@@ -63,6 +63,8 @@ network profiles, and shared-service integrations still need qualification.
   choices and the limits those choices must make visible.
 - [Version 1.0 roadmap](ROADMAP.md): the intended boundaries, delivery sequence,
   and evidence needed before a usable release.
+- [Proposed work model](docs/work-model.md): how persistent bots, projects,
+  finite tasks, and reusable starters could fit together; awaiting design alignment.
 
 Feedback and design proposals are welcome through this repository's issues and
 pull requests. Use synthetic examples when describing a deployment. Keep

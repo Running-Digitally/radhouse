@@ -41,10 +41,13 @@ from an administrator. Show only information and actions permitted by the
 person's role and scope; a viewer's read-only experience does not offer task
 submission. Server-side authorization must enforce the same boundaries.
 
-The next interaction decision is how to start a task: describe the goal first
-and confirm a suggested eligible agent or project, or select the agent or
-project first. This remains open; the work-home decision does not authorize
-automatic assignment or additional access.
+The next interaction decision now covers the relationship between persistent
+bots, project workspaces, finite tasks, and starter templates. The
+[proposed work model](docs/work-model.md) develops several entry points into
+one task brief, reusable bot-role/project/task starters, and an optional Chief
+of Staff. It remains a design proposal; these additions are not yet accepted
+version 1.0 requirements. The work-home decision does not authorize automatic
+assignment or additional access.
 
 Qualification includes an unfamiliar operator starting useful work, finding its
 result, and understanding a blocked action without a terminal, external manual,
@@ -101,10 +104,10 @@ repeat a publication, pull-request operation, or scheduled task.
 
 ## Decisions still to resolve
 
-- Task initiation from the accepted work home: describe the goal before
-  confirming an eligible agent/project suggestion, or select an agent/project
-  first. Detailed task, conversation, and optional group-chat interactions still
-  need design.
+- The proposed work model: bot-role/project/task starters, contextual task
+  entry, a private work context, and the scope of an optional Chief of Staff.
+  Cross-project participation, retained memory, and project-management
+  permissions need explicit design alignment and qualification.
 - Human and bot service identities, credential lifecycles, and the concrete
   mediation mechanism for each allowed GitHub operation.
 - Optional mail delivery and attachment behavior, including how receive-only
