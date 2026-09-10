@@ -1,7 +1,8 @@
 # Architecture and first-slice review
 
-Status: proposed architecture, reviewed in chunks. The accepted product decisions
-remain authoritative; the architecture below is not yet accepted or implemented.
+Status: chunk 1's two-management-VM default and overall responsibilities are
+accepted for the public product. Detailed contracts and later chunks remain
+under review; nothing is implemented or deployed by this acceptance.
 Design depth: D3. Implementation authorization: none from this packet.
 
 ## Review sequence
@@ -11,7 +12,7 @@ on a chunk does not silently accept later choices or authorize deployment.
 
 | Chunk | Review outcome needed | State |
 | --- | --- | --- |
-| 1. Overall structure | Component responsibilities, trust boundaries, and default shared-VM footprint | Ready for review |
+| 1. Overall structure | Component responsibilities, trust boundaries, and default shared-VM footprint | Two shared management VMs accepted; detailed contracts remain to qualify |
 | 2. Identity, access, and information | Human/bot/service identities, grants, private/project data ownership, and mediated operations | Next, informed by chunk 1 |
 | 3. Work and recovery | Task/run state, admission, cancellation, delegation, inference changes, maintenance, and uncertain external effects | Follows chunk 2 |
 | 4. Operator and administrator experience | Onboarding, first task, access requests, sharing, and recovery screens | Follows the accepted authority and work model |
@@ -32,7 +33,7 @@ An operator should experience one product: their work, assigned bots, projects,
 results, and requests for attention. The underlying design separates persistent
 untrusted workers from the components that grant access and manage infrastructure.
 
-### Proposed default deployment
+### Accepted core deployment
 
 **Two shared Linux VMs, plus one persistent VM per bot.** The shared VMs may run
 on the same suitably sized physical host. They provide separation of guest
@@ -133,18 +134,26 @@ exist for actual credential/privilege differences. UI, language, database,
 packaging, and process topology are recommendations to review in chunk 5, not
 technology decisions settled by this diagram.
 
-| Default under consideration | Benefit | Cost or changed guarantee |
+| Alternative / decision | Benefit | Cost or changed guarantee |
 | --- | --- | --- |
-| Two shared VMs — recommended | A web/control-plane process does not share a guest kernel or filesystem with service credentials and infrastructure executors | Additional guest resources, networking, patching, and recovery to qualify; both guests still belong to the trusted management layer. |
-| One shared management VM | Fewer guest resources and simpler initial deployment | Control, credential, and infrastructure execution share a guest kernel. Container/process hardening offers a different boundary; it must not be presented as equivalent to two VMs. |
+| Two shared VMs — accepted default | A web/control-plane process does not share a guest kernel or filesystem with service credentials and infrastructure executors | Additional guest resources, networking, patching, and recovery to qualify; both guests still belong to the trusted management layer. |
+| One shared management VM — not selected | Fewer guest resources and simpler initial deployment | Control, credential, and infrastructure execution share a guest kernel. Container/process hardening offers a different boundary; it must not be presented as equivalent to two VMs. |
 
 The same public recipes should serve either Proxmox or suitably supplied Linux
-VMs. Accepting the two-VM default does not automatically commit V1 to also
-supporting a compact one-VM profile. Actual sizing and targets require capacity
+VMs. The accepted default does not commit V1 to supporting a compact one-VM
+profile. Actual sizing and targets require capacity
 evidence; no host, VM identifier, network, or new standing grant is selected here.
 Optional services may use existing infrastructure or separately qualified shared
 service hosts. This diagram does not promise that all optional services fit in
 the two core VMs' eventual resource budget.
+
+The two-VM count describes the core management layer. It is not a promise that
+every optional service belongs on those guests or that every installation needs
+exactly the same total VM count. Optional-service placement follows the service's
+credentials, data, network exposure, and recovery needs. Reusing a compatible
+existing service or adding a dedicated service host can preserve the same public
+contract through a private deployment overlay; exact optional profiles remain
+to be qualified.
 
 ### Evidence and current limitations
 

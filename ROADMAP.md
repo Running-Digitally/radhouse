@@ -17,6 +17,7 @@ not meet that definition.
 | Agent environment | Persistent Linux VM per agent; terminal, files, and browser access within the agent's boundary. |
 | Idle lifecycle | Keep bot VMs running by default until an authorized human stops them. No automatic idle standby by default; accepted weekly maintenance and deterministic resource limits still apply. |
 | Deployment | Guided Proxmox provisioning plus an installation path for operator-supplied, suitably isolated Linux VMs. |
+| Core management | Two shared VMs: control/UI/work coordination and bounded service/infrastructure operations, plus a persistent VM per bot. Optional-service hosts and CI workers have separate placement/qualification; two is the core management count. |
 | Inference | Self-hosted compatible APIs; explicit provider selection; qualification for required tools, model attribution, and interruption recovery. |
 | Human access | Administrator, operator, and viewer roles; local accounts plus optional bundled SSO or connection to an existing provider. |
 | Human MFA | Required for administrators everywhere and all remote human users, across local accounts and supported SSO. Local non-admin operators/viewers may opt in; unproven local exceptions cannot bypass MFA. |
