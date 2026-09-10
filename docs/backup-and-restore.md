@@ -2,8 +2,11 @@
 
 Status: hybrid protection is accepted for version 1.0. Proxmox, Linux guests,
 and existing NAS-backed workflows are the first reference deployment pattern.
-The portable engine, coverage manifests, schedules, and recovery procedures
-remain design and qualification work. Updated: 2026-09-10. Nothing is deployed.
+Tiered work-data recovery targets are accepted only with deterministic support
+preflights. Recent recoverable work takes priority over extensive historical
+snapshot retention or browsing. Exact retention counts, the engine, manifests,
+schedules, and recovery procedures remain design and qualification work.
+Updated: 2026-09-10. Nothing is deployed.
 
 ## One recovery experience, two protection layers
 
@@ -40,6 +43,134 @@ credentials, paths, retention choices, and schedules in installation overlays.
 The supplied-VM path remains supported; it may require more administrator setup.
 No private installation's existing jobs are automatically reconfigured or assumed
 to protect newly provisioned bots.
+
+## Accepted recovery targets and priority
+
+Use three administrator-controlled work-data profiles: **Standard**, targeting
+about one hour of recent work at risk; **Important**, about fifteen minutes;
+and **Disposable**, about one day. Standard is the proposed installation default.
+Operators inherit the profile and can request a change; bots cannot weaken it.
+Overlapping/shared state uses the strongest admitted requirement or separately
+qualified recovery sets. Protect controller/identity/operation state separately;
+it cannot inherit a weaker profile from a disposable project.
+
+These are recovery point objectives (RPOs), not promises that a timer alone can
+deliver. Measure the age of data in the newest completed, validated, consistent
+recovery point. Capture, queueing, verification, and retry time affect freshness;
+derive a schedule with enough margin to meet the target. Restoration time is a
+separate objective. None of these work-data profiles requires hourly full-VM images.
+
+Version 1 prioritizes reliable recent-state recovery within a finite storage
+budget. Long historical archives, automatic monthly/yearly retention, and a
+user-facing time-machine-style version browser are not baseline requirements.
+This does not remove the accepted optional infrastructure recovery layer, the
+few fallback points needed for safe recovery, or an update's explicit rollback
+requirements. Do not impose a new retention policy on an existing external job.
+
+## Proposed lean retention cycle
+
+The following numbers are a proposal for the next owner decision, not yet an
+accepted retention policy:
+
+| Recovery set | Proposed ordinary retention |
+| --- | --- |
+| Standard work data | Latest 3 completed, validated, compatible recovery points |
+| Important work data | Latest 3 points; refresh more frequently to meet the tighter target |
+| Disposable work data | Latest 3 points; refresh less frequently within its target |
+| Optional complete-computer lane | Recommend latest 2 usable images/sets when the administrator adopts this profile; external infrastructure owns its policy |
+| Extra historical archive | Off by default; an optional alternative keeps one daily point from each of the previous 3 completed local calendar days, in addition to the recent set |
+
+Keep a controller-authorized catalog of valid points, independent of names,
+timestamps, and claimed success supplied by a worker. Count only completed sets
+whose integrity and consistency checks pass. Their underlying capture/restore
+procedure must have a current qualification test; validating each archive is
+not a claim that every capture received a full restore rehearsal.
+
+After admitting, capturing, and validating a replacement, expire the oldest
+eligible point and run the backend's space-reclamation process. A failed or
+partial upload never replaces a usable recovery point. Point count is a steady
+state policy: budget temporary space for the incoming copy before old data can
+be removed. Sets with incremental dependencies retain every required base/chunk;
+deleting a listed point does not necessarily free its full logical size.
+
+The proposed minimum safety floor is **two independently committed usable points**
+per set after initial seeding; they need not be on independent devices and do
+not provide off-site protection by themselves. A new set with fewer points is
+visibly initializing. Never delete the only surviving usable point. Ordinary
+age or a missed backup must not silently erase the last recovery path. Explicit
+administrative data deletion remains a separate scoped action.
+
+Optional history, manually pinned points, and pre-update rollback artifacts all
+consume the same declared capacity budget. A rollback artifact may have a
+separate release condition: identify its owner, bytes, and retention condition
+before admitting the change. Do not let automatic snapshot creation become an
+unbounded exception. Pruning obeys current recovery leases and backend locks.
+
+A three-point rolling set offers only a short window for discovering accidental
+deletion or corruption, especially for Important work. Older history may no
+longer be recoverable. The optional three-day daily set trades additional space
+for a small detection window; it is not enabled by a tighter RPO alone.
+
+## Deterministic support preflight
+
+The selected policy is enforceable only when a versioned rule set can return
+**pass**, **fail**, or **unknown** from measured evidence. Unknown is not pass.
+The supervisor may explain the result but cannot override it or estimate a
+missing capacity value into a pass. Run this before enabling a profile, adding
+protected state, changing storage/retention, or materially changing the engine.
+
+| Check | Required evidence and admission rule |
+| --- | --- |
+| Scope and recovery | Fixed source/target identity, declared volumes/exports, compatible manifests, recovered keys, and a successful isolated restore of representative data. Missing custom-software/volume coverage is explicit. |
+| Capacity | Actual destination free bytes and enforced installation quota; current use, bounded source growth, next-capture peak, indexes/staging, prune/repack/GC overhead and delay, retained dependencies, rollback holds, and shared-infrastructure reserve. Do not assume favorable compression or deduplication. |
+| Freshness | Measured capture-to-usable latency under representative churn and concurrent fleet work, including verification, queueing, retries, and cleanup locks. A conservative operating bound plus schedule interval must fit the selected RPO. Record the load/data limits under which it passed. |
+| Reclamation | Demonstrate expiration and actual byte reclamation with the proposed retention policy. Account for backend delays/locks; a deleted catalog entry or count reduction is insufficient. |
+| Permissions and failure | Verify source/target access, encryption/recovery, scoped retention rights outside worker control, destination outage handling, failed uploads, and preservation of the existing usable recovery set. |
+
+The numerical thresholds, evidence age, and supported data/load envelope belong
+in validated configuration. Use conservative source quotas/change bounds for
+admission; a small favorable sample is not proof that future growth fits. A
+bootstrap measurement or restore rehearsal is a separately authorized bounded
+operation, not an excuse to inspect/decrypt private content in an administrator UI.
+
+Before each backup write, deterministically check that expected peak use stays within
+the installation budget and leaves the required shared-storage reserve. Enforce
+write quotas/limits independently of the model and allowlisted scope. Keep global
+physical capacity authoritative where deduplicated snapshots share storage;
+per-project logical-size estimates cannot enforce a physical byte ceiling.
+Unknown maximum growth means no admission of the tighter profile until bounded.
+
+On failure, keep the requested profile unavailable with a concrete reason and
+remedy. Do not silently select a weaker RPO or expand storage/privileges. If the
+environment changes after admission, show **Protection target missed** or
+**Capacity blocked**, with the real recovery-point age, and stop admitting new
+backup commitments that do not fit. A preflight pass is not a perpetual guarantee
+against destination outages, new data patterns, or failed jobs.
+
+## Preserve freshness without filling shared storage
+
+Reserve room for replacement captures and cleanup before accepting the policy.
+As pressure rises, apply only the approved retention policy: shed optional
+history first, then eligible points above the safety floor, and verify reclaimed
+space. Prefer funding a fresh recovery point over retaining optional old history.
+Never discard required incremental bases, leased rollback state, or the sole
+usable copy to attempt an unproven replacement.
+
+If even the required current data, safety floor, and replacement workspace do
+not fit, no policy can guarantee both the RPO and the storage ceiling. Refuse the
+new backup write/commitment and alert the administrator to add budget, reduce explicitly
+approved scope, or select a different target. Preserve existing usable backups
+and shared-storage safety; do not disguise missed protection as success. Ordinary
+resource limits prevent a bot from creating unlimited source growth. A missing
+bot checkpoint still does not veto accepted weekly OS security maintenance.
+
+Backend qualification matters here. Restic separates forgetting snapshots from
+pruning data; its documentation states that pruning locks the repository and
+can prevent backups completing. Proxmox Backup likewise separates pruning from
+garbage collection. Verify both timing and actual reclaimed bytes for the chosen
+backend. Neither is selected by this design.
+[Restic retention](https://restic.readthedocs.io/en/stable/060_forget.html),
+[Proxmox Backup maintenance](https://pbs.proxmox.com/docs/maintenance.html).
 
 ## Declare the recoverable set
 
@@ -122,10 +253,18 @@ inconsistent exports, old schemas, expired grants, duplicate identities,
 uncertain external actions, and compromised executable state. Test retention
 and storage failure without giving a worker backup deletion authority.
 
-Choose the default engine, backup frequency/retention, storage setup, key custody,
-and detailed restore permissions through subsequent design. A default profile
+Choose the default engine, exact lean retention, storage setup, key custody,
+and detailed restore permissions through subsequent design. Derive backup
+frequency from the accepted tier's measured operating envelope. A default profile
 must state its expected data-loss and recovery targets and prove them with
 restore exercises; a selected backup engine alone is not that proof.
+
+Also exercise quota exhaustion, incompressible/high-churn data, slow verification,
+cleanup locks/delay, failed/forged points, dependent incremental chains, retained
+rollback holds, clock skew, and unavailable evidence. Prove deterministic refusal
+of unsupported profiles and that ordinary rotation preserves usable recovery
+while respecting actual peak bytes. Qualification must include the intended
+fleet concurrency rather than only one idle bot.
 
 ## Source grounding
 

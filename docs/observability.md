@@ -17,6 +17,7 @@ and aggregate analytics without creating a second copy of everyone's private wor
 | Diagnostic logs and traces | Correlate admission, inference, tool operations, delegation, and adapter failures to find a cause | Role- and resource-scoped; privacy-safe fields by default |
 | Security and audit events | Actor, attempted operation, allow/deny outcome, grant/policy revision, sharing approval, evidence reference | Disclosed, narrowly scoped oversight; private payloads remain separate |
 | Maintenance evidence | Installed/running versions, exact plan and admitting policy/approver, occurrence/deadline, checkpoint readiness, forced stops, possible transient-work loss, uncertain actions, health checks, overdue updates and recovery | Administrators; affected operators see availability and their work's recovery |
+| Backup capacity and freshness | Requested/admitted recovery target; policy/evidence revision; last usable capture age; actual used/reserved bytes; cleanup backlog; blocked writes; integrity and restore-test status | Administrators receive storage/qualification detail; operators see scoped protection status and missed targets |
 | Analytics | Completion and failure rates, wait times, bottlenecks, resource use, intervention rates, and human feedback | Scoped personal/project views and appropriately aggregated fleet views |
 
 Keep task content in its existing private/project stores. A task conversation is

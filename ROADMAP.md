@@ -25,6 +25,7 @@ not meet that definition.
 | Maintenance | Automatic weekly OS updates and planned guest restarts by default, under a disclosed administrator-managed policy; advance notice, work preservation, and verified recovery. Security takes precedence: stop unready bot runs after bounded preparation/grace and proceed. Other component changes retain separate review. |
 | Observability | Built-in work/health/event views; local-by-default telemetry, logs, and analytics; scoped audit and maintenance receipts; visible coverage and resource limits. |
 | Backup and restore | Hybrid: managed portable application/data backups plus optional qualified infrastructure protection for complete bot computers; Proxmox/NAS-backed workflows first, with a supplied-VM path and explicit coverage/recovery evidence. |
+| Recovery priority | Tiered work-data RPO targets: Standard ~1 hour, Important ~15 minutes, Disposable ~1 day, conditional on deterministic support preflights. Prioritize recent recovery and finite storage budgets; exact short-retention counts remain proposed. |
 | Work model and naming | Persistent bots, project workspaces, finite tasks, role/project/task starters, optional scoped Chief of Staff; four changeable naming presets and individual overrides. |
 | Private-data egress | Restricted default profile; explicit administrator grant for broader browsing; documented and tested limits for supported combinations. |
 | Collaboration | Delegation to existing project agents; owner-influenced or self-organized reporting lines; leads coordinate work within shared budgets. |
@@ -146,9 +147,11 @@ restore evidence instead of assuming every new bot inherits existing backup jobs
   upgrade contracts for each supported deployment profile.
 - Telemetry schemas/backend, retention defaults, export boundaries, metric
   definitions, and resource budgets for a small installation.
-- Hybrid backup engine, default recovery targets and schedules, retention,
+- Hybrid backup engine, exact schedules and retention,
   storage onboarding, key custody, consistent capture, and detailed restore
-  permissions; complete-computer and controller recovery require qualification.
+  permissions; tiered targets are accepted, while exact retention and measured
+  capacity/performance gates remain design/qualification work. Complete-computer
+  and controller recovery require qualification.
 - Public-contribution CI placement and treatment of untrusted code. Public CI
   must not inherit private infrastructure credentials or caches.
 
@@ -161,6 +164,11 @@ execution includes the accepted weekly OS policy and security-precedence deadlin
 Broad personal
 inbox/calendar access, outbound bot email, unattended merge/deploy, and agents
 expanding their own grants are outside the accepted release boundary.
+
+Extensive historical snapshot browsing and automatic long-term backup archives
+are not version 1 baseline requirements. Retain the hybrid infrastructure recovery
+path and a small usable fallback set; adding historical retention needs an
+explicit capacity-qualified policy.
 
 ## Working in public
 
