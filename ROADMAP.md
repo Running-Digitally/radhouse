@@ -22,7 +22,7 @@ not meet that definition.
 | GitHub | Mediated access by default; explicit advanced direct scoped tokens; authorized branch and pull-request work with human merge approval. |
 | Privacy | Private by default; explicit sharing or disclosed supervision per agent; shared projects and human-reviewed publication. |
 | Oversight | Security-event warnings; optional scoped private review; central supervisor warnings and recommendations, with human intervention. |
-| Maintenance | Supervisor inventory, update checks, and component maintenance responsibility; exact plans and bounded execution, with authorization policy still open. |
+| Maintenance | Automatic weekly OS updates and planned guest restarts by default, under a disclosed administrator-managed policy; advance notice, pre-install work preservation, verified recovery, and separate review for other component changes. Unready-work deadline policy remains open. |
 | Observability | Built-in work/health/event views; local-by-default telemetry, logs, and analytics; scoped audit and maintenance receipts; visible coverage and resource limits. |
 | Work model and naming | Persistent bots, project workspaces, finite tasks, role/project/task starters, optional scoped Chief of Staff; four changeable naming presets and individual overrides. |
 | Private-data egress | Restricted default profile; explicit administrator grant for broader browsing; documented and tested limits for supported combinations. |
@@ -79,7 +79,8 @@ interface and usability evidence remain to be delivered.
 - **Security and maintenance:** correlate scoped findings and maintain component
   inventory; execute only admitted maintenance plans through bounded adapters.
   The [supervisor design](docs/security-supervisor.md) separates model proposals
-  from enforced authority and identifies the open maintenance-policy decision.
+  from enforced authority, defines the weekly OS default, and identifies the
+  open deadline decision for work that cannot checkpoint safely.
 
 These are responsibilities to design and qualify, not a requirement to create
 one independently deployed service per responsibility. Choose the least complex
@@ -120,9 +121,11 @@ repeat a publication, pull-request operation, or scheduled task.
 
 ## Decisions still to resolve
 
-- Maintenance authorization: individual approval for each batch (recommended),
-  or optional administrator policies for qualified low-impact automatic updates.
-  Supported component/version matrices and recovery adapters need qualification.
+- Maintenance deadline behavior: bounded grace then restart from durable state
+  (proposed recommendation), or defer an unready target and alert an administrator.
+  Weekly OS updates/restarts are accepted defaults. Supported package profiles,
+  readiness/checkpoint contracts, cadence settings, and recovery adapters need
+  qualification; other component changes retain separately reviewed plans.
 - Detailed project-management permissions, starter contents, naming-preference
   precedence, cross-project grants, retained memory, and usable boundary displays
   within the accepted work model.
@@ -145,7 +148,8 @@ repeat a publication, pull-request operation, or scheduled task.
 Additional agent runtimes, automated provisioning on other hypervisors, dedicated
 cloud-inference integrations, private-agent question exchange with automatic
 answers, and automatic supervisor incident intervention are deferred. Maintenance
-execution is a separate planned capability with its policy still open. Broad personal
+execution includes the accepted weekly OS policy; the unready-work deadline rule
+remains open. Broad personal
 inbox/calendar access, outbound bot email, unattended merge/deploy, and agents
 expanding their own grants are outside the accepted release boundary.
 

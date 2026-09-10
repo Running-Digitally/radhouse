@@ -96,10 +96,13 @@ or grant changes. Existing deterministic permission and resource limits still
 enforce directly. Review findings can be wrong and must not be presented as
 complete protection.
 
-The supervisor also owns update checks and maintenance coordination. Proposed
-maintenance execution uses exact plans and scoped authorization enforced outside
-the model; its authorization policy is still open. An approved maintenance
-restart does not grant general incident-response power. Upstream update text,
+The supervisor also owns update checks and maintenance coordination. The default
+is automatic weekly OS updates and planned guest restarts under a disclosed
+administrator-managed policy, with advance notice and verified work preservation
+before installation. Exact plans and scoped authorization are enforced outside
+the model. The policy for work that cannot checkpoint by the deadline remains
+open. An approved maintenance restart does not grant general incident-response
+power. Upstream update text,
 bot-installed software, and a supervisor's own recommendation cannot authorize
 new privileges. Preserve work and qualify recovery, artifact trust, compatibility,
 and running versions. See the [supervisor contract](docs/security-supervisor.md).
