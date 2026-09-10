@@ -1,8 +1,10 @@
 # Architecture and first-slice review
 
 Status: chunk 1's two-management-VM default and overall responsibilities are
-accepted for the public product. Detailed contracts and later chunks remain
-under review; nothing is implemented or deployed by this acceptance.
+accepted for the public product. Chunk 2's administrator invitations and explicit
+human roles are also accepted for V1. The rest of chunk 2, detailed contracts and
+later chunks remain under review; these decisions do not implement or deploy
+the product.
 Design depth: D3. Implementation authorization: none from this packet.
 
 ## Review sequence
@@ -13,7 +15,7 @@ on a chunk does not silently accept later choices or authorize deployment.
 | Chunk | Review outcome needed | State |
 | --- | --- | --- |
 | 1. Overall structure | Component responsibilities, trust boundaries, and default shared-VM footprint | Two shared management VMs accepted; detailed contracts remain to qualify |
-| 2. Identity, access, and information | Human/bot/service identities, grants, private/project data ownership, and mediated operations | Next, informed by chunk 1 |
+| 2. Identity, access, and information | Human/bot/service identities, grants, private/project data ownership, and mediated operations | Human invitations and explicit roles accepted; remaining contracts under review |
 | 3. Work and recovery | Task/run state, admission, cancellation, delegation, inference changes, maintenance, and uncertain external effects | Follows chunk 2 |
 | 4. Operator and administrator experience | Onboarding, first task, access requests, sharing, and recovery screens | Follows the accepted authority and work model |
 | 5. Implementation design | Technology choices, packaging, schemas, typed contracts, module dependencies, and call paths | Follows the reviewed product boundaries |
@@ -172,3 +174,53 @@ This chunk follows the accepted [work model](work-model.md),
 The remaining review chunks will refine this proposal rather than create a
 second competing architecture. Final acceptance must include denied-access,
 recovery, resource-pressure, and nontechnical usability evidence.
+
+## Chunk 2: identity, access, and information
+
+### Human admission and roles — accepted for V1
+
+Administrators invite people and assign their roles explicitly in Radhouse.
+Support local accounts and optional SSO; shared sign-in identifies the person,
+while Radhouse owns their membership, role and resource grants. Being known to
+the identity provider does not automatically admit someone to the installation.
+
+The guided administrator flow should combine the invitation, role selection and
+eligible bot assignments. The invited person signs in, completes required
+enrollment and MFA, and reaches their assigned work home. A copyable invitation
+does not require an outbound email service. Invitation delivery must not be
+confused with the separate receive-only bot-mail integration.
+
+| Responsibility | V1 authority |
+| --- | --- |
+| Human admission and admin/operator/viewer role | Explicit administrator action in Radhouse |
+| Human sign-in | A local account or a qualified SSO binding, under the same accepted MFA policy |
+| Bot allocation and service grants | Separate explicit administrator decisions; a role does not allocate every bot or confer service credentials |
+| Project creation and sharing | The accepted operator-owned project model, respecting current membership and content permissions |
+| Private bot histories | Existing private-by-default, explicit-sharing and disclosed-supervision rules; administrator status alone does not add a content audience |
+
+SSO-group-based admission and role changes are deferred beyond V1. A group
+change does not silently admit a person, promote them, or alter their Radhouse
+role. Disabling an identity, revoking sessions and changing resource grants
+still need enforceable lifecycle contracts; deferring group synchronization is
+not a promise that an existing SSO session remains valid indefinitely.
+
+### Contracts still to qualify
+
+Specify first-administrator bootstrap, invitation expiry/redemption, account
+linking, MFA enrollment/recovery, disabling an account, session revocation and
+the effect of permission changes on already admitted work. Keep a stable internal
+person identity and separately verified sign-in bindings. For OIDC, use the
+validated issuer and subject binding; matching email addresses alone cannot
+merge identities or take over an existing account. See the
+[OpenID Connect claim-stability rules](https://openid.net/specs/openid-connect-core-1_0.html#ClaimStability).
+
+Admission qualification must demonstrate that an invited person reaches only
+their authorized work, an uninvited SSO user receives no fleet/project content,
+missing required MFA prevents admission, and SSO group changes cannot grant
+membership or promote a role. Account-linking cases must include a reused email
+address. These are acceptance requirements for the later implementation slice,
+not evidence of an implemented authentication system.
+
+Bot/service identities, grant enforcement and content-release contracts remain
+under review. This human-admission decision does not settle those remaining
+parts of chunk 2.

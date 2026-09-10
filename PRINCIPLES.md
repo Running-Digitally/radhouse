@@ -38,6 +38,12 @@ See [boundary experience](docs/boundary-experience.md) and
 
 ## Protect human sign-in
 
+For V1, administrators invite people and assign human roles explicitly in
+Radhouse. Support local accounts and optional SSO; successful shared sign-in
+alone does not grant membership, bot access or service permissions. Defer SSO
+group automation for admission and roles beyond V1. See the
+[architecture review](docs/architecture-review.md#human-admission-and-roles--accepted-for-v1).
+
 Require multifactor authentication for administrators on every access path and
 for all people connecting remotely. Local non-admin operators and viewers may
 opt in. Apply the same rule to local accounts and supported SSO; a successful
