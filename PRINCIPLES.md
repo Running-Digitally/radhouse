@@ -11,6 +11,13 @@ set the purpose and retain consequential decisions. Agents complete assigned
 work, report results, and suggest follow-ups; suggestions do not authorize new
 work or wider access.
 
+Combine Guardian Angel and Cognitive Amplifier behaviors: notice meaningful
+risks, changes, and opportunities, then prepare evidence, options, and useful
+drafts that reduce the person's effort. A human-enabled standing assignment
+allows proactive judgment within visible source, preparation, audience, and
+resource limits. Respect attention and explicit feedback; new objectives and
+wider effects still require authority. See [proactive assistance](docs/proactive-assistance.md).
+
 ## Make the first useful action obvious
 
 **The best user manual is no user manual.** The interface should explain what a

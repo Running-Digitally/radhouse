@@ -46,6 +46,7 @@ role label nor a project folder replaces the accepted VM and service boundaries.
 | Bot | A named worker created from a template and configured by an administrator. | Persists beyond tasks and projects, with its own identity, VM, tools, private workspace, memory, provider binding, and explicit grants. |
 | Project | A body of work with its own people, eligible bots, shared workspace, instructions, decisions, and audience. | Persists across assignments; may represent an ongoing area or a finite deliverable. Shared content lives here rather than only in a bot's private memory. |
 | Task | An outcome to deliver in a chosen context: the brief, assigned bots, inputs, limits, result, and review state. | Finite work that can complete independently of its bots. A project groups related tasks; a task can have bounded subtasks. |
+| Standing assignment | A human-enabled purpose with allowed sources, local preparation, recipients, triggers/schedule, and limits. | Persists until changed or stopped by a person; events create bounded occurrences/runs within its current authority. |
 | Run | One execution attempt, checkpoint continuation, or retry for a task. | Technical execution detail, visible when useful for progress or diagnosis rather than an onboarding concept. |
 
 A Researcher template can produce several distinct Researcher bots. A bot can
@@ -105,6 +106,20 @@ Within the task, conversation, work status, files, result, and review stay
 together. Finishing the task leaves the bots and project available for later
 work. A completed task's proposed follow-up remains a proposal until authorized;
 selecting a recipe does not enable a recurring schedule.
+
+Version 1 also includes [proactive prepared assistance](proactive-assistance.md).
+A person can give an eligible bot a standing assignment to notice meaningful
+changes and opportunities and bring prepared briefings to an authorized audience.
+The bot exercises judgment within that assignment; the controller enforces its
+scope and limits. A mail or work event can wake an admitted occurrence without
+the person creating each occurrence manually. Guardian Angel and Cognitive
+Amplifier behaviors can belong to the same bot; role labels add no grants.
+
+The work home includes these scoped briefings in needs-attention items, linked
+to evidence, prepared material, and assignment controls. Reviewing a draft or
+dismissing an alert does not start new work. A proposed follow-up is a task brief
+until a person authorizes it. Chief of Staff consolidation uses only permitted
+project status and explicitly released summaries.
 
 ## Three kinds of starter
 

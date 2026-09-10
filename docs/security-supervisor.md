@@ -14,6 +14,13 @@ maintained. It is a platform role with a stable system identity and visible
 responsibilities. It is distinct from a Chief of Staff coordinating people's
 work and from a bot role template with a reassuring name.
 
+[Guardian Angel and Cognitive Amplifier behaviors](proactive-assistance.md)
+describe how a bot notices meaningful events and prepares useful help within a
+standing assignment. They confer no infrastructure authority. The supervisor
+can use the same concise briefing and attention patterns for its scoped evidence;
+it gains no private inbox feed, broader review rights, or new intervention powers.
+Personal briefing preferences must not suppress required operational alerts.
+
 ## Responsibilities
 
 | Responsibility | Useful output | Limit |
