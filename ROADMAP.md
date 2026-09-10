@@ -27,6 +27,7 @@ not meet that definition.
 | Backup and restore | Hybrid: managed portable application/data backups plus optional qualified infrastructure protection for complete bot computers; Proxmox/NAS-backed workflows first, with a supplied-VM path and explicit coverage/recovery evidence. |
 | Recovery priority | Tiered work-data RPO targets: Standard ~1 hour, Important ~15 minutes, Disposable ~1 day, conditional on deterministic support preflights. Retain the latest 3 validated work-data recovery points; historical archives are off by default. Prioritize recent recovery and finite storage budgets. |
 | Recovery keys | Built-in key management for unattended backups, with a guided administrator-held recovery kit saved outside the installation and verified through recovery. Worker bots receive no backup keys. |
+| Restore authority | Operators recover currently authorized files into a separate recovery folder, with current permissions and privacy preserved; no automatic overwrite or bot activation. Administrators handle whole-bot and platform recovery. |
 | Work model and naming | Persistent bots, project workspaces, finite tasks, role/project/task starters, optional scoped Chief of Staff; four changeable naming presets and individual overrides. |
 | Private-data egress | Restricted default profile; explicit administrator grant for broader browsing; documented and tested limits for supported combinations. |
 | Collaboration | Delegation to existing project agents; owner-influenced or self-organized reporting lines; leads coordinate work within shared budgets. |
@@ -150,7 +151,8 @@ restore evidence instead of assuming every new bot inherits existing backup jobs
   definitions, and resource budgets for a small installation.
 - Hybrid backup engine, exact schedules and rotation mechanics,
   storage onboarding, recovery-kit implementation, consistent capture, and
-  detailed restore permissions; tiered targets and the three-point lean default are accepted,
+  concrete restore authorization/extraction contracts; tiered targets, the
+  three-point lean default, built-in recovery kits, and scoped self-service are accepted,
   while capacity/performance gates and optional retention policies need
   design/qualification. Complete-computer and controller recovery require qualification.
 - Public-contribution CI placement and treatment of untrusted code. Public CI

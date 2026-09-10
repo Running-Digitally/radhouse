@@ -7,8 +7,9 @@ preflights. Recent recoverable work takes priority over extensive historical
 snapshot retention or browsing. The lean work-data default is accepted: retain
 the latest three validated recovery points, with historical archives off by
 default. Built-in key management with an administrator-held recovery kit is
-also accepted. The engine, manifests, schedules, and recovery procedures still
-need design and qualification.
+also accepted. Operators may recover currently authorized files into a separate
+folder; administrators handle whole-bot and platform recovery. The engine,
+manifests, schedules, and detailed procedures still need design and qualification.
 Updated: 2026-09-10. Nothing is deployed.
 
 ## One recovery experience, two protection layers
@@ -242,10 +243,36 @@ machine owner or treat that power as routine permission to browse private work.
 
 ## Restore with current authority
 
-Propose administrator-led guided restore into a stopped or externally isolated
-target first. Recover the controller through a documented path that works when
-its normal UI is unavailable. Verify data/schema compatibility and the selected
-recovery set before enabling any agent runtime, cron, or integration.
+Scoped self-service file recovery is accepted for operators. Provide a guided
+action over the retained recovery points: select authorized files, confirm the
+destination and audience, and recover a copy into a separate folder. Preserve
+current work; do not overwrite files or activate restored code, bots, schedules,
+or integrations. A full historical browsing interface is not required.
+
+The recovery service enforces current permissions on both the source and the
+destination and preserves the source data's privacy. Check access before exposing
+backup names/previews and again before releasing recovered files. A historical
+ACL or former membership does not revive access. Deny recovery when the source's
+identity or applicable policy cannot be established, including for deleted files;
+request administrator resolution without silently widening the audience.
+
+Extract only the authorized file set into a bounded recovery location outside
+automatic runtime/configuration discovery. Do not follow archive paths or links
+into live work or a different privacy scope. Account for staging and output bytes
+within resource limits. Keep backup credentials and keys within the recovery
+service; operator self-service does not grant direct access to the backup store.
+Credential material, control databases, grant records, and executable runtime
+state require the administrator-led recovery path. This file-copy permission
+does not grant worker bots self-restore powers or viewers write access.
+Ordinary source-code files can be recovered as inert files; recovering a file
+does not authorize executing it or loading it as runtime configuration.
+
+Administrators perform whole-bot and platform recovery through a guided restore
+into a stopped or externally isolated target first. Infrastructure recovery
+authority does not grant routine permission to browse private contents. Recover
+the controller through a documented path that works when its normal UI is
+unavailable. Verify data/schema compatibility and the selected recovery set
+before enabling any agent runtime, cron, or integration.
 
 Reconcile current grants, revocations, pending operations, and stable identity.
 Fence the previous instance before activating a replacement. Restored credentials
@@ -281,8 +308,9 @@ uncertain external actions, and compromised executable state. Test retention
 and storage failure without giving a worker backup deletion authority.
 
 Choose the default engine, storage setup, the recovery-kit implementation,
-and detailed restore permissions through subsequent design. Derive backup
-frequency from the accepted tier's measured operating envelope. A default profile
+and concrete restore authorization/extraction contracts through subsequent
+design. Derive backup frequency from the accepted tier's measured operating
+envelope. A default profile
 must state its expected data-loss and recovery targets and prove them with
 restore exercises; a selected backup engine alone is not that proof.
 
@@ -296,6 +324,12 @@ fleet concurrency rather than only one idle bot.
 Test recovery with the original controller unavailable and the externally saved
 kit. Exercise missing/stale kits and key rotation across retained recovery sets;
 verify that worker bots and ordinary telemetry cannot obtain recovery material.
+
+Qualify self-service recovery against revoked/changed membership, inaccessible
+backup metadata, deleted sources with missing policy, path traversal and links,
+destination collisions, insufficient space, and runtime auto-discovery. Verify
+that files remain copies, privacy is preserved, and system recovery powers are
+not reachable through the file-recovery action.
 
 ## Source grounding
 
