@@ -152,6 +152,13 @@ encryption, snapshots, or a successful backup job alone do not prove recovery.
 Restoration must reconcile current authority before enabling integrations.
 See [backup and restore](docs/backup-and-restore.md).
 
+Prioritize recent recoverable work over extensive historical retention. Admit
+tiered recovery targets only through deterministic checks of coverage, measured
+throughput, real peak storage, reclamation, and recovery. A point-count limit is
+not a byte limit. Keep short retention and bounded storage, preserve usable
+fallback state, and disclose unsupported or missed targets without silently
+weakening the profile. The model cannot approve its own capacity exception.
+
 Provide useful telemetry, logs, and analytics within the installation. Scope
 access to evidence, minimize private content at collection, and disclose missing
 or stale coverage. Security and maintenance receipts must not depend on a

@@ -134,6 +134,10 @@ The accepted [hybrid backup model](backup-and-restore.md) supplies portable
 application/data protection and an optional complete-computer infrastructure
 lane. Its scope and restore evidence are distinct from a task checkpoint or
 one update's rollback artifact. The supervisor reports each layer's health.
+Tiered recovery profiles require deterministic support preflights and continuing
+capacity/freshness evidence. The supervisor explains pass/fail/unknown results;
+it cannot enable an unsupported profile, grow storage, or lengthen retention on
+its own. Prioritize current recoverability over optional historical archives.
 
 Updating the supervisor, controller, identity service, or its enforcement adapter
 needs an independently executable recovery path. A conversational supervisor

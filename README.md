@@ -59,6 +59,9 @@ Our version 1.0 direction includes:
 - **Hybrid recovery:** portable application/data backups plus optional complete
   bot-computer protection through existing infrastructure; qualify Proxmox and
   NAS-backed workflows first while retaining the supplied-Linux-VM path.
+- **Recent-work protection:** tiered recovery targets admitted only after
+  deterministic capacity/performance checks; short retention and explicit storage
+  budgets take priority over extensive historical snapshot browsing.
 - **Self-hosted inference:** a documented compatible API and explicit provider
   selection, with stable agent identity across supported model changes.
 - **Bounded collaboration:** subtasks for existing project agents and schedules
