@@ -4,8 +4,11 @@ Status: hybrid protection is accepted for version 1.0. Proxmox, Linux guests,
 and existing NAS-backed workflows are the first reference deployment pattern.
 Tiered work-data recovery targets are accepted only with deterministic support
 preflights. Recent recoverable work takes priority over extensive historical
-snapshot retention or browsing. Exact retention counts, the engine, manifests,
-schedules, and recovery procedures remain design and qualification work.
+snapshot retention or browsing. The lean work-data default is accepted: retain
+the latest three validated recovery points, with historical archives off by
+default. Built-in key management with an administrator-held recovery kit is
+also accepted. The engine, manifests, schedules, and recovery procedures still
+need design and qualification.
 Updated: 2026-09-10. Nothing is deployed.
 
 ## One recovery experience, two protection layers
@@ -67,18 +70,23 @@ This does not remove the accepted optional infrastructure recovery layer, the
 few fallback points needed for safe recovery, or an update's explicit rollback
 requirements. Do not impose a new retention policy on an existing external job.
 
-## Proposed lean retention cycle
+## Accepted lean retention default
 
-The following numbers are a proposal for the next owner decision, not yet an
-accepted retention policy:
+Retain the latest three completed, validated, compatible work-data points for
+each tier. The refresh schedule changes with the RPO; a tighter target does not
+increase historical retention. Existing infrastructure owns its separate policy.
 
-| Recovery set | Proposed ordinary retention |
+| Recovery set | Retention policy and status |
 | --- | --- |
 | Standard work data | Latest 3 completed, validated, compatible recovery points |
 | Important work data | Latest 3 points; refresh more frequently to meet the tighter target |
 | Disposable work data | Latest 3 points; refresh less frequently within its target |
-| Optional complete-computer lane | Recommend latest 2 usable images/sets when the administrator adopts this profile; external infrastructure owns its policy |
-| Extra historical archive | Off by default; an optional alternative keeps one daily point from each of the previous 3 completed local calendar days, in addition to the recent set |
+| Optional complete-computer lane | Latest 2 usable images/sets remains a recommendation for the infrastructure owner, not an adopted policy for existing jobs |
+| Extra historical archive | Off by default; adding history requires an explicit capacity-qualified policy |
+
+Any optional history needs an explicit capacity-qualified policy; its detailed
+configuration remains design work. The accepted default does not require a
+history-browsing interface.
 
 Keep a controller-authorized catalog of valid points, independent of names,
 timestamps, and claimed success supplied by a worker. Count only completed sets
@@ -108,8 +116,8 @@ unbounded exception. Pruning obeys current recovery leases and backend locks.
 
 A three-point rolling set offers only a short window for discovering accidental
 deletion or corruption, especially for Important work. Older history may no
-longer be recoverable. The optional three-day daily set trades additional space
-for a small detection window; it is not enabled by a tighter RPO alone.
+longer be recoverable. Disclose this tradeoff in setup; adding a small daily
+history is a separate storage decision, not a consequence of a tighter RPO.
 
 ## Deterministic support preflight
 
@@ -124,7 +132,7 @@ protected state, changing storage/retention, or materially changing the engine.
 | Scope and recovery | Fixed source/target identity, declared volumes/exports, compatible manifests, recovered keys, and a successful isolated restore of representative data. Missing custom-software/volume coverage is explicit. |
 | Capacity | Actual destination free bytes and enforced installation quota; current use, bounded source growth, next-capture peak, indexes/staging, prune/repack/GC overhead and delay, retained dependencies, rollback holds, and shared-infrastructure reserve. Do not assume favorable compression or deduplication. |
 | Freshness | Measured capture-to-usable latency under representative churn and concurrent fleet work, including verification, queueing, retries, and cleanup locks. A conservative operating bound plus schedule interval must fit the selected RPO. Record the load/data limits under which it passed. |
-| Reclamation | Demonstrate expiration and actual byte reclamation with the proposed retention policy. Account for backend delays/locks; a deleted catalog entry or count reduction is insufficient. |
+| Reclamation | Demonstrate expiration and actual byte reclamation with the selected retention policy. Account for backend delays/locks; a deleted catalog entry or count reduction is insufficient. |
 | Permissions and failure | Verify source/target access, encryption/recovery, scoped retention rights outside worker control, destination outage handling, failed uploads, and preservation of the existing usable recovery set. |
 
 The numerical thresholds, evidence age, and supported data/load envelope belong
@@ -202,6 +210,25 @@ mechanism. A compressed VM archive or encrypted network transport alone does not
 establish encryption at rest. Keep recovery keys available independently of the
 installation being recovered; test key recovery as part of restoration.
 
+Use built-in key management for unattended backups. Setup guides an administrator
+to export a recovery kit, store it outside the installation in an independently
+recoverable location, and complete a guided recovery check using that copy. A
+separate secrets-manager service is not required by the accepted default.
+
+The kit must identify its protected recovery sets and include the material needed
+to unlock them. Keep backup locations, required configuration, and an offline
+restore procedure available without the lost controller. The kit does not contain
+the backed-up work itself. Key rotation must preserve access to every retained
+recovery set and prompt an updated export/check when necessary. Do not label key
+recovery verified merely because a download button was clicked. The exact
+export/check mechanism depends on the qualified engine and remains design work.
+
+Scope operational key access to the backup/recovery components that require it.
+Do not expose kit contents through bots, routine logs, analytics, or support
+bundles. Protect its export through administrator authentication and an audit
+event without recording secret values. Holding recovery keys does not grant
+routine application permission to browse private contents.
+
 Store backups outside worker-writable storage. Worker bots must not receive
 backup repository credentials, other bots' keys, or retention/deletion powers.
 Give retention/pruning only the bounded administrative authority it requires.
@@ -253,7 +280,7 @@ inconsistent exports, old schemas, expired grants, duplicate identities,
 uncertain external actions, and compromised executable state. Test retention
 and storage failure without giving a worker backup deletion authority.
 
-Choose the default engine, exact lean retention, storage setup, key custody,
+Choose the default engine, storage setup, the recovery-kit implementation,
 and detailed restore permissions through subsequent design. Derive backup
 frequency from the accepted tier's measured operating envelope. A default profile
 must state its expected data-loss and recovery targets and prove them with
@@ -265,6 +292,10 @@ rollback holds, clock skew, and unavailable evidence. Prove deterministic refusa
 of unsupported profiles and that ordinary rotation preserves usable recovery
 while respecting actual peak bytes. Qualification must include the intended
 fleet concurrency rather than only one idle bot.
+
+Test recovery with the original controller unavailable and the externally saved
+kit. Exercise missing/stale kits and key rotation across retained recovery sets;
+verify that worker bots and ordinary telemetry cannot obtain recovery material.
 
 ## Source grounding
 
