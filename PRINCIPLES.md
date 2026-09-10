@@ -49,6 +49,12 @@ for all people connecting remotely. Local non-admin operators and viewers may
 opt in. Apply the same rule to local accounts and supported SSO; a successful
 SSO login alone does not establish that the required MFA occurred.
 
+When SSO is enabled, retain and test a designated local administrator sign-in
+with MFA that is usable without that provider. For V1, SSO-only non-admin users
+wait for provider recovery before signing in again; ordinary local accounts
+remain supported. See the
+[SSO-outage recovery contract](docs/architecture-review.md#fallback-sign-in-during-an-sso-outage--accepted-for-v1).
+
 Qualify authentication-assurance evidence and the deployment's ingress paths.
 A private proxy address or caller-supplied header cannot establish a local-user
 exception. If the route cannot establish the context required for an exception,

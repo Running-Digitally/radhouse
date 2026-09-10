@@ -2,7 +2,8 @@
 
 Status: chunk 1's two-management-VM default and overall responsibilities are
 accepted for the public product. Chunk 2's administrator invitations, explicit
-human roles and bot-wide pause after grant withdrawal are also accepted for V1.
+human roles, administrator-only SSO fallback and bot-wide pause after grant
+withdrawal are also accepted for V1.
 The rest of chunk 2, detailed contracts and later chunks remain under review;
 these decisions do not implement or deploy the product.
 Design depth: D3. Implementation authorization: none from this packet.
@@ -15,7 +16,7 @@ on a chunk does not silently accept later choices or authorize deployment.
 | Chunk | Review outcome needed | State |
 | --- | --- | --- |
 | 1. Overall structure | Component responsibilities, trust boundaries, and default shared-VM footprint | Two shared management VMs accepted; detailed contracts remain to qualify |
-| 2. Identity, access, and information | Human/bot/service identities, grants, private/project data ownership, and mediated operations | Human invitations, explicit roles and pause scope after grant withdrawal accepted; remaining contracts under review |
+| 2. Identity, access, and information | Human/bot/service identities, grants, private/project data ownership, and mediated operations | Human invitations, explicit roles, administrator-only SSO fallback and grant-withdrawal pause accepted; remaining contracts under review |
 | 3. Work and recovery | Task/run state, admission, cancellation, delegation, inference changes, maintenance, and uncertain external effects | Follows chunk 2 |
 | 4. Operator and administrator experience | Onboarding, first task, access requests, sharing, and recovery screens | Follows the accepted authority and work model |
 | 5. Implementation design | Technology choices, packaging, schemas, typed contracts, module dependencies, and call paths | Follows the reviewed product boundaries |
@@ -203,6 +204,43 @@ change does not silently admit a person, promote them, or alter their Radhouse
 role. Disabling an identity, revoking sessions and changing resource grants
 still need enforceable lifecycle contracts; deferring group synchronization is
 not a promise that an existing SSO session remains valid indefinitely.
+
+### Fallback sign-in during an SSO outage — accepted for V1
+
+Retain and test a designated local administrator sign-in with MFA when optional
+SSO is enabled. Reuse the initial local administrator where appropriate; an
+additional privileged identity needs a concrete reason. Its authentication and
+recovery material must work without the unavailable identity provider.
+
+SSO-only operators and viewers wait for provider recovery before signing in
+again. Ordinary local accounts remain supported and usable under their current
+permissions and MFA policy. Adding independent local fallback credentials for
+selected SSO operators/viewers is deferred beyond V1; provider failure does not
+auto-create an account or enable a weaker authentication method.
+
+The recovery sign-in retains the designated person's current Radhouse authority.
+It cannot revive a disabled account or revoked grant, manufacture administrator
+status, or grant identity-provider, hypervisor or remote-edge repair powers.
+Keep required MFA in force. This is application sign-in recovery, separate from
+the encrypted-backup recovery kit and its key-custody contract.
+
+Setup must prove a reachable management route and usable authentication factors
+that do not depend on the failed provider. An already-authorized local route may
+meet this requirement; a remote access gateway using the same provider may stay
+unavailable. Do not create an automatic public bypass or weaken gateway policy.
+Show recovery readiness and record scoped audit evidence when the route is used.
+
+Qualify provider loss, unavailable provider-dependent ingress, incorrect or
+missing MFA, disabled accounts, revoked recovery bindings and recovery material
+stored behind the unavailable provider. Exact factor methods, enrollment and
+replacement, session lifetime and revocation remain implementation contracts.
+Existing sessions and background work keep their authorization/expiry rules;
+this decision supplies no exception to those rules.
+
+[OWASP MFA guidance](https://cheatsheetseries.owasp.org/cheatsheets/Multifactor_Authentication_Cheat_Sheet.html)
+discusses dependency/lockout risks and secure recovery without exploitable bypass
+flows. Administrator-only fallback is Radhouse's accepted V1 scope. These are
+design and qualification requirements, not an implemented recovery route.
 
 ### Withdrawing a bot grant — accepted for V1
 
