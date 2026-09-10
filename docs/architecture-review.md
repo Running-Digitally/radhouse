@@ -1,10 +1,10 @@
 # Architecture and first-slice review
 
 Status: chunk 1's two-management-VM default and overall responsibilities are
-accepted for the public product. Chunk 2's administrator invitations and explicit
-human roles are also accepted for V1. The rest of chunk 2, detailed contracts and
-later chunks remain under review; these decisions do not implement or deploy
-the product.
+accepted for the public product. Chunk 2's administrator invitations, explicit
+human roles and bot-wide pause after grant withdrawal are also accepted for V1.
+The rest of chunk 2, detailed contracts and later chunks remain under review;
+these decisions do not implement or deploy the product.
 Design depth: D3. Implementation authorization: none from this packet.
 
 ## Review sequence
@@ -15,7 +15,7 @@ on a chunk does not silently accept later choices or authorize deployment.
 | Chunk | Review outcome needed | State |
 | --- | --- | --- |
 | 1. Overall structure | Component responsibilities, trust boundaries, and default shared-VM footprint | Two shared management VMs accepted; detailed contracts remain to qualify |
-| 2. Identity, access, and information | Human/bot/service identities, grants, private/project data ownership, and mediated operations | Human invitations and explicit roles accepted; remaining contracts under review |
+| 2. Identity, access, and information | Human/bot/service identities, grants, private/project data ownership, and mediated operations | Human invitations, explicit roles and pause scope after grant withdrawal accepted; remaining contracts under review |
 | 3. Work and recovery | Task/run state, admission, cancellation, delegation, inference changes, maintenance, and uncertain external effects | Follows chunk 2 |
 | 4. Operator and administrator experience | Onboarding, first task, access requests, sharing, and recovery screens | Follows the accepted authority and work model |
 | 5. Implementation design | Technology choices, packaging, schemas, typed contracts, module dependencies, and call paths | Follows the reviewed product boundaries |
@@ -204,12 +204,55 @@ role. Disabling an identity, revoking sessions and changing resource grants
 still need enforceable lifecycle contracts; deferring group synchronization is
 not a promise that an existing SSO session remains valid indefinitely.
 
+### Withdrawing a bot grant — accepted for V1
+
+When an authorized human withdraws or narrows a bot's grant, block new use of the
+removed permission and pause that bot's work for human review. Preserve durable
+files and progress. Prevent new task, delegation and routine dispatch to the
+paused bot; interrupt active work through the qualified control path. Other
+bots may continue their independently authorized work, while dependent tasks
+still obey their current root scope and grants.
+
+For example, withdrawing repository access during a coding assignment pauses
+the bot, including unrelated work on that same bot. Automatically continuing
+selected tasks inside it is deferred beyond V1. The interface should preview
+this impact, then show the changed grant, pause state and any unfinished effects.
+
+An authorized human reviews and resumes the bot under its remaining permissions.
+Resume cannot restore a revoked grant or unblock a task that still requires it.
+This policy follows an explicit human access decision; it does not grant the
+supervisor independent incident-quarantine authority or select routine VM
+shutdown. Normal credential renewal, temporary service failures, provider
+maintenance and ordinary sign-out are different events.
+
+Enforce revocation outside the untrusted guest. A cooperative checkpoint or UI
+pause flag does not prove containment of runtime/background activity. A bounded
+local checkpoint may preserve work after revoked access is fenced; it must not
+retain old external permissions to finish the task. The implementation must
+qualify external enforcement, guest-wide containment where necessary, deadlines,
+pause verification, restart persistence and resume revalidation.
+
+Previously sent requests may complete. Record unknown outcomes and avoid blind
+replay; do not claim to undo a completed effect or erase previously obtained
+data. Direct tokens and browser sessions require separate upstream revocation
+and containment evidence. Report pending or failed revocation plainly.
+[OWASP authorization guidance](https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html#validate-the-permissions-on-every-request)
+supports checking current permissions on every request, and
+[OAuth token revocation](https://www.rfc-editor.org/rfc/rfc7009.html#section-2.1)
+recognizes propagation delay. The bot-wide pause is the accepted Radhouse policy.
+
+Qualification must include a grant change racing a tool call, an unresponsive
+runtime/background process, a copied direct token, delegated work and queued
+routine dispatch, a controller restart while paused, and a resume attempt that
+still lacks a required grant. Tests must distinguish a recorded pause request
+from verified enforcement and preserve unaffected bots' independent work.
+
 ### Contracts still to qualify
 
 Specify first-administrator bootstrap, invitation expiry/redemption, account
 linking, MFA enrollment/recovery, disabling an account, session revocation and
-the effect of permission changes on already admitted work. Keep a stable internal
-person identity and separately verified sign-in bindings. For OIDC, use the
+the mechanisms implementing the accepted grant-withdrawal policy. Keep a stable
+internal person identity and separately verified sign-in bindings. For OIDC, use the
 validated issuer and subject binding; matching email addresses alone cannot
 merge identities or take over an existing account. See the
 [OpenID Connect claim-stability rules](https://openid.net/specs/openid-connect-core-1_0.html#ClaimStability).
@@ -221,6 +264,6 @@ membership or promote a role. Account-linking cases must include a reused email
 address. These are acceptance requirements for the later implementation slice,
 not evidence of an implemented authentication system.
 
-Bot/service identities, grant enforcement and content-release contracts remain
-under review. This human-admission decision does not settle those remaining
-parts of chunk 2.
+Bot/service identities, detailed enforcement and content-release contracts remain
+under review. The accepted admission and withdrawal behavior does not settle
+those remaining parts of chunk 2.
