@@ -145,6 +145,13 @@ work should queue behind interactive work according to explicit resource policy.
 
 ## Make claims inspectable
 
+Protect both useful work and persistent bot environments. Combine portable
+application/data backups with qualified complete-computer protection through
+existing infrastructure where required. Show coverage and restore evidence;
+encryption, snapshots, or a successful backup job alone do not prove recovery.
+Restoration must reconcile current authority before enabling integrations.
+See [backup and restore](docs/backup-and-restore.md).
+
 Provide useful telemetry, logs, and analytics within the installation. Scope
 access to evidence, minimize private content at collection, and disclose missing
 or stale coverage. Security and maintenance receipts must not depend on a
