@@ -36,6 +36,30 @@ they must not alter identity, grants, or the truth of a boundary indicator.
 See [boundary experience](docs/boundary-experience.md) and
 [naming preferences](docs/naming-preferences.md).
 
+## Protect human sign-in
+
+Require multifactor authentication for administrators on every access path and
+for all people connecting remotely. Local non-admin operators and viewers may
+opt in. Apply the same rule to local accounts and supported SSO; a successful
+SSO login alone does not establish that the required MFA occurred.
+
+Qualify authentication-assurance evidence and the deployment's ingress paths.
+A private proxy address or caller-supplied header cannot establish a local-user
+exception. If the route cannot establish the context required for an exception,
+require MFA or refuse the exception. Local access does not confer trust or wider
+authorization. Alternate sign-in and recovery paths must not silently bypass the
+required policy.
+
+Enrollment, factor recovery/replacement, role promotion, session lifetime, and
+any sensitive-action reauthentication need explicit implementation contracts.
+Do not turn administrator recovery into a standing password-only admin login.
+Supported methods and proof of SSO/ingress integration remain qualification work.
+This is a human sign-in rule; bot service authentication keeps its separate grants.
+
+OWASP recommends MFA for administrative and highly privileged users. The additional
+remote-user requirement and local non-admin option are Radhouse policy choices.
+[OWASP MFA guidance](https://cheatsheetseries.owasp.org/cheatsheets/Multifactor_Authentication_Cheat_Sheet.html).
+
 ## Be flexible but opinionated
 
 Ship a clear recommended setup, useful defaults, and a limited set of qualified
