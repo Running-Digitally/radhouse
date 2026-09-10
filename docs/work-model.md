@@ -61,6 +61,20 @@ can start would undermine the accepted simple onboarding.
 
 ## The everyday flow
 
+Bot computers remain running by default, including between assignments. An
+authorized human can stop a bot VM; task completion and an idle period do not
+automatically shut it down. Files, installed tools, memory, and identity persist
+across a stop/restart. This favors readiness over reducing idle guest resources.
+
+Keep the VM's desired state separate from task/run state. A manually stopped bot
+must not be powered on merely because a message or schedule creates work; queue
+or block the occurrence within limits and show that a human start is needed.
+Ordinary running guests still obey admission/resource limits and the accepted
+weekly OS maintenance policy. A running VM does not require a continuous agent
+reasoning loop or constant inference. Qualify explicit stop/start, host/crash
+recovery, and maintenance behavior separately; idle policy grants no new
+security-supervisor intervention authority.
+
 Operator-owned projects are accepted for V1. Operators create private projects,
 organize their work, and explicitly share projects they own with existing users
 and eligible bots. Project ownership is a resource-specific responsibility within

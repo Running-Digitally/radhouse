@@ -15,9 +15,11 @@ not meet that definition.
 | --- | --- |
 | Agent runtime | Hermes first, behind an adapter suitable for later runtime additions. |
 | Agent environment | Persistent Linux VM per agent; terminal, files, and browser access within the agent's boundary. |
+| Idle lifecycle | Keep bot VMs running by default until an authorized human stops them. No automatic idle standby by default; accepted weekly maintenance and deterministic resource limits still apply. |
 | Deployment | Guided Proxmox provisioning plus an installation path for operator-supplied, suitably isolated Linux VMs. |
 | Inference | Self-hosted compatible APIs; explicit provider selection; qualification for required tools, model attribution, and interruption recovery. |
 | Human access | Administrator, operator, and viewer roles; local accounts plus optional bundled SSO or connection to an existing provider. |
+| Human MFA | Required for administrators everywhere and all remote human users, across local accounts and supported SSO. Local non-admin operators/viewers may opt in; unproven local exceptions cannot bypass MFA. |
 | Project ownership | Operators create private projects and explicitly share projects they own with existing users and eligible bots. Content-sharing permissions still apply; administrators retain user accounts, bot allocation, and service grants. |
 | Operator starting screen | A simple work home with assigned agents, current work, and a prominent Start a task action; conversations and project details remain available within Radhouse. |
 | GitHub | Mediated access by default; explicit advanced direct scoped tokens; authorized branch and pull-request work with human merge approval. |
@@ -122,6 +124,12 @@ Concurrent active assignments and simultaneous model generations are different
 measurements. Resource priority, queueing, browser workload, model context, and
 memory pressure must be visible in the results.
 
+Size the default fleet for running guests even when assignments are idle.
+Include guest/service memory and CPU overhead before admitting additional bots;
+do not assume idle shutdown will supply headroom. A running VM does not imply
+continuous model generation or unlimited work. Manual stop, failure, and planned
+maintenance need distinct visible states and qualified recovery behavior.
+
 Recovery must distinguish resuming agent reasoning from replaying external
 actions. Restoring a workspace must not revive an expired grant or silently
 repeat a publication, pull-request operation, or scheduled task.
@@ -149,7 +157,8 @@ restore evidence instead of assuming every new bot inherits existing backup jobs
 - Proactive-assignment schemas, event/delivery adapters, attention defaults,
   numerical budgets, feedback behavior, and evaluation thresholds within the
   accepted [prepared-assistance contract](docs/proactive-assistance.md).
-- The bundled SSO choice and tested account-linking and recovery behavior.
+- The bundled SSO choice, MFA methods/assurance, enrollment and recovery,
+  session rules, ingress classification, and tested account-linking behavior.
 - Runtime checkpoint capabilities, inference conformance, and behavior when an
   operator changes the model behind a service-following alias.
 - Technology stack, packaging, configuration schema, and installation and

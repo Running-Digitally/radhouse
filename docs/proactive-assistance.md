@@ -48,6 +48,11 @@ an enabled assignment; a configured schedule can also check its sources. The
 controller admits each occurrence under current scope and limits. Mere receipt
 of a message does not authorize its sender to create arbitrary work.
 
+Bot VMs remain running by default. Waking an assignment here means admitting a
+bounded task/run, not powering on a manually stopped VM. Such work waits or is
+reported blocked according to its policy; an event cannot override a human stop.
+This readiness default does not permit unrestricted background inference.
+
 Mail is independently optional. Disabling it does not remove ordinary tasks or
 permitted work-status briefings. Other source integrations require their own
 qualified contracts; this feature does not connect a personal inbox or calendar.
