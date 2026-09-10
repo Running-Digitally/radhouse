@@ -1,14 +1,15 @@
 # Bots, projects, and work
 
-Status: proposed for version 1.0; awaiting design alignment.
+Status: layered work model and starters accepted for version 1.0.
 Research reviewed: 2026-09-10.
 
-The operator work home is already accepted. This proposal develops how people
-move from that home into useful work, with persistent bots, project context,
-and opinionated starters. It does not settle the open interaction decision,
-add runtime capabilities, or claim tested security properties.
+The accepted direction connects the operator work home to useful work through
+persistent bots, project context, finite tasks, opinionated starters, and an
+optional Chief of Staff. Detailed interactions, template contents, permissions,
+and runtime behavior still require design and qualification. Acceptance of the
+model does not add deployed capabilities or prove security properties.
 
-## Recommendation
+## Accepted direction
 
 Use a simple work home with several entry points into one task brief. Keep
 persistent bots, projects, and finite tasks distinct. Offer reusable templates
@@ -214,10 +215,17 @@ for retained data, not just the currently selected folder.
 - No role label enables background work, grants, merges, deployment, schedule
   changes, cancellation, or priority changes outside the accepted contracts.
 
-## Decision requested
+## Related experience and remaining design
 
-Adopt this layered work model with reviewed role/project/task starters and an
-optional Chief of Staff, or adopt the model while deferring that coordinator
-from version 1.0. Further refinement remains an option. The initial question
-about goal-first versus agent-first entry is superseded by this broader design
-proposal; it has not been recorded as an accepted implementation requirement.
+The layered model, reviewed role/project/task starters, and optional Chief of
+Staff are accepted direction. The original goal-first versus agent-first choice
+is superseded by contextual entry into one brief. Detailed project-management
+permissions, template contents, cross-project grants, and memory handling still
+need qualification.
+
+The [boundary experience](boundary-experience.md) specifies how people understand
+context, audience, and access. [Naming preferences](naming-preferences.md) add
+changeable numbered, friendly, themed, and custom presets with individual
+overrides. The [security supervisor](security-supervisor.md) owns security
+oversight and maintenance planning, with maintenance execution authority awaiting
+the next decision. Names and role templates do not confer any of those powers.

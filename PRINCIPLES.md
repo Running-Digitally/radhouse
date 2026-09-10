@@ -22,6 +22,13 @@ Administrators manage infrastructure, allocation, and grants. Operators work
 with assigned agents and request additional capacity or access. Viewers have
 explicitly scoped read-only access.
 
+Make work context, audience, and bot access understandable before work starts
+and whenever a boundary changes. Selected task inputs do not describe everything
+a persistent bot can access or remember. Names and themes are editable labels;
+they must not alter identity, grants, or the truth of a boundary indicator.
+See [boundary experience](docs/boundary-experience.md) and
+[naming preferences](docs/naming-preferences.md).
+
 ## Be flexible but opinionated
 
 Ship a clear recommended setup, useful defaults, and a limited set of qualified
@@ -83,10 +90,19 @@ Security-event visibility covers all agents. Optional private review is enabled
 per agent: a scoped reviewer examines selected content within that privacy
 boundary and supplies limited findings to a central supervisor.
 
-The supervisor warns and recommends. Authorized humans decide intervention.
-It does not automatically pause agents, quarantine them, or change their grants.
-Existing deterministic permission and resource limits still enforce directly.
-Review findings can be wrong and must not be presented as complete protection.
+For security incidents, the supervisor warns and recommends. Authorized humans
+decide intervention. A finding does not authorize automatic pauses, quarantine,
+or grant changes. Existing deterministic permission and resource limits still
+enforce directly. Review findings can be wrong and must not be presented as
+complete protection.
+
+The supervisor also owns update checks and maintenance coordination. Proposed
+maintenance execution uses exact plans and scoped authorization enforced outside
+the model; its authorization policy is still open. An approved maintenance
+restart does not grant general incident-response power. Upstream update text,
+bot-installed software, and a supervisor's own recommendation cannot authorize
+new privileges. Preserve work and qualify recovery, artifact trust, compatibility,
+and running versions. See the [supervisor contract](docs/security-supervisor.md).
 
 ## Treat network access as a data-release decision
 
@@ -123,6 +139,13 @@ Do not replay side-effecting actions blindly after interruptions. Background
 work should queue behind interactive work according to explicit resource policy.
 
 ## Make claims inspectable
+
+Provide useful telemetry, logs, and analytics within the installation. Scope
+access to evidence, minimize private content at collection, and disclose missing
+or stale coverage. Security and maintenance receipts must not depend on a
+worker's editable logs. No product telemetry leaves the installation by default;
+external destinations require an explicit configuration and data-access decision.
+See the [observability contract](docs/observability.md).
 
 Separate intended behavior from measured capability. Release checks must cover
 permission denial, recovery, revocation, supported deployment paths, and useful
