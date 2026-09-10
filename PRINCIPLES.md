@@ -71,6 +71,12 @@ An advanced option must explain which guarantees change. Unsupported
 combinations must be refused clearly. There is no blanket switch that silently
 removes role, assignment, or grant enforcement.
 
+Apply this to [CI setup](docs/ci-and-runner-setup.md): default new setups to
+GitHub-hosted checks, offer local runners when capacity permits, and require
+isolation and lifecycle qualification before activation. Explain missing evidence
+or unavailable capacity plainly. Preserve existing repository CI and keep setup
+with administrators; ordinary operators should not manage runner infrastructure.
+
 ## Treat agent computers as untrusted compute
 
 Persistent agent environments may contain software the platform does not trust.
