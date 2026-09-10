@@ -3,8 +3,9 @@
 Status: security oversight, optional private review, and responsibility for
 checking and maintaining platform components are accepted product direction.
 Weekly OS updates followed by scheduled guest restarts are the accepted default,
-with advance notice and work preservation. Detailed execution remains proposed;
-the deadline rule for a bot that cannot save safely is the next open decision.
+with advance notice and work preservation. Security takes precedence: after
+bounded preparation/grace, maintenance proceeds even if a bot cannot confirm a
+safe checkpoint. Detailed execution and timing still require qualification.
 Updated: 2026-09-10. Nothing here is deployed.
 
 The security supervisor helps the administrator understand the installation's
@@ -108,9 +109,10 @@ the model served by an externally managed inference service.
    with human approval if outside policy. An urgency label never supplies authority.
 4. **Apply:** recheck state and authority; wait for a safe task boundary and
    prevent new work on approved targets during the window. A bot that cannot
-   checkpoint safely reaches the unresolved maintenance-deadline decision below;
-   do not claim it is ready or safely replay unknown external effects. Stage
-   changes and test one suitable target before
+   checkpoint safely is stopped at the policy deadline using the latest durable
+   state, under the accepted security-precedence rule below. Do not claim that
+   unsaved work was preserved or replay unknown external effects. Stage changes
+   and test one suitable target before
    a wider rollout where that reduces the actual risk. Recheck authority before
    each subsequent mutation; revocation stops new steps and cannot undo an
    already completed or in-flight action. Recovery still needs valid authority.
@@ -184,8 +186,8 @@ restart services without coordination.
 | Publish the calendar | Each affected bot and operator can see the next occurrence, target window, timezone, and policy revision. Supply this structured context at task admission, delegation, and resume; notify affected work when it changes. Show only permitted targets and work. |
 | Give notice | Announce the upcoming cycle in advance; proposed reminders are 24 hours and 1 hour before the earliest affected update. Bots created or tasks started later receive the current countdown immediately. Use configured in-product notices; no implicit external messaging. |
 | Prepare | Proposed default: 30 minutes before a target's update, stop admitting new work that cannot finish or checkpoint in time. Queue new requests and subtasks visibly. Give the bot a bounded instruction to save work and a concise continuation note. |
-| Verify saved state | Persist drafts/files, task progress, pending operations, and continuation references. Record an acknowledgement tied to this occurrence, task/run, and durable checkpoint revision. The runtime/controller verifies the persisted state and quiesces execution; a model saying “saved” is insufficient. |
-| Apply and restart | After preparation and readiness checks, update and restart the target in its assigned window. Use a dependency-aware sequence; keep the controller/recovery path available while workers are maintained. Required shared-service maintenance prepares all affected workers first. |
+| Verify saved state | Persist drafts/files, task progress, pending operations, and continuation references. Record an acknowledgement tied to this occurrence, task/run, and durable checkpoint revision. The runtime/controller verifies the persisted state and quiesces execution; a model saying “saved” is insufficient. If no safe checkpoint can be verified by the deadline, record that failure and proceed from the last durable state. |
+| Apply and restart | Complete bounded preparation, stop remaining bot runs at the policy deadline, and update/restart the target after independent package/authority/recovery checks. Use a dependency-aware sequence; keep the controller/recovery path available while workers are maintained. Required shared-service maintenance prepares all affected workers first; an unresponsive worker cannot veto the admitted cycle. |
 | Resume | Verify guest, services, current versions, grants, and data compatibility; restore task context from the durable checkpoint and release queued work. Mark uncertain external operations for reconciliation instead of replaying them. Report success, failure, delay, and any intervention needed. |
 
 Preparation must complete **before package installation**, since packages can
@@ -212,29 +214,39 @@ and announce a new preparation window before admitting ordinary work. A schedule
 change cannot silently shorten the promised preparation period.
 
 The controller and host adapter must handle preparation and execution without
-supervisor inference. If readiness or recovery evidence is unavailable, show
-the precise blocked condition; no model-generated guess can authorize a restart.
-Keep a usable operator recovery path when maintaining the controller itself.
+supervisor inference. A bot's missing checkpoint is handled by the deadline rule;
+missing target identity, valid policy authority, or required infrastructure
+recovery evidence is a separate failure and cannot be guessed away. Keep a usable
+operator recovery path when maintaining the controller itself.
 
-## Open decision: a bot is not ready at the deadline
+## Accepted deadline rule: security takes precedence
 
-Advance notice and continuous durable state reduce this case but cannot prove
-that arbitrary installed software will always save safely. Do not silently
-equate receiving a reminder with readiness. Two product options remain:
+Advance notice and continuous durable state reduce loss, but arbitrary installed
+software cannot be assumed to save safely. Receiving a reminder is not readiness.
+After the administrator-configured preparation and bounded stop-grace period,
+terminate remaining bot runs through the qualified runtime/guest adapter and
+proceed with the weekly OS update/restart. No fresh approval is required solely
+because a bot is unresponsive or cannot verify its checkpoint. A bot cannot
+extend the deadline, repeatedly request grace, or indefinitely veto patching.
 
-- **Bounded grace, then restart — proposed recommendation:** after a configured
-  grace period, stop the affected run using the qualified adapter, preserve the
-  latest durable state, and carry out the scheduled maintenance. Unsaved transient
-  work can be lost; uncertain external actions require reconciliation before
-  resume. This prevents a stuck or compromised bot from indefinitely vetoing
-  maintenance. It does not override failed package or recovery safety checks.
-- **Defer the affected target and alert an administrator:** keep its maintenance
-  overdue until readiness or a human decision permits it. Continue other safe
-  targets and make the unpatched exposure explicit. A deferral must not quietly
-  disappear into the next week's schedule.
+Show the final deadline in the original maintenance notice. The stop grace is
+part of the announced window, not an open-ended extension. Its exact duration
+remains a configuration/design detail. Use graceful shutdown first, then the
+qualified process-termination path if needed. Do not substitute a blind hypervisor
+power cut or kill the package manager to enforce a bot deadline.
 
-The choice is pending. Accepting weekly maintenance does not implicitly select
-forced termination of work whose safe checkpoint could not be verified.
+Preserve the latest durable state and record which runs lacked a verified new
+checkpoint. Unsaved transient work can be lost. On recovery, distinguish normal
+continuation, restart from an earlier checkpoint, and **Needs attention** for
+uncertain external effects. Never invent a successful save or automatically
+repeat an operation whose outcome is unknown. Notify the affected operator and
+scoped administrator without disclosing private task content.
+
+This rule authorizes stopping unready bot work for admitted maintenance. It does
+not override failed package/target/authority checks, unsafe state migrations, or
+an unavailable infrastructure recovery path. Stop the affected update on those
+failures, alert the administrator, and retain its overdue security status. It
+also does not give security findings automatic quarantine or grant-change powers.
 
 ## Research informing this proposal
 

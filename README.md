@@ -52,6 +52,8 @@ Our version 1.0 direction includes:
 - **Security and maintenance oversight:** scoped security findings, update
   checks, and automatic weekly OS updates with planned restarts, advance notice,
   and work preservation; other changes use separately reviewed maintenance plans.
+  Security takes precedence at the deadline; an unready bot cannot postpone
+  admitted maintenance indefinitely.
 - **Useful observability:** local-by-default telemetry, logs, and analytics for
   work progress, fleet health, security evidence, and verified maintenance.
 - **Self-hosted inference:** a documented compatible API and explicit provider
