@@ -32,6 +32,7 @@ not meet that definition.
 | Private-data egress | Restricted default profile; explicit administrator grant for broader browsing; documented and tested limits for supported combinations. |
 | Collaboration | Delegation to existing project agents; owner-influenced or self-organized reporting lines; leads coordinate work within shared budgets. |
 | Routines | On-demand tasks and human-configured schedules with explicit timing, targets, and limits. |
+| Proactive assistance | Human-enabled standing assignments use Guardian Angel and Cognitive Amplifier behaviors to judge relevance and prepare useful briefings/local drafts. Optional bot mail and authorized work/status events may wake bounded runs; humans retain new follow-up and wider-effect decisions. |
 | Optional shared services | Buzz chat, receive-only bot mail, and SSO, with documented installation and isolation contracts. |
 | Optional remote access | Limited guided Cloudflare Access and Tunnel setup for the application, with local use available independently. |
 
@@ -105,7 +106,7 @@ denial, retention, and resource-pressure behavior as each slice is delivered.
 | 4. Software engineering | A scoped repository task produces a branch and pull request; credential custody, denial, revocation, and human merge boundaries hold in both supported credential modes. |
 | 5. Human roles and privacy | A new operator can use an assigned agent without infrastructure knowledge; role isolation, sharing review, supervision, and private-data egress behavior pass boundary checks. |
 | 6. Optional shared services | Independently optional chat, receive-only mail, and SSO integrate without widening agent grants; remote Access/Tunnel setup qualifies separately. |
-| 7. Delegation and routines | Existing project agents complete bounded subtasks; cycles, duplicate delivery, budgets, cancellation, and scheduled runs obey the admitted work and current grants. |
+| 7. Delegation, routines, and proactive assistance | Existing project agents complete bounded subtasks; standing assignments prepare useful briefings from authorized events. Cycles, duplicate delivery, budgets, cancellation, schedules, quiet hours, privacy, and model/restart failures obey admitted work and current grants. |
 | 8. Maintenance and release qualification | Component inventory, update checks, approved-plan execution under the selected policy, running-version checks, failure/recovery proof, reproducible installation, configuration tests, useful fleet work, and published evidence for supported profiles. |
 
 Development should proceed through small end-to-end slices. The sequence is a
@@ -142,6 +143,9 @@ restore evidence instead of assuming every new bot inherits existing backup jobs
   mediation mechanism for each allowed GitHub operation.
 - Optional mail delivery and attachment behavior, including how receive-only
   restrictions are enforced outside the agent runtime.
+- Proactive-assignment schemas, event/delivery adapters, attention defaults,
+  numerical budgets, feedback behavior, and evaluation thresholds within the
+  accepted [prepared-assistance contract](docs/proactive-assistance.md).
 - The bundled SSO choice and tested account-linking and recovery behavior.
 - Runtime checkpoint capabilities, inference conformance, and behavior when an
   operator changes the model behind a service-following alias.

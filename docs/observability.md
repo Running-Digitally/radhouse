@@ -13,6 +13,7 @@ and aggregate analytics without creating a second copy of everyone's private wor
 | Information | Purpose and examples | Visibility |
 | --- | --- | --- |
 | Work progress | Queued, running, waiting for input, blocked, finished; task/run timeline and outcome links | Assigned operator and explicitly authorized collaborators/viewers |
+| Proactive-assignment coverage | Last successful review, reviewed-through source position, backlog, admitted/throttled occurrences, deduplicated findings, delivery state, and explicit usefulness feedback | Operators see their assignment's coverage and briefings; administrators receive bounded operational evidence without private message content |
 | Operational metrics | Queue delay, runtime/tool latency, resource pressure, capacity, errors, last successful check, model actually served | Fleet aggregates for administrators; scoped workload detail for operators |
 | Diagnostic logs and traces | Correlate admission, inference, tool operations, delegation, and adapter failures to find a cause | Role- and resource-scoped; privacy-safe fields by default |
 | Security and audit events | Actor, attempted operation, allow/deny outcome, grant/policy revision, sharing approval, evidence reference | Disclosed, narrowly scoped oversight; private payloads remain separate |

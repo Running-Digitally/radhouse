@@ -47,6 +47,9 @@ Our version 1.0 direction includes:
   merge approval.
 - **Private and shared work:** private agents by default, explicit sharing,
   disclosed supervision, shared projects, and human-reviewed publication.
+- **Proactive assistance:** Guardian Angel and Cognitive Amplifier behaviors
+  notice what matters and prepare useful briefings, options, and local drafts
+  within human-enabled assignments, with controlled interruptions and clear scope.
 - **Understandable boundaries:** visible work context, audience, and bot access;
   reusable bot/project/task starters and changeable naming preferences.
 - **Security and maintenance oversight:** scoped security findings, update
@@ -80,6 +83,8 @@ network profiles, and shared-service integrations still need qualification.
   and evidence needed before a usable release.
 - [Work model](docs/work-model.md): the accepted direction for persistent bots,
   projects, finite tasks, reusable starters, and an optional Chief of Staff.
+- [Proactive assistance](docs/proactive-assistance.md): standing assignments,
+  prepared briefings, attention controls, and scoped bot-to-operator communication.
 - [Boundary experience](docs/boundary-experience.md): make context, audience,
   access, and sharing understandable at the point of use.
 - [Security supervisor](docs/security-supervisor.md): security oversight,
