@@ -50,7 +50,8 @@ Our version 1.0 direction includes:
 - **Understandable boundaries:** visible work context, audience, and bot access;
   reusable bot/project/task starters and changeable naming preferences.
 - **Security and maintenance oversight:** scoped security findings, update
-  checks, and reviewable maintenance plans; execution policy remains under design.
+  checks, and automatic weekly OS updates with planned restarts, advance notice,
+  and work preservation; other changes use separately reviewed maintenance plans.
 - **Useful observability:** local-by-default telemetry, logs, and analytics for
   work progress, fleet health, security evidence, and verified maintenance.
 - **Self-hosted inference:** a documented compatible API and explicit provider

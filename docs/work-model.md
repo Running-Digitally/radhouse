@@ -227,5 +227,7 @@ The [boundary experience](boundary-experience.md) specifies how people understan
 context, audience, and access. [Naming preferences](naming-preferences.md) add
 changeable numbered, friendly, themed, and custom presets with individual
 overrides. The [security supervisor](security-supervisor.md) owns security
-oversight and maintenance planning, with maintenance execution authority awaiting
-the next decision. Names and role templates do not confer any of those powers.
+oversight and maintenance, including automatic weekly OS updates and planned
+guest restarts. Every affected task receives the schedule and must preserve work
+before installation; unready-work deadline behavior is still open. Names and
+role templates do not confer any of those powers.

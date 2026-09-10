@@ -2,8 +2,10 @@
 
 Status: security oversight, optional private review, and responsibility for
 checking and maintaining platform components are accepted product direction.
-The execution design below is proposed; the maintenance authorization policy
-is the next open decision. Updated: 2026-09-10. Nothing here is deployed.
+Weekly OS updates followed by scheduled guest restarts are the accepted default,
+with advance notice and work preservation. Detailed execution remains proposed;
+the deadline rule for a bot that cannot save safely is the next open decision.
+Updated: 2026-09-10. Nothing here is deployed.
 
 The security supervisor helps the administrator understand the installation's
 security and health, decide what needs attention, and keep supported components
@@ -41,8 +43,10 @@ warn, and recommend. An authorized human chooses intervention. The supervisor
 cannot use a suspicion to pause a bot, remove its grants, inspect private history,
 or approve publication. Existing deterministic restrictions still enforce.
 
-For **maintenance**, recommend allowing the supervisor to carry an approved
-plan through to verified completion. An approved maintenance restart is a
+For **maintenance**, a disclosed standing policy authorizes weekly OS updates
+and planned guest restarts without a fresh approval every week. The supervisor
+carries each policy-admitted plan through to verified completion. Other changes
+need their own approved scope. An approved maintenance restart is a
 specific operational action, not general permission to quarantine a bot. Its
 authority expires with that plan. Maintenance must not become a way to rewrite
 privacy settings, add tools or permissions, or bypass human control of priorities.
@@ -98,13 +102,15 @@ the model served by an externally managed inference service.
    using the qualified channel's trust roots/signatures and freshness rules.
    A checksum alone is not publisher authentication.
 3. **Authorize:** the administrator reviews the plan, or a previously approved
-   narrow policy admits it if that option is selected. Changed targets, artifact
-   digests, privileges, or material impact require a new decision. An urgency
-   label never supplies authority.
+   weekly OS policy admits the exact batch. A standing policy can admit new
+   qualifying package versions each week; freeze the admitted batch's versions
+   and artifacts before execution. Changed batch contents require readmission,
+   with human approval if outside policy. An urgency label never supplies authority.
 4. **Apply:** recheck state and authority; wait for a safe task boundary and
    prevent new work on approved targets during the window. A bot that cannot
-   checkpoint safely makes the plan wait for a human decision; do not interrupt
-   unknown external effects. Stage changes and test one suitable target before
+   checkpoint safely reaches the unresolved maintenance-deadline decision below;
+   do not claim it is ready or safely replay unknown external effects. Stage
+   changes and test one suitable target before
    a wider rollout where that reduces the actual risk. Recheck authority before
    each subsequent mutation; revocation stops new steps and cannot undo an
    already completed or in-flight action. Recovery still needs valid authority.
@@ -138,21 +144,97 @@ invented guarantee. The operator sees only the effect on their assigned work:
 “Mira will be unavailable after this task; your files and history are retained.”
 Do not disclose other operators' tasks in maintenance notifications.
 
-## Maintenance authorization decision
+## Accepted default: weekly OS maintenance
 
-**Recommended for version 1.0:** the supervisor checks and prepares plans;
-an administrator approves each maintenance batch, and the supervisor carries
-out that bounded plan, including only its approved verification and recovery.
+Version 1.0 defaults to automatic weekly OS updates followed by planned restarts
+of enrolled, supported Linux guests. Setup shows the enabled policy, targets,
+weekly window, IANA timezone, preparation period, and recovery behavior. An
+administrator can change these settings; a bot cannot postpone or expand them.
+This is a standing installation policy, not a weekly request for approval.
 
-**Alternative:** additionally offer administrator-defined automatic maintenance
-policies for explicitly qualified low-impact updates. Each policy names targets,
-allowed changes, window, health/recovery requirements, limits, and expiry or
-review date. Privilege changes, schemas, identity/enforcement components, host
-reboots, and changes outside that scope still need an individual plan approval.
-“Patch version” alone is not proof of low impact.
+Cover supported OS security and routine bug-fix packages within the installed
+release, including kernel updates and required dependencies where the profile
+qualifies them. Use trusted configured repositories and a resolved package plan.
+Show held, excluded, failed, or unsupported updates explicitly; do not describe
+an incomplete package run as fully patched. Check for advisories more frequently
+than the install window; a daily check is the proposed starting cadence. Surface
+urgent fixes for an administrator's expedited decision rather than hiding them
+until next week.
 
-Neither policy is selected yet. The request to include maintenance establishes
-the product responsibility; it does not authorize changes to a live installation.
+An OS release upgrade, unqualified package removal, application/schema migration,
+new package source, or authority change is outside this routine lane. Do not
+blindly remove bot-installed software during cleanup. Hermes, container images,
+skills, and shared-service application versions retain separately reviewed
+maintenance plans unless a later explicit policy covers them. OS packages that
+restart a database or another sensitive daemon require that service's qualified
+maintenance contract. “OS update” does not erase service dependencies.
+
+The default can cover bot VMs and supported Radhouse control/shared-service
+guests enrolled by the administrator. It does not enroll arbitrary machines or
+grant Proxmox-host, network, or external inference-server authority. For supplied
+VMs, qualify either the Radhouse maintenance adapter or a documented handshake
+with the owner's scheduler; detect competing timers and report unmanaged
+restart paths. Do not claim predictable maintenance while another updater can
+restart services without coordination.
+
+## Prepare, save, update, restart, resume
+
+| Stage | Proposed behavior |
+| --- | --- |
+| Publish the calendar | Each affected bot and operator can see the next occurrence, target window, timezone, and policy revision. Supply this structured context at task admission, delegation, and resume; notify affected work when it changes. Show only permitted targets and work. |
+| Give notice | Announce the upcoming cycle in advance; proposed reminders are 24 hours and 1 hour before the earliest affected update. Bots created or tasks started later receive the current countdown immediately. Use configured in-product notices; no implicit external messaging. |
+| Prepare | Proposed default: 30 minutes before a target's update, stop admitting new work that cannot finish or checkpoint in time. Queue new requests and subtasks visibly. Give the bot a bounded instruction to save work and a concise continuation note. |
+| Verify saved state | Persist drafts/files, task progress, pending operations, and continuation references. Record an acknowledgement tied to this occurrence, task/run, and durable checkpoint revision. The runtime/controller verifies the persisted state and quiesces execution; a model saying “saved” is insufficient. |
+| Apply and restart | After preparation and readiness checks, update and restart the target in its assigned window. Use a dependency-aware sequence; keep the controller/recovery path available while workers are maintained. Required shared-service maintenance prepares all affected workers first. |
+| Resume | Verify guest, services, current versions, grants, and data compatibility; restore task context from the durable checkpoint and release queued work. Mark uncertain external operations for reconciliation instead of replaying them. Report success, failure, delay, and any intervention needed. |
+
+Preparation must complete **before package installation**, since packages can
+restart services before the final reboot. Coordinate system-managed automatic
+updaters with the same readiness contract; downloading or checking packages is
+different from installing them. Ubuntu documents automatic service restarts
+during unattended updates; its defaults are not evidence that arbitrary bot
+work is checkpointed. [Ubuntu service-restart behavior](https://documentation.ubuntu.com/release-notes/24.04/).
+
+Saving work does not require committing or pushing Git changes. Preserve local
+edits and drafts within their existing audience. Memory and a continuation note
+do not preserve every running terminal process, browser session, or external
+transaction. Publish a checkpoint/recovery capability matrix for supported
+tools, and keep operation IDs and outcomes in the controller outside the worker.
+Do not restore expired permissions or reissue an uncertain GitHub/mail/publication
+operation after a restart.
+
+Use one recorded occurrence ID to prevent duplicate cycles. Resolve timezone,
+daylight-saving transitions, target staggering, and any jitter into an announced
+window. Proposed DST behavior: one occurrence for a repeated local time, and the
+next valid local time for a skipped time. Missed windows become overdue work;
+an offline guest's return must not cause a surprise catch-up reboot. Reconcile
+and announce a new preparation window before admitting ordinary work. A schedule
+change cannot silently shorten the promised preparation period.
+
+The controller and host adapter must handle preparation and execution without
+supervisor inference. If readiness or recovery evidence is unavailable, show
+the precise blocked condition; no model-generated guess can authorize a restart.
+Keep a usable operator recovery path when maintaining the controller itself.
+
+## Open decision: a bot is not ready at the deadline
+
+Advance notice and continuous durable state reduce this case but cannot prove
+that arbitrary installed software will always save safely. Do not silently
+equate receiving a reminder with readiness. Two product options remain:
+
+- **Bounded grace, then restart — proposed recommendation:** after a configured
+  grace period, stop the affected run using the qualified adapter, preserve the
+  latest durable state, and carry out the scheduled maintenance. Unsaved transient
+  work can be lost; uncertain external actions require reconciliation before
+  resume. This prevents a stuck or compromised bot from indefinitely vetoing
+  maintenance. It does not override failed package or recovery safety checks.
+- **Defer the affected target and alert an administrator:** keep its maintenance
+  overdue until readiness or a human decision permits it. Continue other safe
+  targets and make the unpatched exposure explicit. A deferral must not quietly
+  disappear into the next week's schedule.
+
+The choice is pending. Accepting weekly maintenance does not implicitly select
+forced termination of work whose safe checkpoint could not be verified.
 
 ## Research informing this proposal
 
@@ -181,6 +263,13 @@ outages. Prove scope checks survive supervisor inference failure, failed
 rollouts stop, private evidence stays scoped, and the supervisor cannot approve
 its own grants. Test rollback compatibility and controller recovery, including
 failure of the component that normally reports health.
+
+Also test pre-install service restarts, competing automatic updaters, late task
+admission, changed schedules, offline/catch-up behavior, DST transitions, and
+shared dependencies. Verify preservation of uncommitted files/drafts, checkpoint
+authenticity, scoped notifications, pending-operation reconciliation, and the
+selected deadline policy. Demonstrate an actual resume without duplicate effects
+before advertising automatic weekly maintenance as qualified.
 
 Related: [principles](../PRINCIPLES.md), [boundary experience](boundary-experience.md),
 and [version 1.0 roadmap](../ROADMAP.md).
