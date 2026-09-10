@@ -159,6 +159,10 @@ service merely to deliver this behavior.
 No mailbox send, delete, forwarding-rule, authentication, or other service-write
 authority follows from reading mail. Attachments, remote content, and verification
 or recovery messages need explicit handling under the qualified mail contract.
+[Account-security mail](mail-and-account-security.md) stays human-controlled by
+default, with tested and explicitly approved verification/sign-in integrations
+for named bot-owned accounts. Password resets and security-setting changes remain
+human-controlled; triage cannot invoke them or obtain their secrets.
 
 ## Version 1 qualification
 
