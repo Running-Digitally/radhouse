@@ -130,6 +130,11 @@ or repeat external actions while recovering a bot. Reverting code across an
 incompatible schema must stop. Retained snapshots and receipts inherit the
 underlying data's access and retention controls.
 
+The accepted [hybrid backup model](backup-and-restore.md) supplies portable
+application/data protection and an optional complete-computer infrastructure
+lane. Its scope and restore evidence are distinct from a task checkpoint or
+one update's rollback artifact. The supervisor reports each layer's health.
+
 Updating the supervisor, controller, identity service, or its enforcement adapter
 needs an independently executable recovery path. A conversational supervisor
 cannot be its own sole health witness or approve changes to its own authority.

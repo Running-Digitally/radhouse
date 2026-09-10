@@ -56,6 +56,9 @@ Our version 1.0 direction includes:
   admitted maintenance indefinitely.
 - **Useful observability:** local-by-default telemetry, logs, and analytics for
   work progress, fleet health, security evidence, and verified maintenance.
+- **Hybrid recovery:** portable application/data backups plus optional complete
+  bot-computer protection through existing infrastructure; qualify Proxmox and
+  NAS-backed workflows first while retaining the supplied-Linux-VM path.
 - **Self-hosted inference:** a documented compatible API and explicit provider
   selection, with stable agent identity across supported model changes.
 - **Bounded collaboration:** subtasks for existing project agents and schedules
@@ -82,6 +85,8 @@ network profiles, and shared-service integrations still need qualification.
   individual overrides, and permanent identity beneath editable names.
 - [Telemetry, logs, and analytics](docs/observability.md): scoped evidence for
   progress, diagnosis, security, maintenance, and resource use.
+- [Backup and restore](docs/backup-and-restore.md): the hybrid recovery model,
+  first deployment focus, coverage, encryption, and safe restoration.
 
 Feedback and design proposals are welcome through this repository's issues and
 pull requests. Use synthetic examples when describing a deployment. Keep
