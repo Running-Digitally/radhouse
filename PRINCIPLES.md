@@ -107,6 +107,12 @@ with broad access to a person's existing inbox or calendar.
 Trust can inform a person's decision to widen a grant. An agent, its seniority,
 or its supervisor cannot promote itself into additional permissions.
 
+For V1, an authorized human withdrawing or narrowing a bot grant also pauses
+that bot's work for review. Preserve durable work and enforce revoked access
+outside the guest. A human may resume under current permissions; unrelated bots
+can continue independently. See the
+[grant-withdrawal contract](docs/architecture-review.md#withdrawing-a-bot-grant--accepted-for-v1).
+
 ## Make credential custody explicit
 
 GitHub access is mediated by default so the agent does not receive the upstream
