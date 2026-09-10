@@ -18,6 +18,7 @@ not meet that definition.
 | Deployment | Guided Proxmox provisioning plus an installation path for operator-supplied, suitably isolated Linux VMs. |
 | Inference | Self-hosted compatible APIs; explicit provider selection; qualification for required tools, model attribution, and interruption recovery. |
 | Human access | Administrator, operator, and viewer roles; local accounts plus optional bundled SSO or connection to an existing provider. |
+| Operator starting screen | A simple work home with assigned agents, current work, and a prominent Start a task action; conversations and project details remain available within Radhouse. |
 | GitHub | Mediated access by default; explicit advanced direct scoped tokens; authorized branch and pull-request work with human merge approval. |
 | Privacy | Private by default; explicit sharing or disclosed supervision per agent; shared projects and human-reviewed publication. |
 | Oversight | Security-event warnings; optional scoped private review; central supervisor warnings and recommendations, with human intervention. |
@@ -26,6 +27,29 @@ not meet that definition.
 | Routines | On-demand tasks and human-configured schedules with explicit timing, targets, and limits. |
 | Optional shared services | Buzz chat, receive-only bot mail, and SSO, with documented installation and isolation contracts. |
 | Optional remote access | Limited guided Cloudflare Access and Tunnel setup for the application, with local use available independently. |
+
+## Operator work home
+
+The version 1.0 operator starts on a simple work home showing assigned agents,
+current work, and a prominent **Start a task** action. Opening a task or project
+keeps its conversation, progress, files, results, and permission requests within
+Radhouse. Buzz remains optional for group chat.
+
+The home should make working, waiting, finished, and needs-help states easy to
+understand. An operator with no assigned agents sees a clear way to request one
+from an administrator. Show only information and actions permitted by the
+person's role and scope; a viewer's read-only experience does not offer task
+submission. Server-side authorization must enforce the same boundaries.
+
+The next interaction decision is how to start a task: describe the goal first
+and confirm a suggested eligible agent or project, or select the agent or
+project first. This remains open; the work-home decision does not authorize
+automatic assignment or additional access.
+
+Qualification includes an unfamiliar operator starting useful work, finding its
+result, and understanding a blocked action without a terminal, external manual,
+or administrator coaching. The work-home requirement is accepted; a working
+interface and usability evidence remain to be delivered.
 
 ## Proposed component boundaries
 
@@ -77,8 +101,10 @@ repeat a publication, pull-request operation, or scheduled task.
 
 ## Decisions still to resolve
 
-- The first-use interaction: how the control-plane work view and optional chat
-  service fit together for a non-technical operator.
+- Task initiation from the accepted work home: describe the goal before
+  confirming an eligible agent/project suggestion, or select an agent/project
+  first. Detailed task, conversation, and optional group-chat interactions still
+  need design.
 - Human and bot service identities, credential lifecycles, and the concrete
   mediation mechanism for each allowed GitHub operation.
 - Optional mail delivery and attachment behavior, including how receive-only
