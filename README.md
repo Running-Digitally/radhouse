@@ -87,6 +87,8 @@ network profiles, and shared-service integrations still need qualification.
   prepared briefings, attention controls, and scoped bot-to-operator communication.
 - [Mail and account security](docs/mail-and-account-security.md): human-controlled
   security mail and explicitly scoped verification/sign-in automation.
+- [CI setup and local runners](docs/ci-and-runner-setup.md): GitHub-hosted defaults,
+  guided administrator setup, and preflight-qualified local execution.
 - [Boundary experience](docs/boundary-experience.md): make context, audience,
   access, and sharing understandable at the point of use.
 - [Security supervisor](docs/security-supervisor.md): security oversight,

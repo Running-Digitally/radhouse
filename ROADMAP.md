@@ -23,6 +23,7 @@ not meet that definition.
 | Project ownership | Operators create private projects and explicitly share projects they own with existing users and eligible bots. Content-sharing permissions still apply; administrators retain user accounts, bot allocation, and service grants. |
 | Operator starting screen | A simple work home with assigned agents, current work, and a prominent Start a task action; conversations and project details remain available within Radhouse. |
 | GitHub | Mediated access by default; explicit advanced direct scoped tokens; authorized branch and pull-request work with human merge approval. |
+| CI setup | Administrator onboarding defaults new CI setups to GitHub-hosted checks; offer local hosting after capacity and suitability preflight, then enable only after isolation/lifecycle qualification. Preserve existing repository CI; preferences can change through an explicit reviewed setup. |
 | Privacy | Private by default; explicit sharing or disclosed supervision per agent; shared projects and human-reviewed publication. |
 | Oversight | Security-event warnings; optional scoped private review; central supervisor warnings and recommendations, with human intervention. |
 | Maintenance | Automatic weekly OS updates and planned guest restarts by default, under a disclosed administrator-managed policy; advance notice, work preservation, and verified recovery. Security takes precedence: stop unready bot runs after bounded preparation/grace and proceed. Other component changes retain separate review. |
@@ -107,7 +108,7 @@ denial, retention, and resource-pressure behavior as each slice is delivered.
 | 1. Contracts and configuration | Reviewable architecture and component contracts; validated synthetic configuration; documented supported and refused combinations. |
 | 2. One persistent agent | Useful task completion through the control plane, retained workspace, truthful inference attribution, and recovery on both deployment paths. |
 | 3. Collaboration and admission | Two agents complete shared work without gaining private access; queued background work respects interactive priority and shared limits. |
-| 4. Software engineering | A scoped repository task produces a branch and pull request; credential custody, denial, revocation, and human merge boundaries hold in both supported credential modes. |
+| 4. Software engineering | A scoped repository task produces a branch and pull request; credential custody, denial, revocation, and human merge boundaries hold in both supported credential modes. Guided CI setup preserves existing workflows; GitHub-hosted defaults and conditional local runners pass the [setup and preflight contract](docs/ci-and-runner-setup.md). |
 | 5. Human roles and privacy | A new operator can use an assigned agent without infrastructure knowledge; role isolation, sharing review, supervision, and private-data egress behavior pass boundary checks. |
 | 6. Optional shared services | Independently optional chat, receive-only mail, and SSO integrate without widening agent grants; remote Access/Tunnel setup qualifies separately. |
 | 7. Delegation, routines, and proactive assistance | Existing project agents complete bounded subtasks; standing assignments prepare useful briefings from authorized events. Cycles, duplicate delivery, budgets, cancellation, schedules, quiet hours, privacy, and model/restart failures obey admitted work and current grants. |
@@ -171,8 +172,11 @@ restore evidence instead of assuming every new bot inherits existing backup jobs
   three-point lean default, built-in recovery kits, and scoped self-service are accepted,
   while capacity/performance gates and optional retention policies need
   design/qualification. Complete-computer and controller recovery require qualification.
-- Public-contribution CI placement and treatment of untrusted code. Public CI
-  must not inherit private infrastructure credentials or caches.
+- Exact CI onboarding/configuration contracts, workload-based capacity thresholds,
+  local runner lifecycle and isolation, and the privileged integration-test path.
+  The [GitHub-hosted default and conditional local option](docs/ci-and-runner-setup.md)
+  are accepted; local execution must pass qualification before activation. Public
+  contribution jobs must not inherit private infrastructure credentials or caches.
 
 ## Deferred from version 1.0
 
