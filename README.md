@@ -39,7 +39,9 @@ Our version 1.0 direction includes:
 - **Two deployment paths:** guided Proxmox provisioning and installation into
   suitably isolated Linux VMs supplied by the operator.
 - **An approachable control plane:** administrator, operator, and viewer roles;
-  assigned agents, projects, progress, and requests for help.
+  a simple operator work home with assigned agents, current work, and a clear
+  **Start a task** action. Projects, progress, and requests for help stay close
+  to the work.
 - **Useful software work:** fine-grained GitHub access, mediated by default;
   explicitly granted direct scoped tokens as an advanced option. Humans retain
   merge approval.
