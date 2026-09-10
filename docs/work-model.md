@@ -61,6 +61,29 @@ can start would undermine the accepted simple onboarding.
 
 ## The everyday flow
 
+Operator-owned projects are accepted for V1. Operators create private projects,
+organize their work, and explicitly share projects they own with existing users
+and eligible bots. Project ownership is a resource-specific responsibility within
+the existing human roles; it is not installation-administrator authority.
+
+Sharing must show the resulting audience and the existing material that becomes
+visible. The requester must have permission to share that content; owning a
+project does not grant permission to redistribute every private contribution.
+Apply the exact-content/audience publication rules before access expands. Keep
+restricted material private or obtain the required release decision.
+
+Adding a bot requires both authority to use that bot and permission to give it
+the selected project material. Membership does not expose private bot histories,
+give every member control of the bot, or add service credentials. The persistent
+bot's other access and memory remain visible in the boundary experience.
+Administrators retain user-account management, bot allocation, and service grants.
+
+Enforce creation/membership limits and recheck current authority on reads, writes,
+sharing, and task admission. Viewers remain read-only. Removing membership blocks
+future access but cannot erase copies already legitimately released. Concrete
+membership, ownership-transfer, revocation, and deletion procedures still need
+design and qualification.
+
 The work home shows current work, assigned bots, and needs-attention items,
 alongside **Start a task**. Projects and bots remain accessible directly.
 
@@ -93,8 +116,8 @@ Requests for additional permissions remain separate, explicit decisions.
 The project and audience must be visible before inputs are dispatched to bots.
 For work without a chosen project, propose an explicitly private **My Work**
 context, not an invisible global scratch area. It should not create a new VM,
-add a bot, or copy other private histories. Whether operators may create further
-private projects needs alignment with the final project-management permissions.
+add a bot, or copy other private histories. Operators may create further private
+projects within the installation's resource limits and their current permissions.
 
 Suggestions are drafts. Candidate filtering uses the caller's permitted
 registry/project metadata; private task text is not broadcast to the roster.
@@ -234,9 +257,9 @@ for retained data, not just the currently selected folder.
 
 The layered model, reviewed role/project/task starters, and optional Chief of
 Staff are accepted direction. The original goal-first versus agent-first choice
-is superseded by contextual entry into one brief. Detailed project-management
-permissions, template contents, cross-project grants, and memory handling still
-need qualification.
+is superseded by contextual entry into one brief. Operator-owned projects are
+accepted. Concrete membership/sharing controls, template contents, cross-project
+grants, and memory handling still need qualification.
 
 The [boundary experience](boundary-experience.md) specifies how people understand
 context, audience, and access. [Naming preferences](naming-preferences.md) add

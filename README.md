@@ -46,7 +46,7 @@ Our version 1.0 direction includes:
   explicitly granted direct scoped tokens as an advanced option. Humans retain
   merge approval.
 - **Private and shared work:** private agents by default, explicit sharing,
-  disclosed supervision, shared projects, and human-reviewed publication.
+  disclosed supervision, operator-owned projects, and human-reviewed publication.
 - **Proactive assistance:** Guardian Angel and Cognitive Amplifier behaviors
   notice what matters and prepare useful briefings, options, and local drafts
   within human-enabled assignments, with controlled interruptions and clear scope.
@@ -85,6 +85,8 @@ network profiles, and shared-service integrations still need qualification.
   projects, finite tasks, reusable starters, and an optional Chief of Staff.
 - [Proactive assistance](docs/proactive-assistance.md): standing assignments,
   prepared briefings, attention controls, and scoped bot-to-operator communication.
+- [Mail and account security](docs/mail-and-account-security.md): human-controlled
+  security mail and explicitly scoped verification/sign-in automation.
 - [Boundary experience](docs/boundary-experience.md): make context, audience,
   access, and sharing understandable at the point of use.
 - [Security supervisor](docs/security-supervisor.md): security oversight,

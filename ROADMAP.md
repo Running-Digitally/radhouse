@@ -18,6 +18,7 @@ not meet that definition.
 | Deployment | Guided Proxmox provisioning plus an installation path for operator-supplied, suitably isolated Linux VMs. |
 | Inference | Self-hosted compatible APIs; explicit provider selection; qualification for required tools, model attribution, and interruption recovery. |
 | Human access | Administrator, operator, and viewer roles; local accounts plus optional bundled SSO or connection to an existing provider. |
+| Project ownership | Operators create private projects and explicitly share projects they own with existing users and eligible bots. Content-sharing permissions still apply; administrators retain user accounts, bot allocation, and service grants. |
 | Operator starting screen | A simple work home with assigned agents, current work, and a prominent Start a task action; conversations and project details remain available within Radhouse. |
 | GitHub | Mediated access by default; explicit advanced direct scoped tokens; authorized branch and pull-request work with human merge approval. |
 | Privacy | Private by default; explicit sharing or disclosed supervision per agent; shared projects and human-reviewed publication. |
@@ -34,6 +35,7 @@ not meet that definition.
 | Routines | On-demand tasks and human-configured schedules with explicit timing, targets, and limits. |
 | Proactive assistance | Human-enabled standing assignments use Guardian Angel and Cognitive Amplifier behaviors to judge relevance and prepare useful briefings/local drafts. Optional bot mail and authorized work/status events may wake bounded runs; humans retain new follow-up and wider-effect decisions. |
 | Optional shared services | Buzz chat, receive-only bot mail, and SSO, with documented installation and isolation contracts. |
+| Account-security mail | Human-controlled by default, with tested integrations for explicitly approved verification/sign-in flows on named bot-owned accounts. Password reset and security-setting changes remain human-controlled. |
 | Optional remote access | Limited guided Cloudflare Access and Tunnel setup for the application, with local use available independently. |
 
 ## Operator work home
@@ -136,13 +138,14 @@ restore evidence instead of assuming every new bot inherits existing backup jobs
   preparation/grace timing, forced-stop behavior, pending-action reconciliation,
   and recovery adapters. Weekly OS updates/restarts and security precedence over
   unready work are accepted; other component changes retain separately reviewed plans.
-- Detailed project-management permissions, starter contents, naming-preference
+- Concrete project membership/sharing contracts, starter contents, naming-preference
   precedence, cross-project grants, retained memory, and usable boundary displays
   within the accepted work model.
 - Human and bot service identities, credential lifecycles, and the concrete
   mediation mechanism for each allowed GitHub operation.
 - Optional mail delivery and attachment behavior, including how receive-only
-  restrictions are enforced outside the agent runtime.
+  restrictions are enforced outside the agent runtime, and provider qualification
+  for the accepted [account-security contract](docs/mail-and-account-security.md).
 - Proactive-assignment schemas, event/delivery adapters, attention defaults,
   numerical budgets, feedback behavior, and evaluation thresholds within the
   accepted [prepared-assistance contract](docs/proactive-assistance.md).
