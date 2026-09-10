@@ -4,9 +4,9 @@ Status: chunk 1's two-management-VM default and overall responsibilities are
 accepted for the public product. Chunk 2's administrator invitations, explicit
 human roles, administrator-only SSO fallback, bot-wide pause after grant
 withdrawal and fresh personal-bot replacement are also accepted for V1.
-Chunk 2's combined boundary model is now proposed for review. Detailed contracts
-and later chunks remain under review;
-these decisions do not implement or deploy the product.
+Chunk 2's combined identity/data boundary is accepted at the architecture level.
+Chunk 3's work/recovery model is proposed for review. Detailed contracts and later
+chunks remain under review; these decisions do not implement or deploy the product.
 Design depth: D3. Implementation authorization: none from this packet.
 
 ## Review sequence
@@ -17,8 +17,8 @@ on a chunk does not silently accept later choices or authorize deployment.
 | Chunk | Review outcome needed | State |
 | --- | --- | --- |
 | 1. Overall structure | Component responsibilities, trust boundaries, and default shared-VM footprint | Two shared management VMs accepted; detailed contracts remain to qualify |
-| 2. Identity, access, and information | Human/bot/service identities, grants, private/project data ownership, and mediated operations | Individual admission, recovery, withdrawal and replacement decisions accepted; combined boundary model proposed for review |
-| 3. Work and recovery | Task/run state, admission, cancellation, delegation, inference changes, maintenance, and uncertain external effects | Follows chunk 2 |
+| 2. Identity, access, and information | Human/bot/service identities, grants, private/project data ownership, and mediated operations | Combined boundary model accepted; concrete mechanisms remain to qualify |
+| 3. Work and recovery | Task/run state, admission, cancellation, delegation, inference changes, maintenance, and uncertain external effects | Proposed lifecycle and recovery model; unexpected-interruption resume policy under review |
 | 4. Operator and administrator experience | Onboarding, first task, access requests, sharing, and recovery screens | Follows the accepted authority and work model |
 | 5. Implementation design | Technology choices, packaging, schemas, typed contracts, module dependencies, and call paths | Follows the reviewed product boundaries |
 | 6. First implementation slice | Exact files, behavior, tests, demonstration, limits, and acceptance for the offline foundation | Final implementation review |
@@ -313,14 +313,14 @@ cannot impersonate the previous bot or revive its grants. See the accepted
 [work model](work-model.md) and
 [memory/context risks](https://cheatsheetseries.owasp.org/cheatsheets/AI_Agent_Security_Cheat_Sheet.html#3-memory-context-security).
 
-### Combined identity and data boundary — proposed review
+### Combined identity and data boundary — accepted boundary model
 
-The following model connects the accepted decisions. It introduces no new
-standing service or identity-provider product. Acceptance would settle component
-responsibilities at the architecture level; exact schemas, transports, factor
-methods and implementation authorization remain for the later design chunks.
+The following accepted model connects the earlier decisions and settles component
+responsibilities at the architecture level. It introduces no new standing service
+or identity-provider product. Exact schemas, transports, factor methods and
+implementation authorization remain for the later design chunks.
 
-| Concept | Proposed contract | Does not imply |
+| Concept | Accepted boundary contract | Does not imply |
 | --- | --- | --- |
 | Person | A stable internal person ID with verified local/SSO bindings; current role and resource grants live in the control plane | Successful login, group names or possession of an old session grant access to every bot/project |
 | Bot and running instance | A durable bot ID plus an authenticated current runtime instance, tied to that bot's registered environment and allowed operations | A display name, role prompt, cloned disk or older runtime instance can impersonate a current worker |
@@ -403,7 +403,114 @@ membership or promote a role. Account-linking cases must include a reused email
 address. These are acceptance requirements for the later implementation slice,
 not evidence of an implemented authentication system.
 
-The combined identity/data boundary above awaits review. Its concrete instance,
-grant and content-release mechanisms remain qualification work. After boundary
-alignment, chunk 3 defines task/run state, scheduling, interruption, resume and
-uncertain effects; chunk 5 specifies the program interfaces before implementation.
+The combined identity/data boundary above is accepted. Its concrete instance,
+grant and content-release mechanisms remain qualification work. Chunk 3 now
+addresses task/run state, scheduling, interruption, resume and uncertain effects;
+chunk 5 specifies the program interfaces before implementation.
+
+## Chunk 3: work, interruption and recovery — proposed review
+
+### Keep the task separate from its execution attempts
+
+Keep one durable task for the authorized outcome and record each execution attempt
+or checkpoint continuation as a run. A restart does not create a new objective,
+reset budgets or authorize another external effect. Store authoritative task/run
+state and operation receipts in the control plane; the worker's memory is useful
+continuation context, not proof that an operation completed.
+
+Proposed operator-facing states:
+
+| State | Meaning |
+| --- | --- |
+| Queued | The request is recorded and awaiting an eligible bot or capacity; revalidate current authority before dispatch |
+| Working | A current run owns the bot's execution slot and has verified authority to proceed |
+| Waiting | The task is awaiting a dependency, provider or human input, with a visible reason and no inference polling loop |
+| Recovering | An unexpected interruption is being reconciled; this is not proof that agent execution has resumed |
+| Paused | An explicit human or accepted grant-withdrawal hold prevents execution until authorized review/resume |
+| Needs attention | A checkpoint, action outcome, compatibility or authority issue prevents safe continuation |
+| Finished / Cancelled | A terminal outcome with permitted results or partial-work evidence; neither state implies every external effect can be undone |
+
+Use one active execution owner per bot, including declared work within the run.
+New tasks queue while it is occupied. Delegation uses other eligible existing
+project bots under the same root scope and aggregate limits; it does not bypass
+the recipient's execution owner or start unbounded parallel work. Inference
+admission remains separate from VM readiness and follows the configured service
+priority/capacity rules. This does not promise one simultaneous generation per bot.
+
+Human-configured schedules and enabled proactive standing assignments create
+bounded occurrences through the same admission path. Deduplicate submissions,
+occurrences and dispatch after retries. Human cancellation blocks new descendant
+work and requests termination of outstanding runs, while recording any in-flight
+effects honestly. Detailed queue fairness, timeout values, missed-occurrence and
+transition-race rules remain program-design work.
+
+### Unexpected interruption: proposed resume default
+
+Recommend **bounded automatic recovery when continuation is verified safe**.
+Reconcile the current runtime before dispatching another attempt. An older run
+must be confirmed inactive, safely adopted or fenced from acting; a missing
+heartbeat alone cannot justify two active writers. Check the durable checkpoint
+against current workspace revisions, versions, identity, grants, task scope and
+remaining budgets. Preserve newer drafts/files; this is not an automatic restore
+of an older backup over the working environment.
+
+When the checks pass and pending effects are resolved or demonstrably safe to
+repeat, continue the same admitted work and record the recovery. Use qualified
+per-adapter recovery behavior, bounded attempt/time limits and delayed retries.
+An LLM's assurance that continuation is safe is not the recovery gate. Repeated
+failure, missing evidence, incompatible state or unresolved effects becomes
+Needs attention with the preserved checkpoint and a clear explanation.
+
+The alternative is **human confirmation after every unexpected interruption**.
+The platform can still perform authorized, bounded status reconciliation and
+prepare the recovery view, but it waits for a person before agent work resumes,
+even when the evidence supports a safe continuation. This is more conservative
+about unattended resumption and increases operator interruptions.
+
+Both options preserve human pause/cancellation, grant-withdrawal holds, manual VM
+stop and current authority. Neither powers on a manually stopped bot because a
+task is queued or restarts an assignment that was cancelled. The accepted weekly
+maintenance save/verify/resume path is separate; this choice does not add manual
+confirmation to every planned maintenance cycle.
+Human confirmation alone cannot bypass a failed authority or compatibility check;
+an unresolved problem needs a concrete, authorized recovery action.
+
+### Reconcile effects before replay
+
+Record the intended operation, exact task/target and request identity before
+dispatch, then retain submitted/confirmed/unknown outcomes. A connection failure
+or missing response cannot establish that nothing happened. Where a qualified
+adapter supports an idempotency key or authoritative status lookup, use it to
+resolve the same operation. Confirm the observed result corresponds to the
+intended operation; a similar-looking artifact is not sufficient evidence.
+
+For example, if connection is lost while creating a pull request, inspect the
+qualified upstream identity/result before attempting another creation. A confirmed
+success can be reconciled without repeating it. An unresolved outcome waits for
+human review; a human retry decision must disclose any remaining duplicate-effect
+risk and cannot manufacture evidence that the first attempt failed.
+
+Local writes, browser actions and advanced direct-token work need their own
+recovery capability classification. An HTTP verb, a task's role label or a
+tool's self-description is insufficient to classify the entire run as replayable.
+Do not promise exactly-once behavior for arbitrary third-party tools. The
+[HTTP retry rules](https://www.rfc-editor.org/rfc/rfc9110.html#section-9.2.2)
+likewise distinguish requests whose effects can safely be repeated from requests
+that require evidence before automatic retry.
+
+Provider unavailability leaves the task waiting within its limits. Recheck the
+configured provider/model policy, current capabilities and checkpoint/input
+compatibility when service returns or its backing model changes. Preserve bot
+identity and work, report the model actually used and do not silently change the
+selected provider. Resource priority remains with interactive applications and
+requests. Exact streaming/tool-call reconciliation belongs in the adapter contract.
+
+### Work/recovery qualification still required
+
+Prove interrupted admission, duplicate dispatch, worker/controller reconnect,
+an old worker returning after replacement, a crash after an external effect but
+before its receipt, current-grant changes during recovery, a newer local edit,
+provider/model changes, a manually paused/stopped bot and exhausted retry budgets.
+The offline first slice can exercise synthetic state and fake effect adapters;
+it cannot establish live runtime or provider guarantees. The state model and
+unexpected-interruption default remain under review.
