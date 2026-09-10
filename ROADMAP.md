@@ -103,6 +103,10 @@ denial, retention, and resource-pressure behavior as each slice is delivered.
 
 ## Proposed delivery sequence
 
+The [architecture and first-slice packet](docs/architecture-review.md) is the
+current review entry point. Its chunks will resolve boundaries and program
+contracts before the first implementation slice is accepted.
+
 | Milestone | Evidence needed before moving on |
 | --- | --- |
 | 1. Contracts and configuration | Reviewable architecture and component contracts; validated synthetic configuration; documented supported and refused combinations. |

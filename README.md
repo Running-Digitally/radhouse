@@ -77,6 +77,8 @@ network profiles, and shared-service integrations still need qualification.
 
 ## Read the plan
 
+- [Architecture and first-slice review](docs/architecture-review.md): the proposed
+  system structure, reviewed in manageable chunks before implementation.
 - [Product and security principles](PRINCIPLES.md): the rules that guide design
   choices and the limits those choices must make visible.
 - [Version 1.0 roadmap](ROADMAP.md): the intended boundaries, delivery sequence,
