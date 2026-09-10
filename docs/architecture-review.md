@@ -2,9 +2,10 @@
 
 Status: chunk 1's two-management-VM default and overall responsibilities are
 accepted for the public product. Chunk 2's administrator invitations, explicit
-human roles, administrator-only SSO fallback and bot-wide pause after grant
-withdrawal are also accepted for V1.
-The rest of chunk 2, detailed contracts and later chunks remain under review;
+human roles, administrator-only SSO fallback, bot-wide pause after grant
+withdrawal and fresh personal-bot replacement are also accepted for V1.
+Chunk 2's combined boundary model is now proposed for review. Detailed contracts
+and later chunks remain under review;
 these decisions do not implement or deploy the product.
 Design depth: D3. Implementation authorization: none from this packet.
 
@@ -16,7 +17,7 @@ on a chunk does not silently accept later choices or authorize deployment.
 | Chunk | Review outcome needed | State |
 | --- | --- | --- |
 | 1. Overall structure | Component responsibilities, trust boundaries, and default shared-VM footprint | Two shared management VMs accepted; detailed contracts remain to qualify |
-| 2. Identity, access, and information | Human/bot/service identities, grants, private/project data ownership, and mediated operations | Human invitations, explicit roles, administrator-only SSO fallback and grant-withdrawal pause accepted; remaining contracts under review |
+| 2. Identity, access, and information | Human/bot/service identities, grants, private/project data ownership, and mediated operations | Individual admission, recovery, withdrawal and replacement decisions accepted; combined boundary model proposed for review |
 | 3. Work and recovery | Task/run state, admission, cancellation, delegation, inference changes, maintenance, and uncertain external effects | Follows chunk 2 |
 | 4. Operator and administrator experience | Onboarding, first task, access requests, sharing, and recovery screens | Follows the accepted authority and work model |
 | 5. Implementation design | Technology choices, packaging, schemas, typed contracts, module dependencies, and call paths | Follows the reviewed product boundaries |
@@ -285,6 +286,106 @@ routine dispatch, a controller restart while paused, and a resume attempt that
 still lacks a required grant. Tests must distinguish a recorded pause request
 from verified enforcement and preserve unaffected bots' independent work.
 
+### A personal bot for a different operator — accepted for V1
+
+When a different operator needs a role previously filled by a personal bot,
+provide a fresh environment from the maintained template, a new bot identity
+and explicit grants. Reuse approved role/software templates. Do not clone the
+previous operator's used disk or transfer their credentials, browser sessions
+or private memory merely by changing the assigned person.
+
+Use the existing project-sharing flow for selected work: a source-authorized
+human reviews the exact content and audience before release. A dedicated
+selective-handover wizard is deferred beyond V1. Imported material remains
+untrusted data and cannot automatically execute or expand permissions.
+
+Keep the original data under its original audience until a separately authorized
+lifecycle action changes its disposition. Replacement does not authorize
+deletion or indefinite archival; apply capacity and retention policies explicitly.
+Make the new identity/history visible even if a familiar display name is reused.
+This decision does not reset a bot between ordinary tasks, prevent authorized
+project collaboration, or change hardware migration for the same bot and person.
+
+Qualification must show clean template provenance, absence of old credentials
+and private state, current grants on the new bot, exact-content/audience release
+and preservation of the original data boundary. A reused label or restored disk
+cannot impersonate the previous bot or revive its grants. See the accepted
+[work model](work-model.md) and
+[memory/context risks](https://cheatsheetseries.owasp.org/cheatsheets/AI_Agent_Security_Cheat_Sheet.html#3-memory-context-security).
+
+### Combined identity and data boundary — proposed review
+
+The following model connects the accepted decisions. It introduces no new
+standing service or identity-provider product. Acceptance would settle component
+responsibilities at the architecture level; exact schemas, transports, factor
+methods and implementation authorization remain for the later design chunks.
+
+| Concept | Proposed contract | Does not imply |
+| --- | --- | --- |
+| Person | A stable internal person ID with verified local/SSO bindings; current role and resource grants live in the control plane | Successful login, group names or possession of an old session grant access to every bot/project |
+| Bot and running instance | A durable bot ID plus an authenticated current runtime instance, tied to that bot's registered environment and allowed operations | A display name, role prompt, cloned disk or older runtime instance can impersonate a current worker |
+| Service connection | A named, scoped upstream connection managed through the operations layer in mediated mode, with attribution to the requesting bot and task | The worker receives human sign-in factors or infrastructure administration credentials |
+| Admitted task | A record binding the authorizing human, eligible bot/project, purpose, inputs, allowed effects and limits; delegated work stays within that root authority | A bot's maximum available grants authorize every possible action or an unrelated follow-up |
+| Project and artifact | A shared workspace whose content has an explicit audience; private contributions require exact-content/audience release by an authorized human | Project membership exposes a member bot's private memory or adds service permissions |
+
+Implement these contracts in the planned registry, task, grant, publication and
+audit modules in the control plane. In the mediated path, the executor authenticates the
+current bot/runtime and checks task scope, current grants, exact target and
+operation, and configured infrastructure limits before using an upstream
+credential. A stale or unverifiable authorization state cannot grant new use.
+The adapter need not create a separate upstream account for every bot where a
+qualified scoped shared integration can provide the required attribution and
+isolation. External service identity and internal bot identity are distinct.
+
+Bot-readable instance credentials identify only that bot's admitted reach; theft
+inside the guest must not yield another identity or broader infrastructure power.
+The runtime-instance contract must fence obsolete workers and credentials across
+replacement, restore and reconnect. Exact issuance, expiry, validation and
+revocation mechanisms remain to qualify. Human MFA/SSO authentication material
+stays outside bot runtimes.
+
+The accepted advanced direct-token mode retains its separate guarantees. A
+copied upstream token may bypass Radhouse's per-operation mediation; enforcement
+then depends on qualified upstream scopes, network controls and actual token
+revocation. Do not claim the mediated contract automatically applies to raw
+tokens, direct browser sessions or arbitrary software installed in a bot VM.
+
+For a private repository-research task, the flow is:
+
+1. The operator chooses an eligible bot and describes the work in a private
+   context. The control plane validates their authority and admits the scope.
+2. The bot requests a named repository read. The operations executor verifies
+   the bot/runtime, current task and grants, then performs the permitted read.
+3. The result returns under the task's audience. The draft report and private
+   context do not become visible to project members merely because the bot also
+   belongs to that project.
+4. Sharing a report uses a reviewed content version and named audience. Recheck
+   release authority at publication and access at retrieval; changed content or
+   recipients invalidate the previous release decision.
+
+Private bot-local state remains in its bot environment. Central streams, stores,
+receipts and search results preserve the applicable audience; logs and metadata
+are not an alternate publication path. Worker-supplied labels and file paths
+cannot grant sharing authority. Bind approval to the actual content version
+served by the trusted publication path, with path/revision checks before release.
+Revocation restricts future access and cannot erase already delivered copies.
+
+Task scope is an authorization boundary, not proof that the bot has forgotten
+other projects. Disclose its wider retained context. When separate confidentiality
+is required, use a fresh bot or keep work within its existing private audience;
+do not promise isolation by changing a project label or narrowing selected inputs.
+
+The supervisor consumes permitted operational evidence and limited opt-in private
+review findings. It does not gain a general content audience or grant authority.
+Human incident intervention and the deterministic standing maintenance policy
+keep their separately accepted scopes.
+
+Boundary qualification includes forged bot/runtime identity, stale task/grant
+state, a more-privileged peer used to bypass root scope, disclosure through task
+names/logs/search, changed content after approval, and misleading scope labels
+when a bot retains other private context. The later slice must make denials and
+unfinished enforcement visible rather than treating a diagram as proof.
+
 ### Contracts still to qualify
 
 Specify first-administrator bootstrap, invitation expiry/redemption, account
@@ -302,6 +403,7 @@ membership or promote a role. Account-linking cases must include a reused email
 address. These are acceptance requirements for the later implementation slice,
 not evidence of an implemented authentication system.
 
-Bot/service identities, detailed enforcement and content-release contracts remain
-under review. The accepted admission and withdrawal behavior does not settle
-those remaining parts of chunk 2.
+The combined identity/data boundary above awaits review. Its concrete instance,
+grant and content-release mechanisms remain qualification work. After boundary
+alignment, chunk 3 defines task/run state, scheduling, interruption, resume and
+uncertain effects; chunk 5 specifies the program interfaces before implementation.

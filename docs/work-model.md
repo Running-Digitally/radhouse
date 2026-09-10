@@ -55,6 +55,14 @@ boundary permit it. A project can use several bots without acquiring their
 private histories. Changing a task's outcome does not redefine the bot's
 standing purpose.
 
+For V1, a different operator taking over a personal bot's role receives a fresh
+bot with a new identity and explicitly assigned permissions. Reuse the role
+template; share selected work through the existing reviewed project-sharing
+flow. A dedicated handover wizard is deferred. The original private VM, memory,
+credentials and browser sessions do not transfer with the role or display name.
+Original data retains its audience until a separately authorized lifecycle action.
+See the [replacement contract](architecture-review.md#a-personal-bot-for-a-different-operator--accepted-for-v1).
+
 Keep long-term goals as optional project/task context initially. Requiring a
 company, department, goal tree, team, project, bot, and workflow before a person
 can start would undermine the accepted simple onboarding.
