@@ -22,6 +22,9 @@ not meet that definition.
 | GitHub | Mediated access by default; explicit advanced direct scoped tokens; authorized branch and pull-request work with human merge approval. |
 | Privacy | Private by default; explicit sharing or disclosed supervision per agent; shared projects and human-reviewed publication. |
 | Oversight | Security-event warnings; optional scoped private review; central supervisor warnings and recommendations, with human intervention. |
+| Maintenance | Supervisor inventory, update checks, and component maintenance responsibility; exact plans and bounded execution, with authorization policy still open. |
+| Observability | Built-in work/health/event views; local-by-default telemetry, logs, and analytics; scoped audit and maintenance receipts; visible coverage and resource limits. |
+| Work model and naming | Persistent bots, project workspaces, finite tasks, role/project/task starters, optional scoped Chief of Staff; four changeable naming presets and individual overrides. |
 | Private-data egress | Restricted default profile; explicit administrator grant for broader browsing; documented and tested limits for supported combinations. |
 | Collaboration | Delegation to existing project agents; owner-influenced or self-organized reporting lines; leads coordinate work within shared budgets. |
 | Routines | On-demand tasks and human-configured schedules with explicit timing, targets, and limits. |
@@ -41,13 +44,17 @@ from an administrator. Show only information and actions permitted by the
 person's role and scope; a viewer's read-only experience does not offer task
 submission. Server-side authorization must enforce the same boundaries.
 
-The next interaction decision now covers the relationship between persistent
-bots, project workspaces, finite tasks, and starter templates. The
-[proposed work model](docs/work-model.md) develops several entry points into
-one task brief, reusable bot-role/project/task starters, and an optional Chief
-of Staff. It remains a design proposal; these additions are not yet accepted
-version 1.0 requirements. The work-home decision does not authorize automatic
-assignment or additional access.
+The accepted [work model](docs/work-model.md) connects persistent bots, project
+workspaces, finite tasks, and reusable role/project/task starters through several
+entry points into one brief. An optional Chief of Staff coordinates within
+explicit information scope. It does not gain automatic assignment authority or
+additional access from its title.
+
+Make context, audience, and bot access visible using the
+[boundary experience](docs/boundary-experience.md). Offer four changeable
+[naming presets](docs/naming-preferences.md) with individual overrides, preserving
+stable identity and permissions across renames. Detailed interactions remain
+proposed until implemented and qualified.
 
 Qualification includes an unfamiliar operator starting useful work, finding its
 result, and understanding a blocked action without a terminal, external manual,
@@ -69,10 +76,19 @@ interface and usability evidence remain to be delivered.
   admission policy, and attribute work to the model actually served.
 - **Shared services:** integrate chat, mail, and identity through explicit
   contracts rather than giving agent VMs administrative access to those services.
+- **Security and maintenance:** correlate scoped findings and maintain component
+  inventory; execute only admitted maintenance plans through bounded adapters.
+  The [supervisor design](docs/security-supervisor.md) separates model proposals
+  from enforced authority and identifies the open maintenance-policy decision.
 
 These are responsibilities to design and qualify, not a requirement to create
 one independently deployed service per responsibility. Choose the least complex
 implementation that adequately enforces each boundary.
+
+[Observability](docs/observability.md) spans these components from the first
+useful task. Correlate work, security, and maintenance through scoped structured
+evidence; keep sensitive content out of routine telemetry. Qualify missing-signal,
+denial, retention, and resource-pressure behavior as each slice is delivered.
 
 ## Proposed delivery sequence
 
@@ -85,7 +101,7 @@ implementation that adequately enforces each boundary.
 | 5. Human roles and privacy | A new operator can use an assigned agent without infrastructure knowledge; role isolation, sharing review, supervision, and private-data egress behavior pass boundary checks. |
 | 6. Optional shared services | Independently optional chat, receive-only mail, and SSO integrate without widening agent grants; remote Access/Tunnel setup qualifies separately. |
 | 7. Delegation and routines | Existing project agents complete bounded subtasks; cycles, duplicate delivery, budgets, cancellation, and scheduled runs obey the admitted work and current grants. |
-| 8. Release qualification | Reproducible installation, upgrade and recovery guidance, configuration tests, useful fleet work, and published evidence for supported profiles. |
+| 8. Maintenance and release qualification | Component inventory, update checks, approved-plan execution under the selected policy, running-version checks, failure/recovery proof, reproducible installation, configuration tests, useful fleet work, and published evidence for supported profiles. |
 
 Development should proceed through small end-to-end slices. The sequence is a
 planning proposal, not a schedule or a promise to implement all components in
@@ -104,10 +120,12 @@ repeat a publication, pull-request operation, or scheduled task.
 
 ## Decisions still to resolve
 
-- The proposed work model: bot-role/project/task starters, contextual task
-  entry, a private work context, and the scope of an optional Chief of Staff.
-  Cross-project participation, retained memory, and project-management
-  permissions need explicit design alignment and qualification.
+- Maintenance authorization: individual approval for each batch (recommended),
+  or optional administrator policies for qualified low-impact automatic updates.
+  Supported component/version matrices and recovery adapters need qualification.
+- Detailed project-management permissions, starter contents, naming-preference
+  precedence, cross-project grants, retained memory, and usable boundary displays
+  within the accepted work model.
 - Human and bot service identities, credential lifecycles, and the concrete
   mediation mechanism for each allowed GitHub operation.
 - Optional mail delivery and attachment behavior, including how receive-only
@@ -117,6 +135,8 @@ repeat a publication, pull-request operation, or scheduled task.
   operator changes the model behind a service-following alias.
 - Technology stack, packaging, configuration schema, and installation and
   upgrade contracts for each supported deployment profile.
+- Telemetry schemas/backend, retention defaults, export boundaries, metric
+  definitions, and resource budgets for a small installation.
 - Public-contribution CI placement and treatment of untrusted code. Public CI
   must not inherit private infrastructure credentials or caches.
 
@@ -124,7 +144,8 @@ repeat a publication, pull-request operation, or scheduled task.
 
 Additional agent runtimes, automated provisioning on other hypervisors, dedicated
 cloud-inference integrations, private-agent question exchange with automatic
-answers, and automatic supervisor intervention are deferred. Broad personal
+answers, and automatic supervisor incident intervention are deferred. Maintenance
+execution is a separate planned capability with its policy still open. Broad personal
 inbox/calendar access, outbound bot email, unattended merge/deploy, and agents
 expanding their own grants are outside the accepted release boundary.
 

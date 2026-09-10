@@ -47,6 +47,12 @@ Our version 1.0 direction includes:
   merge approval.
 - **Private and shared work:** private agents by default, explicit sharing,
   disclosed supervision, shared projects, and human-reviewed publication.
+- **Understandable boundaries:** visible work context, audience, and bot access;
+  reusable bot/project/task starters and changeable naming preferences.
+- **Security and maintenance oversight:** scoped security findings, update
+  checks, and reviewable maintenance plans; execution policy remains under design.
+- **Useful observability:** local-by-default telemetry, logs, and analytics for
+  work progress, fleet health, security evidence, and verified maintenance.
 - **Self-hosted inference:** a documented compatible API and explicit provider
   selection, with stable agent identity across supported model changes.
 - **Bounded collaboration:** subtasks for existing project agents and schedules
@@ -63,8 +69,16 @@ network profiles, and shared-service integrations still need qualification.
   choices and the limits those choices must make visible.
 - [Version 1.0 roadmap](ROADMAP.md): the intended boundaries, delivery sequence,
   and evidence needed before a usable release.
-- [Proposed work model](docs/work-model.md): how persistent bots, projects,
-  finite tasks, and reusable starters could fit together; awaiting design alignment.
+- [Work model](docs/work-model.md): the accepted direction for persistent bots,
+  projects, finite tasks, reusable starters, and an optional Chief of Staff.
+- [Boundary experience](docs/boundary-experience.md): make context, audience,
+  access, and sharing understandable at the point of use.
+- [Security supervisor](docs/security-supervisor.md): security oversight,
+  component maintenance, and the proposed limits on update execution.
+- [Naming preferences](docs/naming-preferences.md): four presets, themes,
+  individual overrides, and permanent identity beneath editable names.
+- [Telemetry, logs, and analytics](docs/observability.md): scoped evidence for
+  progress, diagnosis, security, maintenance, and resource use.
 
 Feedback and design proposals are welcome through this repository's issues and
 pull requests. Use synthetic examples when describing a deployment. Keep
