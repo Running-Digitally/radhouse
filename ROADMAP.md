@@ -38,7 +38,7 @@ not meet that definition.
 | Collaboration | Delegation to existing project agents; owner-influenced or self-organized reporting lines; leads coordinate work within shared budgets. |
 | Routines | On-demand tasks and human-configured schedules with explicit timing, targets, and limits. |
 | Proactive assistance | Human-enabled standing assignments use Guardian Angel and Cognitive Amplifier behaviors to judge relevance and prepare useful briefings/local drafts. Optional bot mail and authorized work/status events may wake bounded runs; humans retain new follow-up and wider-effect decisions. |
-| Optional shared services | Buzz chat, receive-only bot mail, and SSO, with documented installation and isolation contracts. |
+| Optional shared services | Buzz as an optional full operator work surface, including native protected reviews/approvals; receive-only bot mail and SSO, with documented installation and isolation contracts. |
 | Account-security mail | Human-controlled by default, with tested integrations for explicitly approved verification/sign-in flows on named bot-owned accounts. Password reset and security-setting changes remain human-controlled. |
 | Optional remote access | Limited guided Cloudflare Access and Tunnel setup for the application, with local use available independently. |
 
@@ -47,7 +47,11 @@ not meet that definition.
 The version 1.0 operator starts on a simple work home showing assigned agents,
 current work, and a prominent **Start a task** action. Opening a task or project
 keeps its conversation, progress, files, results, and permission requests within
-Radhouse. Buzz remains optional for group chat.
+Radhouse. When enabled, Buzz is an alternative operator work surface for the same
+linked conversations and tasks, including native protected reviews and approvals.
+Infrastructure administration remains in Radhouse. Both use the same authority,
+task and publication contracts; Buzz is optional to install, while its accepted
+integration is part of V1 release qualification.
 
 The home should make working, waiting, finished, and needs-help states easy to
 understand. An operator with no assigned agents sees a clear way to request one
