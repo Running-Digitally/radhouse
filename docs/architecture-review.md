@@ -20,7 +20,7 @@ on a chunk does not silently accept later choices or authorize deployment.
 | 1. Overall structure | Component responsibilities, trust boundaries, and default shared-VM footprint | Two shared management VMs accepted; detailed contracts remain to qualify |
 | 2. Identity, access, and information | Human/bot/service identities, grants, private/project data ownership, and mediated operations | Combined boundary model accepted; concrete mechanisms remain to qualify |
 | 3. Work and recovery | Task/run state, admission, cancellation, delegation, inference changes, maintenance, and uncertain external effects | Bounded automatic recovery and bounded multitasking accepted; remaining lifecycle and concrete mechanisms under review |
-| 4. Operator and administrator experience | Onboarding, first task, access requests, sharing, and recovery screens | Earlier usability pilot and Send-to-start accepted; busy-bot messaging and detailed interactions under review |
+| 4. Operator and administrator experience | Onboarding, first task, access requests, sharing, and recovery screens | Earlier usability pilot, Send-to-start and natural task-aware messaging accepted; additional-access scope and detailed interactions under review |
 | 5. Implementation design | Technology choices, packaging, schemas, typed contracts, module dependencies, and call paths | Follows the reviewed product boundaries |
 | 6. First implementation slice | Exact files, behavior, tests, demonstration, limits, and acceptance for the offline foundation | Final implementation review |
 
@@ -662,10 +662,17 @@ gets a targeted question. A separate brief review and Start action for every
 ordinary task was not selected. This does not change grants, publish private
 material or admit a new model route.
 
-Next, review [messaging a busy bot](boundary-experience.md#messaging-a-busy-bot--proposed-interaction):
-natural conversation with a visible task target, or an explicit Update task / New
-task instruction mode. The proposed default applies clear follow-ups to the
-displayed task, admits clearly separate work independently, and clarifies
-ambiguous targets. Task revisions need a qualified steering and effect-recovery
-contract; interpreting a message cannot create authority or silently revive
-canceled work. This next interaction remains pending.
+The accepted [busy-bot interaction](boundary-experience.md#messaging-a-busy-bot--accepted-for-v1)
+uses natural conversation with a visible task target. Clear follow-ups update
+the displayed task, clearly separate work is admitted independently, and
+ambiguous targets get clarification. Requiring an explicit instruction mode
+was not selected. Task revisions still need qualified steering and effect
+reconciliation; interpreting a message cannot create authority or silently
+revive canceled work.
+
+Next, review the [default scope for additional access](boundary-experience.md#requesting-additional-access--proposed-default-scope).
+Recommend a task-bound, expiring request where enforcement supports it; the
+alternative grants the bot reusable access to the approved resource/operations
+for a limited period. Administrators retain the grant decision, existing standing
+grants remain valid under their own policies, and raw-token/browser limitations
+must remain visible. This default is proposed, not accepted.
