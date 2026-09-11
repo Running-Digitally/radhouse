@@ -9,7 +9,9 @@ Chunk 3's bounded automatic recovery and bounded multitasking per bot are accept
 for V1; the remaining work/run lifecycle is proposed for review. Chunk 4's combined
 operator journey and chunk 5A's Python controller and TypeScript interface are
 accepted. Chunk 5B proposes module ownership and durable task contracts; detailed
-qualification and the first slice remain under review. These decisions do not
+qualification and the first slice remain under review. Full operator equivalence
+with optional Buzz, including native protected reviews/approvals, is also an
+accepted V1 requirement. These decisions do not
 implement or deploy the product.
 Design depth: D3. Implementation authorization: none from this packet.
 
@@ -804,6 +806,7 @@ adapter layout into a Python package and a separate web directory.
 | `src/radhouse/domain/` | Task revisions, state transitions, grant/scope decisions, budgets and result-release rules | Pure typed rules; no HTTP, database driver, Hermes imports or subprocess execution |
 | `src/radhouse/application/` | Admit, steer, claim, recover, cancel and publish use cases; typed adapter/store interfaces | Calls domain rules and interfaces; vendor behavior does not decide policy |
 | `src/radhouse/api/` | Authenticated request context, Pydantic wire schemas and authorized response/event views | Translates requests into application commands; no separate policy implementation in route handlers |
+| `src/radhouse/channels/` | Buzz ingress/delivery adapter, verified identity/space bindings and synchronization receipts | Sends commands through the same application use cases; never starts a separate Hermes execution path or treats chat content as an authority grant |
 | `src/radhouse/storage/` and `migrations/` | PostgreSQL transactions, uniqueness, revision checks, claims and durable event/dispatch records | Implements application interfaces; runtime role cannot perform schema migrations |
 | `src/radhouse/adapters/` | Runtime, provider and Operations clients; capability mapping and receipt normalization | Implements narrow interfaces; no direct task-table edits or silent provider fallback |
 | `src/radhouse/worker.py` | Bounded scheduling/recovery loop and dependency wiring | Invokes the same use cases as other admitted triggers; restart does not invent work |
@@ -937,10 +940,10 @@ to specify for the slice that uses them.
 
 ### Review and first proof
 
-Recommend accepting this division of responsibility and durable task contract,
-then reviewing the exact offline slice. The alternative is to revise a named
-owner, transition or interface before that slice. This is proposed design, not
-runtime qualification or authorization to implement the whole V1 surface.
+The module/task design remains proposed. The accepted Buzz requirement below
+extends its ingress and approval contracts; review the combined design and exact
+offline slice with both surfaces represented. This is not runtime qualification
+or authorization to implement the whole V1 surface.
 
 The next packet must identify exact files and demonstrate a small path through
 real PostgreSQL and fake external adapters: duplicate submission, crash after
@@ -950,3 +953,113 @@ proof cannot accidentally encode one active task per bot. Select a coherent
 bounded subset before implementation; all V1 interfaces above are not required
 in that first commit. Real runtime/identity/containment qualification still
 precedes the relevant live pilot.
+
+### Buzz and Radhouse operator equivalence — accepted requirement
+
+**Two operator surfaces, one task and permission authority.** The earlier
+description of Buzz as only optional group chat was too narrow. When enabled,
+Buzz must support the same operator work, including protected reviews and
+approvals inside its own interface. A contextual handoff to Radhouse for every
+protected action was considered and not selected. Infrastructure administration
+stays in Radhouse. The Python controller/TypeScript interface choice remains
+accepted; Buzz integration must not create a second policy or execution owner.
+
+| Operator action | V1 experience in either interface |
+| --- | --- |
+| Converse, start or steer work | Same linked conversation/task identity and visible context; instructions received in one surface are visible in the other under that audience |
+| Follow, cancel and resume permitted work | Same authoritative progress, holds and cancellation semantics; switching interfaces cannot create another run or clear a hold |
+| Request additional access | Same minimal request, task/resource/operation scope and current decision owner; operator role does not become grant-administrator authority |
+| Review results and share | Native review of the exact artifact version and named audience, with source release authority and current membership checked before publication |
+| Other protected operator decisions | Native structured review and explicit action, with current role/scope, revision and required authentication assurance; no approval inferred from a reaction or an agent-written message |
+| Infrastructure administration | Radhouse administrative interface; Buzz parity does not include hypervisor management, service-credential setup or platform recovery administration |
+
+This is operator capability parity, not an identical layout or every Buzz feature
+reimplemented in Radhouse. Buzz remains optional to install. An installation
+without it has the complete standalone operator path; V1 release support must
+qualify the integrated path as well.
+
+#### Shared command and conversation path
+
+```text
+Radhouse UI ---------------------> authenticated application commands
+Buzz UI / signed events -> channel adapter -> same commands
+                                      -> durable task / decisions / scoped events
+                                      -> one runtime dispatch owner
+                                      -> authorized delivery to either surface
+```
+
+Use a durable `ConversationLink` binding the exact installation/community,
+room/thread, Radhouse conversation/project, audience, allowed history scope and
+binding revision. Map verified Buzz identities to existing Radhouse principals;
+display names or matching email addresses cannot establish that binding or a role.
+Each ingress message retains its source event ID, original verified author,
+revision and task target. API-originated delivery must preserve provenance rather
+than impersonating a human's signed Buzz identity.
+
+Deduplicate by source and event/command identity, retain delivery acknowledgments,
+and mark mirrored events so they cannot trigger another task or an echo loop.
+Buzz owns its original relay events; Radhouse owns admitted tasks, decisions and
+their application views. Delivery copies and source references represent one
+logical work conversation, not two independently editable task databases.
+Concurrent edits/approvals use the same revision checks as the standalone UI.
+Chat editing or deletion does not cancel or undo an already admitted action.
+
+Protect the linked audience before delivery, including attachments, previews,
+search, exports, history backfill and notifications. A link must qualify both
+membership and historical-access enforcement: stopping future bridge delivery
+cannot protect content that a relay has already exposed to a newly added member.
+Unreviewed room widening must be prevented for protected linked spaces; if that
+cannot be enforced, the space is not eligible for that content. Previously
+delivered copies retain the existing limits on recall. Bot-local memory and
+unrelated private histories remain outside the link.
+
+#### Native protected reviews require a real integration
+
+The controller supplies the reviewable action/version/audience and validates the
+human decision through the same use case in both clients. A native Buzz panel
+must show those exact fields, support any required reauthentication/MFA, and
+submit a decision bound to that action and revision. A valid Nostr signature
+alone does not establish Radhouse role, current session or required MFA assurance.
+Keep sign-in/recovery factors outside bots and ordinary room messages. Do not
+turn the integration's service identity into the approving human.
+
+Use supported APIs and UI extension mechanisms where they meet this contract;
+otherwise identify the smallest upstream contribution or maintained patch needed
+before committing to a fork. Native approval components, identity/session linking,
+attachment authorization and membership control remain engineering work. A chat
+bridge plus an external approval link does not satisfy the selected release
+requirement. An unsupported protected action remains visibly blocked until its
+native path is qualified; chat-only support must not be labeled full parity.
+
+Buzz's current architecture document describes signed events, subscriptions and
+an HTTP bridge, plus its own agent harness and workflow engine. The harness
+described there starts agent processes, so wiring it directly to fleet Hermes
+would need replacement or adaptation to preserve Radhouse admission. The same
+document notes unfinished workflow approval/resumption behavior; this is an
+explicit documentation qualification concern, not a verified assertion about
+every current source path. These primitives do not prove native Radhouse
+approval compatibility. Pin and inspect actual source and run conformance tests
+before selecting the integration mechanism.
+[Buzz architecture](https://github.com/block/buzz/blob/main/ARCHITECTURE.md).
+
+#### Acceptance and sequencing still to review
+
+The contract tests must exercise both channel adapters against the same policy:
+start in Buzz and steer/cancel in Radhouse; reverse the direction; duplicate,
+delayed and out-of-order delivery; actor/key/session changes; viewer denial;
+changed audience/history access; stale and concurrent approvals; altered artifact
+after review; required MFA; and integration outages. A native protected decision
+in each real UI must resolve the same action, preserve attribution and produce
+the same authorized outcome. This is in addition to a fake-adapter proof.
+
+The controller continues admitted work through a Buzz outage and reports delivery
+lag. Reconnect rechecks current access and expiry before replaying messages or
+pending commands; stale approvals and cancelled work cannot revive. Buzz must
+show unavailable or unsynchronized state when controller authority is unavailable.
+
+Recommend proving both surfaces early: include synthetic channel/approval
+commands in the offline foundation and a thin real Buzz conversation plus native
+protected review in the early usability pilot. Alternatively, retain the shared
+offline contracts but complete the standalone pilot before qualifying real Buzz.
+Both preserve full native operator parity as a V1 requirement. The sequencing
+choice is pending; exact first-slice scope and implementation remain under review.

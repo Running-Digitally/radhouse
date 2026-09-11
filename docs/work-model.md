@@ -152,6 +152,29 @@ together. Finishing the task leaves the bots and project available for later
 work. A completed task's proposed follow-up remains a proposal until authorized;
 selecting a recipe does not enable a recurring schedule.
 
+### Radhouse and Buzz as interchangeable operator surfaces — accepted for V1
+
+When Buzz is enabled, people should be able to start work in either interface
+and continue the same linked conversation and task in the other. Both support
+conversation, start/steer/cancel, progress, access requests and results. Protected
+operator reviews and approvals must also work natively inside Buzz, including
+the exact-content/audience review for sharing. The accepted scope includes the
+additional integration work; routinely redirecting those actions into the
+Radhouse interface is not the selected V1 experience.
+
+The two interfaces use the same Radhouse task and authority services. A user
+keeps their current role and scope when changing interface. Infrastructure
+administration remains in Radhouse. This does not promise identical screens or
+make Buzz a required installation for standalone use.
+
+Link eligible spaces with a visible audience and history scope. Within that
+link, ordinary conversation continues without a new sharing approval for each
+message. Private bot memory, unrelated conversations and earlier private history
+do not follow automatically. Changes to the audience or released history retain
+the existing content-owner and publication rules. See the
+[integration contract](architecture-review.md#buzz-and-radhouse-operator-equivalence--accepted-requirement)
+for identity, synchronization and native approval qualification.
+
 Version 1 also includes [proactive prepared assistance](proactive-assistance.md).
 A person can give an eligible bot a standing assignment to notice meaningful
 changes and opportunities and bring prepared briefings to an authorized audience.
