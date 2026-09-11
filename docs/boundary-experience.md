@@ -1,6 +1,7 @@
 # Make boundaries understandable
 
-Status: accepted version 1.0 requirement; proposed interaction details below.
+Status: accepted version 1.0 boundary requirement and task-start interaction;
+remaining interaction details are proposed below.
 Updated: 2026-09-10. Implementation and usability qualification remain pending.
 
 People should understand where work happens, who can see it, and what a bot can
@@ -33,9 +34,9 @@ of any supervised review. Explain the infrastructure administrator's underlying
 access separately; “Only you” describes application visibility, not protection
 from the machine owner. Use text and accessible icons, never color alone.
 
-## Starting a task — proposed interaction
+## Starting a task — accepted for V1
 
-Recommend **Send starts ordinary work in the visible context**. Opening an
+Use **Send starts ordinary work in the visible context**. Opening an
 assigned bot or project supplies the eligible context; the work home offers
 permitted choices where one is missing. Before sending task content to a bot
 or inference route, show the selected bot, working context and result audience.
@@ -58,15 +59,58 @@ while one task waits, within the accepted concurrency and bot-wide hold policies
 
 | Interaction choice | Tradeoff |
 | --- | --- |
-| Send starts work in the visible context — recommended | Fast everyday use; ask only for missing information or consequential changes. Known context must be obvious before submission. |
-| Review a brief before every new task | Always show an editable summary and a separate Start action. More opportunity to catch misunderstandings, with an extra step even for clear requests. |
+| Send starts work in the visible context — accepted | Fast everyday use; ask only for missing information or consequential changes. Known context must be obvious before submission. |
+| Review a brief before every new task — not selected | Always show an editable summary and a separate Start action. More opportunity to catch misunderstandings, with an extra step even for clear requests. |
 
 Both choices retain visible context, current authorization and reviewed sharing.
 This is about starting an ordinary task; scheduled standing assignments retain
 their separate configuration and authority contract. Qualification should test
 an unfamiliar operator, a stale or changed audience, missing input, unavailable
-access and a request made while the bot already has other work. This interaction
-choice remains under review.
+access and a request made while the bot already has other work. The interaction
+direction is accepted; implementation and usability evidence remain to deliver.
+
+## Messaging a busy bot — proposed interaction
+
+Recommend natural conversation with a visible task target. In a task conversation,
+follow-up instructions normally update that task. Clearly separate work creates
+its own task within the visible authorized context. Status questions inspect
+existing work. A bot-level conversation with several plausible targets asks a
+short clarification instead of silently choosing the latest task.
+
+| Example message | Proposed response |
+| --- | --- |
+| “Focus more on Canada” in the open comparison task | Record a revision to that task and deliver it through the qualified steering path |
+| “Separately, review this pull request” | Admit a new task if context, inputs and permissions are sufficient; identify the new task in the acknowledgment |
+| “Any progress on the comparison?” | Report current evidence for that task without creating a new assignment |
+| “Stop that one” when several tasks are plausible | Ask which task; keep explicit task-scoped Pause and Cancel controls available |
+
+Keep a compact task label beside the composer and label acknowledgments as a
+task update or new task. Scope changes retain the accepted admission and sharing
+checks. A new task does not inherit an entire old conversation, private inputs
+or expanded permissions simply because it was requested in that conversation.
+Model interpretation cannot override the server-bound audience, grants or budgets.
+
+Distinguish an instruction being received from its being applied at an execution
+checkpoint. An update must not secretly restart a task, reset its budget, repeat
+an external effect or change priority without a human instruction. Changes that
+conflict with pending or completed effects need reconciliation before the affected
+work continues. In-progress external actions may complete after an interruption
+request; report that state honestly. A task-level stop must not cancel unrelated
+work. Explicit bot-wide actions and the accepted grant-withdrawal/maintenance
+policies retain their wider scope.
+
+| Interaction choice | Tradeoff |
+| --- | --- |
+| Natural conversation with visible task context — recommended | Interpret clear instructions in their displayed task; clarify ambiguous targets or materially different intent |
+| Explicit Update task / New task choice | Require the operator to select an instruction mode before submitting work, giving more direct routing control with an extra interaction |
+
+Both retain bounded multitasking, human priority/cancellation, current permission
+checks and the accepted recovery policy. Qualify steering, concurrent results,
+ambiguous targets, stale task selection, canceled tasks and instruction delivery
+across reconnects. Preserve finished/canceled execution history; clearly requested
+new work can become a separately identified task, while an ambiguous follow-up
+needs clarification. A message cannot silently resume a canceled run. This
+interaction remains under review.
 
 ## Explain boundaries at the moment they matter
 
