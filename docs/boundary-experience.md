@@ -1,6 +1,6 @@
 # Make boundaries understandable
 
-Status: accepted version 1.0 boundary requirement and task-start interaction;
+Status: accepted version 1.0 boundary requirement, task start and busy-bot messaging;
 remaining interaction details are proposed below.
 Updated: 2026-09-10. Implementation and usability qualification remain pending.
 
@@ -69,15 +69,15 @@ an unfamiliar operator, a stale or changed audience, missing input, unavailable
 access and a request made while the bot already has other work. The interaction
 direction is accepted; implementation and usability evidence remain to deliver.
 
-## Messaging a busy bot — proposed interaction
+## Messaging a busy bot — accepted for V1
 
-Recommend natural conversation with a visible task target. In a task conversation,
+Use natural conversation with a visible task target. In a task conversation,
 follow-up instructions normally update that task. Clearly separate work creates
 its own task within the visible authorized context. Status questions inspect
 existing work. A bot-level conversation with several plausible targets asks a
 short clarification instead of silently choosing the latest task.
 
-| Example message | Proposed response |
+| Example message | Accepted interaction; runtime behavior still to qualify |
 | --- | --- |
 | “Focus more on Canada” in the open comparison task | Record a revision to that task and deliver it through the qualified steering path |
 | “Separately, review this pull request” | Admit a new task if context, inputs and permissions are sufficient; identify the new task in the acknowledgment |
@@ -101,8 +101,8 @@ policies retain their wider scope.
 
 | Interaction choice | Tradeoff |
 | --- | --- |
-| Natural conversation with visible task context — recommended | Interpret clear instructions in their displayed task; clarify ambiguous targets or materially different intent |
-| Explicit Update task / New task choice | Require the operator to select an instruction mode before submitting work, giving more direct routing control with an extra interaction |
+| Natural conversation with visible task context — accepted | Interpret clear instructions in their displayed task; clarify ambiguous targets or materially different intent |
+| Explicit Update task / New task choice — not selected | Require the operator to select an instruction mode before submitting work, giving more direct routing control with an extra interaction |
 
 Both retain bounded multitasking, human priority/cancellation, current permission
 checks and the accepted recovery policy. Qualify steering, concurrent results,
@@ -110,7 +110,47 @@ ambiguous targets, stale task selection, canceled tasks and instruction delivery
 across reconnects. Preserve finished/canceled execution history; clearly requested
 new work can become a separately identified task, while an ambiguous follow-up
 needs clarification. A message cannot silently resume a canceled run. This
-interaction remains under review.
+interaction direction is accepted; implementation remains to qualify.
+
+## Requesting additional access — proposed default scope
+
+A blocked task should explain the missing operation in plain language and offer
+to narrow the task or prepare an access request. The operator reviews the request
+before submitting it to an authorized administrator. Include the bot, task,
+requested resource/operations, a minimal reason, duration and intended use.
+Do not attach the private conversation or disclose undiscoverable resource names.
+The request's own audience and content must be visible before submission.
+
+Recommend **task-bound access with an expiry** for access requested this way.
+For example, a Researcher needs to read one repository to complete an analysis.
+The proposed grant permits those reads for that task until completion/cancellation
+or the approved expiry, whichever comes first. Subsequent tasks do not inherit
+it. An administrator may explicitly choose a wider or reusable grant; that
+decision must name its scope and duration rather than silently adopting defaults.
+
+| Default request scope | Tradeoff |
+| --- | --- |
+| This task, with an expiry — recommended | Narrow purpose and lifetime; later tasks needing the same access may require another grant |
+| This bot, for a limited period | Reuse the approved operations/resources across eligible tasks until expiry; fewer repeated requests but broader continuing access |
+
+This choice concerns new access requested by a blocked task. Existing standing
+grants remain subject to their own accepted policy. A request is not a grant,
+and service-grant approval does not substitute for a content owner's required
+release decision. New access also does not remove a human pause, cancellation
+or grant-withdrawal hold. Current task admission and recovery checks still apply.
+
+Only show a task-bound guarantee where the qualified access path can enforce it.
+A direct upstream token or shared authenticated browser session may be usable
+outside the requesting task. Preserve the advanced mode's different guarantees;
+do not present an unenforceable task-only label. Restrict or queue unsupported
+paths, or require an explicitly reviewed alternative with its limits disclosed.
+Expiry blocks future access and cannot erase previously read files or memories.
+Task-bound service calls do not isolate tasks sharing the bot's retained context.
+
+Exact lifetimes, renewal, termination/expiry races and pending-effect handling
+remain program-design work. The accepted bot-wide hold after human grant
+withdrawal is unchanged. Verify expiry, wrong-task use, scope changes and lack
+of authority at both request and execution time. This default remains under review.
 
 ## Explain boundaries at the moment they matter
 
