@@ -6,8 +6,10 @@ human roles, administrator-only SSO fallback, bot-wide pause after grant
 withdrawal and fresh personal-bot replacement are also accepted for V1.
 Chunk 2's combined identity/data boundary is accepted at the architecture level.
 Chunk 3's bounded automatic recovery and bounded multitasking per bot are accepted
-for V1; the remaining work/run lifecycle is proposed for review. Detailed contracts and later
-chunks remain under review; these decisions do not implement or deploy the product.
+for V1; the remaining work/run lifecycle is proposed for review. Chunk 4's combined
+operator journey is accepted. Chunk 5A proposes the implementation stack; detailed
+contracts and later chunks remain under review. These decisions do not implement
+or deploy the product.
 Design depth: D3. Implementation authorization: none from this packet.
 
 ## Review sequence
@@ -20,8 +22,8 @@ on a chunk does not silently accept later choices or authorize deployment.
 | 1. Overall structure | Component responsibilities, trust boundaries, and default shared-VM footprint | Two shared management VMs accepted; detailed contracts remain to qualify |
 | 2. Identity, access, and information | Human/bot/service identities, grants, private/project data ownership, and mediated operations | Combined boundary model accepted; concrete mechanisms remain to qualify |
 | 3. Work and recovery | Task/run state, admission, cancellation, delegation, inference changes, maintenance, and uncertain external effects | Bounded automatic recovery and bounded multitasking accepted; remaining lifecycle and concrete mechanisms under review |
-| 4. Operator and administrator experience | Onboarding, first task, access requests, sharing, and recovery screens | Core operator interactions accepted; combined journey under review before implementation design |
-| 5. Implementation design | Technology choices, packaging, schemas, typed contracts, module dependencies, and call paths | Follows the reviewed product boundaries |
+| 4. Operator and administrator experience | Onboarding, first task, access requests, sharing, and recovery screens | Combined operator journey accepted; implementation and usability qualification remain pending |
+| 5. Implementation design | Technology choices, packaging, schemas, typed contracts, module dependencies, and call paths | Stack and process responsibilities proposed in chunk 5A; exact contracts follow its review |
 | 6. First implementation slice | Exact files, behavior, tests, demonstration, limits, and acceptance for the offline foundation | Final implementation review |
 
 The first implementation candidate remains an offline foundation using synthetic
@@ -682,10 +684,102 @@ authority, runtime, scope and effect checks pass. A separate Resume after every
 grant was not selected. New access never clears explicit holds or authorizes
 different work.
 
-Review the [complete operator journey](boundary-experience.md#one-complete-operator-journey--proposed-combined-review)
-as the conclusion of this UX chunk: start in a visible context, resolve missing
+The accepted [complete operator journey](boundary-experience.md#one-complete-operator-journey--accepted-for-v1)
+concludes this UX chunk: start in a visible context, resolve missing
 access, steer work, find the result and explicitly share only the reviewed
-artifact with its approved audience. These steps assemble accepted decisions;
-private publication is not reopened. The combined journey remains proposed.
-After alignment, proceed to chunk 5's concrete implementation design, then the
-first-slice review. No implementation authority is inferred from this walkthrough.
+artifact with its approved audience. The next review is the concrete implementation
+design below, then the first slice. No implementation authority is inferred from
+accepting the walkthrough; usability and enforcement still need evidence.
+
+## Chunk 5A: implementation stack — proposed for review
+
+Recommend **Python with FastAPI/Pydantic for the controller, React with TypeScript
+and Vite for the interface, and PostgreSQL for durable control records and queued
+work**. Package the trusted services with Docker Compose within their assigned
+VMs. This is a proposed technology direction, not a selected version matrix or
+an installation. Keep one Radhouse codebase and release; separate execution
+roles only where lifecycle or authority requires them.
+
+| Part | Proposed implementation and responsibility | Reason / constraint |
+| --- | --- | --- |
+| Operator interface | React/TypeScript, built by Vite into static assets served with the control API | Supports the accepted work home and progressive disclosure; no production Node server is needed for this proposed static UI. Build tools are contributor/release dependencies. |
+| Control API | Python/FastAPI with Pydantic boundary schemas | Validate commands and configuration; enforce current identity, role, audience and grant rules on the server. Generate the TypeScript client from the reviewed OpenAPI contract to reduce duplicated wire types. Validation alone is not authorization. |
+| Work coordinator | A worker process from the same Python application and release | Own admission, scheduling, recovery and adapter dispatch independently of a browser connection or web request. Multiple assignments can overlap within the accepted limits; one worker process does not mean one active bot task. |
+| Durable control store | One PostgreSQL instance on the Control VM, with versioned schema migrations | Keep task revisions, attempts, authority references, reservations, pending dispatch and scoped events transactionally consistent. The database is not reachable by bot guests; roles and queries must preserve the accepted content/metadata audiences. |
+| Operations executors | Narrow Python entrypoints on the Operations VM, sharing only reviewed contracts with the controller | Receive authenticated, scoped commands and return receipts. They enforce current grants and local ceilings; they do not receive general controller-database access or accept arbitrary model-supplied shell commands. Credential custody remains on Operations. |
+| Bot runtime | Hermes inside each persistent bot VM, reached through a Radhouse adapter | Keep its dependency environment and permissions separate from trusted controller/executor processes. Prefer qualifying the documented HTTP run API first; exact transport, version and capability acceptance remain a later review. |
+| Deployment/configuration | Versioned Compose recipes per trusted VM; a common validated configuration schema with generic examples and private overlays | Both managed Proxmox and supplied Linux VMs retain the same product contracts. Packaging does not collapse VM boundaries or grant Docker socket/root access to the web process. Secrets remain references to separately managed material. |
+
+### What the database and worker must prove
+
+Store a task and its pending dispatch in one transaction, then let the coordinator
+claim eligible work through bounded leases. Commit the claim before making a
+remote runtime or service call; never hold a database transaction open for an
+agent's whole assignment. Persist the resulting receipt and state change, and
+reconcile an interrupted dispatch against the same operation identity before
+retrying. A lease timeout alone is not proof that the previous executor stopped.
+Independent work can proceed while conflicting resource claims wait.
+
+This keeps the first control deployment to the application and database, with
+separate API and worker processes. A PostgreSQL queue avoids introducing Redis,
+Celery or another workflow service without a demonstrated need. It still requires
+explicit ordering, fairness, retry limits, fencing and recovery tests; neither a
+database lock nor an HTTP idempotency key supplies exactly-once external effects.
+Schema migrations, backup consistency and real PostgreSQL concurrency tests
+belong in the design. An in-memory fake can test policy, but cannot qualify these
+storage guarantees or substitute for a PostgreSQL integration test.
+
+```text
+Send -> authenticated API -> scoped admission
+     -> transaction: task revision + pending dispatch
+     -> coordinator: current checks + resource claim
+     -> selected runtime / Operations adapter
+     -> reconciled receipt + scoped event -> operator view
+```
+
+The store owns control state; it does not become a central copy of every bot's
+private memory, transcript, filesystem or credentials. Existing private/project
+ownership and reviewed publication contracts still govern what is retained and
+who may retrieve it. Untrusted bot-generated HTML or active artifacts must not
+run in the trusted control UI origin.
+
+Local accounts, optional SSO, required MFA and revocation remain foundational
+contracts. FastAPI's authentication utilities do not constitute that implementation.
+Select maintained authentication libraries and qualify the actual flows before
+a pilot uses real identities or private material. The offline foundation uses
+synthetic principals and fake external adapters; its exact files and executable
+checks remain chunk 6's decision.
+
+### Evidence and tradeoff
+
+These are Radhouse design inferences from primary documentation checked on
+2026-09-10, not measured integration or security claims:
+
+- FastAPI documents Python/Pydantic validation, OpenAPI/JSON Schema and client
+  generation. These support the proposed typed API boundary.
+  [FastAPI features](https://fastapi.tiangolo.com/features/).
+- PostgreSQL documents row locking and `SKIP LOCKED` for queue-like tables,
+  with an inconsistent-view caveat. Queue claims can use that mechanism;
+  authorization checks must not infer permission from skipped rows.
+  [PostgreSQL locking clause](https://www.postgresql.org/docs/current/sql-select.html#SQL-FOR-UPDATE-SHARE).
+- Vite produces a static build; its preview command is not a production server.
+  [Vite deployment](https://vite.dev/guide/static-deploy.html).
+- Docker documents Compose deployment and environment-specific overrides.
+  Radhouse must still qualify each VM recipe, service identity and update path.
+  [Compose in production](https://docs.docker.com/compose/how-tos/production/).
+- Hermes documents language-independent HTTP run/status/events/stop/steering
+  surfaces. Python is a controller maintainability choice, not an integration
+  requirement; embedding Hermes in the trusted server is not proposed.
+  [Hermes programmatic integration](https://hermes-agent.nousresearch.com/docs/developer-guide/programmatic-integration).
+
+| Stack direction | Benefit | Cost |
+| --- | --- | --- |
+| Python controller + TypeScript interface — recommended, pending | Explicit Python policy/configuration contracts and a separate interactive UI; generated API client connects them | Contributors maintain two language toolchains; generated contracts and dependency pins must stay synchronized |
+| TypeScript controller + TypeScript interface — alternative | One main language across Radhouse's own server and UI; Hermes remains a separate runtime | Requires a different server/schema-library choice; it retains the same database, recovery work and trust boundaries |
+
+Accepting a stack direction advances to chunk 5B's exact module ownership, types,
+state transitions and adapter contracts, followed by chunk 6's first offline
+slice. It does not approve dependency installation, application implementation
+or live deployment. Pin supported versions and review dependency/update practices
+in that concrete slice; optional-service products and host allocations remain
+separate decisions.
