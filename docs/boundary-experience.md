@@ -1,8 +1,7 @@
 # Make boundaries understandable
 
-Status: V1 decisions for boundaries, starting work, messaging, access scopes
-and continuing after a grant are accepted. The combined operator journey remains
-under review.
+Status: V1 decisions for boundaries, starting work, messaging, access scopes,
+continuing after a grant and the combined operator journey are accepted.
 Updated: 2026-09-10. Implementation and usability qualification remain pending.
 
 People should understand where work happens, who can see it, and what a bot can
@@ -188,7 +187,7 @@ publication boundaries. Test delayed grants, stale requests, partial approvals,
 expiry, duplicate approval events, task changes and explicit holds. This
 interaction direction is accepted; implementation remains to qualify.
 
-## One complete operator journey — proposed combined review
+## One complete operator journey — accepted for V1
 
 This walkthrough connects the accepted decisions. It introduces no new access,
 publication or automation policy.
@@ -221,11 +220,11 @@ to publish another person's private material. If the content or audience changes
 after review, obtain the required new release decision; do not silently replace
 the shared version. Revoking later access cannot recall delivered copies.
 
-The proposed combined review is whether this journey is coherent and obvious for
-a nontechnical operator. Accept it to proceed to implementation design, or revise
-a named step first. This is design alignment only. The exact interfaces, state
-transitions, supported runtime behavior and first implementation slice still need
-their concrete review and qualification.
+The combined journey is accepted at the design level. Proceed to the concrete
+implementation design and then review the first implementation slice. Acceptance
+does not establish that the experience is intuitive in use: the unfamiliar-user
+pilot and boundary checks below remain required. Exact interfaces, state
+transitions and supported runtime behavior still need review and qualification.
 
 ## Explain boundaries at the moment they matter
 
