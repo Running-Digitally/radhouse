@@ -11,7 +11,8 @@ operator journey and chunk 5A's Python controller and TypeScript interface are
 accepted. Chunk 5B proposes module ownership and durable task contracts; detailed
 qualification and the first slice remain under review. Full operator equivalence
 with optional Buzz, including native protected reviews/approvals, is also an
-accepted V1 requirement. These decisions do not
+accepted V1 requirement. Testing both in the early usability pilot is accepted;
+chunk 6 now proposes the first bounded offline implementation. These decisions do not
 implement or deploy the product.
 Design depth: D3. Implementation authorization: none from this packet.
 
@@ -27,7 +28,7 @@ on a chunk does not silently accept later choices or authorize deployment.
 | 3. Work and recovery | Task/run state, admission, cancellation, delegation, inference changes, maintenance, and uncertain external effects | Bounded automatic recovery and bounded multitasking accepted; remaining lifecycle and concrete mechanisms under review |
 | 4. Operator and administrator experience | Onboarding, first task, access requests, sharing, and recovery screens | Combined operator journey accepted; implementation and usability qualification remain pending |
 | 5. Implementation design | Technology choices, packaging, schemas, typed contracts, module dependencies, and call paths | Chunk 5A stack direction accepted; chunk 5B module ownership and durable task contracts proposed |
-| 6. First implementation slice | Exact files, behavior, tests, demonstration, limits, and acceptance for the offline foundation | Final implementation review |
+| 6. First implementation slice | Exact files, behavior, tests, demonstration, limits, and acceptance for the offline foundation | VS0-A proposed below; implementation approval pending |
 
 The first implementation candidate remains an offline foundation using synthetic
 identities/data and fake runtime, provider, and service adapters. Its intended
@@ -1042,7 +1043,7 @@ approval compatibility. Pin and inspect actual source and run conformance tests
 before selecting the integration mechanism.
 [Buzz architecture](https://github.com/block/buzz/blob/main/ARCHITECTURE.md).
 
-#### Acceptance and sequencing still to review
+#### Early proof through both interfaces — accepted sequencing
 
 The contract tests must exercise both channel adapters against the same policy:
 start in Buzz and steer/cancel in Radhouse; reverse the direction; duplicate,
@@ -1057,9 +1058,151 @@ lag. Reconnect rechecks current access and expiry before replaying messages or
 pending commands; stale approvals and cancelled work cannot revive. Buzz must
 show unavailable or unsynchronized state when controller authority is unavailable.
 
-Recommend proving both surfaces early: include synthetic channel/approval
+Prove both surfaces early: include synthetic channel/approval
 commands in the offline foundation and a thin real Buzz conversation plus native
-protected review in the early usability pilot. Alternatively, retain the shared
-offline contracts but complete the standalone pilot before qualifying real Buzz.
-Both preserve full native operator parity as a V1 requirement. The sequencing
-choice is pending; exact first-slice scope and implementation remain under review.
+protected review in the early usability pilot. Delaying the real Buzz proof until
+after the standalone pilot was not selected. Full native operator parity remains
+a V1 requirement; this early proof is a thin path, not complete release coverage.
+Exact first-slice scope and implementation are presented for review below.
+
+## Chunk 6: VS0-A — one durable task through two simulated channels
+
+Status: proposed bounded implementation; approval pending. This slice implements
+only the following subset of chunk 5B's contracts. The wider V1 program design
+and real integration qualification remain review work.
+
+**Observable result:** a repeatable local demonstration starts a synthetic task
+through either simulated operator channel, survives a controller interruption,
+and reviews/releases its synthetic result through the other channel. Both paths
+use the same task, authority checks and PostgreSQL state. Repeat submissions or
+deliveries do not create another task or repeat a confirmed release.
+
+### Scope and demonstration
+
+1. Load synthetic admin/operator/viewer identities, two eligible bots, a private
+   work context and one explicitly linked project conversation. Both channel
+   drivers submit typed commands; no language model interprets chat text.
+2. Admit a permitted task, reserve an attempt and let a fake runtime produce a
+   small fixed report. Preserve independent task/revision, progress, budget,
+   provider-binding, attempt, operation and delivery identifiers.
+3. Interrupt the controller after a fake operation commits but before its receipt
+   is recorded. A fresh controller process reloads the task from PostgreSQL,
+   reconciles the same operation and continues within current grants and budget.
+   A separate case with no authoritative outcome remains Needs attention.
+4. Prepare a review of the exact report digest and named audience. Submit the
+   protected decision through the other simulated channel. Record one authorized
+   publication and expose the result only to the permitted synthetic audience.
+5. Run the reverse direction and the denial/race cases below. Emit a short step
+   trace with task/attempt IDs, state, simulated channel, decision and effect count.
+
+FastAPI request/response handling is exercised in-process, without a listening
+web server. The two channel drivers are test fixtures, not React screens or a
+Buzz relay/client. Synthetic identity and assurance fixtures do not prove SSO,
+MFA, Nostr signature verification or native protected UX. Real Hermes, model
+servers, GitHub effects, VM provisioning, bot memory and optional services are
+outside this slice. The accepted early pilot will prove the actual interfaces.
+
+### Files and ownership
+
+Create only used modules and required package markers; avoid empty scaffolding
+for the remaining fleet. Braces below expand to the named files in that directory.
+Implementation stays on a feature branch for review.
+
+| Files to create or update | Slice responsibility |
+| --- | --- |
+| `pyproject.toml`, `uv.lock`, `.gitignore` | Isolated Python dependencies, reproducible lock and exclusions for environments and disposable output |
+| `src/radhouse/domain/{tasks,access,releases}.py` | Typed task/progress/attempt values, permission intersection and immutable release decisions; pure rules |
+| `src/radhouse/application/{ports,service}.py` | Store/runtime/effect/channel interfaces and the bounded admit, reconcile, cancel and review/publish use cases |
+| `src/radhouse/storage/postgres.py` | Transactional persistence, request/operation uniqueness, optimistic revisions, scoped reads and resource claims |
+| `src/radhouse/api/{schemas,app}.py` | Strict command/response schemas and an app factory requiring an authentication adapter; no default or environment-switchable synthetic sign-in |
+| `src/radhouse/channels/{commands,mapping}.py` | Shared normalized channel envelope, configured actor/conversation mapping, duplicate/echo rejection and delivery state; no live Buzz transport |
+| `tests/{fakes,conftest}.py`, `tests/fixtures/vs0.json`, `tests/fixtures/vs0-schema.sql` | Synthetic clients/runtime/provider, independently retained fake-effect evidence, fixture-owned identities and disposable database bootstrap |
+| `tests/{test_task_flow,test_recovery,test_channel_approvals,test_concurrency}.py` | The end-to-end and denial/race evidence listed below |
+| `scripts/vs0.py`, `deploy/dev/compose.vs0.yaml` | One bounded verification/demo entrypoint and an explicitly local disposable PostgreSQL service |
+| `docs/vs0-demo.md`, this packet and `README.md` | Exact reproduction steps, resulting evidence, implemented file map and remaining qualification; clearly label simulated surfaces |
+
+The SQL file is an initial fixture schema for a fresh disposable database, not a
+production upgrade or restore tool. It must refuse an existing unowned database.
+Schema/table ownership is explicit: task revisions/progress, attempts/claims,
+budget reservations, operations, release decisions/publications, channel mappings
+and deliveries. Admission and pending dispatch commit together; resource and
+budget claims serialize conflicting admissions; publication and its delivery
+record commit together. The fake target keeps evidence outside that controller
+transaction so crash tests cannot succeed through an accidental shared commit.
+
+Actor and assurance fixtures are injected only by the test/demo harness outside
+the production package. Raw input cannot assert a verified actor, role or MFA
+state. Both channel paths call the same application methods. The fake runtime
+and provider have deterministic supported, unavailable and unknown-result modes;
+tests must demonstrate that an unknown result is not converted to a safe retry.
+Use an injected clock and explicit barriers/failure points for race tests, so
+their outcome does not depend on arbitrary sleeps or a model's response timing.
+
+### Initial dependency selection and qualification
+
+Use Python 3.14 for this development proof; record the exact interpreter in the
+verification output without changing a contributor's system Python. Proposed
+direct pins, checked against publisher package records on 2026-09-10:
+
+| Package | Pin / use |
+| --- | --- |
+| [FastAPI](https://pypi.org/project/fastapi/0.141.1/) | `0.141.1`, in-process API contract |
+| [Pydantic](https://pypi.org/project/pydantic/2.13.5/) | `2.13.5`, strict boundary validation |
+| [Psycopg](https://pypi.org/project/psycopg/3.3.5/) | `psycopg[binary]==3.3.5`, PostgreSQL access |
+| [pytest](https://pypi.org/project/pytest/9.1.1/) | `9.1.1`, meaningful contract/integration checks |
+| [HTTPX](https://pypi.org/project/httpx/0.28.1/) | `0.28.1`, in-process test client; no prerelease dependency |
+
+The official image catalog lists `postgres:18.6-bookworm` for the relevant local
+architectures. Resolve and record its immutable manifest digest before running
+the fixture, then use that digest in the Compose recipe.
+[Official PostgreSQL image catalog](https://github.com/docker-library/official-images/blob/master/library/postgres).
+Generate and inspect `uv.lock` with exact transitive versions/hashes after slice
+approval; metadata availability is not compatibility or security qualification.
+Stop to revise an incompatible direct pin rather than silently changing the stack.
+No dependencies or images have been installed as part of this design review.
+
+### Acceptance cases
+
+| Case | Required evidence |
+| --- | --- |
+| Either-channel admission and continuation | Same actor/context creates one task; reverse-channel status/review reaches that task. A duplicate source event has no second task/effect; different input under a reused command key conflicts. |
+| Restart and ambiguous effect | A separate controller process reconciles independently committed fake-target evidence. Confirmed effects are not repeated; absent authoritative evidence remains unknown/Needs attention. |
+| Current authority and independent holds | Viewer, wrong actor, missing grant, stale binding and insufficient synthetic assurance are denied. Provider recovery or a new grant does not clear a human pause or grant-withdrawal hold. |
+| Protected review integrity | Changed bytes, audience, decision revision, expired approval or a mirrored message cannot authorize publication. Concurrent decisions yield one committed outcome and a clear conflict/idempotent receipt for the other. |
+| Provider alias changes | Fake backing model A changes to B while the task persists; record actual simulated identity and recheck capability/context. Incompatibility waits, with no provider fallback or budget reset. |
+| Bounded multitasking and cancellation | Two independent tasks on one bot can hold active attempts. Conflicting resource claims queue, two workers cannot own the same task attempt, and task cancellation preserves unrelated work. |
+| Late/out-of-order observations | Old instance generations and duplicate observations cannot overwrite newer progress or resurrect stopped work. A current snapshot resynchronizes a simulated client after a delivery gap without broadening its audience. |
+| Disposable environment boundary | Refuse remote/unowned DB targets and missing fixture ownership; tests use separate connections for races. Cleanup removes only resources created for this run. |
+
+Proposed user commands, to be implemented: `uv run python scripts/vs0.py verify`
+and `uv run python scripts/vs0.py demo`. Verification includes the demonstration
+and targeted tests once; repeated runs must create fresh owned fixtures. Report
+pass/fail per case, the exact source commit/dependency/image identities, and any
+residual resources. A green result is an offline contract proof, not a usable
+fleet, native Buzz UI, verified runtime recovery or validated security perimeter.
+
+### Proposed execution envelope and review gate
+
+After explicit slice approval, work in an isolated checkout on a `codex/` feature
+branch. Permit the listed source/tests/docs, local isolated dependency downloads,
+one disposable PostgreSQL container and test-owned storage on an explicitly
+verified local Docker Unix-socket context. No remote Docker context, existing
+database, host-wide package upgrade, request through a real bot integration or
+inference service, or VM change.
+Use a loopback-only database port, no privileged container, host network or Docker
+socket mount. Cap the container at one CPU and 512 MiB RAM; bound each verification
+run to 15 minutes and check local storage headroom before creating fixture data.
+If the local daemon is unavailable or capacity is insufficient, retain the work
+and report the missing prerequisite rather than switching targets.
+
+Publish the reviewed feature branch and prepare a draft pull request using the
+repository's authorized identity. Do not merge it or add a CI/deployment workflow
+in this slice. If no verified API identity can create the PR, retain the pushed
+branch and exact PR text rather than using another account. Remove only owned
+fixture containers/volumes/output through the run manifest; keep code and useful
+sanitized test evidence. Broader implementation, real integrations and deployment
+require their own reviewed scope.
+
+The pending decision is to approve this bounded offline implementation and its
+applicable contracts, or revise the slice before coding. Stack acceptance and
+the earlier-pilot decision alone do not grant this execution envelope.
