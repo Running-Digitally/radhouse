@@ -120,6 +120,15 @@ offline foundation exercises both simulated channels first. Retain all accepted
 V1 requirements and the applicable identity, scope and isolation checks before
 live access.
 
+Prepared VM and component work feeds the
+[handoff into the live pilot](docs/architecture-review.md#prepared-infrastructure-and-the-path-into-the-live-pilot).
+Keep VS0-A independent of infrastructure provisioning. Refine the next milestone
+into VS1-A (qualify the selected prepared services) and VS1-B (the useful task
+through both real interfaces). Before retained workloads, replace empty-guest
+maintenance with work-aware updates/recovery and verify storage, backup and
+network admission. The final release milestone broadens this evidence; it does
+not postpone these protections until after the pilot.
+
 | Milestone | Evidence needed before moving on |
 | --- | --- |
 | 1. Contracts and configuration | Reviewable architecture and component contracts; the proposed offline slice exercises durable task and protected-decision semantics through simulated Radhouse/Buzz channels against PostgreSQL. Validate synthetic configuration and document supported/refused combinations. |

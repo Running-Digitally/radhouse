@@ -1206,3 +1206,56 @@ require their own reviewed scope.
 The pending decision is to approve this bounded offline implementation and its
 applicable contracts, or revise the slice before coding. Stack acceptance and
 the earlier-pilot decision alone do not grant this execution envelope.
+
+### Prepared infrastructure and the path into the live pilot
+
+The first slice remains an offline proof even when deployment preparation runs
+alongside it. Prepared guests and component recipes provide targets for the next
+stage; they do not establish application readiness or change VS0-A's execution
+scope. This refinement is proposed for review with the first slice.
+
+Use the existing VS0-A files and fake ports to cover the runtime conditions that
+can otherwise give a misleading recovery result: missing durable admission
+evidence, expired runtime deduplication records, a lost event buffer and an
+interrupted run whose external outcome is unknown. Keep controller operation
+identity and current-authority checks independent of runtime retention. None of
+these cases may silently redispatch an unresolved effect. Extend the existing
+recovery/channel fixtures; do not implement a VM installer, OIDC server or Buzz
+transport in the offline slice.
+
+Controller and runtime dependencies have separate locks and environments. The
+controller's selected development Python version is not a requirement for a bot
+runtime. Qualify each pinned runtime's supported interpreter in its bot guest;
+do not import its dependency tree into the trusted controller.
+
+Treat the first live milestone as two small steps, preserving the accepted early
+proof through both real operator interfaces:
+
+| Step | Inputs and proof |
+| --- | --- |
+| VS1-A: qualify the prepared services | Consume the deployment owner's verified guest handoff and the pinned runtime, identity and collaboration recipes. Test actual caller/egress restrictions, durable runtime admission, bounded overlap/cancellation, provider attribution, identity assurance, channel audience and recovery. Use synthetic content and scoped canaries. Reuse component evidence where applicable; the final product adapter must still pass its own boundary tests. |
+| VS1-B: one useful task through both interfaces | Deploy the thin controller/work home and the real Buzz adapter/native review surface onto the qualified targets. An unfamiliar operator starts bounded research, follows the same task across both surfaces, receives one cited artifact and completes an exact protected review. Verify current permissions, persistence and recovery. Complete the minimum SSO binding here when the selected pilot profile enables SSO. |
+
+The deployer supplies a small, versioned configuration and evidence handoff for
+each selected role. Record the exact guest/image/runtime identity, allowed
+caller and service endpoints, credential references, resource limits, trusted
+TLS origins, maintenance policy, recovery coverage and verification locators.
+Keep site names, addresses, credentials and operational receipts in the private
+overlay. Public examples use synthetic values. A missing capability is reported
+as unavailable; installing into a supplied VM never implies hypervisor authority.
+This is a handoff contract to refine for VS1, not another standing service.
+
+| Handoff boundary | Required change before admitting the relevant workload |
+| --- | --- |
+| Empty guest to application host | Replace any empty-guest maintenance/rollback mode as the workload is installed. Preserve weekly OS updates and restarts, advance notice, bounded work preparation, mandatory progression after grace, and verified recovery. Do not leave an update gap when an empty-guest timer stops applying. |
+| Network and credentials | Admit exact control-to-runtime, selected inference, identity and collaboration paths. A guest with package-download access and SSH is not ready for these connections. Installation of Docker does not grant bots its socket or a management identity. |
+| Identity to protected Buzz decisions | Bind validated OIDC identities and separately verified Buzz keys to the same Radhouse person. Qualify native review freshness/MFA, current roles and audience, key/session revocation and outage behavior. Nostr membership, SSO login or a signed chat message alone cannot authorize a protected decision. |
+| Runtime to controller | Use stable task/attempt/operation mappings and reconcile authoritative runtime/effect state after reconnect. Runtime leases, finite deduplication and event buffers do not replace controller durability or prove an old executor can no longer act. |
+| Persistent data and capacity | Prove enforceable storage limits, scheduled protection and an isolated restore before retained work. Budget portable sets, full-VM copies and restore staging together without double counting shared allocations; measure achievable RPO. A reserved backup allowance or a running guest is not recovery coverage or fleet-capacity evidence. |
+
+Infrastructure qualification and product usability are separate evidence. Service
+installation may advance while VS0-A is under review, but a healthy relay or a
+successful model request cannot complete VS1-B. Mail, full fleet expansion and
+full V1 parity retain their later milestones. Local accounts and optional SSO
+remain supported; one pilot's selected identity provider is not a universal
+deployment dependency.
