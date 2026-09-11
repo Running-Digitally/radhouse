@@ -20,7 +20,7 @@ on a chunk does not silently accept later choices or authorize deployment.
 | 1. Overall structure | Component responsibilities, trust boundaries, and default shared-VM footprint | Two shared management VMs accepted; detailed contracts remain to qualify |
 | 2. Identity, access, and information | Human/bot/service identities, grants, private/project data ownership, and mediated operations | Combined boundary model accepted; concrete mechanisms remain to qualify |
 | 3. Work and recovery | Task/run state, admission, cancellation, delegation, inference changes, maintenance, and uncertain external effects | Bounded automatic recovery and bounded multitasking accepted; remaining lifecycle and concrete mechanisms under review |
-| 4. Operator and administrator experience | Onboarding, first task, access requests, sharing, and recovery screens | Earlier usability pilot accepted; detailed experience follows the accepted authority and work model |
+| 4. Operator and administrator experience | Onboarding, first task, access requests, sharing, and recovery screens | Earlier usability pilot and Send-to-start accepted; busy-bot messaging and detailed interactions under review |
 | 5. Implementation design | Technology choices, packaging, schemas, typed contracts, module dependencies, and call paths | Follows the reviewed product boundaries |
 | 6. First implementation slice | Exact files, behavior, tests, demonstration, limits, and acceptance for the offline foundation | Final implementation review |
 
@@ -651,14 +651,21 @@ require design and qualification. This acceptance does not authorize implementat
 
 ## Chunk 4: operator journey — proposed review
 
-Start with the existing work home and context card. The accepted boundary model
-already requires visible context/audience, current authority checks and explicit
-decisions for new access or sharing. The next UX choice concerns how much
-confirmation to require for ordinary work inside an already visible context.
+Use the existing work home and context card. The accepted boundary model requires
+visible context/audience, current authority checks and explicit decisions for
+new access or sharing.
 
-The [task-start interaction](boundary-experience.md#starting-a-task--proposed-interaction)
-proposes that sending a sufficiently specified request starts work when the
-eligible bot, context and audience are already shown. Missing information or a
-boundary change gets a targeted question. The alternative is a separate brief
-review and Start action for every new task. This interaction remains pending;
-it does not change grants, publish private material or admit a new model route.
+The accepted [task-start interaction](boundary-experience.md#starting-a-task--accepted-for-v1)
+lets sending a sufficiently specified request start work when the eligible bot,
+context and audience are already shown. Missing information or a boundary change
+gets a targeted question. A separate brief review and Start action for every
+ordinary task was not selected. This does not change grants, publish private
+material or admit a new model route.
+
+Next, review [messaging a busy bot](boundary-experience.md#messaging-a-busy-bot--proposed-interaction):
+natural conversation with a visible task target, or an explicit Update task / New
+task instruction mode. The proposed default applies clear follow-ups to the
+displayed task, admits clearly separate work independently, and clarifies
+ambiguous targets. Task revisions need a qualified steering and effect-recovery
+contract; interpreting a message cannot create authority or silently revive
+canceled work. This next interaction remains pending.
