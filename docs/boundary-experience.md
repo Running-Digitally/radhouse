@@ -1,8 +1,8 @@
 # Make boundaries understandable
 
-Status: accepted version 1.0 boundary requirement, task start, busy-bot messaging
-and both additional-access scopes;
-remaining interaction details are proposed below.
+Status: V1 decisions for boundaries, starting work, messaging, access scopes
+and continuing after a grant are accepted. The combined operator journey remains
+under review.
 Updated: 2026-09-10. Implementation and usability qualification remain pending.
 
 People should understand where work happens, who can see it, and what a bot can
@@ -159,9 +159,9 @@ withdrawal is unchanged. Verify expiry, wrong-task use, scope changes and lack
 of authority at both request and execution time. Both scopes are accepted;
 concrete enforcement and usability remain to qualify.
 
-## Continuing after access is granted — proposed interaction
+## Continuing after access is granted — accepted for V1
 
-Recommend automatically continuing the original task when its missing access
+Automatically continue the original task when its missing access
 becomes effective and all remaining checks pass. The operator already requested
 that work; receiving the needed grant need not require another Start/Resume
 action. Show the grant result and the actual continuation state in the task.
@@ -180,13 +180,52 @@ reconcile the change instead of blindly applying the earlier request.
 
 | Continuation choice | Tradeoff |
 | --- | --- |
-| Continue automatically when ready — recommended | Resume the still-requested work once effective access and current checks allow it; report progress or the remaining blocker |
-| Operator chooses Resume | Notify the operator that access is ready, then wait for an explicit Resume even when other checks pass |
+| Continue automatically when ready — accepted | Resume the still-requested work once effective access and current checks allow it; report progress or the remaining blocker |
+| Operator chooses Resume — not selected | Notify the operator that access is ready, then wait for an explicit Resume even when other checks pass |
 
 Both choices preserve the accepted recovery, cancellation, permission and
 publication boundaries. Test delayed grants, stale requests, partial approvals,
 expiry, duplicate approval events, task changes and explicit holds. This
-interaction remains under review.
+interaction direction is accepted; implementation remains to qualify.
+
+## One complete operator journey — proposed combined review
+
+This walkthrough connects the accepted decisions. It introduces no new access,
+publication or automation policy.
+
+1. **Start in a visible context.** An operator opens an assigned Researcher in
+   private My Work, selects permitted source material and sends a clear brief.
+   The task starts within current authority; context and audience stay visible.
+2. **Resolve missing access.** The bot explains a blocked operation and prepares
+   a minimal request. The operator reviews it. An authorized administrator chooses
+   task-bound or time-limited reusable access. Once effective, the original task
+   continues if the remaining checks pass; explicit holds remain in force.
+3. **Steer and follow work.** A message such as “Focus more on Canada” updates the
+   displayed task. Clearly separate work gets a distinct task; ambiguous targets
+   get clarification. The interface distinguishes received guidance from applied
+   guidance and shows progress or the real reason for waiting.
+4. **Review the result privately.** The operator finds the cited report alongside
+   the task. Completion does not expand its audience. Other admitted work may
+   continue, and the bot retains its identity and workspace.
+5. **Share a selected result deliberately.** The operator chooses the report or
+   selected attachments and an eligible project/audience. The release view shows
+   the exact content version and named recipients, including recipient-visible
+   metadata and references. Apply existing content-release authority checks.
+   Publish the approved artifact through the trusted sharing path; keep private
+   conversations, other files, memory and credentials outside that release.
+
+For example, sharing the comparison with Project Cedar shares the reviewed
+report, not the private My Work conversation. Sharing does not create a new
+service grant. An administrator's infrastructure role is not automatic authority
+to publish another person's private material. If the content or audience changes
+after review, obtain the required new release decision; do not silently replace
+the shared version. Revoking later access cannot recall delivered copies.
+
+The proposed combined review is whether this journey is coherent and obvious for
+a nontechnical operator. Accept it to proceed to implementation design, or revise
+a named step first. This is design alignment only. The exact interfaces, state
+transitions, supported runtime behavior and first implementation slice still need
+their concrete review and qualification.
 
 ## Explain boundaries at the moment they matter
 

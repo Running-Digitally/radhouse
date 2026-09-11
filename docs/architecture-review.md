@@ -20,7 +20,7 @@ on a chunk does not silently accept later choices or authorize deployment.
 | 1. Overall structure | Component responsibilities, trust boundaries, and default shared-VM footprint | Two shared management VMs accepted; detailed contracts remain to qualify |
 | 2. Identity, access, and information | Human/bot/service identities, grants, private/project data ownership, and mediated operations | Combined boundary model accepted; concrete mechanisms remain to qualify |
 | 3. Work and recovery | Task/run state, admission, cancellation, delegation, inference changes, maintenance, and uncertain external effects | Bounded automatic recovery and bounded multitasking accepted; remaining lifecycle and concrete mechanisms under review |
-| 4. Operator and administrator experience | Onboarding, first task, access requests, sharing, and recovery screens | Earlier usability pilot, Send-to-start, natural task-aware messaging and both additional-access scopes accepted; post-grant continuation and detailed interactions under review |
+| 4. Operator and administrator experience | Onboarding, first task, access requests, sharing, and recovery screens | Core operator interactions accepted; combined journey under review before implementation design |
 | 5. Implementation design | Technology choices, packaging, schemas, typed contracts, module dependencies, and call paths | Follows the reviewed product boundaries |
 | 6. First implementation slice | Exact files, behavior, tests, demonstration, limits, and acceptance for the offline foundation | Final implementation review |
 
@@ -676,8 +676,16 @@ period, where each can be enforced. The administrator chooses explicitly based
 on context; neither is a universal default. Existing standing grants and the
 different raw-token/browser guarantees remain unchanged. Both scopes are accepted.
 
-Next, review [continuation after a grant](boundary-experience.md#continuing-after-access-is-granted--proposed-interaction).
-Recommend continuing the original waiting task once the grant is effective and
-current authority, runtime, scope and effect checks pass. The alternative asks
-the operator to choose Resume after every grant. Neither choice clears explicit
-holds or authorizes different work. This continuation interaction is proposed.
+The accepted [continuation after a grant](boundary-experience.md#continuing-after-access-is-granted--accepted-for-v1)
+continues the original waiting task once the grant is effective and current
+authority, runtime, scope and effect checks pass. A separate Resume after every
+grant was not selected. New access never clears explicit holds or authorizes
+different work.
+
+Review the [complete operator journey](boundary-experience.md#one-complete-operator-journey--proposed-combined-review)
+as the conclusion of this UX chunk: start in a visible context, resolve missing
+access, steer work, find the result and explicitly share only the reviewed
+artifact with its approved audience. These steps assemble accepted decisions;
+private publication is not reopened. The combined journey remains proposed.
+After alignment, proceed to chunk 5's concrete implementation design, then the
+first-slice review. No implementation authority is inferred from this walkthrough.
