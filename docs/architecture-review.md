@@ -7,9 +7,10 @@ withdrawal and fresh personal-bot replacement are also accepted for V1.
 Chunk 2's combined identity/data boundary is accepted at the architecture level.
 Chunk 3's bounded automatic recovery and bounded multitasking per bot are accepted
 for V1; the remaining work/run lifecycle is proposed for review. Chunk 4's combined
-operator journey is accepted. Chunk 5A proposes the implementation stack; detailed
-contracts and later chunks remain under review. These decisions do not implement
-or deploy the product.
+operator journey and chunk 5A's Python controller and TypeScript interface are
+accepted. Chunk 5B proposes module ownership and durable task contracts; detailed
+qualification and the first slice remain under review. These decisions do not
+implement or deploy the product.
 Design depth: D3. Implementation authorization: none from this packet.
 
 ## Review sequence
@@ -23,7 +24,7 @@ on a chunk does not silently accept later choices or authorize deployment.
 | 2. Identity, access, and information | Human/bot/service identities, grants, private/project data ownership, and mediated operations | Combined boundary model accepted; concrete mechanisms remain to qualify |
 | 3. Work and recovery | Task/run state, admission, cancellation, delegation, inference changes, maintenance, and uncertain external effects | Bounded automatic recovery and bounded multitasking accepted; remaining lifecycle and concrete mechanisms under review |
 | 4. Operator and administrator experience | Onboarding, first task, access requests, sharing, and recovery screens | Combined operator journey accepted; implementation and usability qualification remain pending |
-| 5. Implementation design | Technology choices, packaging, schemas, typed contracts, module dependencies, and call paths | Stack and process responsibilities proposed in chunk 5A; exact contracts follow its review |
+| 5. Implementation design | Technology choices, packaging, schemas, typed contracts, module dependencies, and call paths | Chunk 5A stack direction accepted; chunk 5B module ownership and durable task contracts proposed |
 | 6. First implementation slice | Exact files, behavior, tests, demonstration, limits, and acceptance for the offline foundation | Final implementation review |
 
 The first implementation candidate remains an offline foundation using synthetic
@@ -137,9 +138,9 @@ and releases limited findings through its existing contract.
 Use one modular controller application for policy, scheduling, work records,
 and the operator API, with one transactional store. Modules do not need separate
 VMs or independently operated queue/policy/memory services. Executor boundaries
-exist for actual credential/privilege differences. UI, language, database,
-packaging, and process topology are recommendations to review in chunk 5, not
-technology decisions settled by this diagram.
+exist for actual credential/privilege differences. Chunk 5A now records the
+accepted technology and process direction; exact versions and packaging recipes
+remain to qualify.
 
 | Alternative / decision | Benefit | Cost or changed guarantee |
 | --- | --- | --- |
@@ -691,16 +692,16 @@ artifact with its approved audience. The next review is the concrete implementat
 design below, then the first slice. No implementation authority is inferred from
 accepting the walkthrough; usability and enforcement still need evidence.
 
-## Chunk 5A: implementation stack — proposed for review
+## Chunk 5A: implementation stack — accepted direction
 
-Recommend **Python with FastAPI/Pydantic for the controller, React with TypeScript
+Use **Python with FastAPI/Pydantic for the controller, React with TypeScript
 and Vite for the interface, and PostgreSQL for durable control records and queued
 work**. Package the trusted services with Docker Compose within their assigned
-VMs. This is a proposed technology direction, not a selected version matrix or
+VMs. This is an accepted technology direction, not a selected version matrix or
 an installation. Keep one Radhouse codebase and release; separate execution
 roles only where lifecycle or authority requires them.
 
-| Part | Proposed implementation and responsibility | Reason / constraint |
+| Part | Accepted implementation direction and responsibility | Reason / constraint |
 | --- | --- | --- |
 | Operator interface | React/TypeScript, built by Vite into static assets served with the control API | Supports the accepted work home and progressive disclosure; no production Node server is needed for this proposed static UI. Build tools are contributor/release dependencies. |
 | Control API | Python/FastAPI with Pydantic boundary schemas | Validate commands and configuration; enforce current identity, role, audience and grant rules on the server. Generate the TypeScript client from the reviewed OpenAPI contract to reduce duplicated wire types. Validation alone is not authorization. |
@@ -774,12 +775,178 @@ These are Radhouse design inferences from primary documentation checked on
 
 | Stack direction | Benefit | Cost |
 | --- | --- | --- |
-| Python controller + TypeScript interface — recommended, pending | Explicit Python policy/configuration contracts and a separate interactive UI; generated API client connects them | Contributors maintain two language toolchains; generated contracts and dependency pins must stay synchronized |
-| TypeScript controller + TypeScript interface — alternative | One main language across Radhouse's own server and UI; Hermes remains a separate runtime | Requires a different server/schema-library choice; it retains the same database, recovery work and trust boundaries |
+| Python controller + TypeScript interface — accepted | Explicit Python policy/configuration contracts and a separate interactive UI; generated API client connects them | Contributors maintain two language toolchains; generated contracts and dependency pins must stay synchronized |
+| TypeScript controller + TypeScript interface — not selected | One main language across Radhouse's own server and UI; Hermes remains a separate runtime | Requires a different server/schema-library choice; it retains the same database, recovery work and trust boundaries |
 
-Accepting a stack direction advances to chunk 5B's exact module ownership, types,
-state transitions and adapter contracts, followed by chunk 6's first offline
-slice. It does not approve dependency installation, application implementation
-or live deployment. Pin supported versions and review dependency/update practices
-in that concrete slice; optional-service products and host allocations remain
-separate decisions.
+The accepted stack advances to chunk 5B below, followed by chunk 6's first offline
+slice. It does not approve dependency installation, application implementation or
+live deployment. Pin supported versions and review dependency/update practices in
+that concrete slice; optional-service products and host allocations remain separate
+decisions.
+
+## Chunk 5B: module ownership and durable task contracts — proposed for review
+
+**Radhouse owns the authorized task and its recorded outcome; Hermes owns the
+agent's execution within that task.** Keep policy and state transitions in ordinary
+Python modules, with typed boundaries to persistence, runtime and Operations.
+The UI submits commands and displays authorized views. Runtime messages and
+model judgments are inputs to validation, not authoritative state changes.
+
+### Proposed code ownership and dependency direction
+
+These are module destinations, not files created or a mandate to implement all
+V1 modules in the first slice. This refines the earlier conceptual controller/
+adapter layout into a Python package and a separate web directory.
+
+| Proposed path | Owns | Dependency constraint |
+| --- | --- | --- |
+| `web/` | Work home, context display, commands and scoped progress/results | Uses the generated control API client; no direct database, Hermes or Operations credentials |
+| `src/radhouse/domain/` | Task revisions, state transitions, grant/scope decisions, budgets and result-release rules | Pure typed rules; no HTTP, database driver, Hermes imports or subprocess execution |
+| `src/radhouse/application/` | Admit, steer, claim, recover, cancel and publish use cases; typed adapter/store interfaces | Calls domain rules and interfaces; vendor behavior does not decide policy |
+| `src/radhouse/api/` | Authenticated request context, Pydantic wire schemas and authorized response/event views | Translates requests into application commands; no separate policy implementation in route handlers |
+| `src/radhouse/storage/` and `migrations/` | PostgreSQL transactions, uniqueness, revision checks, claims and durable event/dispatch records | Implements application interfaces; runtime role cannot perform schema migrations |
+| `src/radhouse/adapters/` | Runtime, provider and Operations clients; capability mapping and receipt normalization | Implements narrow interfaces; no direct task-table edits or silent provider fallback |
+| `src/radhouse/worker.py` | Bounded scheduling/recovery loop and dependency wiring | Invokes the same use cases as other admitted triggers; restart does not invent work |
+| `src/radhouse/operations/` | Mediated service and lifecycle handlers, local ceilings and durable operation receipts | Separate Operations entrypoints/credentials; shared domain/contracts where needed, no controller DB access or untrusted shell passthrough |
+| `tests/`, `examples/`, `deploy/` | Contract fakes, synthetic fixtures, generic configuration and installation recipes | No private inventory or credentials; production entrypoints cannot enable a synthetic identity bypass |
+
+Use one schema definition for each wire contract and generate its client types.
+Keep domain values separate from database rows and vendor payloads. Compose the
+concrete adapters at process startup, not through a dynamic plugin loader.
+Operations must answer operation-status queries after a restart, including when
+the controller lost the original receipt. Reuse authoritative upstream lookup
+where it proves the outcome; retain bounded local receipts for evidence that
+cannot be recovered that way. Select any required local journal and its recovery
+recipe per real effect adapter, without introducing another general queue service.
+
+### Records and typed interfaces
+
+Names below are proposed internal types. They are not claims about Hermes fields
+or a final public API. IDs are opaque, references resolve through authorized
+registries, and caller-supplied identity/role fields cannot authenticate a request.
+
+| Record | Required information / invariant |
+| --- | --- |
+| `TaskRevision` | Stable `task_id`, monotonic `revision`, initiating authority, bot/project, outcome brief, context/audience references, provider binding, effect scope, root/parent lineage and shared budget reference. An edit creates a revision; retry does not reset scope or budget. |
+| `TaskProgress` | Execution phase (`queued`, `active`, `recovering`, `stopping`, `closed`), a separate monotonic `state_revision`, a set of outstanding blockers, and an optional terminal outcome (`completed`, `cancelled`, `failed`). Keep independent blockers so resolving provider availability cannot clear a human hold. |
+| `Attempt` | Task/revision, attempt identity, runtime instance/run/session references, ownership generation, resource claims, checkpoint reference and observed execution status. One current owner per attempt and at most one unfenced top-level attempt per task; independent tasks may overlap and helpers retain their parent attempt. |
+| `OperationRecord` | Stable operation key, task/attempt, exact target/operation, protected input reference/digest, authority references, dispatch history and outcome (`prepared`, `submitted`, `confirmed`, `rejected`, `unknown`). A timeout preserves uncertainty and the same operation identity. |
+| `ArtifactManifest` | Immutable content version/digest, permitted source provenance and audience; publication additionally binds the exact reviewed version, release authority and destination. A runtime-provided path cannot grant publication. |
+| `ScopedEvent` | Stable event ID and cursor, task/revision/attempt references, audience and bounded payload. Late or duplicate events cannot regress state or expose content after access changes. |
+
+```text
+admit(actor: AuthContext, command: StartTask) -> AcceptedTask | Denied | Invalid | Conflict
+steer(actor: AuthContext, task_id: TaskId, expected: Revision, command: TaskMessage)
+    -> MessageReceipt | ClarificationNeeded | Denied | Conflict
+claim(worker: WorkerIdentity, now: Instant) -> DispatchPlan | NoEligibleWork
+reconcile(attempt: AttemptId, observation: RuntimeObservation) -> TransitionResult
+cancel(actor: AuthContext, task_id: TaskId, expected: Revision) -> Stopping | Terminal | Denied | Conflict
+resume(actor: AuthContext, task_id: TaskId, expected: Revision) -> Ready | Blocked | Denied | Conflict
+publish(actor: AuthContext, approved: ReleaseDecision) -> PublicationReceipt | Denied | Conflict
+
+RuntimePort: start_or_attach(plan, dispatch_key), observe(handle, cursor), steer(handle, message_key), stop(handle)
+ProviderPort: describe(binding), admit_step(task_scope, request_key), observe_usage(request_key)
+OperationsPort: execute(scoped_command, operation_key), lookup(operation_key)
+```
+
+Authenticated context is constructed at the trusted entrypoint. A dispatch plan
+or signed-looking value is not authority by itself: execution must authenticate
+the current caller and verify the task, grants, target and local limits. Adapter
+results distinguish confirmed outcome, rejected request, temporary unavailability,
+unsupported capability and unknown outcome. Unsupported or unknown must never be
+reported as successful merely to keep a task moving.
+
+### One task through the system
+
+1. **Admit and remember.** Authenticate the person and check current bot/context
+   access. Scope the request key to the principal and command; reuse returns the
+   original task only when the input matches. Changed input under the same key is
+   a conflict. Commit the task, initial revision, scoped event and pending work
+   together. Missing service permission may leave an otherwise authorized task
+   waiting; missing permission to use the bot rejects admission.
+2. **Claim and dispatch.** In a short transaction, recheck holds, current grants,
+   remaining shared budget and qualified resource availability, then reserve an
+   attempt and record the dispatch identity. Commit before calling an adapter.
+   The target validates authority again at use. A lost response invokes lookup
+   or attachment for that identity, not another uncorrelated start.
+3. **Observe and steer.** Deduplicate observations, verify their runtime/attempt
+   binding and apply allowed transitions with a revision check. A follow-up is
+   durably received before delivery and marked applied only with qualified
+   evidence. Unconsumed guidance remains visible; it is not silently replayed as
+   a new task. Requests for different work use ordinary admission.
+4. **Recover or stop.** Reconcile ownership and uncertain effects before another
+   attempt; preserve the task, edits and budgets. Cancel records stop intent,
+   blocks new descendant admissions and asks active attempts to terminate.
+   Late receipts may resolve an effect, but cannot resurrect cancelled work.
+5. **Complete and release.** Confirm the runtime has ended and reconcile required
+   child work, effects and result persistence before recording completion. The
+   operator sees the result under its existing audience. Sharing invokes the
+   separate exact-content/audience release contract.
+
+```mermaid
+sequenceDiagram
+    participant UI as Operator interface
+    participant API as Control API / application
+    participant DB as PostgreSQL
+    participant W as Work coordinator
+    participant R as Runtime or Operations adapter
+    UI->>API: Command + request key (authenticated session)
+    API->>DB: Transaction: authorized task + event + pending dispatch
+    API-->>UI: Durable task receipt
+    W->>DB: Current checks; claim attempt and reserve budget
+    W->>R: Authenticated scoped dispatch with stable key
+    R-->>W: Observation, receipt or unknown outcome
+    W->>DB: Reconcile; commit allowed transition and scoped event
+    UI->>API: Read/subscribe from cursor
+    API-->>UI: Currently authorized task view
+```
+
+### Transition and race rules
+
+| Trigger | Required transition / operator meaning |
+| --- | --- |
+| Eligible queued work | `queued -> active` only after current admission and ownership checks; an acknowledged start alone is not proof of a running agent |
+| Missing provider/access/input/capacity | Retain progress with explicit blockers and show Waiting; a resolved blocker re-enters admission only if all other conditions permit |
+| Human pause or accepted bot-wide grant hold | Retain the hold independently, prevent new effects/dispatch and request suspension; show any still-stopping execution honestly. Only an authorized action clears an explicit hold. |
+| Unexpected interruption | `active -> recovering`; reconcile or safely adopt/fence the prior attempt. Compatible verified continuation gets a new/adopted attempt; unresolved evidence shows Needs attention. |
+| Cancellation | Any nonterminal phase may enter `stopping`; close as `cancelled` only after relevant execution/descendants have been reconciled as stopped. Stalled termination remains visible. |
+| Verified end | Enter `closed` with `completed` or `failed`; pending/unresolved effects prevent a claim of clean completion. Late evidence may annotate the outcome, not restart the task. |
+| Concurrent edit, cancel or grant change | Check expected revisions and current authorization transactionally. Stale commands conflict; an earlier decision cannot overwrite a later hold, outcome or scope revision. |
+| Provider backing-model change | Keep the configured provider and task identity; recheck capabilities, context and interrupted tool effects, record the served model when verifiable, and wait if incompatible. No unrequested fallback or model-switch operation is granted to the bot. |
+
+Blockers project into the accepted simple UI states; store the reasons separately
+and show all actionable conditions without losing one when another clears.
+Cancellation stops new admissions immediately but cannot undo already committed
+effects. Service-side revocation and in-flight races retain the previously
+disclosed guarantees, including the weaker advanced direct-token path.
+
+Database constraints enforce request/dispatch/event uniqueness and optimistic
+revision checks. Resource claims coordinate only qualified adapters; they cannot
+make arbitrary software obey a lock or turn one bot VM into isolated per-task
+computers. A stale worker must be fenced or proven inactive before replacing its
+exclusive claim. Child admission reserves the shared root budget atomically and
+retains the recipient's current permissions/provider; lead status grants no extra
+cancellation or priority control.
+
+API reads, event replay and each live event delivery recheck the audience. A
+cursor older than retained events returns a visible resynchronization response
+and an authorized current snapshot; it cannot manufacture missing history.
+Timeouts and retries have bounded configuration values; exact defaults, schema
+migrations, authentication libraries and real adapter protocol details are still
+to specify for the slice that uses them.
+
+### Review and first proof
+
+Recommend accepting this division of responsibility and durable task contract,
+then reviewing the exact offline slice. The alternative is to revise a named
+owner, transition or interface before that slice. This is proposed design, not
+runtime qualification or authorization to implement the whole V1 surface.
+
+The next packet must identify exact files and demonstrate a small path through
+real PostgreSQL and fake external adapters: duplicate submission, crash after
+dispatch, uncertain effect, stale observation, current-grant denial, cancellation,
+and a provider-alias change. Include independent/conflicting work cases so the
+proof cannot accidentally encode one active task per bot. Select a coherent
+bounded subset before implementation; all V1 interfaces above are not required
+in that first commit. Real runtime/identity/containment qualification still
+precedes the relevant live pilot.

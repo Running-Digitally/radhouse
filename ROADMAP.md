@@ -173,8 +173,11 @@ restore evidence instead of assuming every new bot inherits existing backup jobs
   session rules, ingress classification, and tested account-linking behavior.
 - Runtime checkpoint capabilities, inference conformance, and behavior when an
   operator changes the model behind a service-following alias.
-- Technology stack, packaging, configuration schema, and installation and
-  upgrade contracts for each supported deployment profile.
+- Exact dependency versions, configuration schema, packaging recipes, and
+  installation/upgrade contracts for each supported deployment profile. The
+  [Python controller, TypeScript interface, PostgreSQL store/queue and Compose
+  direction](docs/architecture-review.md#chunk-5a-implementation-stack--accepted-direction)
+  are accepted; program contracts and implementation remain under review.
 - Telemetry schemas/backend, retention defaults, export boundaries, metric
   definitions, and resource budgets for a small installation.
 - Hybrid backup engine, exact schedules and rotation mechanics,
