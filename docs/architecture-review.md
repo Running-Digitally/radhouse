@@ -5,8 +5,8 @@ accepted for the public product. Chunk 2's administrator invitations, explicit
 human roles, administrator-only SSO fallback, bot-wide pause after grant
 withdrawal and fresh personal-bot replacement are also accepted for V1.
 Chunk 2's combined identity/data boundary is accepted at the architecture level.
-Chunk 3's bounded automatic recovery default is accepted for V1; the remaining
-work/run lifecycle is proposed for review. Detailed contracts and later
+Chunk 3's bounded automatic recovery and bounded multitasking per bot are accepted
+for V1; the remaining work/run lifecycle is proposed for review. Detailed contracts and later
 chunks remain under review; these decisions do not implement or deploy the product.
 Design depth: D3. Implementation authorization: none from this packet.
 
@@ -19,7 +19,7 @@ on a chunk does not silently accept later choices or authorize deployment.
 | --- | --- | --- |
 | 1. Overall structure | Component responsibilities, trust boundaries, and default shared-VM footprint | Two shared management VMs accepted; detailed contracts remain to qualify |
 | 2. Identity, access, and information | Human/bot/service identities, grants, private/project data ownership, and mediated operations | Combined boundary model accepted; concrete mechanisms remain to qualify |
-| 3. Work and recovery | Task/run state, admission, cancellation, delegation, inference changes, maintenance, and uncertain external effects | Bounded automatic recovery default accepted; remaining lifecycle and concrete recovery contracts under review |
+| 3. Work and recovery | Task/run state, admission, cancellation, delegation, inference changes, maintenance, and uncertain external effects | Bounded automatic recovery and bounded multitasking accepted; remaining lifecycle and concrete mechanisms under review |
 | 4. Operator and administrator experience | Onboarding, first task, access requests, sharing, and recovery screens | Earlier usability pilot accepted; detailed experience follows the accepted authority and work model |
 | 5. Implementation design | Technology choices, packaging, schemas, typed contracts, module dependencies, and call paths | Follows the reviewed product boundaries |
 | 6. First implementation slice | Exact files, behavior, tests, demonstration, limits, and acceptance for the offline foundation | Final implementation review |
@@ -431,13 +431,12 @@ Proposed operator-facing states:
 | Needs attention | A checkpoint, action outcome, compatibility or authority issue prevents safe continuation |
 | Finished / Cancelled | A terminal outcome with permitted results or partial-work evidence; neither state implies every external effect can be undone |
 
-### Concurrency: constrain conflicting work, not the whole bot — proposed revision
+### Bounded multitasking per bot — accepted for V1
 
 The earlier one-active-task-per-bot proposal was a V1 simplification, not an
 established Hermes limit. It reduced coordination of shared state, attribution
 and recovery, but would also hold up independent work unnecessarily. That blanket
-restriction is withdrawn from the recommendation; the replacement remains under
-review.
+restriction is superseded by the accepted bounded-multitasking direction.
 
 Hermes documents [parallel background subagents](https://hermes-agent.nousresearch.com/docs/user-guide/features/delegation)
 while the parent conversation remains available. Its
@@ -447,14 +446,14 @@ documents optional Git worktrees, with a shared-directory fallback when the
 feature is unsupported. These are distinct concurrency mechanisms; none proves
 arbitrary simultaneous tasks safe in a shared bot environment.
 
-Recommend bounded multitasking within a bot's existing authority and resource
+Allow bounded multitasking within a bot's existing authority and resource
 budget. Preserve each task's identity, audience, limits and cancellation lineage.
 A task waiting for input or a long-running command should not, by itself, prevent
 unrelated admitted work. Retain one current owner for a given run/attempt and
 serialize conflicting updates to the same conversation or shared resource.
 This prevents duplicate execution of one run without serializing the whole bot.
 
-| Work combination | Proposed handling |
+| Work combination | Accepted direction; implementation still to qualify |
 | --- | --- |
 | Independent research or analysis with separate outputs | Permit overlap when the adapter can preserve attribution, task scope and resource limits |
 | A build runs while another task prepares a document | Allow useful overlap if their files, environment and required resources do not conflict; a background process retains its owning task |
@@ -561,9 +560,9 @@ Concurrency qualification must also cover conflicting checkout/browser/memory
 use, unsupported separation, task-scoped cancellation with siblings running,
 bot-wide grant withdrawal, per-task result delivery and aggregate resource limits.
 The offline first slice can exercise synthetic state and fake effect adapters;
-it cannot establish live runtime or provider guarantees. The automatic-recovery
-default is accepted; the remaining state model and concrete mechanisms remain
-under review.
+it cannot establish live runtime or provider guarantees. Automatic recovery and
+bounded multitasking are accepted; the remaining state model and concrete
+mechanisms remain under review.
 
 ## Creator interview: implications for the current review
 
@@ -635,9 +634,9 @@ a delivery order. A pilot is not a V1 release: remaining
 roles, collaboration, GitHub, optional integrations and release gates still
 need their own evidence. The exact first-slice packet remains to review.
 
-### Next review: the combined work and recovery model
+### Review continuity: work and recovery
 
-The remaining chunk 3 decision includes the revised concurrency recommendation:
+The proposed combined lifecycle incorporates the accepted concurrency direction:
 one durable outcome with bounded runs, bounded multitasking within each bot,
 coordination of conflicting resources and delegation to eligible existing bots,
 visible waiting/attention states, and the accepted recovery default. Planned schedules
@@ -645,13 +644,21 @@ and proactive work enter through the same admission and budget controls.
 Humans retain priority/cancellation and grant decisions; unknown external
 effects wait for reconciliation instead of blind replay.
 
-The concurrency alternative is one foreground assignment per bot initially,
-with qualified parallel subtasks/background commands inside that assignment and
-additional top-level assignments queued. It reduces cross-task coordination but
-still delays independent new work. Both alternatives need the same authority,
-resource and recovery checks for the concurrency they permit.
+One foreground assignment with later top-level work queued was not selected as
+the V1 product policy. The concurrency direction is accepted; numerical limits,
+resource coordination, runtime transports and concrete transition rules still
+require design and qualification. This acceptance does not authorize implementation.
 
-The earlier combined-acceptance question is superseded by this focused comparison.
-Question 45 remains open. Architecture alignment would not select timeout values,
-approve runtime transports or authorize implementation. Review the revised
-concurrency direction before closing the combined lifecycle chunk.
+## Chunk 4: operator journey — proposed review
+
+Start with the existing work home and context card. The accepted boundary model
+already requires visible context/audience, current authority checks and explicit
+decisions for new access or sharing. The next UX choice concerns how much
+confirmation to require for ordinary work inside an already visible context.
+
+The [task-start interaction](boundary-experience.md#starting-a-task--proposed-interaction)
+proposes that sending a sufficiently specified request starts work when the
+eligible bot, context and audience are already shown. Missing information or a
+boundary change gets a targeted question. The alternative is a separate brief
+review and Start action for every new task. This interaction remains pending;
+it does not change grants, publish private material or admit a new model route.
