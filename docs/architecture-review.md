@@ -424,19 +424,65 @@ Proposed operator-facing states:
 | State | Meaning |
 | --- | --- |
 | Queued | The request is recorded and awaiting an eligible bot or capacity; revalidate current authority before dispatch |
-| Working | A current run owns the bot's execution slot and has verified authority to proceed |
+| Working | A current run has verified authority and the execution resources needed to proceed |
 | Waiting | The task is awaiting a dependency, provider or human input, with a visible reason and no inference polling loop |
 | Recovering | An unexpected interruption is being reconciled; this is not proof that agent execution has resumed |
 | Paused | An explicit human or accepted grant-withdrawal hold prevents execution until authorized review/resume |
 | Needs attention | A checkpoint, action outcome, compatibility or authority issue prevents safe continuation |
 | Finished / Cancelled | A terminal outcome with permitted results or partial-work evidence; neither state implies every external effect can be undone |
 
-Use one active execution owner per bot, including declared work within the run.
-New tasks queue while it is occupied. Delegation uses other eligible existing
-project bots under the same root scope and aggregate limits; it does not bypass
-the recipient's execution owner or start unbounded parallel work. Inference
-admission remains separate from VM readiness and follows the configured service
-priority/capacity rules. This does not promise one simultaneous generation per bot.
+### Concurrency: constrain conflicting work, not the whole bot — proposed revision
+
+The earlier one-active-task-per-bot proposal was a V1 simplification, not an
+established Hermes limit. It reduced coordination of shared state, attribution
+and recovery, but would also hold up independent work unnecessarily. That blanket
+restriction is withdrawn from the recommendation; the replacement remains under
+review.
+
+Hermes documents [parallel background subagents](https://hermes-agent.nousresearch.com/docs/user-guide/features/delegation)
+while the parent conversation remains available. Its
+[Runs API](https://hermes-agent.nousresearch.com/docs/user-guide/features/api-server)
+serializes competing turns on the same session. The delegation guide also
+documents optional Git worktrees, with a shared-directory fallback when the
+feature is unsupported. These are distinct concurrency mechanisms; none proves
+arbitrary simultaneous tasks safe in a shared bot environment.
+
+Recommend bounded multitasking within a bot's existing authority and resource
+budget. Preserve each task's identity, audience, limits and cancellation lineage.
+A task waiting for input or a long-running command should not, by itself, prevent
+unrelated admitted work. Retain one current owner for a given run/attempt and
+serialize conflicting updates to the same conversation or shared resource.
+This prevents duplicate execution of one run without serializing the whole bot.
+
+| Work combination | Proposed handling |
+| --- | --- |
+| Independent research or analysis with separate outputs | Permit overlap when the adapter can preserve attribution, task scope and resource limits |
+| A build runs while another task prepares a document | Allow useful overlap if their files, environment and required resources do not conflict; a background process retains its owning task |
+| Two edits to one checkout, two controllers of one browser session, or competing shared-memory updates | Use qualified separation or coordinate exclusive access to the affected resource; otherwise queue the conflicting work |
+| A task waits for a human decision | Preserve the hold on that task and its descendants; unrelated admitted tasks may progress. Accepted bot-wide grant-withdrawal holds still stop the whole affected bot |
+
+Prefer Hermes's existing session, delegation and workspace mechanisms where they
+meet the contract. Do not build a universal file-locking or scheduling layer
+before demonstrating a gap. Separate conversations/worktrees coordinate work;
+they do not isolate mutually untrusted tasks or private audiences inside a bot
+VM. A worker's assertion of independence or a silent worktree fallback is not
+enough to admit a combination whose safety depends on separation. For arbitrary
+tools or unqualified shared resources, queue the affected work and disclose why.
+
+Runtime subagents, if qualified, are temporary execution helpers inside the same
+bot boundary. They do not create persistent fleet bots, new identities or wider
+grants. Map every helper to an admitted task and its aggregate budget, provider
+binding, effects and stop/recovery contract. Delegation to existing project bots
+retains its separately accepted access rules. Task grants cannot be pooled to
+authorize a wider operation. Retained context remains a bot-level concern;
+different task labels do not prove confidentiality between those tasks.
+
+The supported combinations and numerical concurrency limits must be measured
+for the selected Hermes version, tools and deployment. Keep inference admission
+separate from VM readiness and follow configured service priorities. The first
+offline proof may exercise one execution path without making one active task a
+permanent product restriction. Multiple active tasks do not promise simultaneous
+model generations or a proportional speedup.
 
 Human-configured schedules and enabled proactive standing assignments create
 bounded occurrences through the same admission path. Deduplicate submissions,
@@ -448,9 +494,10 @@ transition-race rules remain program-design work.
 ### Unexpected interruption: accepted V1 resume default
 
 Use **bounded automatic recovery when continuation is verified safe**.
-Reconcile the current runtime before dispatching another attempt. An older run
-must be confirmed inactive, safely adopted or fenced from acting; a missing
-heartbeat alone cannot justify two active writers. Check the durable checkpoint
+Reconcile the current runtime before dispatching another attempt. An older attempt
+of the same run must be confirmed inactive, safely adopted or fenced from acting;
+a missing heartbeat alone cannot justify duplicate owners of that run or its
+exclusively held resources. Check the durable checkpoint
 against current workspace revisions, versions, identity, grants, task scope and
 remaining budgets. Preserve newer drafts/files; this is not an automatic restore
 of an older backup over the working environment.
@@ -510,6 +557,9 @@ Prove interrupted admission, duplicate dispatch, worker/controller reconnect,
 an old worker returning after replacement, a crash after an external effect but
 before its receipt, current-grant changes during recovery, a newer local edit,
 provider/model changes, a manually paused/stopped bot and exhausted retry budgets.
+Concurrency qualification must also cover conflicting checkout/browser/memory
+use, unsupported separation, task-scoped cancellation with siblings running,
+bot-wide grant withdrawal, per-task result delivery and aggregate resource limits.
 The offline first slice can exercise synthetic state and fake effect adapters;
 it cannot establish live runtime or provider guarantees. The automatic-recovery
 default is accepted; the remaining state model and concrete mechanisms remain
@@ -587,15 +637,21 @@ need their own evidence. The exact first-slice packet remains to review.
 
 ### Next review: the combined work and recovery model
 
-The remaining chunk 3 decision is whether to accept the combined lifecycle:
-one durable outcome with bounded runs, one active execution owner per bot,
-queued additional tasks and delegation to eligible existing bots, visible
-waiting/attention states, and the accepted recovery default. Planned schedules
+The remaining chunk 3 decision includes the revised concurrency recommendation:
+one durable outcome with bounded runs, bounded multitasking within each bot,
+coordination of conflicting resources and delegation to eligible existing bots,
+visible waiting/attention states, and the accepted recovery default. Planned schedules
 and proactive work enter through the same admission and budget controls.
 Humans retain priority/cancellation and grant decisions; unknown external
 effects wait for reconciliation instead of blind replay.
 
-Accepting that model would close this architecture-level chunk and move to the
-operator journey. It would not select timeout values, approve runtime transports
-or authorize implementation. If its work sequencing or boundary is unsuitable,
-revise that part before moving on. This combined decision remains pending.
+The concurrency alternative is one foreground assignment per bot initially,
+with qualified parallel subtasks/background commands inside that assignment and
+additional top-level assignments queued. It reduces cross-task coordination but
+still delays independent new work. Both alternatives need the same authority,
+resource and recovery checks for the concurrency they permit.
+
+The earlier combined-acceptance question is superseded by this focused comparison.
+Question 45 remains open. Architecture alignment would not select timeout values,
+approve runtime transports or authorize implementation. Review the revised
+concurrency direction before closing the combined lifecycle chunk.
