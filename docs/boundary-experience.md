@@ -1,6 +1,7 @@
 # Make boundaries understandable
 
-Status: accepted version 1.0 boundary requirement, task start and busy-bot messaging;
+Status: accepted version 1.0 boundary requirement, task start, busy-bot messaging
+and both additional-access scopes;
 remaining interaction details are proposed below.
 Updated: 2026-09-10. Implementation and usability qualification remain pending.
 
@@ -112,7 +113,7 @@ new work can become a separately identified task, while an ambiguous follow-up
 needs clarification. A message cannot silently resume a canceled run. This
 interaction direction is accepted; implementation remains to qualify.
 
-## Requesting additional access — proposed default scope
+## Requesting additional access — both scopes accepted for V1
 
 A blocked task should explain the missing operation in plain language and offer
 to narrow the task or prepare an access request. The operator reviews the request
@@ -121,16 +122,21 @@ requested resource/operations, a minimal reason, duration and intended use.
 Do not attach the private conversation or disclose undiscoverable resource names.
 The request's own audience and content must be visible before submission.
 
-Recommend **task-bound access with an expiry** for access requested this way.
-For example, a Researcher needs to read one repository to complete an analysis.
-The proposed grant permits those reads for that task until completion/cancellation
-or the approved expiry, whichever comes first. Subsequent tasks do not inherit
-it. An administrator may explicitly choose a wider or reusable grant; that
-decision must name its scope and duration rather than silently adopting defaults.
+Offer **both task-bound access with an expiry and reusable bot access for a
+limited period**. Choose according to the request's purpose and context; there
+is no universal default between these scopes. The operator can propose a scope,
+and the authorized administrator makes the explicit grant decision with resource,
+operations and duration visible. A bot's recommendation cannot select or expand
+its own permission. Available choices must reflect the access path's enforcement
+capabilities.
 
-| Default request scope | Tradeoff |
+For example, one repository analysis may warrant a task-bound read grant. A
+Researcher assigned repeated work on that repository may need the same reads
+across eligible tasks for an approved period. Both are supported V1 choices.
+
+| Accepted request scope | Tradeoff |
 | --- | --- |
-| This task, with an expiry — recommended | Narrow purpose and lifetime; later tasks needing the same access may require another grant |
+| This task, with an expiry | Ends at task completion/cancellation or approved expiry, whichever comes first; subsequent tasks do not inherit the grant |
 | This bot, for a limited period | Reuse the approved operations/resources across eligible tasks until expiry; fewer repeated requests but broader continuing access |
 
 This choice concerns new access requested by a blocked task. Existing standing
@@ -150,7 +156,37 @@ Task-bound service calls do not isolate tasks sharing the bot's retained context
 Exact lifetimes, renewal, termination/expiry races and pending-effect handling
 remain program-design work. The accepted bot-wide hold after human grant
 withdrawal is unchanged. Verify expiry, wrong-task use, scope changes and lack
-of authority at both request and execution time. This default remains under review.
+of authority at both request and execution time. Both scopes are accepted;
+concrete enforcement and usability remain to qualify.
+
+## Continuing after access is granted — proposed interaction
+
+Recommend automatically continuing the original task when its missing access
+becomes effective and all remaining checks pass. The operator already requested
+that work; receiving the needed grant need not require another Start/Resume
+action. Show the grant result and the actual continuation state in the task.
+
+Recheck that the task still awaits this access, the approved resource/operations
+cover the pending step, the task's current scope/audience and budgets permit it,
+and the runtime/provider and any pending effects allow safe continuation. A
+broader reusable grant does not expand the original task's instructions. A grant
+decision is not evidence that its enforcement is active; wait for that evidence.
+
+An explicit human pause, cancellation, grant-withdrawal hold, manually stopped
+bot or another unresolved approval still prevents continuation. The new grant
+cannot authorize a different outcome, bypass reviewed publication or revive
+terminal work. If the task or its requested operation changed while waiting,
+reconcile the change instead of blindly applying the earlier request.
+
+| Continuation choice | Tradeoff |
+| --- | --- |
+| Continue automatically when ready — recommended | Resume the still-requested work once effective access and current checks allow it; report progress or the remaining blocker |
+| Operator chooses Resume | Notify the operator that access is ready, then wait for an explicit Resume even when other checks pass |
+
+Both choices preserve the accepted recovery, cancellation, permission and
+publication boundaries. Test delayed grants, stale requests, partial approvals,
+expiry, duplicate approval events, task changes and explicit holds. This
+interaction remains under review.
 
 ## Explain boundaries at the moment they matter
 
