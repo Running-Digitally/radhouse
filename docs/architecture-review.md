@@ -5,7 +5,8 @@ accepted for the public product. Chunk 2's administrator invitations, explicit
 human roles, administrator-only SSO fallback, bot-wide pause after grant
 withdrawal and fresh personal-bot replacement are also accepted for V1.
 Chunk 2's combined identity/data boundary is accepted at the architecture level.
-Chunk 3's work/recovery model is proposed for review. Detailed contracts and later
+Chunk 3's bounded automatic recovery default is accepted for V1; the remaining
+work/run lifecycle is proposed for review. Detailed contracts and later
 chunks remain under review; these decisions do not implement or deploy the product.
 Design depth: D3. Implementation authorization: none from this packet.
 
@@ -18,8 +19,8 @@ on a chunk does not silently accept later choices or authorize deployment.
 | --- | --- | --- |
 | 1. Overall structure | Component responsibilities, trust boundaries, and default shared-VM footprint | Two shared management VMs accepted; detailed contracts remain to qualify |
 | 2. Identity, access, and information | Human/bot/service identities, grants, private/project data ownership, and mediated operations | Combined boundary model accepted; concrete mechanisms remain to qualify |
-| 3. Work and recovery | Task/run state, admission, cancellation, delegation, inference changes, maintenance, and uncertain external effects | Proposed lifecycle and recovery model; unexpected-interruption resume policy under review |
-| 4. Operator and administrator experience | Onboarding, first task, access requests, sharing, and recovery screens | Follows the accepted authority and work model |
+| 3. Work and recovery | Task/run state, admission, cancellation, delegation, inference changes, maintenance, and uncertain external effects | Bounded automatic recovery default accepted; remaining lifecycle and concrete recovery contracts under review |
+| 4. Operator and administrator experience | Onboarding, first task, access requests, sharing, and recovery screens | Earlier usability pilot accepted; detailed experience follows the accepted authority and work model |
 | 5. Implementation design | Technology choices, packaging, schemas, typed contracts, module dependencies, and call paths | Follows the reviewed product boundaries |
 | 6. First implementation slice | Exact files, behavior, tests, demonstration, limits, and acceptance for the offline foundation | Final implementation review |
 
@@ -444,9 +445,9 @@ work and requests termination of outstanding runs, while recording any in-flight
 effects honestly. Detailed queue fairness, timeout values, missed-occurrence and
 transition-race rules remain program-design work.
 
-### Unexpected interruption: proposed resume default
+### Unexpected interruption: accepted V1 resume default
 
-Recommend **bounded automatic recovery when continuation is verified safe**.
+Use **bounded automatic recovery when continuation is verified safe**.
 Reconcile the current runtime before dispatching another attempt. An older run
 must be confirmed inactive, safely adopted or fenced from acting; a missing
 heartbeat alone cannot justify two active writers. Check the durable checkpoint
@@ -461,15 +462,13 @@ An LLM's assurance that continuation is safe is not the recovery gate. Repeated
 failure, missing evidence, incompatible state or unresolved effects becomes
 Needs attention with the preserved checkpoint and a clear explanation.
 
-The alternative is **human confirmation after every unexpected interruption**.
-The platform can still perform authorized, bounded status reconciliation and
-prepare the recovery view, but it waits for a person before agent work resumes,
-even when the evidence supports a safe continuation. This is more conservative
-about unattended resumption and increases operator interruptions.
+Requiring human confirmation after every unexpected interruption was not selected
+as the V1 default. Human review remains necessary when safe continuation cannot
+be established.
 
-Both options preserve human pause/cancellation, grant-withdrawal holds, manual VM
-stop and current authority. Neither powers on a manually stopped bot because a
-task is queued or restarts an assignment that was cancelled. The accepted weekly
+Automatic recovery preserves human pause/cancellation, grant-withdrawal holds,
+manual VM stop and current authority. It does not power on a manually stopped bot because a
+task is queued or restart an assignment that was cancelled. The accepted weekly
 maintenance save/verify/resume path is separate; this choice does not add manual
 confirmation to every planned maintenance cycle.
 Human confirmation alone cannot bypass a failed authority or compatibility check;
@@ -512,5 +511,91 @@ an old worker returning after replacement, a crash after an external effect but
 before its receipt, current-grant changes during recovery, a newer local edit,
 provider/model changes, a manually paused/stopped bot and exhausted retry budgets.
 The offline first slice can exercise synthetic state and fake effect adapters;
-it cannot establish live runtime or provider guarantees. The state model and
-unexpected-interruption default remain under review.
+it cannot establish live runtime or provider guarantees. The automatic-recovery
+default is accepted; the remaining state model and concrete mechanisms remain
+under review.
+
+## Creator interview: implications for the current review
+
+Review date: 2026-09-10. The supplied transcript of
+[Roman Ugarte's Grok Bot interview](https://www.lennysnewsletter.com/p/how-we-built-grok-bot-in-a-month)
+informs the product observations below. They are the team's account of its
+experience, not independent performance or security evidence. The implications
+are Radhouse design judgments; proposed refinements do not silently change the
+accepted V1 scope.
+
+### Keep the accepted boundaries
+
+Grok Bot's [current FAQ](https://docs.x.ai/grok-bot/faq) describes one computer
+per user, with files and browser logins shared between that user's bots.
+Separate screens do not provide per-bot isolation. Retain Radhouse's separate
+bot VMs, explicit grants and reviewed sharing. A bot's independent computer
+should make work independent of an operator's laptop; a qualified self-hosted
+deployment provides that arrangement while its host and required
+services remain available.
+
+Retain Hermes first, optional Chief of Staff coordination, selected self-hosted
+inference, mediated credentials by default, and human control of new authority.
+The interview offers no compatibility evidence that would justify changing
+these decisions. Reusing Hermes does not require making its developer interface
+the operator's work home. Do not infer a one-month delivery estimate from another
+team's launch story.
+
+### Refinements worth making concrete
+
+| Interview observation | Proposed application within Radhouse |
+| --- | --- |
+| The team watched many new users attempt real work and removed confusing interface elements | Test an unfamiliar nontechnical operator early. Make the default task view show the requested outcome, brief progress, result and need for attention; keep scoped technical inspection available. Missing or stale evidence must still be visible. |
+| A useful colleague completes a meaningful piece of work across tools | Qualify complete workflows, including artifact quality and source checks, alongside boundary and recovery tests. Record interventions, completion failures, latency and resource cost for each supported runtime/model combination. Do not substitute a successful chat response for task completion. |
+| People describe routines in conversation | Let a human request a routine in plain language. Show its interpreted task, bot/project, sources, audience, timezone/timing and limits in an editable summary. Resolve missing or consequential ambiguity and obtain any missing authority before activation. Human configuration need not require a workflow-builder form; bot suggestions still cannot enable recurrence. Exact activation interaction remains to design. |
+| A principal bot emerged naturally, while people still worked with specialists | Keep the Chief of Staff optional. It may coordinate permitted context and existing bots; its title cannot make it an all-seeing router or enlarge project access. |
+| The team uses its own bots to test product workflows | Use isolated synthetic accounts and fixtures for repeatable journey tests; review failures against explicit expected outcomes. This does not authorize recursive bot creation, real-account experimentation or treating a bot's self-report as a passing test. |
+
+Computer use deserves explicit qualification. A model-compatible text API alone
+does not prove usable browser interaction, tool calling or durable recovery.
+For a service-following inference binding, preserve identity and work across a
+backing-model change, but check the actual served model against the task's
+required capabilities before continuing. Show a blocked/waiting reason when
+qualification or compatibility is missing; do not promise equivalent competence
+or silently select another provider.
+
+A logged-in browser may carry broader powers than a mediated connector. Calling
+an assignment read-only cannot constrain an arbitrary authenticated website.
+Apply the existing service/session and egress contracts to each supported path;
+unqualified private-site automation is not part of a generic compatibility claim.
+Voice huddles, demonstration recording and a public template marketplace are
+ideas for later review, not additions to the current release commitments.
+
+### Earlier usability pilot — accepted delivery refinement
+
+Bring a thin operator work home into the first live single-bot pilot, after the
+proposed offline foundation. This moves nontechnical usability proof forward
+from milestone 5. It does not remove V1 fleet, GitHub, identity or optional-service
+scope. The delivery refinement is accepted; implementation remains unapproved.
+
+| Delivery choice | What the next live proof demonstrates |
+| --- | --- |
+| Useful operator workflow early — accepted | An unfamiliar operator gives one eligible persistent bot a bounded research task, sees truthful progress and a permission boundary, finds a cited artifact and returns to retained work. Include the minimum real identity/access enforcement needed for that pilot. |
+| Runtime/API proof first — not selected | Establish live Hermes execution, persistence and recovery through an administrative/API harness first; add the everyday operator interface in a subsequent slice. Usability feedback arrives later, with less interface work in the initial live proof. |
+
+Retain the offline synthetic foundation as the first implementation candidate,
+technical contracts before implementation and deployment-specific qualification
+before live access. No private account or infrastructure is admitted by selecting
+a delivery order. A pilot is not a V1 release: remaining
+roles, collaboration, GitHub, optional integrations and release gates still
+need their own evidence. The exact first-slice packet remains to review.
+
+### Next review: the combined work and recovery model
+
+The remaining chunk 3 decision is whether to accept the combined lifecycle:
+one durable outcome with bounded runs, one active execution owner per bot,
+queued additional tasks and delegation to eligible existing bots, visible
+waiting/attention states, and the accepted recovery default. Planned schedules
+and proactive work enter through the same admission and budget controls.
+Humans retain priority/cancellation and grant decisions; unknown external
+effects wait for reconciliation instead of blind replay.
+
+Accepting that model would close this architecture-level chunk and move to the
+operator journey. It would not select timeout values, approve runtime transports
+or authorize implementation. If its work sequencing or boundary is unsuitable,
+revise that part before moving on. This combined decision remains pending.

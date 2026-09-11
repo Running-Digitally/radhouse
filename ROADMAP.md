@@ -108,13 +108,19 @@ The [architecture and first-slice packet](docs/architecture-review.md) is the
 current review entry point. Its chunks will resolve boundaries and program
 contracts before the first implementation slice is accepted.
 
+The accepted [earlier usability pilot](docs/architecture-review.md#earlier-usability-pilot--accepted-delivery-refinement)
+brings a thin operator work home and nontechnical usability proof into the first
+live single-bot milestone, after the offline foundation. The sequence below
+reflects that decision. Retain all accepted V1 requirements and the applicable
+identity, scope and isolation checks before live access.
+
 | Milestone | Evidence needed before moving on |
 | --- | --- |
 | 1. Contracts and configuration | Reviewable architecture and component contracts; validated synthetic configuration; documented supported and refused combinations. |
-| 2. One persistent agent | Useful task completion through the control plane, retained workspace, truthful inference attribution, and recovery on both deployment paths. |
+| 2. One persistent agent and a useful operator journey | After the offline foundation, an unfamiliar nontechnical operator uses a thin work home to assign a bounded research task, follow truthful progress, find a cited artifact and understand a permission boundary. Prove persistence, current authority, model attribution and recovery on both supported deployment paths. |
 | 3. Collaboration and admission | Two agents complete shared work without gaining private access; queued background work respects interactive priority and shared limits. |
 | 4. Software engineering | A scoped repository task produces a branch and pull request; credential custody, denial, revocation, and human merge boundaries hold in both supported credential modes. Guided CI setup preserves existing workflows; GitHub-hosted defaults and conditional local runners pass the [setup and preflight contract](docs/ci-and-runner-setup.md). |
-| 5. Human roles and privacy | A new operator can use an assigned agent without infrastructure knowledge; role isolation, sharing review, supervision, and private-data egress behavior pass boundary checks. |
+| 5. Expanded human roles and privacy | Extend the early usability proof to administrator/operator/viewer journeys, sharing review, supervision and private-data egress. Full cross-user and disclosure checks complement the identity and scope enforcement already required for the single-bot pilot. |
 | 6. Optional shared services | Independently optional chat, receive-only mail, and SSO integrate without widening agent grants; remote Access/Tunnel setup qualifies separately. |
 | 7. Delegation, routines, and proactive assistance | Existing project agents complete bounded subtasks; standing assignments prepare useful briefings from authorized events. Cycles, duplicate delivery, budgets, cancellation, schedules, quiet hours, privacy, and model/restart failures obey admitted work and current grants. |
 | 8. Maintenance and release qualification | Component inventory, update checks, approved-plan execution under the selected policy, running-version checks, failure/recovery proof, reproducible installation, configuration tests, useful fleet work, and published evidence for supported profiles. |
