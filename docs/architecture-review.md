@@ -20,7 +20,7 @@ on a chunk does not silently accept later choices or authorize deployment.
 | 1. Overall structure | Component responsibilities, trust boundaries, and default shared-VM footprint | Two shared management VMs accepted; detailed contracts remain to qualify |
 | 2. Identity, access, and information | Human/bot/service identities, grants, private/project data ownership, and mediated operations | Combined boundary model accepted; concrete mechanisms remain to qualify |
 | 3. Work and recovery | Task/run state, admission, cancellation, delegation, inference changes, maintenance, and uncertain external effects | Bounded automatic recovery and bounded multitasking accepted; remaining lifecycle and concrete mechanisms under review |
-| 4. Operator and administrator experience | Onboarding, first task, access requests, sharing, and recovery screens | Earlier usability pilot, Send-to-start and natural task-aware messaging accepted; additional-access scope and detailed interactions under review |
+| 4. Operator and administrator experience | Onboarding, first task, access requests, sharing, and recovery screens | Earlier usability pilot, Send-to-start, natural task-aware messaging and both additional-access scopes accepted; post-grant continuation and detailed interactions under review |
 | 5. Implementation design | Technology choices, packaging, schemas, typed contracts, module dependencies, and call paths | Follows the reviewed product boundaries |
 | 6. First implementation slice | Exact files, behavior, tests, demonstration, limits, and acceptance for the offline foundation | Final implementation review |
 
@@ -670,9 +670,14 @@ was not selected. Task revisions still need qualified steering and effect
 reconciliation; interpreting a message cannot create authority or silently
 revive canceled work.
 
-Next, review the [default scope for additional access](boundary-experience.md#requesting-additional-access--proposed-default-scope).
-Recommend a task-bound, expiring request where enforcement supports it; the
-alternative grants the bot reusable access to the approved resource/operations
-for a limited period. Administrators retain the grant decision, existing standing
-grants remain valid under their own policies, and raw-token/browser limitations
-must remain visible. This default is proposed, not accepted.
+Offer [both additional-access scopes](boundary-experience.md#requesting-additional-access--both-scopes-accepted-for-v1):
+task-bound access with an expiry and reusable access for the bot for a limited
+period, where each can be enforced. The administrator chooses explicitly based
+on context; neither is a universal default. Existing standing grants and the
+different raw-token/browser guarantees remain unchanged. Both scopes are accepted.
+
+Next, review [continuation after a grant](boundary-experience.md#continuing-after-access-is-granted--proposed-interaction).
+Recommend continuing the original waiting task once the grant is effective and
+current authority, runtime, scope and effect checks pass. The alternative asks
+the operator to choose Resume after every grant. Neither choice clears explicit
+holds or authorizes different work. This continuation interaction is proposed.
