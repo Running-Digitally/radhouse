@@ -33,6 +33,41 @@ of any supervised review. Explain the infrastructure administrator's underlying
 access separately; “Only you” describes application visibility, not protection
 from the machine owner. Use text and accessible icons, never color alone.
 
+## Starting a task — proposed interaction
+
+Recommend **Send starts ordinary work in the visible context**. Opening an
+assigned bot or project supplies the eligible context; the work home offers
+permitted choices where one is missing. Before sending task content to a bot
+or inference route, show the selected bot, working context and result audience.
+Keep these visible above the composer, with the bot's wider access and retained
+context available to inspect. Do not broadcast a private request to candidate
+bots to discover which one should receive it.
+
+For example, an operator opens their Researcher in private My Work, sees that
+context, and sends: “Compare these three reports and prepare a two-page brief.”
+If the necessary inputs and existing authority are present, admit the task and
+show progress in that conversation. Sending is the deliberate Start action;
+there is no additional confirmation screen for the same request.
+
+If a required choice is missing, ask for that choice. If the work needs a new
+grant or a wider audience, explain the consequence and use the accepted access
+or publication flow before proceeding with the affected step. Current scope is
+checked at admission; stale context cannot silently select different recipients,
+broader permissions or another provider. Unrelated admitted tasks may continue
+while one task waits, within the accepted concurrency and bot-wide hold policies.
+
+| Interaction choice | Tradeoff |
+| --- | --- |
+| Send starts work in the visible context — recommended | Fast everyday use; ask only for missing information or consequential changes. Known context must be obvious before submission. |
+| Review a brief before every new task | Always show an editable summary and a separate Start action. More opportunity to catch misunderstandings, with an extra step even for clear requests. |
+
+Both choices retain visible context, current authorization and reviewed sharing.
+This is about starting an ordinary task; scheduled standing assignments retain
+their separate configuration and authority contract. Qualification should test
+an unfamiliar operator, a stale or changed audience, missing input, unavailable
+access and a request made while the bot already has other work. This interaction
+choice remains under review.
+
 ## Explain boundaries at the moment they matter
 
 - **Starting work:** show context and audience before sending the brief to an
