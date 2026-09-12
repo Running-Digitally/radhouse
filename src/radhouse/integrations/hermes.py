@@ -49,6 +49,11 @@ class HermesRun:
     output: str | None = None
 
 
+@dataclass(frozen=True)
+class HermesCapabilities:
+    idempotency_retention_seconds: int
+
+
 class HermesRunsClient:
     """Synchronous transport for one authenticated Hermes gateway."""
 
@@ -104,6 +109,22 @@ class HermesRunsClient:
 
     def __exit__(self, *_exc: object) -> None:
         self.close()
+
+    def capabilities(self) -> HermesCapabilities:
+        payload, _ = self._request("GET", "v1/capabilities", expected_status=200)
+        features = payload.get("features")
+        idempotency = features.get("runs_idempotency") if isinstance(features, dict) else None
+        retention = idempotency.get("retention_seconds") if isinstance(idempotency, dict) else None
+        if (
+            not isinstance(idempotency, dict)
+            or idempotency.get("supported") is not True
+            or idempotency.get("durable") is not True
+            or isinstance(retention, bool)
+            or not isinstance(retention, int)
+            or not 1 <= retention <= 31 * 24 * 60 * 60
+        ):
+            raise HermesGatewayError("runtime_idempotency_unavailable")
+        return HermesCapabilities(idempotency_retention_seconds=retention)
 
     def start_or_attach(
         self, *, input_text: str, session_id: str, dispatch_key: str
