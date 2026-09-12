@@ -56,6 +56,34 @@ def test_start_and_identical_replay_use_the_pinned_runs_contract():
         assert "provider" not in request.content.decode()
 
 
+def test_capability_preflight_requires_durable_bounded_idempotency():
+    response = httpx.Response(200, json={
+        "features": {"runs_idempotency": {
+            "supported": True, "durable": True, "retention_seconds": 86_400,
+        }}
+    })
+    with client(lambda _request: response) as gateway:
+        capabilities = gateway.capabilities()
+    assert capabilities.idempotency_retention_seconds == 86_400
+
+
+@pytest.mark.parametrize(
+    "idempotency",
+    [
+        {},
+        {"supported": False, "durable": True, "retention_seconds": 86_400},
+        {"supported": True, "durable": False, "retention_seconds": 86_400},
+        {"supported": True, "durable": True, "retention_seconds": 0},
+        {"supported": True, "durable": True, "retention_seconds": True},
+    ],
+)
+def test_capability_preflight_fails_closed(idempotency):
+    response = httpx.Response(200, json={"features": {"runs_idempotency": idempotency}})
+    with client(lambda _request: response) as gateway, pytest.raises(HermesGatewayError) as caught:
+        gateway.capabilities()
+    assert caught.value.code == "runtime_idempotency_unavailable"
+
+
 @pytest.mark.parametrize(
     ("status", "code"),
     [
