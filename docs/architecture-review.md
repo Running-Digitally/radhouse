@@ -30,7 +30,7 @@ on a chunk does not silently accept later choices or authorize deployment.
 | 3. Work and recovery | Task/run state, admission, cancellation, delegation, inference changes, maintenance, and uncertain external effects | Bounded automatic recovery and bounded multitasking accepted; remaining lifecycle and concrete mechanisms under review |
 | 4. Operator and administrator experience | Onboarding, first task, access requests, sharing, and recovery screens | Combined operator journey accepted; implementation and usability qualification remain pending |
 | 5. Implementation design | Technology choices, packaging, schemas, typed contracts, module dependencies, and call paths | Chunk 5A stack direction accepted; chunk 5B module ownership and durable task contracts proposed |
-| 6. First implementation slice | Exact files, behavior, tests, demonstration, limits, and acceptance for the offline foundation | VS0-A implemented; 108 tests and both crash/recovery demonstrations passed |
+| 6. First implementation slice | Exact files, behavior, tests, demonstration, limits, and acceptance for the offline foundation | VS0-A implemented; 111 tests and both crash/recovery demonstrations passed |
 
 The first implementation is an offline foundation using synthetic identities/data
 and fake runtime, provider, and service adapters. It proves the accepted subset
@@ -168,8 +168,9 @@ to be qualified.
 
 ### Evidence and current limitations
 
-The repository at baseline `22f6c8f` contains requirements and design documents,
-not application source or tests. This packet proposes boundaries to implement.
+The repository at baseline `22f6c8f` contained requirements and design documents,
+not application source or tests. VS0-A now implements the bounded offline subset
+described in chunk 6; the service integrations in this section remain unqualified.
 Hermes documents an HTTP run API and ACP integration surfaces, which are
 candidates for the worker adapter. Transport selection, version pins, recovery,
 and tool interception must be qualified in the later chunks; documented methods
@@ -1067,8 +1068,8 @@ Exact first-slice scope and implementation are presented for review below.
 
 ## Chunk 6: VS0-A — one durable task through two simulated channels
 
-Status: implemented and locally verified on 2026-09-11. The final run passed
-108 tests without failures, errors, or skips, plus both fresh-process crash and
+Status: implemented and locally verified on 2026-09-12. The final run passed
+111 tests without failures, errors, or skips, plus both fresh-process crash and
 recovery demonstrations. Cleanup reported no retained fixture resources. This
 slice implements only the following subset of chunk 5B's contracts; the wider
 V1 design and real integrations remain to qualify. See [the demo guide](vs0-demo.md).
@@ -1214,7 +1215,11 @@ by themselves admit live application connections or deployment.
 The first slice remains an offline proof even when deployment preparation runs
 alongside it. Prepared guests and component recipes provide targets for the next
 stage; they do not establish application readiness or change VS0-A's execution
-scope. This refinement is proposed for review with the first slice.
+scope. The reusable handoff is now recorded in the
+[reference deployment foundation](deployment/reference-foundation.md) and the
+[Hermes](integrations/hermes.md), [Authentik](integrations/authentik.md), and
+[Buzz](integrations/buzz.md) qualification profiles. Private topology, credentials,
+capacity evidence, and operational receipts remain in the deployment overlay.
 
 Use the existing VS0-A files and fake ports to cover the runtime conditions that
 can otherwise give a misleading recovery result: missing durable admission

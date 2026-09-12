@@ -96,6 +96,21 @@ def test_provider_recovery_preserves_human_pause(service, alice, envelope, start
     assert claimed.budget_remaining == start.budget - 1
 
 
+@pytest.mark.postgres
+def test_closed_task_does_not_depend_on_provider_availability(
+    service, service_factory, alice, envelope, start,
+):
+    task = service.admit(alice, envelope(), start)
+    closed = service.run(task.task_id)
+
+    class UnavailableProvider:
+        def describe(self, binding):
+            raise ConnectionError("provider unavailable")
+
+    restarted = service_factory(provider=UnavailableProvider())
+    assert restarted.run(task.task_id) == closed
+
+
 def test_harness_rejects_docker_environment_override_before_any_command(monkeypatch):
     from scripts.vs0 import FixtureError, Run
     monkeypatch.setenv("DOCKER_HOST", "tcp://unowned.invalid:2375")

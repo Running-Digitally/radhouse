@@ -8,7 +8,7 @@ import sys
 
 import pytest
 
-from radhouse.domain.tasks import Observation, Rejected
+from radhouse.domain.tasks import EffectResult, LostReply, Observation, Rejected
 from tests.fakes import FakeOperations, FakeRuntime
 
 pytestmark = pytest.mark.postgres
@@ -30,6 +30,56 @@ def test_lost_reply_recovers_same_operation_without_repeat(service, service_fact
     assert fresh.run(task.task_id) == recovered
 
 
+def test_late_lost_reply_does_not_regress_a_terminal_operation(
+    service_factory, alice, envelope, start, store,
+):
+    """Another reconciler may settle the operation before the caller loses its reply."""
+    holder = {}
+
+    class SettleThenLoseReply:
+        def execute(self, task, operation_key):
+            holder["service"].recover(task.task_id)
+            raise LostReply()
+
+        def lookup(self, operation_key):
+            return EffectResult("rejected")
+
+    service = service_factory(operations=SettleThenLoseReply())
+    holder["service"] = service
+    task = service.admit(alice, envelope(), start)
+
+    final = service.run(task.task_id)
+
+    assert final.phase == "closed" and final.outcome == "failed"
+    with store.transaction() as tx:
+        assert tx.operation(task.task_id + ":report").state == "rejected"
+
+
+def test_late_effect_reply_does_not_regress_a_terminal_operation(
+    service_factory, alice, envelope, start, store,
+):
+    holder = {}
+
+    class SettleThenReply:
+        def execute(self, task, operation_key):
+            holder["service"].recover(task.task_id)
+            return EffectResult("confirmed", "stale reply")
+
+        def lookup(self, operation_key):
+            return EffectResult("rejected")
+
+    service = service_factory(operations=SettleThenReply())
+    holder["service"] = service
+    task = service.admit(alice, envelope(), start)
+
+    final = service.run(task.task_id)
+
+    assert final.phase == "closed" and final.outcome == "failed"
+    assert final.result is None
+    with store.transaction() as tx:
+        assert tx.operation(task.task_id + ":report").state == "rejected"
+
+
 def test_absent_receipt_stays_unknown_across_recovery_and_provider_change(service, alice, envelope, start, fake_operations, fake_provider):
     fake_operations.mode = "unknown_without_receipt"
     task = service.admit(alice, envelope(), start)
@@ -37,9 +87,11 @@ def test_absent_receipt_stays_unknown_across_recovery_and_provider_change(servic
     fake_provider.model_id = "model-B"
     changed = service.refresh_provider(task.task_id)
     recovered = service.recover(task.task_id)
+    recovered_again = service.recover(task.task_id)
     service.run(task.task_id)
     assert changed.model_id == "model-B"
     assert recovered.phase == "recovering" and recovered.outcome is None
+    assert recovered_again == recovered
     assert "operation_unknown" in recovered.blockers
     assert recovered.budget_remaining == interrupted.budget_remaining
     assert fake_operations.execute_count == 1 and fake_operations.effect_count == 0

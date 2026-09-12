@@ -113,6 +113,8 @@ class Service:
     def refresh_provider(self, task_id: str) -> Task:
         with self.store.transaction() as tx:
             before = self._task(tx, task_id)
+            if before.phase == "closed":
+                return before
         description = self.provider.describe(before.provider_binding)
         with self.store.transaction() as tx:
             task = self._task(tx, task_id)
@@ -157,7 +159,11 @@ class Service:
             task = self._task(tx, task_id)
             attempt = tx.attempt(task.attempt_id)
             operation = tx.operation(task.task_id + ":report")
-            if task.phase != "active" or task.blockers or attempt.worker_id != worker_id or operation.state != "prepared":
+            if task.phase != "active" or task.blockers:
+                return task
+            if attempt is None or operation is None:
+                raise Rejected("task_state_inconsistent")
+            if attempt.worker_id != worker_id or operation.state != "prepared":
                 return task
             try:
                 require_access(tx.access(task.owner_id), task.bot_id, task.project_id, write=True)
@@ -171,21 +177,36 @@ class Service:
             with self.store.transaction() as tx:
                 current = self._task(tx, task_id)
                 op = tx.operation(operation.key)
-                if op.state != "confirmed":
-                    tx.save_operation(replace(op, state="unknown"))
+                if op is None:
+                    raise Rejected("missing_operation")
                 if current.phase == "closed":
                     return current
-                return self._save(tx, current, current.evolve(
-                    blockers=tuple(sorted(set(current.blockers) | {"operation_unknown"})),
-                    phase="stopping" if "cancel_requested" in current.blockers else "recovering"), "needs_attention")
+                if op.state in {"confirmed", "rejected"}:
+                    settled = EffectResult(op.state, op.result)
+                else:
+                    settled = None
+                if op.state == "submitted":
+                    tx.save_operation(replace(op, state="unknown"))
+                if settled is None:
+                    blockers = tuple(sorted(set(current.blockers) | {"operation_unknown"}))
+                    phase = "stopping" if "cancel_requested" in blockers else "recovering"
+                    if (current.phase, current.blockers) == (phase, blockers):
+                        return current
+                    return self._save(tx, current, current.evolve(
+                        blockers=blockers, phase=phase), "needs_attention")
+            return self._finish_effect(task_id, settled)
         return self._finish_effect(task_id, result)
 
     def _finish_effect(self, task_id: str, result: EffectResult) -> Task:
         with self.store.transaction() as tx:
             task = self._task(tx, task_id)
+            if task.phase == "closed":
+                return task
             operation = tx.operation(task.task_id + ":report")
             if operation is None:
                 raise Rejected("missing_operation")
+            if task.attempt_id is None or operation.attempt_id != task.attempt_id:
+                raise Rejected("task_state_inconsistent")
             if result.state == "confirmed" and result.result is not None:
                 if len(result.result.encode()) > 65536:
                     raise Rejected("result_too_large")
@@ -196,16 +217,23 @@ class Service:
                 if task.phase == "closed":
                     return task
                 tx.save_operation(replace(operation, state="unknown"))
+                blockers = tuple(sorted(set(task.blockers) | {"operation_unknown"}))
+                phase = "stopping" if "cancel_requested" in blockers else "recovering"
+                if (task.phase, task.blockers) == (phase, blockers):
+                    return task
                 return self._save(tx, task, task.evolve(
-                    phase="stopping" if "cancel_requested" in task.blockers else "recovering",
-                    blockers=tuple(sorted(set(task.blockers) | {"operation_unknown"}))), "needs_attention")
+                    phase=phase, blockers=blockers), "needs_attention")
             attempt = tx.attempt(task.attempt_id)
+            if attempt is None:
+                raise Rejected("task_state_inconsistent")
         stopped = self.runtime.stop(attempt)
         with self.store.transaction() as tx:
             task = self._task(tx, task_id)
             if task.phase == "closed":
                 return task
             op = tx.operation(task.task_id + ":report")
+            if op is None or task.attempt_id is None:
+                raise Rejected("task_state_inconsistent")
             blockers = set(task.blockers) - {"operation_unknown", "runtime_stop"}
             if not stopped:
                 blockers.add("runtime_stop")
