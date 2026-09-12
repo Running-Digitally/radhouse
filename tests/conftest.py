@@ -40,7 +40,7 @@ def seed_fixture(dsn: str) -> None:
     data = json.loads(FIXTURE.read_text())
     with psycopg.connect(dsn) as connection:
         # Reverse FK order from the fixture schema. No schema/role authority is used.
-        for table in ("events", "deliveries", "commands", "publications", "reviews", "agent_dispatches", "operations", "budget_reservations", "claims", "task_revisions", "attempts", "tasks", "channel_bindings", "project_members", "bot_grants", "bots", "actors"):
+        for table in ("events", "deliveries", "commands", "publications", "reviews", "agent_dispatches", "operations", "budget_reservations", "claims", "task_revisions", "attempts", "tasks", "channel_bindings", "project_members", "bot_grants", "bots", "projects", "actors"):
             connection.execute(sql.SQL("DELETE FROM {}").format(sql.Identifier("public", table)))
         for bot in data["bots"]:
             connection.execute(
@@ -52,6 +52,13 @@ def seed_fixture(dsn: str) -> None:
         for principal in data["principals"]:
             pid = principal["id"]
             connection.execute("INSERT INTO actors(principal_id,role) VALUES (%s,%s)", (pid, principal["role"]))
+        for project in data["projects"]:
+            connection.execute(
+                "INSERT INTO projects(project_id,owner_id,display_name,state) VALUES (%s,%s,%s,%s)",
+                (project["project_id"], project["owner_id"], project["display_name"], project["state"]),
+            )
+        for principal in data["principals"]:
+            pid = principal["id"]
             for bot in principal["bots"]:
                 connection.execute("INSERT INTO bot_grants(principal_id,bot_id) VALUES (%s,%s)", (pid, bot))
             for project in principal["projects"]:

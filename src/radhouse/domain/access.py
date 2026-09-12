@@ -41,6 +41,14 @@ class BotProfile:
     state: str = "ready"
 
 
+@dataclass(frozen=True)
+class ProjectProfile:
+    project_id: str
+    owner_id: str
+    display_name: str
+    state: str = "active"
+
+
 def require_access(access: Access | None, bot_id: str, project_id: str, *, write: bool) -> None:
     if access is None or not access.active or bot_id not in access.bots or project_id not in access.projects:
         raise Rejected("access_denied", 403)

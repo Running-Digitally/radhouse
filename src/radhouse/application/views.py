@@ -25,6 +25,7 @@ class WorkHome:
     principal_id: str
     role: str
     project_id: str
+    project_name: str
     agents: tuple[BotProfile, ...]
     tasks: tuple[TaskCard, ...]
     start: ActionView

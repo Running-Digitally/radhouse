@@ -46,7 +46,7 @@ class BoundaryService:
     def work_home(self, actor, *, envelope):
         from radhouse.application.views import ActionView, WorkHome
         self.calls.append(("work_home", actor, envelope))
-        return WorkHome(actor.principal_id, "operator", "personal-alice", (), (), ActionView(False, "no_assigned_agents"))
+        return WorkHome(actor.principal_id, "operator", "personal-alice", "Alice's work", (), (), ActionView(False, "no_assigned_agents"))
 
 
 @pytest.mark.parametrize("adapter", [None, False, "fixture-auth"])
@@ -143,6 +143,7 @@ def test_work_home_receives_only_authenticated_actor_and_read_context():
         })
     assert response.status_code == 200
     assert response.json()["principal_id"] == "alice"
+    assert response.json()["project_name"] == "Alice's work"
     assert service.calls == [(
         "work_home", actor,
         Envelope(actor.channel, "read", envelope.conversation_id, 1, "read"),

@@ -227,7 +227,7 @@ function render(home: WorkHome, message?: string): void {
   identity.append(
     element("p", "eyebrow", "Radhouse · A home for your agents"),
     element("h1", "page-title", "Your work home"),
-    element("p", "muted", `Project ${home.project_id} · ${home.role}`),
+    element("p", "muted", `${home.project_name} · ${home.role}`),
   );
   header.append(identity);
   root.append(header);

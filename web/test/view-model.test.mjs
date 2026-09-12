@@ -37,6 +37,7 @@ test("work-home contract accepts the bounded empty view", () => {
     principal_id: "alice",
     role: "operator",
     project_id: "personal-alice",
+    project_name: "Alice's work",
     agents: [],
     tasks: [],
     start: { enabled: false, reason: "no_assigned_agents" },

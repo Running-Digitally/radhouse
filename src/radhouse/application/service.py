@@ -135,6 +135,9 @@ class Service:
             self._binding(tx, actor, envelope, binding.project_id)
             if access is None or not access.active or binding.project_id not in access.projects:
                 raise Rejected("access_denied", 403)
+            project = tx.project(binding.project_id)
+            if project is None or project.state != "active":
+                raise Rejected("project_unavailable", 409)
             agents = tuple(tx.bots(actor.principal_id))
             tasks = tuple(
                 task for task in tx.tasks()
@@ -173,7 +176,8 @@ class Service:
                 review,
             ))
         return WorkHome(
-            actor.principal_id, access.role, binding.project_id, agents, tuple(cards), start,
+            actor.principal_id, access.role, binding.project_id, project.display_name,
+            agents, tuple(cards), start,
         )
 
     @staticmethod

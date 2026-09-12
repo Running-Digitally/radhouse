@@ -24,6 +24,7 @@ def test_operator_home_lists_assigned_agents_and_only_owned_project_tasks(
 
     assert home.principal_id == "alice" and home.role == "operator"
     assert home.project_id == "project-shared"
+    assert home.project_name == "Shared research"
     assert home.start.enabled and home.start.reason is None
     assert [(agent.display_name, agent.role_name) for agent in home.agents] == [
         ("Atlas", "Researcher"), ("Beacon", "Researcher"),
