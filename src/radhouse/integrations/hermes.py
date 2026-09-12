@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from radhouse.application.ports import AgentWorkPort
 from radhouse.domain.tasks import (
     Attempt, RuntimeCapabilities, RuntimeDispatch, RuntimeFailure, RuntimeResult, Task,
 )
@@ -273,7 +274,7 @@ class HermesAgentWorkAdapter:
         self.runtime_revision = runtime_revision
         self.clock = clock
 
-    def capabilities(self) -> RuntimeCapabilities:
+    def capabilities(self, _task: Task) -> RuntimeCapabilities:
         capabilities = self.client.capabilities()
         return RuntimeCapabilities(
             runtime_revision=self.runtime_revision,
@@ -283,7 +284,7 @@ class HermesAgentWorkAdapter:
     def start_or_attach(
         self, task: Task, attempt: Attempt, dispatch_key: str
     ) -> RuntimeDispatch:
-        capabilities = self.capabilities()
+        capabilities = self.capabilities(task)
         submitted_at = self.clock().astimezone(timezone.utc)
         accepted = self.client.start_or_attach(
             input_text=task.brief,
@@ -301,7 +302,7 @@ class HermesAgentWorkAdapter:
             ),
         )
 
-    def result(self, dispatch: RuntimeDispatch) -> RuntimeResult:
+    def result(self, _task: Task, dispatch: RuntimeDispatch) -> RuntimeResult:
         run = self.client.status(dispatch.run_id)
         if run.status in {"queued", "running", "waiting_for_approval", "stopping"}:
             return RuntimeResult("running")
@@ -313,7 +314,36 @@ class HermesAgentWorkAdapter:
             return RuntimeResult("unknown")
         return RuntimeResult("failed", run.output)
 
-    def stop(self, dispatch: RuntimeDispatch) -> bool:
+    def stop(self, _task: Task, dispatch: RuntimeDispatch) -> bool:
         return self.client.stop(dispatch.run_id).status in {
             "stopping", "cancelled", "completed", "failed", "interrupted",
         }
+
+
+class RoutingAgentWork:
+    """Route every runtime operation by the task's durable bot identity."""
+
+    def __init__(self, adapters: dict[str, AgentWorkPort]):
+        if not adapters or any(_IDENTIFIER.fullmatch(key) is None for key in adapters):
+            raise ValueError("invalid_bot_runtime_routes")
+        self.adapters = dict(adapters)
+
+    def _adapter(self, task: Task) -> AgentWorkPort:
+        try:
+            return self.adapters[task.bot_id]
+        except KeyError:
+            raise RuntimeFailure("runtime_not_configured") from None
+
+    def capabilities(self, task: Task) -> RuntimeCapabilities:
+        return self._adapter(task).capabilities(task)
+
+    def start_or_attach(
+        self, task: Task, attempt: Attempt, dispatch_key: str,
+    ) -> RuntimeDispatch:
+        return self._adapter(task).start_or_attach(task, attempt, dispatch_key)
+
+    def result(self, task: Task, dispatch: RuntimeDispatch) -> RuntimeResult:
+        return self._adapter(task).result(task, dispatch)
+
+    def stop(self, task: Task, dispatch: RuntimeDispatch) -> bool:
+        return self._adapter(task).stop(task, dispatch)

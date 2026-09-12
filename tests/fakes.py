@@ -152,7 +152,7 @@ class FakeAgentWork(_FakeLedger):
         self.crash_after_commit = crash_after_commit
         self.clock = clock or (lambda: datetime.now(timezone.utc))
 
-    def capabilities(self) -> RuntimeCapabilities:
+    def capabilities(self, _task: Task) -> RuntimeCapabilities:
         return RuntimeCapabilities("fake-runtime-v1", 86_400)
 
     def start_or_attach(
@@ -207,7 +207,7 @@ class FakeAgentWork(_FakeLedger):
             submitted_at, retention_until,
         )
 
-    def result(self, dispatch: RuntimeDispatch) -> RuntimeResult:
+    def result(self, _task: Task, dispatch: RuntimeDispatch) -> RuntimeResult:
         with self.connect() as db:
             row = db.execute(
                 "SELECT state,result FROM agent_runs WHERE run_id=?", (dispatch.run_id,),
@@ -222,7 +222,7 @@ class FakeAgentWork(_FakeLedger):
             return RuntimeResult("failed")
         return RuntimeResult("completed", row[1])
 
-    def stop(self, dispatch: RuntimeDispatch) -> bool:
+    def stop(self, _task: Task, dispatch: RuntimeDispatch) -> bool:
         with self.connect() as db:
             cursor = db.execute(
                 "UPDATE agent_runs SET state='cancelled' WHERE run_id=?", (dispatch.run_id,),

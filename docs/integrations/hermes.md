@@ -14,6 +14,12 @@ The first transport candidate is Hermes's HTTP Runs API. One gateway owns one
 Hermes home. Separate sessions may overlap when their resource claims do not
 conflict; Radhouse does not impose a blanket one-task-per-bot rule.
 
+The controller's implemented runtime router selects that gateway from the
+task's durable bot ID for capability discovery, start/attach, result polling,
+and exact-run stop. A missing bot route becomes a bounded unavailable-runtime
+state. Provider names, model names, session text, or a returned run ID cannot
+select another bot's gateway.
+
 ## Bot guest boundary
 
 Run Hermes as a dedicated unprivileged user with no `sudo`, Docker socket/group,
