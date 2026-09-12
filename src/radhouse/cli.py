@@ -32,6 +32,7 @@ def _summary(config) -> dict:
         "schema_version": config.schema_version,
         "deployment_id": config.database.deployment_id,
         "database": config.database.name,
+        "provider_count": len(config.providers),
         "bot_count": len(config.bots),
     }
 

@@ -126,6 +126,7 @@ composition root's real authentication adapter and current Radhouse authorizatio
 - [PostgreSQL storage boundary](docs/storage.md): separate fixture/application
   guards, deployment identity, schema compatibility, and remaining migration work.
 - Integration profiles for [Hermes](docs/integrations/hermes.md),
+  [OpenAI-compatible local inference](docs/integrations/openai-compatible.md),
   [Authentik](docs/integrations/authentik.md), and
   [Buzz](docs/integrations/buzz.md): pinned qualification candidates, boundaries,
   recovery requirements, and the evidence still needed before a live pilot.

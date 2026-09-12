@@ -17,6 +17,8 @@ Version 1 of the schema covers the currently implemented controller pieces:
   through an absolute secret-file path;
 - one bounded coordinator identity, interval, and per-cycle task limit;
 - an explicit absolute path to the built operator assets; and
+- one or more stable OpenAI-compatible provider bindings with an exact model
+  alias and an operator-qualified capability ceiling; and
 - one distinct Hermes-home endpoint, token-file path, profile, pinned runtime
   revision, and stable provider binding for every configured bot.
 
@@ -38,6 +40,13 @@ builds the durable bot-ID routes, and owns client shutdown. Construction does
 not connect to PostgreSQL, contact Hermes, inspect a provider, or start a
 listener. A deployment supplies the separately qualified provider and
 authentication adapters before it can serve operator traffic.
+
+Provider probes use only `GET /models`; they never submit generation requests.
+HTTPS or a literal loopback address is the default. A private overlay may admit
+plain HTTP to a literal RFC1918 address when the deployment supplies the network
+boundary, as in a source-fenced homelab inference VLAN. Hostnames and public
+addresses cannot use that exception. Each bot must name one configured binding,
+and an operator task request cannot override that durable assignment.
 
 Identity configuration is intentionally absent until the local-account and OIDC
 adapters have concrete, tested session and assurance contracts. A deployment

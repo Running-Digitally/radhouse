@@ -27,6 +27,29 @@ class Client:
         self.closed = True
 
 
+class ProviderClient:
+    created = []
+
+    def __init__(
+        self, binding, endpoint, requested_model, requirements, *, bearer_token,
+        allow_plaintext_private_network,
+    ):
+        self.binding = binding
+        self.endpoint = endpoint
+        self.requested_model = requested_model
+        self.requirements = requirements
+        self.bearer_token = bearer_token
+        self.allow_plaintext_private_network = allow_plaintext_private_network
+        self.closed = False
+        self.created.append(self)
+
+    def describe(self, binding):
+        return ProviderDescription(binding, self.requested_model)
+
+    def close(self):
+        self.closed = True
+
+
 def secret(path: Path, value: str) -> Path:
     path.write_text(value, encoding="utf-8")
     path.chmod(0o600)
@@ -52,6 +75,14 @@ coordinator:
   max_tasks_per_cycle: 7
 web:
   root: {tmp_path}/web
+providers:
+  - binding: local-chat
+    endpoint: https://inference.example.invalid/v1
+    model: local-chat
+    requirements:
+      required: [text, tools]
+      admitted: [text, tools, structured_output]
+      minimum_context_tokens: 8192
 bots:
   - bot_id: researcher-001
     endpoint: https://researcher.example.invalid
@@ -108,3 +139,28 @@ def test_partial_composition_closes_created_clients_on_secret_refusal(tmp_path: 
 
     assert len(Client.created) == 1
     assert Client.created[0].closed is True
+
+
+def test_composition_can_build_and_own_configured_provider_routes(tmp_path: Path):
+    Client.created = []
+    ProviderClient.created = []
+
+    composition = compose_controller(
+        configuration(tmp_path),
+        client_factory=Client,
+        provider_factory=ProviderClient,
+    )
+
+    assert len(ProviderClient.created) == 1
+    provider = ProviderClient.created[0]
+    assert provider.binding == "local-chat"
+    assert provider.endpoint == "https://inference.example.invalid/v1"
+    assert provider.requested_model == "local-chat"
+    assert provider.bearer_token is None
+    assert provider.requirements.required_capabilities == frozenset({"text", "tools"})
+    assert provider.requirements.minimum_context_tokens == 8192
+    assert composition.provider.describe("local-chat").available is True
+
+    composition.close()
+    assert provider.closed is True
+    assert all(client.closed for client in Client.created)

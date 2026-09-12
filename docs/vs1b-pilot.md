@@ -100,6 +100,14 @@ only application-owned result or error codes. One task error does not prevent
 the remaining selected tasks from advancing. Deployment timing, process
 shutdown, and backoff remain composition-root responsibilities.
 
+The configured provider path now has a read-only OpenAI-compatible catalog
+adapter. It follows a stable alias, applies an operator-qualified capability
+ceiling, optionally records a deployment-supplied physical revision, and makes
+network or catalog failures visible without issuing a model request. The
+offline-safe composition root constructs these provider routes and the per-bot
+Hermes routes from protected secret files; live authentication and listener
+startup remain separate gates.
+
 ## Increment B: the operator work home
 
 **Implementation status:** the current branch implements the server-owned
