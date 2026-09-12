@@ -117,6 +117,8 @@ composition root's real authentication adapter and current Radhouse authorizatio
   for durable Hermes execution, the TypeScript work home, and real Buzz parity.
 - [Reference deployment foundation](docs/deployment/reference-foundation.md):
   reusable Proxmox or supplied-VM roles, readiness states, and handoff evidence.
+- [Configuration and private overlays](docs/configuration.md): strict public YAML,
+  private replacement values, secret-file references, and endpoint boundaries.
 - Integration profiles for [Hermes](docs/integrations/hermes.md),
   [Authentik](docs/integrations/authentik.md), and
   [Buzz](docs/integrations/buzz.md): pinned qualification candidates, boundaries,
