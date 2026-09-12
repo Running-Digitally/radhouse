@@ -105,6 +105,27 @@ class Service:
             self._authorize(tx, actor, task, envelope)
             return task
 
+    def coordination_candidates(self, limit: int) -> tuple[str, ...]:
+        if not 1 <= limit <= 100:
+            raise ValueError("invalid_coordination_limit")
+        held = {"human_pause", "grant_withdrawal", "budget_exhausted"}
+        with self.store.transaction() as tx:
+            tasks = tx.tasks()
+        return tuple(
+            task.task_id for task in tasks
+            if task.phase != "closed"
+            and (task.phase == "stopping" or not set(task.blockers) & held)
+        )[:limit]
+
+    def advance(self, task_id: str, worker_id: str) -> Task:
+        with self.store.transaction() as tx:
+            task = self._task(tx, task_id)
+        if task.phase == "closed":
+            return task
+        if task.phase == "queued":
+            return self.run(task_id, worker_id)
+        return self.recover(task_id)
+
     def work_home(self, actor: AuthContext, *, envelope: Envelope) -> WorkHome:
         with self.store.transaction() as tx:
             access = tx.access(actor.principal_id)
