@@ -9,7 +9,7 @@ Two store entry points keep development proof separate from retained work:
 - `PostgresStore` accepts only a generated, loopback-only VS0 database with its
   exact fixture ownership marker.
 - `ApplicationPostgresStore` accepts an explicitly named database and requires
-  one matching `radhouse_metadata` row containing the configured deployment ID
+  one matching `radhouse_metadata` row containing the configured deployment ID,
   supported schema version, and packaged migration digest.
 
 Both reject libpq service indirection, arbitrary connection options, missing
@@ -33,8 +33,23 @@ database/schema creation and temporary-table permission. It returns a bounded
 receipt with the database, deployment identity, schema version, migration digest,
 and whether the schema was initialized or already current.
 
-A CLI wrapper, upgrade migration, backup gate, and recovery proof remain before
-retained deployment. The runtime application role must not own schema objects or
-receive create, role, database, or migration authority. A matching metadata row
-proves target identity and compatibility; it does not grant migration permission
-or prove backup coverage.
+The CLI wrapper requires the schema-owner DSN in a private, regular, bounded
+single-line file. A missing `--apply` returns `apply_required` without reading
+that file or contacting PostgreSQL. The explicit initialization form is:
+
+```sh
+radhouse migrate --config /etc/radhouse/base.yaml \
+  --overlay /etc/radhouse/private.yaml \
+  --owner-dsn-file /run/secrets/radhouse-owner-dsn \
+  --runtime-role radhouse_runtime --apply
+```
+
+Do not retain the schema-owner DSN beside the application runtime secret after
+the admitted migration window. The JSON result contains only the database and
+deployment identity, schema version, migration digest, and result code.
+
+Upgrade migrations, a backup gate, and recovery proof remain before retained
+deployment. The runtime application role must not own schema objects or receive
+create, role, database, or migration authority. A matching metadata row proves
+target identity and compatibility; it does not grant migration permission or
+prove backup coverage.

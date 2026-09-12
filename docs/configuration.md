@@ -36,3 +36,11 @@ run before starting a listener or coordinator.
 Identity configuration is intentionally absent until the local-account and OIDC
 adapters have concrete, tested session and assurance contracts. A deployment
 cannot infer or enable synthetic authentication from this file.
+
+Validate a base and optional private overlay without reading any referenced
+secret or contacting any endpoint:
+
+```sh
+radhouse config-check --config /etc/radhouse/base.yaml \
+  --overlay /etc/radhouse/private.yaml
+```
