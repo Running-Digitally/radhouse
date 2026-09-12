@@ -17,6 +17,10 @@ and advances eligible work while preserving human pauses and continuing past one
 sanitized task failure. There is no installable fleet release or production
 authentication adapter yet; the features below remain the intended version 1.0.
 
+The offline-safe composition root reads protected database and per-bot Hermes
+secret files, routes runtime operations by durable bot ID, and owns client
+shutdown without contacting a configured service during construction.
+
 ## Why Radhouse?
 
 Running an agent in a dedicated VM is a useful beginning. Managing several

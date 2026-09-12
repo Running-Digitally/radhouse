@@ -75,10 +75,12 @@ class BotRuntimeConfig(StrictModel):
     endpoint: str
     token: SecretFile
     profile: str
+    runtime_revision: str
     provider_binding: str
 
     _bot_id = field_validator("bot_id")(_identifier)
     _profile = field_validator("profile")(_identifier)
+    _runtime_revision = field_validator("runtime_revision")(_identifier)
     _provider_binding = field_validator("provider_binding")(_identifier)
 
     @field_validator("endpoint")

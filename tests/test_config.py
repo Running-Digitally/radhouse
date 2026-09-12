@@ -20,6 +20,7 @@ bots:
     endpoint: https://agent.example.invalid
     token: {path: /run/secrets/hermes-token}
     profile: researcher
+    runtime_revision: hermes-0.21.1
     provider_binding: local-chat
 """
 
@@ -39,6 +40,7 @@ bots:
     endpoint: https://researcher.private.example
     token: {path: /run/secrets/private-hermes-token}
     profile: researcher
+    runtime_revision: hermes-0.21.1
     provider_binding: nemo-chat
 """)
 
@@ -102,6 +104,7 @@ def test_duplicate_bot_identity_or_hermes_home_is_rejected(tmp_path: Path):
     endpoint: https://agent.example.invalid
     token: {path: /run/secrets/reviewer-token}
     profile: reviewer
+    runtime_revision: hermes-0.21.1
     provider_binding: local-chat
 """
     with pytest.raises(ConfigurationError, match="configuration_invalid"):
