@@ -348,7 +348,7 @@ class Service:
 
         if dispatch.state == "prepared":
             try:
-                capabilities = self.work.capabilities()
+                capabilities = self.work.capabilities(task)
                 self._validate_capabilities(capabilities)
             except RuntimeFailure:
                 return self._runtime_unavailable(task_id)
@@ -414,12 +414,12 @@ class Service:
             current = self._task(tx, task_id)
         if current.phase == "stopping":
             try:
-                if not self.work.stop(runtime_dispatch):
+                if not self.work.stop(current, runtime_dispatch):
                     return self._needs_attention(task_id, dispatch.key)
             except RuntimeFailure:
                 return self._needs_attention(task_id, dispatch.key)
         try:
-            result = self.work.result(runtime_dispatch)
+            result = self.work.result(current, runtime_dispatch)
         except RuntimeFailure:
             return self._needs_attention(task_id, dispatch.key)
         if result.state == "unknown":
@@ -501,7 +501,7 @@ class Service:
         elif dispatch.state == "accepted":
             exact_run = True
             try:
-                stopped = self.work.stop(self._runtime_dispatch(dispatch))
+                stopped = self.work.stop(task, self._runtime_dispatch(dispatch))
             except RuntimeFailure:
                 stopped = False
         elif dispatch.state == "closed":

@@ -6,7 +6,7 @@ import pytest
 
 from radhouse.integrations.hermes import (
     HermesAgentWorkAdapter, HermesCapabilities, HermesDispatch, HermesGatewayError,
-    HermesRun, HermesRunsClient, MAX_RESPONSE_BYTES,
+    HermesRun, HermesRunsClient, MAX_RESPONSE_BYTES, RoutingAgentWork,
 )
 from radhouse.domain.tasks import Attempt, Task
 
@@ -258,7 +258,7 @@ def test_agent_work_adapter_preserves_task_session_and_provider_binding():
     attempt = Attempt("attempt-01", task.task_id, 1, "worker")
 
     dispatch = adapter.start_or_attach(task, attempt, attempt.attempt_id)
-    result = adapter.result(dispatch)
+    result = adapter.result(task, dispatch)
 
     assert dispatch.session_id == task.task_id
     assert dispatch.provider_binding == "nemo-chat"
@@ -266,7 +266,7 @@ def test_agent_work_adapter_preserves_task_session_and_provider_binding():
     assert dispatch.submitted_at == now
     assert int((dispatch.retention_until - now).total_seconds()) == 86_400
     assert result.state == "completed" and result.content == "Cited result"
-    assert adapter.stop(dispatch)
+    assert adapter.stop(task, dispatch)
     assert client.stopped == ["run-01"]
 
 
@@ -290,4 +290,47 @@ def test_agent_work_adapter_maps_runtime_states_without_inventing_completion(
     dispatch = RuntimeDispatch(
         "run-01", "task-01", "nemo-chat", "hermes-0.21.1", now, now,
     )
-    assert adapter.result(dispatch).state == radhouse_state
+    task = Task(
+        "task-01", "alice", "bot-01", "project-01", "Research safely.",
+        "nemo-chat", None, 3,
+    )
+    assert adapter.result(task, dispatch).state == radhouse_state
+
+
+def test_runtime_router_uses_durable_bot_identity_for_every_operation():
+    class Adapter:
+        def __init__(self, name):
+            self.name = name
+            self.calls = []
+
+        def capabilities(self, task):
+            self.calls.append(("capabilities", task.bot_id))
+            from radhouse.domain.tasks import RuntimeCapabilities
+            return RuntimeCapabilities(self.name, 60)
+
+        def start_or_attach(self, task, attempt, dispatch_key):
+            self.calls.append(("start", task.bot_id, dispatch_key))
+            return "dispatch"
+
+        def result(self, task, dispatch):
+            self.calls.append(("result", task.bot_id, dispatch))
+            return "result"
+
+        def stop(self, task, dispatch):
+            self.calls.append(("stop", task.bot_id, dispatch))
+            return True
+
+    alpha, beta = Adapter("alpha"), Adapter("beta")
+    router = RoutingAgentWork({"bot-01": alpha, "bot-02": beta})
+    task = Task(
+        "task-01", "alice", "bot-02", "project-01", "Research safely.",
+        "nemo-chat", None, 3,
+    )
+    attempt = Attempt("attempt-01", task.task_id, 1, "worker")
+
+    assert router.capabilities(task).runtime_revision == "beta"
+    assert router.start_or_attach(task, attempt, "dispatch-01") == "dispatch"
+    assert router.result(task, "dispatch") == "result"
+    assert router.stop(task, "dispatch")
+    assert alpha.calls == []
+    assert [call[0] for call in beta.calls] == ["capabilities", "start", "result", "stop"]
