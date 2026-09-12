@@ -21,7 +21,8 @@ services:
     ports:
       - 127.0.0.1:55432:5432
     networks:
-      - database
+      database:
+        ipv4_address: 172.30.220.2
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U radhouse_owner -d radhouse"]
       interval: 10s
@@ -37,6 +38,8 @@ services:
 networks:
   database:
     name: radhouse_database
+    driver_opts:
+      com.docker.network.bridge.name: br-rh-db
     ipam:
       config:
         - subnet: 172.30.220.0/28
