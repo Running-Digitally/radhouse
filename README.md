@@ -95,6 +95,8 @@ evidence, and the remaining integration work.
 
 - [Architecture and first-slice review](docs/architecture-review.md): the proposed
   system structure, accepted boundaries, and the implemented offline slice.
+- [VS1-B useful-task pilot](docs/vs1b-pilot.md): the next implementation slices
+  for durable Hermes execution, the TypeScript work home, and real Buzz parity.
 - [Reference deployment foundation](docs/deployment/reference-foundation.md):
   reusable Proxmox or supplied-VM roles, readiness states, and handoff evidence.
 - Integration profiles for [Hermes](docs/integrations/hermes.md),
