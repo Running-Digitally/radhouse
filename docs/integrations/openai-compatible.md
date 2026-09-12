@@ -25,6 +25,14 @@ Radhouse can record a physical backing revision without changing the model sent
 by Hermes. This extension is observation only. The operator's model selector
 remains the sole switch authority.
 
+Some self-hosted servers publish exactly two catalog entries: the configured
+alias and its current physical model. A deployment can explicitly select
+`model_identity: catalog_sibling` for that contract. Radhouse records the sole
+other valid model ID and uses its context/capability metadata when present. Zero
+or multiple sibling entries fail closed as incompatible because the physical
+identity is ambiguous. The secure default remains `alias`; the alternative
+`radhouse_extension` mode requires the explicit field described above.
+
 Plain HTTP defaults to literal loopback. An administrator can explicitly admit
 a literal RFC1918 endpoint for a deployment whose network policy provides the
 trust boundary. The public default and remote-provider path use HTTPS. Provider

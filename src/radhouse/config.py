@@ -104,6 +104,7 @@ class ProviderConfig(StrictModel):
     binding: str
     endpoint: str
     model: str
+    model_identity: Literal["alias", "catalog_sibling", "radhouse_extension"] = "alias"
     token: SecretFile | None = None
     allow_plaintext_private_network: bool = False
     requirements: ProviderRequirementsConfig = ProviderRequirementsConfig()

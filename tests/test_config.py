@@ -98,6 +98,14 @@ def test_plaintext_provider_requires_literal_loopback_or_explicit_rfc1918_admiss
     assert config.providers[0].allow_plaintext_private_network is True
 
 
+def test_provider_can_explicitly_observe_one_physical_catalog_sibling(tmp_path: Path):
+    configured = BASE.replace(
+        "    model: local-chat", "    model: local-chat\n    model_identity: catalog_sibling",
+    )
+    config = load_config(write(tmp_path / "config.yaml", configured))
+    assert config.providers[0].model_identity == "catalog_sibling"
+
+
 @pytest.mark.parametrize("change", [
     "inline-password: forbidden",
     "unknown-setting: true",
