@@ -36,7 +36,10 @@ services:
 
 networks:
   database:
-    internal: true
+    name: radhouse_database
+    ipam:
+      config:
+        - subnet: 172.30.220.0/28
 
 secrets:
   postgres-owner-password:

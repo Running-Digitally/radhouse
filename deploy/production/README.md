@@ -5,7 +5,9 @@ and one separately isolated Hermes bot VM. The operator supplies private values;
 the public files contain no hostnames, addresses, credentials, or user data.
 
 The controller runs as an unprivileged host service. PostgreSQL publishes only
-to host loopback and its container network is internal. A separate unprivileged
+to host loopback and uses the fixed `172.30.220.0/28` container subnet. The host
+firewall must deny new outbound connections from that subnet while preserving
+established replies to the loopback-published database port. A separate unprivileged
 SSH identity forwards only the Hermes gateway and the deployment's bounded model
 catalog endpoint to loopback. Radhouse terminates HTTPS itself for this early
 pilot; expose the selected HTTPS port only to explicitly admitted operator
