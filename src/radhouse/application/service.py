@@ -75,6 +75,15 @@ class Service:
         event_identity = fingerprint({"kind": "start", "key": envelope.command_key, "body": body})
         with self.store.transaction() as tx:
             require_access(tx.access(actor.principal_id), start.bot_id, start.project_id, write=True)
+            bot = next(
+                (candidate for candidate in tx.bots(actor.principal_id)
+                 if candidate.bot_id == start.bot_id),
+                None,
+            )
+            if bot is None or bot.state != "ready":
+                raise Rejected("bot_unavailable", 409)
+            if bot.provider_binding != start.provider_binding:
+                raise Rejected("provider_binding_denied", 403)
             self._binding(tx, actor, envelope, start.project_id)
             delivery = tx.delivery(envelope.channel, envelope.event_id)
             if delivery:
