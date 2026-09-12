@@ -29,6 +29,35 @@ def test_migrate_without_apply_does_not_read_owner_secret(tmp_path: Path, capsys
     assert json.loads(capsys.readouterr().out)["result"] == "apply_required"
 
 
+def test_preflight_reads_protected_secrets_without_contacting_services(
+    tmp_path: Path, capsys,
+):
+    database = tmp_path / "database-dsn"
+    database.write_text(
+        "host=unreachable.example dbname=radhouse user=radhouse_runtime",
+        encoding="utf-8",
+    )
+    database.chmod(0o600)
+    token = tmp_path / "hermes-token"
+    token.write_text("synthetic-control-token", encoding="utf-8")
+    token.chmod(0o600)
+    contents = BASE.replace(
+        "/run/secrets/database-dsn", str(database),
+    ).replace("/run/secrets/hermes-token", str(token))
+    config = write(tmp_path / "config.yaml", contents)
+
+    assert main(["preflight", "--config", str(config)]) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output == {
+        "bot_count": 1,
+        "database": "radhouse",
+        "deployment_id": "example-home",
+        "provider_count": 1,
+        "result": "offline_ready",
+        "schema_version": 1,
+    }
+
+
 def test_secret_reader_accepts_private_regular_single_line(tmp_path: Path):
     secret = tmp_path / "secret"
     secret.write_text("host=database dbname=radhouse\n", encoding="utf-8")

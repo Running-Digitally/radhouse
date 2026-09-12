@@ -59,3 +59,16 @@ secret or contacting any endpoint:
 radhouse config-check --config /etc/radhouse/base.yaml \
   --overlay /etc/radhouse/private.yaml
 ```
+
+After installing protected secret files, validate their ownership, permissions,
+DSN boundary, and complete provider/bot composition without opening a database
+connection or contacting a provider or Hermes endpoint:
+
+```sh
+radhouse preflight --config /etc/radhouse/base.yaml \
+  --overlay /etc/radhouse/private.yaml
+```
+
+A successful result is `offline_ready`. It is a prerequisite for online health,
+identity, database, and runtime checks; it does not claim that any service is
+reachable or start the controller.

@@ -6,9 +6,11 @@ from dataclasses import asdict
 import json
 import sys
 
+from radhouse.composition import compose_controller
 from radhouse.config import ConfigurationError, load_config
 from radhouse.secrets import SecretFileError, read_secret_file
 from radhouse.storage.migrations import MigrationError, initialize_database
+from radhouse.storage.postgres import ApplicationStorageError
 
 
 def parser() -> argparse.ArgumentParser:
@@ -17,6 +19,11 @@ def parser() -> argparse.ArgumentParser:
     check = commands.add_parser("config-check", help="validate configuration without reading secrets")
     check.add_argument("--config", required=True)
     check.add_argument("--overlay")
+    preflight = commands.add_parser(
+        "preflight", help="validate protected deployment composition without network access",
+    )
+    preflight.add_argument("--config", required=True)
+    preflight.add_argument("--overlay")
     migrate = commands.add_parser("migrate", help="initialize or verify the configured control database")
     migrate.add_argument("--config", required=True)
     migrate.add_argument("--overlay")
@@ -43,6 +50,10 @@ def main(arguments: list[str] | None = None) -> int:
         config = load_config(args.config, getattr(args, "overlay", None))
         if args.command == "config-check":
             output = _summary(config)
+        elif args.command == "preflight":
+            with compose_controller(config):
+                pass
+            output = {**_summary(config), "result": "offline_ready"}
         elif not args.apply:
             output = {**_summary(config), "result": "apply_required"}
         else:
@@ -54,7 +65,12 @@ def main(arguments: list[str] | None = None) -> int:
                 runtime_role=args.runtime_role,
             )
             output = asdict(receipt)
-    except (ConfigurationError, MigrationError, SecretFileError) as error:
+    except (
+        ApplicationStorageError,
+        ConfigurationError,
+        MigrationError,
+        SecretFileError,
+    ) as error:
         print(json.dumps({"result": "refused", "code": str(error)}, sort_keys=True))
         return 2
     print(json.dumps(output, sort_keys=True))
