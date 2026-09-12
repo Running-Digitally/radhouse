@@ -20,6 +20,11 @@ and exact-run stop. A missing bot route becomes a bounded unavailable-runtime
 state. Provider names, model names, session text, or a returned run ID cannot
 select another bot's gateway.
 
+Task admission also compares the requested binding with the selected bot's
+durable provider assignment. An operator cannot move a task to another provider
+by changing an API request; changing that assignment remains an administrator
+configuration operation.
+
 ## Bot guest boundary
 
 Run Hermes as a dedicated unprivileged user with no `sudo`, Docker socket/group,
