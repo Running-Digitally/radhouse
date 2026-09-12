@@ -30,6 +30,14 @@ BEGIN
     END IF;
 END $$;
 
+CREATE TABLE public.radhouse_metadata (
+    singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton),
+    deployment_id text UNIQUE NOT NULL,
+    schema_version integer NOT NULL CHECK(schema_version>0)
+);
+INSERT INTO public.radhouse_metadata(singleton,deployment_id,schema_version)
+SELECT true, 'fixture-' || run_id, 1 FROM public.fixture_ownership WHERE singleton;
+
 CREATE TABLE public.actors (
     principal_id text PRIMARY KEY,
     role text NOT NULL CHECK(role IN ('admin','operator','viewer')),

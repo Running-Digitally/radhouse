@@ -9,6 +9,7 @@ BASE = """\
 schema_version: 1
 database:
   dsn: {path: /run/secrets/database-dsn}
+  name: radhouse
   deployment_id: example-home
 coordinator:
   worker_id: controller-01
