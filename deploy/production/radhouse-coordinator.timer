@@ -1,0 +1,12 @@
+[Unit]
+Description=Advance admitted Radhouse work
+
+[Timer]
+OnBootSec=20s
+OnUnitActiveSec=5s
+AccuracySec=1s
+Persistent=false
+Unit=radhouse-coordinator.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,32 @@
+[Unit]
+Description=Radhouse bounded model catalog view for %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=radhousebot
+Group=radhousebot
+ExecStart=/usr/bin/python3 -I /opt/radhouse/model_catalog_proxy.py
+EnvironmentFile=/etc/radhouse/model-catalog.env
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+IPAddressDeny=any
+IPAddressAllow=localhost
+IPAddressAllow=%i/32
+
+[Install]
+WantedBy=multi-user.target

@@ -1,4 +1,5 @@
 import { ApiError, RadhouseApi } from "./api.js";
+import type { AuthSession } from "./api.js";
 import { actionReason, blockerMessages, phaseLabel } from "./view-model.js";
 import type { ActionState, AgentSummary, Review, TaskCard, WorkHome } from "./types.js";
 
@@ -10,12 +11,8 @@ function requiredRoot(): HTMLElement {
 
 const root = requiredRoot();
 
-const query = new URLSearchParams(window.location.search);
-const conversationId = query.get("conversation_id") ?? "";
-const bindingRevision = Number(query.get("binding_revision") ?? "");
-const api = conversationId && Number.isInteger(bindingRevision) && bindingRevision > 0
-  ? new RadhouseApi(conversationId, bindingRevision)
-  : null;
+let api: RadhouseApi | null = null;
+let signedIn: AuthSession | null = null;
 
 function element<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -42,10 +39,78 @@ function errorMessage(error: unknown): string {
       binding_denied: "This work-home link is no longer current. Open it again from Radhouse.",
       access_denied: "Your access to this project or agent changed.",
       invalid_server_response: "Radhouse returned an unexpected response. No task was submitted.",
+      invalid_credentials: "That username, password, or authenticator code was not accepted.",
+      authentication_required: "Please sign in to continue.",
+      request_origin_denied: "Radhouse rejected this page origin.",
+      csrf_denied: "Your session changed. Sign in again before retrying.",
     };
     return known[error.code] ?? `Radhouse could not complete that action (${error.code}).`;
   }
   return "Radhouse could not reach the control service. Your task was not resubmitted.";
+}
+
+function useSession(session: AuthSession): void {
+  signedIn = session;
+  api = new RadhouseApi(
+    session.conversation_id, session.binding_revision, session.csrf_token,
+  );
+}
+
+function loginScreen(message?: string): void {
+  api = null;
+  signedIn = null;
+  root.replaceChildren();
+  const card = element("section", "login-card");
+  card.append(
+    element("p", "eyebrow", "Radhouse · A home for your agents"),
+    element("h1", "page-title", "Welcome home"),
+    element("p", "muted", "Sign in with your local Radhouse account."),
+  );
+  if (message) card.append(statusBanner(message, "error"));
+  const form = element("form", "login-form");
+  const fields: Array<[string, string, string, string]> = [
+    ["username", "Username", "text", "username"],
+    ["password", "Password", "password", "current-password"],
+    ["totp", "Authenticator code", "text", "one-time-code"],
+  ];
+  const inputs = new Map<string, HTMLInputElement>();
+  for (const [name, label, type, autocomplete] of fields) {
+    const wrapper = element("label", "field field--wide");
+    wrapper.append(element("span", "field__label", label));
+    const input = element("input", "field__control");
+    input.name = name;
+    input.type = type;
+    input.setAttribute("autocomplete", autocomplete);
+    input.required = true;
+    if (name === "totp") {
+      input.inputMode = "numeric";
+      input.pattern = "[0-9]{6}";
+      input.maxLength = 6;
+    }
+    inputs.set(name, input);
+    wrapper.append(input);
+    form.append(wrapper);
+  }
+  const submit = element("button", "button button--primary", "Sign in");
+  submit.type = "submit";
+  form.append(submit);
+  form.addEventListener("submit", (event) => void (async () => {
+    event.preventDefault();
+    setBusy(submit, true, "Signing in…");
+    try {
+      const session = await RadhouseApi.login(
+        inputs.get("username")?.value ?? "",
+        inputs.get("password")?.value ?? "",
+        inputs.get("totp")?.value ?? "",
+      );
+      useSession(session);
+      await load();
+    } catch (error) {
+      loginScreen(errorMessage(error));
+    }
+  })());
+  card.append(form);
+  root.append(card);
 }
 
 function statusBanner(message: string, tone: "info" | "error" = "info"): HTMLElement {
@@ -230,6 +295,16 @@ function render(home: WorkHome, message?: string): void {
     element("p", "muted", `${home.project_name} · ${home.role}`),
   );
   header.append(identity);
+  if (api && signedIn) {
+    const signOut = element(
+      "button", "button button--secondary", `Sign out ${signedIn.username}`,
+    );
+    signOut.type = "button";
+    signOut.addEventListener("click", () => void (async () => {
+      try { await api?.logout(); } finally { loginScreen(); }
+    })());
+    header.append(signOut);
+  }
   root.append(header);
   if (message) root.append(statusBanner(message));
   root.append(startPanel(home));
@@ -263,16 +338,20 @@ function render(home: WorkHome, message?: string): void {
 
 async function load(message?: string): Promise<void> {
   if (!api) {
-    root.replaceChildren(statusBanner(
-      "This work-home link is incomplete. Open Radhouse from your signed-in dashboard.",
-      "error",
-    ));
-    return;
+    try {
+      useSession(await RadhouseApi.currentSession());
+    } catch (error) {
+      loginScreen(error instanceof ApiError && error.status !== 401 ? errorMessage(error) : undefined);
+      return;
+    }
   }
+  const currentApi = api;
+  if (!currentApi) return;
   try {
-    render(await api.home(), message);
+    render(await currentApi.home(), message);
   } catch (error) {
-    root.replaceChildren(statusBanner(errorMessage(error), "error"));
+    if (error instanceof ApiError && error.status === 401) loginScreen();
+    else root.replaceChildren(statusBanner(errorMessage(error), "error"));
   }
 }
 

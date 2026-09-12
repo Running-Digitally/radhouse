@@ -1,0 +1,36 @@
+schema_version: 1
+database:
+  dsn:
+    path: /etc/radhouse/secrets/database-runtime-dsn
+  name: radhouse
+  deployment_id: example-radhouse-home
+coordinator:
+  worker_id: control-01
+  interval_seconds: 5
+  max_tasks_per_cycle: 4
+web:
+  root: /opt/radhouse/app/web
+authentication:
+  type: local
+  encryption_key:
+    path: /etc/radhouse/secrets/local-auth-key
+  expected_origin: https://radhouse.example:8443
+  cookie_name: radhouse_session
+  secure_cookie: true
+providers:
+  - binding: local-primary
+    endpoint: http://127.0.0.1:18001/v1
+    model: stable-local-alias
+    model_identity: catalog_sibling
+    requirements:
+      required: [text, tools]
+      admitted: [text, tools]
+      minimum_context_tokens: 8192
+bots:
+  - bot_id: researcher-01
+    endpoint: http://127.0.0.1:18642
+    token:
+      path: /etc/radhouse/secrets/researcher-01-token
+    profile: researcher
+    runtime_revision: replace-with-qualified-runtime-revision
+    provider_binding: local-primary

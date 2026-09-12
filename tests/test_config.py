@@ -84,6 +84,26 @@ def test_literal_loopback_http_is_allowed_for_a_managed_local_tunnel(tmp_path: P
     assert config.bots[0].endpoint == "http://127.0.0.1:8080"
 
 
+def test_local_auth_requires_secret_file_and_https_origin(tmp_path: Path):
+    auth = """\
+authentication:
+  type: local
+  encryption_key: {path: /run/secrets/local-auth-key}
+  expected_origin: https://radhouse.example:8443
+"""
+    config = load_config(write(
+        tmp_path / "config.yaml", BASE.replace("providers:\n", auth + "providers:\n"),
+    ))
+    assert config.authentication is not None
+    assert config.authentication.secure_cookie is True
+
+    plaintext = BASE.replace(
+        "providers:\n", auth.replace("https://radhouse.example:8443", "http://10.0.0.65:8443") + "providers:\n",
+    )
+    with pytest.raises(ConfigurationError, match="configuration_invalid"):
+        load_config(write(tmp_path / "plaintext.yaml", plaintext))
+
+
 def test_plaintext_provider_requires_literal_loopback_or_explicit_rfc1918_admission(tmp_path: Path):
     remote = BASE.replace(
         "https://inference.example.invalid/v1", "http://192.168.50.9:8000/v1",

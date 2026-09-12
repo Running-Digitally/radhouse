@@ -14,8 +14,10 @@ through either simulated operator channel. The small TypeScript work home lists
 assigned agents and owned project tasks, starts work, exposes server-authorized
 controls, and prepares an exact result review. A bounded coordinator cycle claims
 and advances eligible work while preserving human pauses and continuing past one
-sanitized task failure. There is no installable fleet release or production
-authentication adapter yet; the features below remain the intended version 1.0.
+sanitized task failure. The first supplied-VM deployment assets and a
+database-backed local-account adapter now exist, but the live pilot, OIDC
+adapter, Buzz transport, recovery qualification, and installable fleet release
+remain incomplete.
 
 The offline-safe composition root reads protected database and per-bot Hermes
 secret files, routes runtime operations by durable bot ID, and owns client

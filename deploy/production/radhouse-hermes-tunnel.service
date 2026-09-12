@@ -1,0 +1,29 @@
+[Unit]
+Description=Radhouse restricted transport to one Hermes home
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=radhouse-tunnel
+Group=radhouse-tunnel
+ExecStart=/usr/bin/ssh -F /etc/radhouse/tunnel/ssh_config -N radhouse-hermes
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
