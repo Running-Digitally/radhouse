@@ -12,9 +12,10 @@ A task records its exact runtime dispatch before contacting Hermes, reattaches
 after a lost reply or controller restart, and receives a reviewed publication
 through either simulated operator channel. The small TypeScript work home lists
 assigned agents and owned project tasks, starts work, exposes server-authorized
-controls, and prepares an exact result review. There is no installable fleet
-release or production authentication adapter yet; the features below remain the
-intended version 1.0.
+controls, and prepares an exact result review. A bounded coordinator cycle claims
+and advances eligible work while preserving human pauses and continuing past one
+sanitized task failure. There is no installable fleet release or production
+authentication adapter yet; the features below remain the intended version 1.0.
 
 ## Why Radhouse?
 

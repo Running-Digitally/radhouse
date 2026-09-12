@@ -92,6 +92,14 @@ exit after runtime admission, retention expiry without reattachment, exact-run
 cancellation after a lost start reply, and an independent running sibling. The
 canonical `scripts/vs0.py verify` path remains the reproducible release check.
 
+The first coordinator cycle is also implemented. A service manager may invoke
+this bounded, non-sleeping cycle repeatedly. Each cycle selects at most its
+configured limit, claims queued work through PostgreSQL, reconciles already
+active work after restart, skips explicit human/grant/budget holds, and records
+only application-owned result or error codes. One task error does not prevent
+the remaining selected tasks from advancing. Deployment timing, process
+shutdown, and backoff remain composition-root responsibilities.
+
 ## Increment B: the operator work home
 
 **Implementation status:** the current branch implements the server-owned
