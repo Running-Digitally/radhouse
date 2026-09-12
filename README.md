@@ -6,11 +6,12 @@ Radhouse is a self-hosted platform being built for persistent AI agents: agents
 that retain their workspaces, work on useful assignments, and collaborate within
 permissions you control.
 
-**Status: early development.** The first offline controller slice is implemented:
-a durable task can survive a controller crash and receive a reviewed publication
-through two simulated operator channels. The local PostgreSQL proof passes 111
-tests. There is no installable fleet release yet; the features below remain the
-intended version 1.0.
+**Status: early development.** The offline controller proof and VS1-B's durable
+Hermes execution path are implemented. A task records its exact runtime dispatch
+before contacting Hermes, reattaches after a lost reply or controller restart,
+and receives a reviewed publication through either simulated operator channel.
+There is no installable fleet release yet; the features below remain the intended
+version 1.0.
 
 ## Why Radhouse?
 
@@ -88,8 +89,9 @@ uv run python scripts/vs0.py verify
 This creates one disposable PostgreSQL fixture, demonstrates recovery in both
 simulated Radhouse/Buzz directions, runs the tests, and removes its owned test
 container and volume. It uses synthetic identities and fake agent/model/service
-adapters. See [the demo guide](docs/vs0-demo.md) for prerequisites, resource limits,
-evidence, and the remaining integration work.
+adapters. The Hermes HTTP adapter has separate bounded transport tests and makes
+no model request. See [the demo guide](docs/vs0-demo.md) for prerequisites,
+resource limits, evidence, and the remaining integration work.
 
 ## Read the plan
 

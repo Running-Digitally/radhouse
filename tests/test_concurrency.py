@@ -142,7 +142,7 @@ def test_two_workers_reserve_one_attempt_and_one_budget_unit(service, store, ali
 
 
 @pytest.mark.postgres
-def test_two_workers_execute_one_effect(service, store, fake_operations, fake_runtime, alice, envelope, start):
+def test_two_workers_execute_one_agent_run(service, store, fake_work, alice, envelope, start):
     task = service.admit(alice, envelope(), start)
     _parallel(lambda: service.run(task.task_id, "worker-one"),
               lambda: service.run(task.task_id, "worker-two"))
@@ -150,7 +150,7 @@ def test_two_workers_execute_one_effect(service, store, fake_operations, fake_ru
         current = uow.task(task.task_id)
     assert current.outcome == "completed"
     assert current.budget_remaining == start.budget - 1
-    assert fake_operations.execute_count == fake_operations.effect_count == fake_runtime.start_count == 1
+    assert fake_work.start_count == 1
 
 
 @pytest.mark.postgres
@@ -199,7 +199,7 @@ def test_conflicting_claim_waits_without_spending_budget_then_proceeds_after_can
 
 
 @pytest.mark.postgres
-def test_pause_resume_preserves_prepared_attempt_and_spent_budget(service, store, fake_operations, alice, envelope, start):
+def test_pause_resume_preserves_prepared_attempt_and_spent_budget(service, store, fake_work, alice, envelope, start):
     task = service.admit(alice, envelope(), start)
     active = service.claim(task.task_id, "worker-one")
     paused = service.pause(alice, task.task_id, active.state_revision, envelope=envelope())
@@ -208,16 +208,16 @@ def test_pause_resume_preserves_prepared_attempt_and_spent_budget(service, store
     assert paused.attempt_id == active.attempt_id
     assert paused.budget_remaining == active.budget_remaining == start.budget - 1
     assert service.run(task.task_id, "worker-one").blockers == paused.blockers
-    assert fake_operations.execute_count == 0
+    assert fake_work.start_count == 0
     resumed = service.resume(alice, task.task_id, paused.state_revision, envelope=envelope())
     assert resumed.attempt_id == active.attempt_id
     finished = service.run(task.task_id, "worker-one")
     assert finished.outcome == "completed"
     assert finished.attempt_id == active.attempt_id
     assert finished.budget_remaining == start.budget - 1
-    assert fake_operations.execute_count == 1
+    assert fake_work.start_count == 1
     with store.transaction() as uow:
-        assert uow.operation(task.task_id + ":report").attempt_id == active.attempt_id
+        assert uow.dispatch(active.attempt_id).attempt_id == active.attempt_id
 
 
 @pytest.mark.postgres

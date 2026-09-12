@@ -1,11 +1,14 @@
 import json
+from datetime import datetime, timezone
 
 import httpx
 import pytest
 
 from radhouse.integrations.hermes import (
-    HermesGatewayError, HermesRunsClient, MAX_RESPONSE_BYTES,
+    HermesAgentWorkAdapter, HermesCapabilities, HermesDispatch, HermesGatewayError,
+    HermesRun, HermesRunsClient, MAX_RESPONSE_BYTES,
 )
+from radhouse.domain.tasks import Attempt, Task
 
 
 def client(handler):
@@ -201,8 +204,90 @@ def test_transport_failure_is_a_bounded_runtime_error():
         "http://user:password@127.0.0.1:8642",
         "http://127.0.0.1:8642/base",
         "http://127.0.0.1:8642/?token=secret",
+        "http://192.0.2.10:8642",
+        "http://gateway.internal:8642",
     ],
 )
 def test_endpoint_must_be_a_plain_http_origin(endpoint):
     with pytest.raises(ValueError, match="invalid_hermes_endpoint"):
         HermesRunsClient(endpoint, "secret", transport=httpx.MockTransport(lambda _: None))
+
+
+def test_https_origin_can_be_supplied_by_the_private_deployment_overlay():
+    gateway = HermesRunsClient(
+        "https://hermes.example", "secret",
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, json={"features": {}})
+        ),
+    )
+    gateway.close()
+
+
+class StubHermesClient:
+    def __init__(self, status="completed"):
+        self.run_status = status
+        self.stopped = []
+
+    def capabilities(self):
+        return HermesCapabilities(86_400)
+
+    def start_or_attach(self, *, input_text, session_id, dispatch_key):
+        assert (input_text, session_id, dispatch_key) == (
+            "Research safely.", "task-01", "attempt-01",
+        )
+        return HermesDispatch("run-01", session_id, "queued", False)
+
+    def status(self, run_id):
+        return HermesRun(run_id, self.run_status, "Cited result")
+
+    def stop(self, run_id):
+        self.stopped.append(run_id)
+        return HermesRun(run_id, "stopping")
+
+
+def test_agent_work_adapter_preserves_task_session_and_provider_binding():
+    now = datetime(2026, 9, 12, 15, tzinfo=timezone.utc)
+    client = StubHermesClient()
+    adapter = HermesAgentWorkAdapter(
+        client, runtime_revision="hermes-0.21.1", clock=lambda: now,
+    )
+    task = Task(
+        "task-01", "alice", "bot-01", "project-01", "Research safely.",
+        "nemo-chat", None, 3,
+    )
+    attempt = Attempt("attempt-01", task.task_id, 1, "worker")
+
+    dispatch = adapter.start_or_attach(task, attempt, attempt.attempt_id)
+    result = adapter.result(dispatch)
+
+    assert dispatch.session_id == task.task_id
+    assert dispatch.provider_binding == "nemo-chat"
+    assert dispatch.runtime_revision == "hermes-0.21.1"
+    assert dispatch.submitted_at == now
+    assert int((dispatch.retention_until - now).total_seconds()) == 86_400
+    assert result.state == "completed" and result.content == "Cited result"
+    assert adapter.stop(dispatch)
+    assert client.stopped == ["run-01"]
+
+
+@pytest.mark.parametrize(
+    ("hermes_state", "radhouse_state"),
+    [
+        ("queued", "running"),
+        ("waiting_for_approval", "running"),
+        ("failed", "failed"),
+        ("cancelled", "cancelled"),
+        ("interrupted", "unknown"),
+    ],
+)
+def test_agent_work_adapter_maps_runtime_states_without_inventing_completion(
+    hermes_state, radhouse_state,
+):
+    client = StubHermesClient(hermes_state)
+    adapter = HermesAgentWorkAdapter(client, runtime_revision="hermes-0.21.1")
+    from radhouse.domain.tasks import RuntimeDispatch
+    now = datetime.now(timezone.utc)
+    dispatch = RuntimeDispatch(
+        "run-01", "task-01", "nemo-chat", "hermes-0.21.1", now, now,
+    )
+    assert adapter.result(dispatch).state == radhouse_state

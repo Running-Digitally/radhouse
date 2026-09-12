@@ -13,7 +13,13 @@ provider binding.
 
 ## Increment A: durable Hermes task execution
 
-The current VS0 service separates `RuntimePort.start_or_attach()` from an
+**Implementation status:** the public controller, PostgreSQL fixture schema, and
+Hermes adapter now implement this increment. The normal task path receives its
+result from `AgentWorkPort`; `OperationsPort` remains separate for future
+mediated effects. No live deployment or inference request is implied by these
+tests.
+
+The original VS0 service separated `RuntimePort.start_or_attach()` from an
 `OperationsPort` that fabricates the final report. That separation was useful for
 testing an uncertain external effect, but a live Hermes run both executes the
 assignment and produces its result. Treating the Hermes result as a second
@@ -27,6 +33,7 @@ class RuntimeDispatch:
     run_id: str
     session_id: str
     provider_binding: str
+    runtime_revision: str
     submitted_at: datetime
     retention_until: datetime
 
@@ -36,6 +43,7 @@ class RuntimeResult:
     content: str | None = None
 
 class AgentWorkPort(Protocol):
+    def capabilities(self) -> RuntimeCapabilities: ...
     def start_or_attach(
         self, task: Task, attempt: Attempt, dispatch_key: str
     ) -> RuntimeDispatch: ...
@@ -56,10 +64,12 @@ run automatically.
 The Hermes adapter uses the authenticated Runs API with proxy inheritance
 disabled, a fixed endpoint supplied by the private deployment overlay, finite
 connect/read/deadline limits, one selected bot profile, and no provider or model
-override. Its ordinary request contains the stable `nemo-chat` style binding
-selected for that deployment rather than a physical model name. The provider
-capability adapter records the served revision separately before admission and
-after an operator model change.
+override. The bot's Hermes profile contains the stable `nemo-chat` style binding
+selected for that deployment; the Runs API request carries no physical model or
+provider field. The provider capability adapter records the served revision
+separately before admission and after an operator model change.
+Plain HTTP is accepted only on an IP loopback origin; cross-machine deployments
+must terminate HTTPS or provide an explicitly managed local tunnel.
 
 `OperationsPort` remains available for later mediated service effects, where an
 effect has its own idempotency and lookup contract. It no longer manufactures
@@ -76,6 +86,11 @@ Acceptance for increment A:
 - completion stores at most one bounded result and closes one attempt; and
 - the model can change behind the stable provider binding without changing the
   task, bot, workspace, session, or dispatch identity.
+
+The implemented tests cover all seven conditions, including a hard controller
+exit after runtime admission, retention expiry without reattachment, exact-run
+cancellation after a lost start reply, and an independent running sibling. The
+canonical `scripts/vs0.py verify` path remains the reproducible release check.
 
 ## Increment B: the operator work home
 

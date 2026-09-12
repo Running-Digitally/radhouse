@@ -9,7 +9,10 @@ import sqlite3
 from uuid import uuid4
 
 from radhouse.domain.access import AuthContext
-from radhouse.domain.tasks import Attempt, EffectResult, LostReply, ProviderDescription, Task
+from radhouse.domain.tasks import (
+    Attempt, EffectResult, LostReply, ProviderDescription, RuntimeCapabilities,
+    RuntimeDispatch, RuntimeFailure, RuntimeResult, Task,
+)
 from radhouse.channels.commands import Envelope
 
 
@@ -43,6 +46,13 @@ class _FakeLedger:
                     dispatch_key TEXT PRIMARY KEY, task_id TEXT NOT NULL,
                     attempt_id TEXT NOT NULL UNIQUE, state TEXT NOT NULL,
                     attach_count INTEGER NOT NULL DEFAULT 0);
+                CREATE TABLE IF NOT EXISTS agent_runs (
+                    dispatch_key TEXT PRIMARY KEY, task_id TEXT NOT NULL,
+                    attempt_id TEXT NOT NULL UNIQUE, run_id TEXT NOT NULL UNIQUE,
+                    session_id TEXT NOT NULL, provider_binding TEXT NOT NULL,
+                    runtime_revision TEXT NOT NULL, submitted_at TEXT NOT NULL,
+                    retention_until TEXT NOT NULL, state TEXT NOT NULL,
+                    result TEXT, attach_count INTEGER NOT NULL DEFAULT 0);
             """)
 
     def connect(self) -> sqlite3.Connection:
@@ -126,6 +136,123 @@ class FakeRuntime(_FakeLedger):
     def attach_count(self) -> int:
         with self.connect() as db:
             return db.execute("SELECT coalesce(sum(attach_count),0) FROM runtimes").fetchone()[0]
+
+
+class FakeAgentWork(_FakeLedger):
+    """Durable fake of one agent runtime; results come from the run itself."""
+
+    def __init__(
+        self, path: str | Path, mode: str = "completed", *,
+        crash_after_commit: bool = False, clock=None,
+    ):
+        super().__init__(path)
+        if mode not in {"completed", "lost_reply_after_commit", "unknown", "running", "failed"}:
+            raise ValueError("unsupported synthetic agent-work mode")
+        self.mode = mode
+        self.crash_after_commit = crash_after_commit
+        self.clock = clock or (lambda: datetime.now(timezone.utc))
+
+    def capabilities(self) -> RuntimeCapabilities:
+        return RuntimeCapabilities("fake-runtime-v1", 86_400)
+
+    def start_or_attach(
+        self, task: Task, attempt: Attempt, dispatch_key: str
+    ) -> RuntimeDispatch:
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT task_id,attempt_id,run_id,session_id,provider_binding,"
+                "runtime_revision,submitted_at,retention_until FROM agent_runs "
+                "WHERE dispatch_key=?", (dispatch_key,),
+            ).fetchone()
+            if row is not None:
+                if row[:2] != (task.task_id, attempt.attempt_id):
+                    raise RuntimeFailure("runtime_dispatch_conflict")
+                db.execute(
+                    "UPDATE agent_runs SET attach_count=attach_count+1 WHERE dispatch_key=?",
+                    (dispatch_key,),
+                )
+                return RuntimeDispatch(
+                    row[2], row[3], row[4], row[5],
+                    datetime.fromisoformat(row[6]), datetime.fromisoformat(row[7]),
+                )
+            submitted_at = self.clock().astimezone(timezone.utc)
+            retention_until = submitted_at + timedelta(days=1)
+            run_id = "run-" + attempt.attempt_id
+            state = {
+                "completed": "completed",
+                "lost_reply_after_commit": "completed",
+                "unknown": "unknown",
+                "running": "running",
+                "failed": "failed",
+            }[self.mode]
+            result = (
+                "Synthetic report: the bounded offline task completed."
+                if state == "completed" else None
+            )
+            db.execute(
+                "INSERT INTO agent_runs(dispatch_key,task_id,attempt_id,run_id,session_id,"
+                "provider_binding,runtime_revision,submitted_at,retention_until,state,result) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (dispatch_key, task.task_id, attempt.attempt_id, run_id, task.task_id,
+                 task.provider_binding, "fake-runtime-v1", submitted_at.isoformat(),
+                 retention_until.isoformat(), state, result),
+            )
+        if self.crash_after_commit:
+            os._exit(73)
+        if self.mode == "lost_reply_after_commit":
+            raise RuntimeFailure("runtime_lost_reply")
+        return RuntimeDispatch(
+            run_id, task.task_id, task.provider_binding, "fake-runtime-v1",
+            submitted_at, retention_until,
+        )
+
+    def result(self, dispatch: RuntimeDispatch) -> RuntimeResult:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT state,result FROM agent_runs WHERE run_id=?", (dispatch.run_id,),
+            ).fetchone()
+        if row is None or row[0] == "unknown":
+            return RuntimeResult("unknown")
+        if row[0] == "running":
+            return RuntimeResult("running")
+        if row[0] == "cancelled":
+            return RuntimeResult("cancelled")
+        if row[0] == "failed":
+            return RuntimeResult("failed")
+        return RuntimeResult("completed", row[1])
+
+    def stop(self, dispatch: RuntimeDispatch) -> bool:
+        with self.connect() as db:
+            cursor = db.execute(
+                "UPDATE agent_runs SET state='cancelled' WHERE run_id=?", (dispatch.run_id,),
+            )
+        return cursor.rowcount == 1
+
+    def settle(self, dispatch_key: str, state: str = "completed") -> None:
+        result = "Synthetic report: the bounded offline task completed." if state == "completed" else None
+        with self.connect() as db:
+            db.execute(
+                "UPDATE agent_runs SET state=?,result=? WHERE dispatch_key=?",
+                (state, result, dispatch_key),
+            )
+
+    def state(self, dispatch_key: str) -> str | None:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT state FROM agent_runs WHERE dispatch_key=?", (dispatch_key,),
+            ).fetchone()
+        return row[0] if row else None
+
+    @property
+    def start_count(self) -> int:
+        with self.connect() as db:
+            return db.execute("SELECT count(*) FROM agent_runs").fetchone()[0]
+
+    @property
+    def attach_count(self) -> int:
+        with self.connect() as db:
+            return db.execute("SELECT coalesce(sum(attach_count),0) FROM agent_runs").fetchone()[0]
 
 
 class FakeProvider:

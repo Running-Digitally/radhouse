@@ -1,7 +1,7 @@
 # Hermes runtime profile
 
 Hermes is Radhouse's first agent runtime. Radhouse owns the authorized task,
-current grants, budgets, operation identities, and released outcome. Hermes owns
+current grants, budgets, dispatch and operation identities, and released outcome. Hermes owns
 agent execution inside one persistent bot VM. The adapter between them must not
 turn runtime messages into authoritative permission or publication decisions.
 
@@ -50,8 +50,8 @@ installation-specific endpoints stay outside the public configuration.
 
 ## Recovery and maintenance
 
-Persist Radhouse task, attempt, and operation identities independently of Hermes
-session retention. Reattach with the original attempt key after reconnect. A
+Persist Radhouse task, attempt, dispatch, and operation identities independently
+of Hermes session retention. Reattach with the original attempt key after reconnect. A
 missing runtime event or expired runtime deduplication record does not authorize
 another external effect; reconcile the target's durable receipt first.
 

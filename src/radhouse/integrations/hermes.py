@@ -5,12 +5,19 @@ no provider or model parameters: the Hermes bot profile owns its stable provider
 binding, such as ``nemo-chat``.
 """
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+import ipaddress
 import json
 import re
+import time
 from typing import Literal
 from urllib.parse import urlsplit
 
 import httpx
+
+from radhouse.domain.tasks import (
+    Attempt, RuntimeCapabilities, RuntimeDispatch, RuntimeFailure, RuntimeResult, Task,
+)
 
 
 MAX_INPUT_BYTES = 262_144
@@ -26,12 +33,11 @@ _STATES = {
 }
 
 
-class HermesGatewayError(RuntimeError):
+class HermesGatewayError(RuntimeFailure):
     """A sanitized failure code; vendor bodies and credentials are discarded."""
 
     def __init__(self, code: str):
         super().__init__(code)
-        self.code = code
 
 
 @dataclass(frozen=True)
@@ -65,6 +71,7 @@ class HermesRunsClient:
         transport: httpx.BaseTransport | None = None,
         connect_timeout: float = 5.0,
         read_timeout: float = 30.0,
+        request_deadline: float = 40.0,
     ):
         parsed = urlsplit(endpoint)
         if (
@@ -77,13 +84,19 @@ class HermesRunsClient:
             or parsed.path not in {"", "/"}
         ):
             raise ValueError("invalid_hermes_endpoint")
+        if parsed.scheme == "http":
+            try:
+                if not ipaddress.ip_address(parsed.hostname).is_loopback:
+                    raise ValueError("invalid_hermes_endpoint")
+            except ValueError:
+                raise ValueError("invalid_hermes_endpoint") from None
         if (
             not bearer_token
             or len(bearer_token) > 4096
             or any(ord(character) <= 0x20 or ord(character) > 0x7e for character in bearer_token)
         ):
             raise ValueError("invalid_hermes_bearer")
-        if connect_timeout <= 0 or read_timeout <= 0:
+        if connect_timeout <= 0 or read_timeout <= 0 or request_deadline <= 0:
             raise ValueError("invalid_hermes_timeout")
 
         timeout = httpx.Timeout(
@@ -100,6 +113,7 @@ class HermesRunsClient:
             trust_env=False,
             transport=transport,
         )
+        self._request_deadline = request_deadline
 
     def close(self) -> None:
         self._client.close()
@@ -179,10 +193,13 @@ class HermesRunsClient:
         body: dict[str, str] | None = None,
         headers: dict[str, str] | None = None,
     ) -> tuple[dict, httpx.Headers]:
+        deadline = time.monotonic() + self._request_deadline
         try:
             with self._client.stream(method, path, json=body, headers=headers) as response:
                 data = bytearray()
                 for chunk in response.iter_bytes():
+                    if time.monotonic() >= deadline:
+                        raise HermesGatewayError("runtime_timeout")
                     data.extend(chunk)
                     if len(data) > MAX_RESPONSE_BYTES:
                         raise HermesGatewayError("runtime_response_too_large")
@@ -238,3 +255,65 @@ def _status_code(status: int, path: str) -> str:
     if status == 429:
         return "runtime_capacity_limited"
     return "runtime_unexpected_status"
+
+
+class HermesAgentWorkAdapter:
+    """Translate the pinned wire API into Radhouse's agent-work contract."""
+
+    def __init__(
+        self,
+        client: HermesRunsClient,
+        *,
+        runtime_revision: str,
+        clock=lambda: datetime.now(timezone.utc),
+    ):
+        if _IDENTIFIER.fullmatch(runtime_revision) is None:
+            raise ValueError("invalid_hermes_runtime_revision")
+        self.client = client
+        self.runtime_revision = runtime_revision
+        self.clock = clock
+
+    def capabilities(self) -> RuntimeCapabilities:
+        capabilities = self.client.capabilities()
+        return RuntimeCapabilities(
+            runtime_revision=self.runtime_revision,
+            idempotency_retention_seconds=capabilities.idempotency_retention_seconds,
+        )
+
+    def start_or_attach(
+        self, task: Task, attempt: Attempt, dispatch_key: str
+    ) -> RuntimeDispatch:
+        capabilities = self.capabilities()
+        submitted_at = self.clock().astimezone(timezone.utc)
+        accepted = self.client.start_or_attach(
+            input_text=task.brief,
+            session_id=task.task_id,
+            dispatch_key=dispatch_key,
+        )
+        return RuntimeDispatch(
+            run_id=accepted.run_id,
+            session_id=accepted.session_id,
+            provider_binding=task.provider_binding,
+            runtime_revision=capabilities.runtime_revision,
+            submitted_at=submitted_at,
+            retention_until=submitted_at + timedelta(
+                seconds=capabilities.idempotency_retention_seconds
+            ),
+        )
+
+    def result(self, dispatch: RuntimeDispatch) -> RuntimeResult:
+        run = self.client.status(dispatch.run_id)
+        if run.status in {"queued", "running", "waiting_for_approval", "stopping"}:
+            return RuntimeResult("running")
+        if run.status == "completed":
+            return RuntimeResult("completed", run.output)
+        if run.status == "cancelled":
+            return RuntimeResult("cancelled", run.output)
+        if run.status == "interrupted":
+            return RuntimeResult("unknown")
+        return RuntimeResult("failed", run.output)
+
+    def stop(self, dispatch: RuntimeDispatch) -> bool:
+        return self.client.stop(dispatch.run_id).status in {
+            "stopping", "cancelled", "completed", "failed", "interrupted",
+        }

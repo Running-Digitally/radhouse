@@ -1,10 +1,10 @@
 # First controller proof: VS0-A
 
-VS0-A implements one durable synthetic task through two simulated operator
-channels. A controller process can die after an external fake action commits;
-a fresh process recovers the same task, checks the action's receipt, and continues
-without performing that confirmed action again. The operator can review and
-publish the exact result through the other channel.
+VS0-A began as one durable synthetic task through two simulated operator
+channels. The current harness also exercises VS1-B Increment A: a controller can
+die after a fake agent run is admitted, and a fresh process reattaches through the
+same durable dispatch key and runtime run ID. The operator can review and publish
+the exact result through the other channel.
 
 This is the first controller implementation. The channel labels are `radhouse`
 and `buzz`, but both use in-process FastAPI test clients. There is no browser UI,
@@ -43,27 +43,27 @@ checks, but database-dependent tests skip without that owned fixture; it cannot
 substitute for a successful `verify` run.
 
 The terminal trace shows admission, recovery, and reviewed publication with
-task/attempt identities and effect counts. The two successful tasks each cause
-one fake effect. A third task deliberately produces no authoritative receipt;
-repeated recovery leaves it waiting for attention without executing it again.
+task, attempt, and run identities. The two successful tasks each create one fake
+agent run. A third task deliberately produces no authoritative runtime result;
+repeated recovery leaves it waiting for attention without creating another run.
 
 ## What is implemented
 
 | Boundary | Behavior demonstrated |
 | --- | --- |
-| Durable work | PostgreSQL retains task identity, revisions, attempt ownership, budget reservations, resource claims, operations, review decisions, and channel deliveries. |
+| Durable work | PostgreSQL retains task identity, revisions, attempt ownership, budget reservations, resource claims, exact agent dispatches, mediated operations, review decisions, and channel deliveries. |
 | Two operator surfaces | Both normalized channel paths invoke the same application service. Repeated deliveries and reused command keys cannot create a second task or authorize a different publication. |
 | Current permission | Every operator request rechecks the actor, bot/project grants, and current conversation binding. The app factory requires an injected authentication adapter; request fields cannot assert identity, role, or MFA assurance. |
 | Privacy | Task contents and history remain owner-only. An eligible named publication audience can read the released result, without access to private task history. Revoked access applies to subsequent reads and repeated decisions. |
 | Protected decisions | Reviews bind content digest, audience, reviewer, task/state revisions, expiry, and synthetic fresh assurance. Changed or stale decisions fail; publication and delivery commit together. |
-| Recovery | Fake effect receipts live in a separate SQLite target outside the controller transaction. The demonstration kills a child controller after the effect commits, then recovers through another child process. Missing receipts never imply a safe replay. |
+| Recovery | Fake runtime runs live in a separate SQLite target outside the controller transaction. The demonstration kills a child controller after admission commits, then reattaches through another child process. Missing or expired runtime evidence never permits a new run. |
 | Provider changes | A task retains its selected provider binding while the fake provider changes its backing model. Capability failures block work without provider fallback or a fresh budget. |
 | Bounded overlap | Independent assignments on one bot can hold active attempts. Conflicting resource use waits, and concurrent workers cannot claim the same task attempt. |
 | Human control | Cancellation and independent pause/grant holds persist through provider recovery. Stale observations cannot resurrect closed work or assert a trusted external result. |
 
-A paused, prepared attempt retains its owner, resource claim, operation key, and
+A paused, prepared attempt retains its owner, resource claim, dispatch key, and
 spent budget reservation. Resume continues that same attempt; it neither spends
-another attempt budget nor silently reassigns an unresolved operation. The claim
+another attempt budget nor silently reassigns an unresolved dispatch. The claim
 blocks conflicting work while paused; cancellation releases it once stopping
 and the external outcome are resolved. This is a bounded prototype behavior to
 qualify against the real runtime before building the operator experience.
@@ -99,7 +99,7 @@ resource. Read the manifest before any manual cleanup; do not use a broad prune.
 Use the Python entrypoint for the proof: a bare Compose start does not perform
 the runner's ownership, schema, authority, deadline, or cleanup checks.
 
-## Verification record
+## Original VS0 verification record
 
 The final 2026-09-12 local arm64 run used Python 3.14.4 and the committed
 dependency pins:
@@ -108,6 +108,11 @@ dependency pins:
 - Both channel directions recovered in a fresh controller process, confirmed
   one effect per completed task, and published one reviewed result.
 - The unknown-receipt case stayed blocked without another execution.
+
+VS1-B adds Hermes wire-contract, durable dispatch, retention-expiry,
+lost-admission-reply, exact cancellation, sibling isolation, and grant-withdrawal
+coverage to this suite. Run the canonical command above for current release
+evidence rather than treating the historical VS0 count as the current total.
 - Cleanup completed with no retained fixture container or volume.
 
 The retained local manifest identifies the pre-commit source baseline separately

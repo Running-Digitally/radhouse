@@ -21,7 +21,7 @@ from psycopg.types.json import Jsonb
 from radhouse.domain.access import Access, Binding
 from radhouse.domain.releases import Publication, Review
 from radhouse.domain.tasks import (
-    Attempt, Delivery, Event, Operation, Rejected, SavedCommand, Task,
+    AgentDispatch, Attempt, Delivery, Event, Operation, Rejected, SavedCommand, Task,
 )
 
 
@@ -81,6 +81,10 @@ def _snapshot(row, kind):
         value["audience"] = tuple(value["audience"])
     if kind is Review:
         value["expires_at"] = datetime.fromisoformat(value["expires_at"])
+    if kind is AgentDispatch:
+        for field in ("submitted_at", "retention_until"):
+            if value[field] is not None:
+                value[field] = datetime.fromisoformat(value[field])
     return kind(**value)
 
 
@@ -269,6 +273,24 @@ class PostgresUnitOfWork:
         )
         if cursor.rowcount != 1:
             raise Rejected("operation_conflict")
+
+    def dispatch(self, key: str) -> AgentDispatch | None:
+        return _snapshot(self._connection.execute(
+            "SELECT snapshot FROM public.agent_dispatches WHERE dispatch_key=%s", (key,),
+        ).fetchone(), AgentDispatch)
+
+    def save_dispatch(self, dispatch: AgentDispatch) -> None:
+        cursor = self._connection.execute(
+            "INSERT INTO public.agent_dispatches(dispatch_key,task_id,attempt_id,state,run_id,snapshot) "
+            "VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT(dispatch_key) DO UPDATE SET "
+            "state=EXCLUDED.state,run_id=EXCLUDED.run_id,snapshot=EXCLUDED.snapshot "
+            "WHERE agent_dispatches.task_id=EXCLUDED.task_id "
+            "AND agent_dispatches.attempt_id=EXCLUDED.attempt_id",
+            (dispatch.key, dispatch.task_id, dispatch.attempt_id, dispatch.state,
+             dispatch.run_id, _json(dispatch)),
+        )
+        if cursor.rowcount != 1:
+            raise Rejected("dispatch_conflict")
 
     def add_event(self, event: Event) -> None:
         self._connection.execute(
