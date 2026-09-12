@@ -6,10 +6,11 @@ Radhouse is a self-hosted platform being built for persistent AI agents: agents
 that retain their workspaces, work on useful assignments, and collaborate within
 permissions you control.
 
-**Status: design and development.** This repository currently contains the
-product direction, principles, and release plan. There is no installable Radhouse
-release yet. The features below describe the intended version 1.0, not a tested
-or deployed system.
+**Status: early development.** The first offline controller slice is implemented:
+a durable task can survive a controller crash and receive a reviewed publication
+through two simulated operator channels. The local PostgreSQL proof passes 108
+tests. There is no installable fleet release yet; the features below remain the
+intended version 1.0.
 
 ## Why Radhouse?
 
@@ -75,10 +76,25 @@ Our version 1.0 direction includes:
 These are release requirements. Runtime compatibility, isolation, recovery,
 network profiles, and shared-service integrations still need qualification.
 
+## Run the first controller proof
+
+With Python 3.14, uv, and a running local Docker daemon:
+
+```sh
+uv sync --locked
+uv run python scripts/vs0.py verify
+```
+
+This creates one disposable PostgreSQL fixture, demonstrates recovery in both
+simulated Radhouse/Buzz directions, runs the tests, and removes its owned test
+container and volume. It uses synthetic identities and fake agent/model/service
+adapters. See [the demo guide](docs/vs0-demo.md) for prerequisites, resource limits,
+evidence, and the remaining integration work.
+
 ## Read the plan
 
 - [Architecture and first-slice review](docs/architecture-review.md): the proposed
-  system structure, reviewed in manageable chunks before implementation.
+  system structure, accepted boundaries, and the implemented offline slice.
 - [Product and security principles](PRINCIPLES.md): the rules that guide design
   choices and the limits those choices must make visible.
 - [Version 1.0 roadmap](ROADMAP.md): the intended boundaries, delivery sequence,

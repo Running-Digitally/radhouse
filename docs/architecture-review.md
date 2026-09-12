@@ -9,12 +9,14 @@ Chunk 3's bounded automatic recovery and bounded multitasking per bot are accept
 for V1; the remaining work/run lifecycle is proposed for review. Chunk 4's combined
 operator journey and chunk 5A's Python controller and TypeScript interface are
 accepted. Chunk 5B proposes module ownership and durable task contracts; detailed
-qualification and the first slice remain under review. Full operator equivalence
+qualification beyond the implemented VS0-A subset remains under review. Full operator equivalence
 with optional Buzz, including native protected reviews/approvals, is also an
 accepted V1 requirement. Testing both in the early usability pilot is accepted;
-chunk 6 now proposes the first bounded offline implementation. These decisions do not
-implement or deploy the product.
-Design depth: D3. Implementation authorization: none from this packet.
+chunk 6 records the first bounded offline implementation and its verification.
+The 2026-09-11 instruction to begin Radhouse development authorized VS0-A within
+its stated envelope. The wider product and live integrations remain unqualified.
+Design depth: D3. VS0-A is implemented on a feature branch; no live deployment
+is authorized by this packet.
 
 ## Review sequence
 
@@ -28,15 +30,13 @@ on a chunk does not silently accept later choices or authorize deployment.
 | 3. Work and recovery | Task/run state, admission, cancellation, delegation, inference changes, maintenance, and uncertain external effects | Bounded automatic recovery and bounded multitasking accepted; remaining lifecycle and concrete mechanisms under review |
 | 4. Operator and administrator experience | Onboarding, first task, access requests, sharing, and recovery screens | Combined operator journey accepted; implementation and usability qualification remain pending |
 | 5. Implementation design | Technology choices, packaging, schemas, typed contracts, module dependencies, and call paths | Chunk 5A stack direction accepted; chunk 5B module ownership and durable task contracts proposed |
-| 6. First implementation slice | Exact files, behavior, tests, demonstration, limits, and acceptance for the offline foundation | VS0-A proposed below; implementation approval pending |
+| 6. First implementation slice | Exact files, behavior, tests, demonstration, limits, and acceptance for the offline foundation | VS0-A implemented; 108 tests and both crash/recovery demonstrations passed |
 
-The first implementation candidate remains an offline foundation using synthetic
-identities/data and fake runtime, provider, and service adapters. Its intended
-proof is that authorized work can persist through interruption and a provider's
-backing-model change, while denied access and uncertain external effects remain
-visible. This is a scope preview; chunk 6 will specify the implementation only
-after the earlier contracts are reviewed. No live credentials or deployment
-are needed for that candidate.
+The first implementation is an offline foundation using synthetic identities/data
+and fake runtime, provider, and service adapters. It proves the accepted subset
+of task durability, provider attribution, access checks, and uncertain-effect
+handling. [Reproduction and limitations](vs0-demo.md) distinguish this evidence
+from the live runtime and operator experience still to qualify.
 
 ## Chunk 1: a small management layer and isolated bot computers
 
@@ -1067,9 +1067,11 @@ Exact first-slice scope and implementation are presented for review below.
 
 ## Chunk 6: VS0-A — one durable task through two simulated channels
 
-Status: proposed bounded implementation; approval pending. This slice implements
-only the following subset of chunk 5B's contracts. The wider V1 program design
-and real integration qualification remain review work.
+Status: implemented and locally verified on 2026-09-11. The final run passed
+108 tests without failures, errors, or skips, plus both fresh-process crash and
+recovery demonstrations. Cleanup reported no retained fixture resources. This
+slice implements only the following subset of chunk 5B's contracts; the wider
+V1 design and real integrations remain to qualify. See [the demo guide](vs0-demo.md).
 
 **Observable result:** a repeatable local demonstration starts a synthetic task
 through either simulated operator channel, survives a controller interruption,
@@ -1104,11 +1106,11 @@ outside this slice. The accepted early pilot will prove the actual interfaces.
 
 ### Files and ownership
 
-Create only used modules and required package markers; avoid empty scaffolding
-for the remaining fleet. Braces below expand to the named files in that directory.
-Implementation stays on a feature branch for review.
+The implementation includes only used modules and required package markers.
+Braces below expand to the named files in that directory. Implementation stays
+on a feature branch for review.
 
-| Files to create or update | Slice responsibility |
+| Implemented files | Slice responsibility |
 | --- | --- |
 | `pyproject.toml`, `uv.lock`, `.gitignore` | Isolated Python dependencies, reproducible lock and exclusions for environments and disposable output |
 | `src/radhouse/domain/{tasks,access,releases}.py` | Typed task/progress/attempt values, permission intersection and immutable release decisions; pure rules |
@@ -1141,8 +1143,9 @@ their outcome does not depend on arbitrary sleeps or a model's response timing.
 ### Initial dependency selection and qualification
 
 Use Python 3.14 for this development proof; record the exact interpreter in the
-verification output without changing a contributor's system Python. Proposed
-direct pins, checked against publisher package records on 2026-09-10:
+verification output without changing a contributor's system Python. These direct
+pins are installed and locked for the proof; package records were checked on
+2026-09-10 and the final suite ran with Python 3.14.4 on 2026-09-11:
 
 | Package | Pin / use |
 | --- | --- |
@@ -1152,14 +1155,13 @@ direct pins, checked against publisher package records on 2026-09-10:
 | [pytest](https://pypi.org/project/pytest/9.1.1/) | `9.1.1`, meaningful contract/integration checks |
 | [HTTPX](https://pypi.org/project/httpx/0.28.1/) | `0.28.1`, in-process test client; no prerelease dependency |
 
-The official image catalog lists `postgres:18.6-bookworm` for the relevant local
-architectures. Resolve and record its immutable manifest digest before running
-the fixture, then use that digest in the Compose recipe.
+The runner and Compose recipe pin `postgres:18.6-bookworm` to the verified
+registry index `sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af`.
 [Official PostgreSQL image catalog](https://github.com/docker-library/official-images/blob/master/library/postgres).
-Generate and inspect `uv.lock` with exact transitive versions/hashes after slice
-approval; metadata availability is not compatibility or security qualification.
-Stop to revise an incompatible direct pin rather than silently changing the stack.
-No dependencies or images have been installed as part of this design review.
+`uv.lock` records exact transitive versions and hashes. The local arm64 proof
+qualifies these dependencies for this fixture, not other platforms or production
+security. The HTTPX/Starlette and anyio deprecation warnings remain documented in
+the demo guide; no prerelease replacement was introduced.
 
 ### Acceptance cases
 
@@ -1174,17 +1176,17 @@ No dependencies or images have been installed as part of this design review.
 | Late/out-of-order observations | Old instance generations and duplicate observations cannot overwrite newer progress or resurrect stopped work. A current snapshot resynchronizes a simulated client after a delivery gap without broadening its audience. |
 | Disposable environment boundary | Refuse remote/unowned DB targets and missing fixture ownership; tests use separate connections for races. Cleanup removes only resources created for this run. |
 
-Proposed user commands, to be implemented: `uv run python scripts/vs0.py verify`
+Implemented user commands: `uv run python scripts/vs0.py verify`
 and `uv run python scripts/vs0.py demo`. Verification includes the demonstration
 and targeted tests once; repeated runs must create fresh owned fixtures. Report
 pass/fail per case, the exact source commit/dependency/image identities, and any
 residual resources. A green result is an offline contract proof, not a usable
 fleet, native Buzz UI, verified runtime recovery or validated security perimeter.
 
-### Proposed execution envelope and review gate
+### Accepted execution envelope
 
-After explicit slice approval, work in an isolated checkout on a `codex/` feature
-branch. Permit the listed source/tests/docs, local isolated dependency downloads,
+The implementation uses an isolated checkout on a `codex/` feature branch. Its
+authorized scope includes the listed source/tests/docs, local isolated dependency downloads,
 one disposable PostgreSQL container and test-owned storage on an explicitly
 verified local Docker Unix-socket context. No remote Docker context, existing
 database, host-wide package upgrade, request through a real bot integration or
@@ -1203,9 +1205,9 @@ fixture containers/volumes/output through the run manifest; keep code and useful
 sanitized test evidence. Broader implementation, real integrations and deployment
 require their own reviewed scope.
 
-The pending decision is to approve this bounded offline implementation and its
-applicable contracts, or revise the slice before coding. Stack acceptance and
-the earlier-pilot decision alone do not grant this execution envelope.
+VS0-A is implemented within this envelope. The next design and qualification
+step is VS1-A below; completed infrastructure and a passing offline proof do not
+by themselves admit live application connections or deployment.
 
 ### Prepared infrastructure and the path into the live pilot
 
@@ -1254,7 +1256,7 @@ This is a handoff contract to refine for VS1, not another standing service.
 | Persistent data and capacity | Prove enforceable storage limits, scheduled protection and an isolated restore before retained work. Budget portable sets, full-VM copies and restore staging together without double counting shared allocations; measure achievable RPO. A reserved backup allowance or a running guest is not recovery coverage or fleet-capacity evidence. |
 
 Infrastructure qualification and product usability are separate evidence. Service
-installation may advance while VS0-A is under review, but a healthy relay or a
+installation and offline development can advance independently, but a healthy relay or a
 successful model request cannot complete VS1-B. Mail, full fleet expansion and
 full V1 parity retain their later milestones. Local accounts and optional SSO
 remain supported; one pilot's selected identity provider is not a universal
