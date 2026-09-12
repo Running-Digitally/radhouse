@@ -17,8 +17,8 @@ Version 1 of the schema covers the currently implemented controller pieces:
   through an absolute secret-file path;
 - one bounded coordinator identity, interval, and per-cycle task limit;
 - an explicit absolute path to the built operator assets; and
-- one distinct Hermes-home endpoint, token-file path, profile, and stable
-  provider binding for every configured bot.
+- one distinct Hermes-home endpoint, token-file path, profile, pinned runtime
+  revision, and stable provider binding for every configured bot.
 
 Configuration never contains an inline password or token. Plain HTTP runtime
 endpoints are accepted only for literal loopback IP addresses, supporting an
@@ -32,6 +32,12 @@ limit, and returns only bounded error codes. Parsing a file does not prove that 
 secret exists, a TLS origin is trusted, a database is ready, or a runtime is
 reachable. Those checks belong to deterministic deployment preflight and must
 run before starting a listener or coordinator.
+
+The composition root reads the referenced database and Hermes token files,
+builds the durable bot-ID routes, and owns client shutdown. Construction does
+not connect to PostgreSQL, contact Hermes, inspect a provider, or start a
+listener. A deployment supplies the separately qualified provider and
+authentication adapters before it can serve operator traffic.
 
 Identity configuration is intentionally absent until the local-account and OIDC
 adapters have concrete, tested session and assurance contracts. A deployment

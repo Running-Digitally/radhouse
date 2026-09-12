@@ -20,10 +20,12 @@ bots:
     token:
       path: /run/secrets/researcher-001-hermes-token
     profile: researcher
+    runtime_revision: hermes-0.21.1
     provider_binding: local-chat
   - bot_id: reviewer-001
     endpoint: https://reviewer-001.example.invalid
     token:
       path: /run/secrets/reviewer-001-hermes-token
     profile: reviewer
+    runtime_revision: hermes-0.21.1
     provider_binding: local-chat
