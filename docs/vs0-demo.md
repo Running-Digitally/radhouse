@@ -101,10 +101,10 @@ the runner's ownership, schema, authority, deadline, or cleanup checks.
 
 ## Verification record
 
-The final 2026-09-11 local arm64 run used Python 3.14.4 and the committed
+The final 2026-09-12 local arm64 run used Python 3.14.4 and the committed
 dependency pins:
 
-- **108 tests passed; zero failures, errors, or skips.**
+- **111 tests passed; zero failures, errors, or skips.**
 - Both channel directions recovered in a fresh controller process, confirmed
   one effect per completed task, and published one reviewed result.
 - The unknown-receipt case stayed blocked without another execution.
@@ -114,8 +114,8 @@ The retained local manifest identifies the pre-commit source baseline separately
 from the implementation file hash. Its verification identities are:
 
 ```text
-run_id: 8aabc0ec0c0648039b4b1806272ee72a
-source_sha256: b3156f329de209529f6c2210dc503365ed5a1945901fcd538bce4b57174f6916
+run_id: f6b005b7d0b245a09d2f8290924e2b3d
+source_sha256: 8bec7d86921fecc20867ca57f6a2c0f70309305a6528419dfd6c1bdec8c454fe
 dependency_lock_sha256: 722e0a96bb9b239cfe2b1e904239214a7f0e375eabee3ed93e2a04dd40727de0
 ```
 

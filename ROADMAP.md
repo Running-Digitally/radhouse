@@ -110,7 +110,7 @@ denial, retention, and resource-pressure behavior as each slice is delivered.
 
 The [architecture and first-slice packet](docs/architecture-review.md) is the
 current review entry point. Its VS0-A subset is implemented and locally verified:
-108 tests and both simulated channel crash/recovery demonstrations passed.
+111 tests and both simulated channel crash/recovery demonstrations passed.
 [Run the proof](docs/vs0-demo.md); broader contracts and integrations remain to qualify.
 
 The accepted [earlier usability pilot](docs/architecture-review.md#earlier-usability-pilot--accepted-delivery-refinement)
@@ -123,6 +123,10 @@ live access.
 
 Prepared VM and component work feeds the
 [handoff into the live pilot](docs/architecture-review.md#prepared-infrastructure-and-the-path-into-the-live-pilot).
+The public [reference foundation](docs/deployment/reference-foundation.md) and
+[Hermes](docs/integrations/hermes.md), [Authentik](docs/integrations/authentik.md),
+and [Buzz](docs/integrations/buzz.md) profiles retain the reusable contracts from
+that work without carrying private deployment topology or receipts.
 Keep VS0-A independent of infrastructure provisioning. Refine the next milestone
 into VS1-A (qualify the selected prepared services) and VS1-B (the useful task
 through both real interfaces). Before retained workloads, replace empty-guest
@@ -185,8 +189,9 @@ restore evidence instead of assuming every new bot inherits existing backup jobs
 - Proactive-assignment schemas, event/delivery adapters, attention defaults,
   numerical budgets, feedback behavior, and evaluation thresholds within the
   accepted [prepared-assistance contract](docs/proactive-assistance.md).
-- The bundled SSO choice, MFA methods/assurance, enrollment and recovery,
-  session rules, ingress classification, and tested account-linking behavior.
+- Qualify the Authentik SSO candidate, including MFA methods/assurance,
+  enrollment and recovery, session rules, ingress classification, and tested
+  account-linking behavior. Local accounts remain supported.
 - Runtime checkpoint capabilities, inference conformance, and behavior when an
   operator changes the model behind a service-following alias.
 - Exact dependency versions, configuration schema, packaging recipes, and

@@ -8,7 +8,7 @@ permissions you control.
 
 **Status: early development.** The first offline controller slice is implemented:
 a durable task can survive a controller crash and receive a reviewed publication
-through two simulated operator channels. The local PostgreSQL proof passes 108
+through two simulated operator channels. The local PostgreSQL proof passes 111
 tests. There is no installable fleet release yet; the features below remain the
 intended version 1.0.
 
@@ -95,6 +95,12 @@ evidence, and the remaining integration work.
 
 - [Architecture and first-slice review](docs/architecture-review.md): the proposed
   system structure, accepted boundaries, and the implemented offline slice.
+- [Reference deployment foundation](docs/deployment/reference-foundation.md):
+  reusable Proxmox or supplied-VM roles, readiness states, and handoff evidence.
+- Integration profiles for [Hermes](docs/integrations/hermes.md),
+  [Authentik](docs/integrations/authentik.md), and
+  [Buzz](docs/integrations/buzz.md): pinned qualification candidates, boundaries,
+  recovery requirements, and the evidence still needed before a live pilot.
 - [Product and security principles](PRINCIPLES.md): the rules that guide design
   choices and the limits those choices must make visible.
 - [Version 1.0 roadmap](ROADMAP.md): the intended boundaries, delivery sequence,
