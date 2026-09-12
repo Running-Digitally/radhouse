@@ -26,7 +26,6 @@ RestrictRealtime=true
 SystemCallArchitectures=native
 IPAddressDeny=any
 IPAddressAllow=localhost
-IPAddressAllow=%i/32
 
 [Install]
 WantedBy=multi-user.target

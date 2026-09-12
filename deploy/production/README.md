@@ -27,9 +27,9 @@ sources.
 5. Create a private TLS key and certificate whose SAN exactly matches the
    configured origin. Keep the CA outside the VM and explicitly trust it on
    admitted clients.
-6. On the bot VM, install `model_catalog_proxy.py` and enable the templated
-   systemd unit with the exact model-server IP as its instance, for example
-   `radhouse-model-catalog@192.0.2.20.service`. It
+6. On the bot VM, install `model_catalog_proxy.py`. Keep the templated unit's
+   fail-closed `IPAddressDeny=any` and loopback allowance, then add a private
+   instance drop-in containing the exact model-server `IPAddressAllow`. It
    accepts only loopback `GET /v1/models`, performs one bounded upstream GET,
    follows no proxy setting or redirect, and has no generation route.
 7. On the bot VM, install the tunnel public key with `restrict,port-forwarding`
