@@ -73,6 +73,43 @@ class Operation:
 
 
 @dataclass(frozen=True)
+class AgentDispatch:
+    key: str
+    task_id: str
+    attempt_id: str
+    session_id: str
+    provider_binding: str
+    request_digest: str
+    state: Literal["prepared", "submitted", "accepted", "unknown", "closed"]
+    run_id: str | None = None
+    runtime_revision: str | None = None
+    submitted_at: datetime | None = None
+    retention_until: datetime | None = None
+
+
+@dataclass(frozen=True)
+class RuntimeCapabilities:
+    runtime_revision: str
+    idempotency_retention_seconds: int
+
+
+@dataclass(frozen=True)
+class RuntimeDispatch:
+    run_id: str
+    session_id: str
+    provider_binding: str
+    runtime_revision: str
+    submitted_at: datetime
+    retention_until: datetime
+
+
+@dataclass(frozen=True)
+class RuntimeResult:
+    state: Literal["running", "completed", "failed", "cancelled", "unknown"]
+    content: str | None = None
+
+
+@dataclass(frozen=True)
 class Observation:
     task_id: str
     attempt_id: str
@@ -124,3 +161,11 @@ class Delivery:
 
 class LostReply(Exception):
     """An external operation may have committed; reconcile, never redispatch."""
+
+
+class RuntimeFailure(Exception):
+    """A bounded runtime failure code with no vendor response or credential."""
+
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code

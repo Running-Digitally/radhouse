@@ -190,7 +190,7 @@ def _completed(service, actor, envelope, start):
 @pytest.mark.postgres
 @pytest.mark.parametrize("first,second", [("radhouse", "buzz"), ("buzz", "radhouse")])
 def test_two_channel_reverse_review_and_duplicate_publication(
-    service, alice, envelope, start, fake_operations, first, second,
+    service, alice, envelope, start, fake_work, first, second,
 ):
     source, destination = envelope(first), envelope(second)
     with _driver(service, alice, first) as originating, _driver(service, alice, second) as reviewing:
@@ -225,8 +225,7 @@ def test_two_channel_reverse_review_and_duplicate_publication(
         assert events.status_code == 200
         assert events.json()["task"]["task_id"] == task_id
         assert sum(event["kind"] == "published" for event in events.json()["events"]) == 1
-    assert fake_operations.effect_count == 1
-    assert fake_operations.execute_count == 1
+    assert fake_work.start_count == 1
 
 
 @pytest.mark.postgres
@@ -266,7 +265,7 @@ def test_publication_command_key_cannot_authorize_another_task(
     ("missing_grant", "access_denied"),
 ])
 def test_denied_channel_admission_has_no_task_or_dispatch(
-    service, store, alice, viewer, envelope, start, fake_runtime, fake_operations, case, code,
+    service, store, alice, viewer, envelope, start, fake_work, case, code,
 ):
     actor = viewer if case == "viewer" else alice
     source = envelope(principal=actor.principal_id, project_id="project-shared")
@@ -288,7 +287,7 @@ def test_denied_channel_admission_has_no_task_or_dispatch(
     with store.transaction() as tx:
         assert tx.tasks() == []
         assert tx.delivery(source.channel, source.event_id) is None
-    assert fake_runtime.start_count == fake_operations.effect_count == 0
+    assert fake_work.start_count == 0
 
 
 @pytest.mark.postgres

@@ -114,6 +114,15 @@ CREATE TABLE public.operations (
     snapshot jsonb NOT NULL,
     FOREIGN KEY(task_id,attempt_id) REFERENCES public.attempts(task_id,attempt_id)
 );
+CREATE TABLE public.agent_dispatches (
+    dispatch_key text PRIMARY KEY,
+    task_id text NOT NULL,
+    attempt_id text NOT NULL,
+    state text NOT NULL CHECK(state IN ('prepared','submitted','accepted','unknown','closed')),
+    run_id text UNIQUE,
+    snapshot jsonb NOT NULL,
+    FOREIGN KEY(task_id,attempt_id) REFERENCES public.attempts(task_id,attempt_id)
+);
 CREATE TABLE public.reviews (
     review_id text PRIMARY KEY,
     task_id text NOT NULL REFERENCES public.tasks,

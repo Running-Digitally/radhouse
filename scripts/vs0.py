@@ -235,11 +235,14 @@ class Run:
 def service_for_environment(env, *, crash=False):
     from radhouse.application.service import Service
     from radhouse.storage.postgres import PostgresStore
-    from tests.fakes import FakeOperations, FakeProvider, FakeRuntime, FixedClock
+    from tests.fakes import FakeAgentWork, FakeProvider, FixedClock
     store = PostgresStore(env["RADHOUSE_VS0_DSN"], env["RADHOUSE_VS0_RUN_ID"])
     target = env["RADHOUSE_VS0_FAKE_TARGET"]
-    operations = FakeOperations(target, "lost_reply_after_commit" if crash else "confirmed", crash_after_commit=crash)
-    return Service(store, FakeRuntime(target), FakeProvider(), operations, FixedClock()), operations
+    work = FakeAgentWork(
+        target, "lost_reply_after_commit" if crash else "completed",
+        crash_after_commit=crash, clock=FixedClock(),
+    )
+    return Service(store, work, FakeProvider(), FixedClock()), work
 
 
 def controller_child(action, task_id):
@@ -263,7 +266,7 @@ def demonstration(run: Run):
     from tests.conftest import seed_fixture
     from tests.fakes import FixedClock, SimulatedChannelDriver, make_envelope
 
-    service, operations = service_for_environment(run.env)
+    service, work = service_for_environment(run.env)
     with service.store.transaction():
         pass
     seed_fixture(run.env["RADHOUSE_VS0_DSN"])
@@ -284,7 +287,7 @@ def demonstration(run: Run):
             duplicate = sender.admit(admission, start)
             if duplicate.json()["task_id"] != task_id:
                 raise FixtureError("duplicate admission created another task")
-            print(f"TRACE channel={source} task={task_id} attempt=none state={task['phase']} decision=admitted effects={operations.effect_count}")
+            print(f"TRACE channel={source} task={task_id} attempt=none state={task['phase']} decision=admitted runs={work.start_count}")
             run.command([sys.executable, str(Path(__file__)), "_controller", "run", task_id], env=run.env, accepted=(73,))
             run.command([sys.executable, str(Path(__file__)), "_controller", "recover", task_id], env=run.env)
             envelope = make_envelope(destination, project_id="project-shared")
@@ -292,8 +295,8 @@ def demonstration(run: Run):
             if current.status_code != 200:
                 raise FixtureError("reverse-channel task read failed")
             task = current.json()
-            if task["outcome"] != "completed" or operations.effect_count != index or operations.execute_count != index:
-                raise FixtureError("fresh-process recovery did not confirm exactly one effect")
+            if task["outcome"] != "completed" or work.start_count != index:
+                raise FixtureError("fresh-process recovery did not confirm exactly one agent run")
             reviewed = receiver.review(task_id, envelope, expected_state_revision=task["state_revision"], audience=["alice", "bob"])
             if reviewed.status_code not in (200, 201):
                 raise FixtureError("reverse-channel protected review failed")
@@ -302,21 +305,22 @@ def demonstration(run: Run):
                 expected_revision=review["revision"], content=task["result"], audience=["alice", "bob"])
             if released.status_code not in (200, 201):
                 raise FixtureError("reverse-channel protected publication failed")
-            print(f"TRACE channel={destination} task={task_id} attempt={task['attempt_id']} state={task['phase']} decision=published effects={operations.effect_count}")
-    # Missing external evidence stays blocked and never becomes permission to retry.
-    from tests.fakes import FakeOperations
+            print(f"TRACE channel={destination} task={task_id} attempt={task['attempt_id']} state={task['phase']} decision=published runs={work.start_count}")
+    # Missing runtime evidence stays blocked and never becomes permission for a new run.
+    from tests.fakes import FakeAgentWork
     actor = AuthContext("alice", "radhouse", "alice@radhouse", clock() + timedelta(minutes=10))
-    uncertain = service.admit(actor, make_envelope(), StartTask("bot-alpha", "personal-alice", "Synthetic unknown effect.", "fake-local"))
-    service.operations = FakeOperations(run.env["RADHOUSE_VS0_FAKE_TARGET"], "unknown_without_receipt")
+    uncertain = service.admit(actor, make_envelope(), StartTask("bot-alpha", "personal-alice", "Synthetic unknown run.", "fake-local"))
+    service.work = FakeAgentWork(run.env["RADHOUSE_VS0_FAKE_TARGET"], "unknown", clock=clock)
     service.run(uncertain.task_id)
     blocked = service.recover(uncertain.task_id)
-    if "operation_unknown" not in blocked.blockers or operations.effect_count != 2 or operations.execute_count != 3:
-        raise FixtureError("missing receipt was incorrectly treated as safe to retry")
-    print(f"TRACE channel=radhouse task={blocked.task_id} attempt={blocked.attempt_id} state={blocked.phase} decision=needs_attention effects={operations.effect_count}")
-    run.manifest["demonstration"] = {"channel_directions": 2, "fresh_controller_recoveries": 2, "unknown_receipt_not_retried": True,
-                                     "effects": operations.effect_count, "execute_calls": operations.execute_count}
+    if "operation_unknown" not in blocked.blockers or work.start_count != 3:
+        raise FixtureError("missing runtime evidence was incorrectly treated as a new run")
+    print(f"TRACE channel=radhouse task={blocked.task_id} attempt={blocked.attempt_id} state={blocked.phase} decision=needs_attention runs={work.start_count}")
+    run.manifest["demonstration"] = {"channel_directions": 2, "fresh_controller_recoveries": 2,
+                                     "unknown_runtime_not_redispatched": True,
+                                     "agent_runs": work.start_count}
     run.save()
-    print("PASS: both simulated channel directions, duplicate admission, separate-process recovery, one effect per completed task, protected publication, unknown receipt stays blocked")
+    print("PASS: both simulated channel directions, duplicate admission, separate-process recovery, one run per completed task, protected publication, unknown runtime stays blocked")
 
 
 def main():
