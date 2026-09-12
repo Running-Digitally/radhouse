@@ -147,6 +147,7 @@ class WorkHomeResponse(StrictModel):
     principal_id: str
     role: Literal["admin", "operator", "viewer"]
     project_id: str
+    project_name: str
     agents: tuple[AgentResponse, ...]
     tasks: tuple[TaskCardResponse, ...]
     start: ActionResponse

@@ -10,6 +10,7 @@ from dataclasses import asdict, replace
 from datetime import datetime
 import hashlib
 import ipaddress
+from pathlib import Path
 import re
 from typing import Iterator
 
@@ -18,7 +19,7 @@ from psycopg.conninfo import conninfo_to_dict
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from radhouse.domain.access import Access, Binding, BotProfile
+from radhouse.domain.access import Access, Binding, BotProfile, ProjectProfile
 from radhouse.domain.releases import Publication, Review
 from radhouse.domain.tasks import (
     AgentDispatch, Attempt, Delivery, Event, Operation, Rejected, SavedCommand, Task,
@@ -34,6 +35,14 @@ class ApplicationStorageError(ValueError):
 
 
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+_INITIAL_MIGRATION = Path(__file__).parent / "migrations" / "0001_initial.sql"
+
+
+def schema_digest() -> str:
+    try:
+        return hashlib.sha256(_INITIAL_MIGRATION.read_bytes()).hexdigest()
+    except OSError:
+        raise ApplicationStorageError("database_migration_missing") from None
 
 
 def _connection_parameters(dsn: str, run_id: str) -> dict:
@@ -167,7 +176,7 @@ class ApplicationPostgresStore:
         with psycopg.connect(**self._params, row_factory=dict_row) as connection:
             try:
                 rows = connection.execute(
-                    "SELECT deployment_id,schema_version,current_database() AS database "
+                    "SELECT deployment_id,schema_version,migration_sha256,current_database() AS database "
                     "FROM public.radhouse_metadata WHERE singleton"
                 ).fetchall()
             except psycopg.Error as exc:
@@ -176,6 +185,7 @@ class ApplicationPostgresStore:
                 len(rows) != 1
                 or rows[0]["deployment_id"] != self.deployment_id
                 or rows[0]["schema_version"] != self.schema_version
+                or rows[0]["migration_sha256"] != schema_digest()
                 or rows[0]["database"] != self.expected_database
             ):
                 raise ApplicationStorageError("database_identity_mismatch")
@@ -231,6 +241,13 @@ class PostgresUnitOfWork:
             "WHERE g.principal_id=%s ORDER BY b.display_name,b.bot_id",
             (principal_id,),
         ).fetchall()]
+
+    def project(self, project_id: str) -> ProjectProfile | None:
+        row = self._connection.execute(
+            "SELECT project_id,owner_id,display_name,state FROM public.projects "
+            "WHERE project_id=%s", (project_id,),
+        ).fetchone()
+        return ProjectProfile(**row) if row else None
 
     def insert_task(self, task: Task) -> None:
         self._connection.execute(

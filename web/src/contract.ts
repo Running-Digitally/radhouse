@@ -106,6 +106,7 @@ export function parseWorkHome(value: unknown): WorkHome {
     principal_id: string(item.principal_id),
     role: oneOf<Role>(item.role, roles),
     project_id: string(item.project_id),
+    project_name: string(item.project_name),
     agents: item.agents.map(agent),
     tasks: item.tasks.map(taskCard),
     start: action(item.start),

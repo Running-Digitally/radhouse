@@ -184,6 +184,13 @@ class Run:
             connection.execute("CREATE TABLE fixture_ownership(singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton),run_id text UNIQUE NOT NULL)")
             connection.execute("INSERT INTO fixture_ownership(run_id) VALUES (%s)", (self.run_id,))
             connection.execute((ROOT / "tests/fixtures/vs0-schema.sql").read_text())
+            migration = (ROOT / "src/radhouse/storage/migrations/0001_initial.sql").read_bytes()
+            connection.execute(migration.decode())
+            connection.execute(
+                "INSERT INTO radhouse_metadata"
+                "(singleton,deployment_id,schema_version,migration_sha256) VALUES (true,%s,1,%s)",
+                (f"fixture-{self.run_id}", hashlib.sha256(migration).hexdigest()),
+            )
             connection.execute(sql.SQL("CREATE ROLE radhouse_runtime LOGIN PASSWORD {} NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT").format(sql.Literal(runtime_password)))
             connection.execute(sql.SQL("REVOKE ALL ON DATABASE {} FROM PUBLIC").format(sql.Identifier(self.manifest["database"])))
             connection.execute(sql.SQL("GRANT CONNECT ON DATABASE {} TO radhouse_runtime").format(sql.Identifier(self.manifest["database"])))
@@ -191,9 +198,11 @@ class Run:
             connection.execute("GRANT USAGE ON SCHEMA public TO radhouse_runtime")
             connection.execute("GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO radhouse_runtime")
             connection.execute("REVOKE INSERT,UPDATE,DELETE ON fixture_ownership FROM radhouse_runtime")
+            connection.execute("REVOKE INSERT,UPDATE,DELETE ON radhouse_metadata FROM radhouse_runtime")
             connection.execute("GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO radhouse_runtime")
         self.env.update(RADHOUSE_VS0_DSN=make_conninfo(host="127.0.0.1", hostaddr="127.0.0.1", port=port, dbname=self.manifest["database"],
                         user="radhouse_runtime", password=runtime_password, connect_timeout=3, sslmode="disable"),
+                        RADHOUSE_VS0_OWNER_DSN=owner_dsn,
                         RADHOUSE_VS0_RUN_ID=self.run_id, RADHOUSE_VS0_MANIFEST=str(self.manifest_path),
                         RADHOUSE_VS0_FAKE_TARGET=str(self.output / "target.sqlite3"))
         self.manifest["runtime_role"] = "DML only; ownership marker read-only"

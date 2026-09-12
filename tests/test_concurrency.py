@@ -224,8 +224,9 @@ def test_pause_resume_preserves_prepared_attempt_and_spent_budget(service, store
 @pytest.mark.parametrize("statement", [
     "CREATE TABLE public.forbidden_runtime_ddl (value integer)",
     "UPDATE public.fixture_ownership SET run_id=run_id",
+    "UPDATE public.radhouse_metadata SET schema_version=schema_version",
 ])
-def test_runtime_role_cannot_modify_schema_or_fixture_ownership(store, statement):
+def test_runtime_role_cannot_modify_schema_or_identity_ownership(store, statement):
     from psycopg.errors import InsufficientPrivilege
 
     with pytest.raises(InsufficientPrivilege):

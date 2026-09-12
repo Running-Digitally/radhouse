@@ -48,6 +48,7 @@ export interface WorkHome {
   principal_id: string;
   role: Role;
   project_id: string;
+  project_name: string;
   agents: AgentSummary[];
   tasks: TaskCard[];
   start: ActionState;
