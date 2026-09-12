@@ -35,9 +35,16 @@ CREATE TABLE public.actors (
     role text NOT NULL CHECK(role IN ('admin','operator','viewer')),
     active boolean NOT NULL DEFAULT true
 );
+CREATE TABLE public.bots (
+    bot_id text PRIMARY KEY,
+    display_name text NOT NULL,
+    role_name text NOT NULL,
+    provider_binding text NOT NULL,
+    state text NOT NULL CHECK(state IN ('ready','busy','maintenance','unavailable'))
+);
 CREATE TABLE public.bot_grants (
     principal_id text NOT NULL REFERENCES public.actors,
-    bot_id text NOT NULL,
+    bot_id text NOT NULL REFERENCES public.bots,
     PRIMARY KEY(principal_id,bot_id)
 );
 CREATE TABLE public.project_members (

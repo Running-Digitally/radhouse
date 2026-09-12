@@ -4,15 +4,18 @@ VS0 exercises this factory in-process with authenticators owned by its test
 harness. This module has no fixture identity, environment bypass, or listener.
 """
 from collections.abc import Callable
+from pathlib import Path
 from typing import Annotated, TYPE_CHECKING
 
 from fastapi import Depends, FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from radhouse.api.schemas import (
     AdmitRequest, ErrorResponse, EventsResponse, PublicationResponse,
     PublishRequest, ReviewRequest, ReviewResponse, StateRequest, TaskResponse,
+    WorkHomeResponse,
 )
 from radhouse.domain.access import AuthContext
 from radhouse.channels.commands import Envelope
@@ -23,12 +26,13 @@ if TYPE_CHECKING:
 
 
 def create_app(
-    service: "Service", authenticate: Callable[[Request], AuthContext]
+    service: "Service", authenticate: Callable[[Request], AuthContext],
+    *, web_root: Path | None = None,
 ) -> FastAPI:
     if not callable(authenticate):
         raise TypeError("authenticate must be an explicitly supplied callable")
 
-    app = FastAPI(title="Radhouse VS0 operator contract")
+    app = FastAPI(title="Radhouse operator contract")
 
     @app.exception_handler(Rejected)
     async def rejected(_request: Request, error: Rejected) -> JSONResponse:
@@ -53,6 +57,12 @@ def create_app(
     def read_envelope(actor: AuthContext, conversation: str, revision: int) -> Envelope:
         # Reads check the same current binding, without adding a delivery receipt.
         return Envelope(actor.channel, "read", conversation, revision, "read")
+
+    @app.get("/work-home", response_model=WorkHomeResponse, responses=errors)
+    def work_home(actor: Actor, conversation_id: Conversation, binding_revision: BindingRevision):
+        return service.work_home(
+            actor, envelope=read_envelope(actor, conversation_id, binding_revision)
+        )
 
     @app.post("/tasks", response_model=TaskResponse, responses=errors)
     def admit(body: AdmitRequest, actor: Actor):
@@ -99,5 +109,10 @@ def create_app(
         binding_revision: BindingRevision, after: Annotated[int, Query(ge=0)] = 0,
     ):
         return service.events(actor, task_id, after, envelope=read_envelope(actor, conversation_id, binding_revision))
+
+    if web_root is not None:
+        # Static assets contain no principal data. Every data request still
+        # crosses the caller-supplied authentication and authorization boundary.
+        app.mount("/app", StaticFiles(directory=web_root, html=True), name="operator-app")
 
     return app
