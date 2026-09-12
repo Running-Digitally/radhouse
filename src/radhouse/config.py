@@ -1,0 +1,158 @@
+"""Strict public configuration with private overlay and secret-file references."""
+from __future__ import annotations
+
+import ipaddress
+from pathlib import Path
+import re
+from typing import Any, Literal
+from urllib.parse import urlsplit
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+import yaml
+
+
+_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+_MAX_CONFIG_BYTES = 1024 * 1024
+
+
+class ConfigurationError(ValueError):
+    """A bounded configuration failure that does not echo file contents."""
+
+
+class StrictModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+
+
+def _absolute_path(value: str) -> str:
+    if not value or not Path(value).is_absolute():
+        raise ValueError("path must be absolute")
+    return value
+
+
+def _identifier(value: str) -> str:
+    if not _IDENTIFIER.fullmatch(value):
+        raise ValueError("invalid identifier")
+    return value
+
+
+class SecretFile(StrictModel):
+    path: str
+
+    _path = field_validator("path")(_absolute_path)
+
+
+class DatabaseConfig(StrictModel):
+    dsn: SecretFile
+    deployment_id: str
+
+    _deployment_id = field_validator("deployment_id")(_identifier)
+
+
+class CoordinatorConfig(StrictModel):
+    worker_id: str
+    interval_seconds: int = Field(default=5, ge=1, le=300)
+    max_tasks_per_cycle: int = Field(default=16, ge=1, le=100)
+
+    _worker_id = field_validator("worker_id")(_identifier)
+
+
+class WebConfig(StrictModel):
+    root: str
+
+    _root = field_validator("root")(_absolute_path)
+
+
+class BotRuntimeConfig(StrictModel):
+    bot_id: str
+    endpoint: str
+    token: SecretFile
+    profile: str
+    provider_binding: str
+
+    _bot_id = field_validator("bot_id")(_identifier)
+    _profile = field_validator("profile")(_identifier)
+    _provider_binding = field_validator("provider_binding")(_identifier)
+
+    @field_validator("endpoint")
+    @classmethod
+    def secure_endpoint(cls, value: str) -> str:
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("invalid runtime endpoint")
+        if parsed.scheme == "http":
+            try:
+                if not ipaddress.ip_address(parsed.hostname).is_loopback:
+                    raise ValueError("plaintext runtime endpoint must be loopback")
+            except ValueError as error:
+                raise ValueError("plaintext runtime endpoint must be loopback") from error
+        return value.rstrip("/")
+
+
+class RadhouseConfig(StrictModel):
+    schema_version: Literal[1]
+    database: DatabaseConfig
+    coordinator: CoordinatorConfig
+    web: WebConfig
+    bots: tuple[BotRuntimeConfig, ...] = Field(min_length=1, max_length=100)
+
+    @field_validator("bots", mode="before")
+    @classmethod
+    def yaml_sequence(cls, value: Any) -> Any:
+        # Safe YAML represents sequences as lists. Convert that one container
+        # deliberately while retaining strict validation for every item.
+        return tuple(value) if isinstance(value, list) else value
+
+    @model_validator(mode="after")
+    def unique_bot_homes(self) -> "RadhouseConfig":
+        bot_ids = [bot.bot_id for bot in self.bots]
+        endpoints = [bot.endpoint for bot in self.bots]
+        if len(set(bot_ids)) != len(bot_ids):
+            raise ValueError("bot IDs must be unique")
+        if len(set(endpoints)) != len(endpoints):
+            raise ValueError("each bot requires a distinct Hermes home endpoint")
+        return self
+
+
+def _read_yaml(path: Path) -> dict[str, Any]:
+    try:
+        with path.open("rb") as source:
+            raw = source.read(_MAX_CONFIG_BYTES + 1)
+        if len(raw) > _MAX_CONFIG_BYTES:
+            raise ConfigurationError("configuration_too_large")
+        value = yaml.safe_load(raw.decode("utf-8"))
+    except ConfigurationError:
+        raise
+    except (OSError, UnicodeError, yaml.YAMLError):
+        raise ConfigurationError("configuration_unreadable") from None
+    if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
+        raise ConfigurationError("configuration_invalid")
+    return value
+
+
+def _merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base)
+    for key, value in overlay.items():
+        current = merged.get(key)
+        merged[key] = (
+            _merge(current, value)
+            if isinstance(current, dict) and isinstance(value, dict)
+            else value
+        )
+    return merged
+
+
+def load_config(base_path: str | Path, overlay_path: str | Path | None = None) -> RadhouseConfig:
+    value = _read_yaml(Path(base_path))
+    if overlay_path is not None:
+        value = _merge(value, _read_yaml(Path(overlay_path)))
+    try:
+        return RadhouseConfig.model_validate(value)
+    except (TypeError, ValueError):
+        raise ConfigurationError("configuration_invalid") from None

@@ -1,0 +1,28 @@
+schema_version: 1
+
+database:
+  dsn:
+    path: /run/secrets/radhouse-database-dsn
+  deployment_id: radhouse-example
+
+coordinator:
+  worker_id: controller-example-01
+  interval_seconds: 5
+  max_tasks_per_cycle: 8
+
+web:
+  root: /opt/radhouse/web
+
+bots:
+  - bot_id: researcher-001
+    endpoint: https://researcher-001.example.invalid
+    token:
+      path: /run/secrets/researcher-001-hermes-token
+    profile: researcher
+    provider_binding: local-chat
+  - bot_id: reviewer-001
+    endpoint: https://reviewer-001.example.invalid
+    token:
+      path: /run/secrets/reviewer-001-hermes-token
+    profile: reviewer
+    provider_binding: local-chat
