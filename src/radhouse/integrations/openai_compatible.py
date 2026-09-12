@@ -6,6 +6,7 @@ import ipaddress
 import json
 import re
 import time
+from typing import Literal
 from urllib.parse import urlsplit
 
 import httpx
@@ -69,6 +70,7 @@ class OpenAICompatibleProvider:
         requested_model: str,
         requirements: ProviderRequirements,
         *,
+        model_identity: Literal["alias", "catalog_sibling", "radhouse_extension"] = "alias",
         bearer_token: str | None = None,
         allow_plaintext_private_network: bool = False,
         transport: httpx.BaseTransport | None = None,
@@ -80,6 +82,8 @@ class OpenAICompatibleProvider:
             raise ValueError("invalid_provider_binding")
         if _MODEL_ID.fullmatch(requested_model) is None:
             raise ValueError("invalid_provider_model")
+        if model_identity not in {"alias", "catalog_sibling", "radhouse_extension"}:
+            raise ValueError("invalid_provider_model_identity")
         parsed = urlsplit(endpoint)
         if (
             parsed.scheme not in {"http", "https"}
@@ -114,6 +118,7 @@ class OpenAICompatibleProvider:
         headers = {"Authorization": f"Bearer {bearer_token}"} if bearer_token else {}
         self.binding = binding
         self.requested_model = requested_model
+        self.model_identity = model_identity
         self.requirements = requirements
         self._client = httpx.Client(
             base_url=endpoint.rstrip("/") + "/",
@@ -142,16 +147,33 @@ class OpenAICompatibleProvider:
     def describe(self, binding: str) -> ProviderDescription:
         if binding != self.binding:
             return ProviderDescription(self.binding, self.requested_model, False, False)
-        model = self._matching_model()
-        if model is None:
+        catalog = self._catalog()
+        if catalog is None:
             return ProviderDescription(self.binding, self.requested_model, False, False)
+        matches = [item for item in catalog if item.get("id") == self.requested_model]
+        if len(matches) != 1:
+            return ProviderDescription(self.binding, self.requested_model, False, False)
+        model = matches[0]
 
-        model_id = model.get("radhouse_model_id", self.requested_model)
+        evidence = model
+        if self.model_identity == "alias":
+            model_id = self.requested_model
+        elif self.model_identity == "radhouse_extension":
+            model_id = model.get("radhouse_model_id")
+        else:
+            siblings = [
+                item for item in catalog
+                if isinstance(item.get("id"), str) and item.get("id") != self.requested_model
+            ]
+            if len(siblings) != 1:
+                return ProviderDescription(self.binding, self.requested_model, True, False)
+            model_id = siblings[0]["id"]
+            evidence = siblings[0]
         if not isinstance(model_id, str) or _MODEL_ID.fullmatch(model_id) is None:
             return ProviderDescription(self.binding, self.requested_model, True, False)
 
         effective = self.requirements.admitted_capabilities
-        advertised = model.get("capabilities")
+        advertised = evidence.get("capabilities", model.get("capabilities"))
         if advertised is not None:
             parsed = _advertised_capabilities(advertised)
             if parsed is None:
@@ -161,13 +183,13 @@ class OpenAICompatibleProvider:
         compatible = self.requirements.required_capabilities <= effective
         minimum = self.requirements.minimum_context_tokens
         if minimum is not None:
-            context = model.get("max_model_len")
+            context = evidence.get("max_model_len", model.get("max_model_len"))
             compatible = compatible and (
                 not isinstance(context, bool) and isinstance(context, int) and context >= minimum
             )
         return ProviderDescription(self.binding, model_id, True, compatible)
 
-    def _matching_model(self) -> dict | None:
+    def _catalog(self) -> list[dict] | None:
         deadline = time.monotonic() + self._request_deadline
         try:
             with self._client.stream("GET", "models") as response:
@@ -188,11 +210,9 @@ class OpenAICompatibleProvider:
             return None
         if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
             return None
-        matches = [
-            item for item in payload["data"]
-            if isinstance(item, dict) and item.get("id") == self.requested_model
-        ]
-        return matches[0] if len(matches) == 1 else None
+        if any(not isinstance(item, dict) for item in payload["data"]):
+            return None
+        return payload["data"]
 
 
 def _advertised_capabilities(value: object) -> frozenset[str] | None:

@@ -32,12 +32,13 @@ class ProviderClient:
 
     def __init__(
         self, binding, endpoint, requested_model, requirements, *, bearer_token,
-        allow_plaintext_private_network,
+        model_identity, allow_plaintext_private_network,
     ):
         self.binding = binding
         self.endpoint = endpoint
         self.requested_model = requested_model
         self.requirements = requirements
+        self.model_identity = model_identity
         self.bearer_token = bearer_token
         self.allow_plaintext_private_network = allow_plaintext_private_network
         self.closed = False
@@ -156,6 +157,7 @@ def test_composition_can_build_and_own_configured_provider_routes(tmp_path: Path
     assert provider.binding == "local-chat"
     assert provider.endpoint == "https://inference.example.invalid/v1"
     assert provider.requested_model == "local-chat"
+    assert provider.model_identity == "alias"
     assert provider.bearer_token is None
     assert provider.requirements.required_capabilities == frozenset({"text", "tools"})
     assert provider.requirements.minimum_context_tokens == 8192

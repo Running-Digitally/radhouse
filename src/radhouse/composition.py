@@ -93,6 +93,7 @@ def compose_controller(
                         admitted_capabilities=frozenset(configured.requirements.admitted),
                         minimum_context_tokens=configured.requirements.minimum_context_tokens,
                     ),
+                    model_identity=configured.model_identity,
                     bearer_token=token,
                     allow_plaintext_private_network=(
                         configured.allow_plaintext_private_network

@@ -19,6 +19,7 @@ def provider(handler, **overrides):
             admitted_capabilities=frozenset({"text", "tools", "structured_output"}),
             minimum_context_tokens=8192,
         ),
+        "model_identity": "radhouse_extension",
         "bearer_token": "provider-secret",
         "transport": httpx.MockTransport(handler),
     }
@@ -71,6 +72,40 @@ def test_physical_identity_can_change_behind_the_same_alias():
     assert second.model_id == "model-revision-b"
     assert first.binding == second.binding == "local-chat"
     assert first.compatible is second.compatible is True
+
+
+def test_explicit_catalog_sibling_mode_tracks_a_single_physical_model():
+    response = {"data": [
+        {"id": "local-chat", "max_model_len": 32768},
+        {"id": "physical-model-b", "max_model_len": 32768,
+         "capabilities": ["text", "tools"]},
+    ]}
+    with provider(
+        lambda _request: httpx.Response(200, json=response),
+        model_identity="catalog_sibling",
+    ) as adapter:
+        description = adapter.describe("local-chat")
+
+    assert description.model_id == "physical-model-b"
+    assert description.available is True
+    assert description.compatible is True
+
+
+def test_catalog_sibling_mode_fails_closed_on_ambiguous_physical_identity():
+    response = {"data": [
+        {"id": "local-chat", "max_model_len": 32768},
+        {"id": "physical-a"},
+        {"id": "physical-b"},
+    ]}
+    with provider(
+        lambda _request: httpx.Response(200, json=response),
+        model_identity="catalog_sibling",
+    ) as adapter:
+        description = adapter.describe("local-chat")
+
+    assert description.model_id == "local-chat"
+    assert description.available is True
+    assert description.compatible is False
 
 
 @pytest.mark.parametrize("payload", [
