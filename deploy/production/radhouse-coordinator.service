@@ -1,0 +1,24 @@
+[Unit]
+Description=Run one bounded Radhouse coordinator cycle
+After=network-online.target docker.service radhouse-hermes-tunnel.service
+Wants=network-online.target radhouse-hermes-tunnel.service
+
+[Service]
+Type=oneshot
+User=radhouse
+Group=radhouse
+WorkingDirectory=/opt/radhouse/app
+ExecStart=/opt/radhouse/app/.venv/bin/radhouse coordinator-once --config /etc/radhouse/config.yaml
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+SystemCallArchitectures=native

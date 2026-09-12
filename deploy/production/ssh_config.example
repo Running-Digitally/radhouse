@@ -1,0 +1,14 @@
+Host radhouse-hermes
+    HostName bot-vm.example
+    User radhousebot
+    IdentityFile /etc/radhouse/tunnel/id_ed25519
+    IdentitiesOnly yes
+    UserKnownHostsFile /etc/radhouse/tunnel/known_hosts
+    StrictHostKeyChecking yes
+    BatchMode yes
+    ExitOnForwardFailure yes
+    ServerAliveInterval 15
+    ServerAliveCountMax 3
+    LocalForward 127.0.0.1:18642 127.0.0.1:8642
+    LocalForward 127.0.0.1:18001 127.0.0.1:8643
+    RequestTTY no

@@ -9,6 +9,34 @@ CREATE TABLE public.actors (
     role text NOT NULL CHECK(role IN ('admin','operator','viewer')),
     active boolean NOT NULL DEFAULT true
 );
+CREATE TABLE public.local_credentials (
+    principal_id text PRIMARY KEY REFERENCES public.actors,
+    username text UNIQUE NOT NULL CHECK(username=lower(username)),
+    password_hash text NOT NULL,
+    totp_secret_ciphertext bytea NOT NULL,
+    last_totp_counter bigint,
+    updated_at timestamptz NOT NULL
+);
+CREATE TABLE public.local_sessions (
+    token_hash text PRIMARY KEY CHECK(token_hash ~ '^[0-9a-f]{64}$'),
+    principal_id text NOT NULL REFERENCES public.actors,
+    csrf_hash text NOT NULL CHECK(csrf_hash ~ '^[0-9a-f]{64}$'),
+    created_at timestamptz NOT NULL,
+    last_seen_at timestamptz NOT NULL,
+    idle_expires_at timestamptz NOT NULL,
+    absolute_expires_at timestamptz NOT NULL,
+    assurance_until timestamptz NOT NULL,
+    revoked_at timestamptz
+);
+CREATE INDEX local_sessions_principal ON public.local_sessions(principal_id);
+CREATE TABLE public.local_login_throttles (
+    username_hash text NOT NULL CHECK(username_hash ~ '^[0-9a-f]{64}$'),
+    source_hash text NOT NULL CHECK(source_hash ~ '^[0-9a-f]{64}$'),
+    window_started_at timestamptz NOT NULL,
+    failures integer NOT NULL CHECK(failures>=0),
+    locked_until timestamptz,
+    PRIMARY KEY(username_hash,source_hash)
+);
 CREATE TABLE public.projects (
     project_id text PRIMARY KEY,
     owner_id text NOT NULL REFERENCES public.actors,

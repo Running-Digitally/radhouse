@@ -114,9 +114,12 @@ startup remain separate gates.
 work-home read model, explicit `/app/` static mount, and the small TypeScript
 client. It checks the response shape at runtime, writes untrusted content only
 through DOM text nodes, preserves draft and review state during polling, and
-uses the same task and protected-review commands as other channels. The public
-tests use synthetic identities. Real OIDC composition and an unfamiliar-person
-browser usability pilot remain before this increment is qualified.
+uses the same task and protected-review commands as other channels. The first
+real local-account adapter uses Argon2id passwords, encrypted TOTP factors,
+replay denial, throttled failures, revocable database sessions, secure cookies,
+exact-origin enforcement, and session-bound CSRF tokens. Real OIDC composition,
+administrator invitation/recovery UX, and an unfamiliar-person browser usability
+pilot remain before this increment is qualified.
 
 The small TypeScript interface is backed by the existing FastAPI application.
 The first screen contains assigned agents, current work, blocked/needs-attention

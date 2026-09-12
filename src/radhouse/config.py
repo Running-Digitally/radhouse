@@ -74,6 +74,38 @@ class WebConfig(StrictModel):
     _root = field_validator("root")(_absolute_path)
 
 
+class LocalAuthConfig(StrictModel):
+    type: Literal["local"]
+    encryption_key: SecretFile
+    expected_origin: str
+    cookie_name: str = "radhouse_session"
+    secure_cookie: bool = True
+
+    @field_validator("expected_origin")
+    @classmethod
+    def origin(cls, value: str) -> str:
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query or parsed.fragment
+            or parsed.path not in {"", "/"}
+        ):
+            raise ValueError("invalid authentication origin")
+        if parsed.scheme == "http" and parsed.hostname not in {"127.0.0.1", "localhost"}:
+            raise ValueError("plaintext authentication origin must be loopback")
+        return value.rstrip("/")
+
+    @field_validator("cookie_name")
+    @classmethod
+    def cookie(cls, value: str) -> str:
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", value):
+            raise ValueError("invalid cookie name")
+        return value
+
+
 Capability = Literal["text", "tools", "structured_output", "vision"]
 
 
@@ -185,6 +217,7 @@ class RadhouseConfig(StrictModel):
     database: DatabaseConfig
     coordinator: CoordinatorConfig
     web: WebConfig
+    authentication: LocalAuthConfig | None = None
     providers: tuple[ProviderConfig, ...] = Field(min_length=1, max_length=20)
     bots: tuple[BotRuntimeConfig, ...] = Field(min_length=1, max_length=100)
 

@@ -155,3 +155,19 @@ class WorkHomeResponse(StrictModel):
 
 class ErrorResponse(StrictModel):
     code: str
+
+
+class LoginRequest(StrictModel):
+    username: Annotated[str, Field(min_length=3, max_length=64)]
+    password: Annotated[str, Field(min_length=1, max_length=1024)]
+    totp_code: Annotated[str, Field(pattern=r"^[0-9]{6}$")]
+
+
+class AuthSessionResponse(StrictModel):
+    principal_id: str
+    username: str
+    assurance_until: datetime
+    conversation_id: str
+    binding_revision: int
+    project_id: str
+    csrf_token: str

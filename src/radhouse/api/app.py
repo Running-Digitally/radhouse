@@ -7,7 +7,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, TYPE_CHECKING
 
-from fastapi import Depends, FastAPI, Query, Request
+from fastapi import Depends, FastAPI, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from radhouse.api.schemas import (
     AdmitRequest, ErrorResponse, EventsResponse, PublicationResponse,
     PublishRequest, ReviewRequest, ReviewResponse, StateRequest, TaskResponse,
-    WorkHomeResponse,
+    WorkHomeResponse, LoginRequest, AuthSessionResponse,
 )
 from radhouse.domain.access import AuthContext
 from radhouse.channels.commands import Envelope
@@ -23,16 +23,33 @@ from radhouse.domain.tasks import Rejected
 
 if TYPE_CHECKING:
     from radhouse.application.service import Service
+    from radhouse.auth.local import LocalAuthService, LocalSession
 
 
 def create_app(
     service: "Service", authenticate: Callable[[Request], AuthContext],
-    *, web_root: Path | None = None,
+    *, web_root: Path | None = None, local_auth: "LocalAuthService | None" = None,
 ) -> FastAPI:
     if not callable(authenticate):
         raise TypeError("authenticate must be an explicitly supplied callable")
 
     app = FastAPI(title="Radhouse operator contract")
+
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; "
+            "form-action 'self'; object-src 'none'"
+        )
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        if request.url.scheme == "https":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000"
+        if request.url.path.startswith(("/auth/", "/tasks", "/reviews", "/work-home")):
+            response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.exception_handler(Rejected)
     async def rejected(_request: Request, error: Rejected) -> JSONResponse:
@@ -53,6 +70,54 @@ def create_app(
     Conversation = Annotated[str, Query(min_length=1, max_length=200)]
     BindingRevision = Annotated[int, Query(ge=1)]
     errors = {status: {"model": ErrorResponse} for status in (401, 403, 404, 409, 422)}
+
+    def session_response(session: "LocalSession") -> AuthSessionResponse:
+        return AuthSessionResponse(
+            principal_id=session.principal_id,
+            username=session.username,
+            assurance_until=session.assurance_until,
+            conversation_id=session.conversation_id,
+            binding_revision=session.binding_revision,
+            project_id=session.project_id,
+            csrf_token=session.csrf_token,
+        )
+
+    if local_auth is not None:
+        @app.get("/healthz")
+        def health():
+            local_auth.health()
+            return {"status": "ready"}
+
+        @app.post("/auth/login", response_model=AuthSessionResponse, responses=errors)
+        def login(body: LoginRequest, request: Request, response: Response):
+            local_auth.verify_origin(request)
+            session = local_auth.login(
+                body.username, body.password, body.totp_code,
+                request.client.host if request.client is not None else "unknown",
+            )
+            response.set_cookie(
+                local_auth.cookie_name, session.token, max_age=12 * 60 * 60,
+                secure=local_auth.secure_cookie, httponly=True, samesite="strict",
+                path="/",
+            )
+            response.headers["Cache-Control"] = "no-store"
+            return session_response(session)
+
+        @app.get("/auth/session", response_model=AuthSessionResponse, responses=errors)
+        def current_session(request: Request, response: Response):
+            response.headers["Cache-Control"] = "no-store"
+            return session_response(local_auth.refresh(request))
+
+        @app.post("/auth/logout", status_code=204, responses=errors)
+        def logout(request: Request, response: Response):
+            local_auth.revoke(request)
+            response.status_code = 204
+            response.delete_cookie(
+                local_auth.cookie_name, secure=local_auth.secure_cookie,
+                httponly=True, samesite="strict", path="/",
+            )
+            response.headers["Cache-Control"] = "no-store"
+            return response
 
     def read_envelope(actor: AuthContext, conversation: str, revision: int) -> Envelope:
         # Reads check the same current binding, without adding a delivery receipt.

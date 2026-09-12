@@ -48,9 +48,12 @@ boundary, as in a source-fenced homelab inference VLAN. Hostnames and public
 addresses cannot use that exception. Each bot must name one configured binding,
 and an operator task request cannot override that durable assignment.
 
-Identity configuration is intentionally absent until the local-account and OIDC
-adapters have concrete, tested session and assurance contracts. A deployment
-cannot infer or enable synthetic authentication from this file.
+The optional `authentication` block selects the implemented local-account
+adapter, an absolute encryption-key file, the exact HTTPS origin, and secure
+cookie behavior. Omitting it keeps offline composition available but makes the
+production `serve` command refuse startup. OIDC configuration remains absent
+until that adapter has a concrete, tested session and assurance contract. A
+deployment cannot infer or enable synthetic authentication from this file.
 
 Validate a base and optional private overlay without reading any referenced
 secret or contacting any endpoint:
