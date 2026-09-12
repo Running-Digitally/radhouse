@@ -109,8 +109,9 @@ denial, retention, and resource-pressure behavior as each slice is delivered.
 ## Proposed delivery sequence
 
 The [architecture and first-slice packet](docs/architecture-review.md) is the
-current review entry point. Its chunks will resolve boundaries and program
-contracts before the first implementation slice is accepted.
+current review entry point. Its VS0-A subset is implemented and locally verified:
+108 tests and both simulated channel crash/recovery demonstrations passed.
+[Run the proof](docs/vs0-demo.md); broader contracts and integrations remain to qualify.
 
 The accepted [earlier usability pilot](docs/architecture-review.md#earlier-usability-pilot--accepted-delivery-refinement)
 brings a thin operator work home and nontechnical usability proof into the first
@@ -131,7 +132,7 @@ not postpone these protections until after the pilot.
 
 | Milestone | Evidence needed before moving on |
 | --- | --- |
-| 1. Contracts and configuration | Reviewable architecture and component contracts; the proposed offline slice exercises durable task and protected-decision semantics through simulated Radhouse/Buzz channels against PostgreSQL. Validate synthetic configuration and document supported/refused combinations. |
+| 1. Contracts and configuration | The offline VS0-A subset passes against PostgreSQL: durable tasks, protected decisions, simulated Radhouse/Buzz channels, and synthetic configuration boundaries. Extend and qualify contracts as the live adapters are introduced; this is not full V1 configuration support. |
 | 2. One persistent agent and a useful operator journey | After the offline foundation, an unfamiliar nontechnical operator uses the thin Radhouse and Buzz interfaces to assign bounded research, continue the same task across surfaces, find its cited artifact and complete a native protected review. Prove current authority, audience, persistence, model attribution and recovery; qualify both deployment paths before claiming release support. |
 | 3. Collaboration and admission | Two agents complete shared work without gaining private access; queued background work respects interactive priority and shared limits. |
 | 4. Software engineering | A scoped repository task produces a branch and pull request; credential custody, denial, revocation, and human merge boundaries hold in both supported credential modes. Guided CI setup preserves existing workflows; GitHub-hosted defaults and conditional local runners pass the [setup and preflight contract](docs/ci-and-runner-setup.md). |

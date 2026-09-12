@@ -1,0 +1,12 @@
+{
+  "principals": [
+    {"id": "alice", "role": "operator", "bots": ["bot-alpha", "bot-beta"], "projects": ["personal-alice", "project-shared"]},
+    {"id": "bob", "role": "operator", "bots": ["bot-beta"], "projects": ["project-shared"]},
+    {"id": "viewer", "role": "viewer", "bots": ["bot-alpha"], "projects": ["project-shared"]},
+    {"id": "admin", "role": "admin", "bots": [], "projects": []}
+  ],
+  "channels": ["radhouse", "buzz"],
+  "provider_binding": "fake-local",
+  "initial_model": "model-A",
+  "replacement_model": "model-B"
+}
