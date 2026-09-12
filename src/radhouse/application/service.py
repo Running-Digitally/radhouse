@@ -13,6 +13,7 @@ from uuid import uuid4
 from radhouse.channels.mapping import verify_envelope
 from radhouse.channels.commands import Envelope
 from radhouse.application.ports import AgentWorkPort, ProviderPort, Store, UnitOfWork
+from radhouse.application.views import ActionView, TaskCard, WorkHome
 from radhouse.domain.access import AuthContext, require_access, require_assurance
 from radhouse.domain.releases import Publication, Review, digest, validate_review
 from radhouse.domain.tasks import (AgentDispatch, Attempt, Delivery, Event,
@@ -103,6 +104,56 @@ class Service:
             task = self._task(tx, task_id)
             self._authorize(tx, actor, task, envelope)
             return task
+
+    def work_home(self, actor: AuthContext, *, envelope: Envelope) -> WorkHome:
+        with self.store.transaction() as tx:
+            access = tx.access(actor.principal_id)
+            binding = tx.binding(actor.channel, actor.subject, envelope.conversation_id)
+            if binding is None:
+                raise Rejected("binding_denied", 403)
+            self._binding(tx, actor, envelope, binding.project_id)
+            if access is None or not access.active or binding.project_id not in access.projects:
+                raise Rejected("access_denied", 403)
+            agents = tuple(tx.bots(actor.principal_id))
+            tasks = tuple(
+                task for task in tx.tasks()
+                if task.owner_id == actor.principal_id and task.project_id == binding.project_id
+            )
+
+        can_write = access.role in {"admin", "operator"}
+        start = ActionView(
+            can_write and bool(agents),
+            None if can_write and agents else "read_only_role" if not can_write else "no_assigned_agents",
+        )
+
+        def action(enabled: bool, reason: str) -> ActionView:
+            if not can_write:
+                return ActionView(False, "read_only_role")
+            return ActionView(enabled, None if enabled else reason)
+
+        cards = []
+        for task in tasks:
+            paused = "human_pause" in task.blockers
+            cancellable = task.phase != "closed" and "cancel_requested" not in task.blockers
+            pausable = task.phase in {"active", "recovering"} and not paused and cancellable
+            resumable = paused and task.phase not in {"closed", "stopping"}
+            reviewable = task.outcome == "completed" and task.result is not None
+            if not can_write:
+                review = ActionView(False, "read_only_role")
+            elif reviewable and (actor.assurance_until is None or actor.assurance_until <= self._now()):
+                review = ActionView(False, "fresh_assurance_required")
+            else:
+                review = action(reviewable, "result_not_ready")
+            cards.append(TaskCard(
+                task,
+                action(cancellable, "task_closed"),
+                action(pausable, "task_not_pausable"),
+                action(resumable, "task_not_paused"),
+                review,
+            ))
+        return WorkHome(
+            actor.principal_id, access.role, binding.project_id, agents, tuple(cards), start,
+        )
 
     @staticmethod
     def _provider_state(task: Task, description: ProviderDescription) -> tuple[tuple[str, ...], str | None]:

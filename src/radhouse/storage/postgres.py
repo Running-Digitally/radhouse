@@ -18,7 +18,7 @@ from psycopg.conninfo import conninfo_to_dict
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from radhouse.domain.access import Access, Binding
+from radhouse.domain.access import Access, Binding, BotProfile
 from radhouse.domain.releases import Publication, Review
 from radhouse.domain.tasks import (
     AgentDispatch, Attempt, Delivery, Event, Operation, Rejected, SavedCommand, Task,
@@ -150,6 +150,14 @@ class PostgresUnitOfWork:
     def tasks(self) -> list[Task]:
         return [_snapshot(row, Task) for row in self._connection.execute(
             "SELECT snapshot FROM public.tasks ORDER BY task_id"
+        ).fetchall()]
+
+    def bots(self, principal_id: str) -> list[BotProfile]:
+        return [BotProfile(**row) for row in self._connection.execute(
+            "SELECT b.bot_id,b.display_name,b.role_name,b.provider_binding,b.state "
+            "FROM public.bots b JOIN public.bot_grants g ON g.bot_id=b.bot_id "
+            "WHERE g.principal_id=%s ORDER BY b.display_name,b.bot_id",
+            (principal_id,),
         ).fetchall()]
 
     def insert_task(self, task: Task) -> None:

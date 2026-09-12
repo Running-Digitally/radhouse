@@ -94,7 +94,15 @@ canonical `scripts/vs0.py verify` path remains the reproducible release check.
 
 ## Increment B: the operator work home
 
-Add a small TypeScript interface backed by the existing FastAPI application.
+**Implementation status:** the current branch implements the server-owned
+work-home read model, explicit `/app/` static mount, and the small TypeScript
+client. It checks the response shape at runtime, writes untrusted content only
+through DOM text nodes, preserves draft and review state during polling, and
+uses the same task and protected-review commands as other channels. The public
+tests use synthetic identities. Real OIDC composition and an unfamiliar-person
+browser usability pilot remain before this increment is qualified.
+
+The small TypeScript interface is backed by the existing FastAPI application.
 The first screen contains assigned agents, current work, blocked/needs-attention
 states, and one prominent **Start a task** action. The task view shows its project,
 agent, audience, provider binding, progress events, result, and exact review
@@ -142,7 +150,7 @@ repeat admitted agent work.
 | Increment | Primary code | Tests |
 | --- | --- | --- |
 | A | `domain/tasks.py`, `application/ports.py`, `application/service.py`, PostgreSQL migration/store, `integrations/hermes.py` | fake Runs API, PostgreSQL restart/recovery, adapter timeouts, stop isolation, provider-switch continuity |
-| B | work-home/query API, OIDC authentication adapter, `web/` TypeScript client | API authorization, browser-level operator/viewer journeys, reconnect and stale-review cases |
+| B | work-home/query API, OIDC authentication adapter, `web/` TypeScript client | API authorization, checked response contract, browser-level operator/viewer journeys, reconnect and stale-review cases |
 | C | `channels/buzz.py`, binding and delivery storage, native Buzz review component | signed-event fixtures followed by the pinned real relay/client, cross-surface recovery and revocation |
 
 Implement and review in that order. Increment A fixes the task/runtime ownership

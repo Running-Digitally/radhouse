@@ -6,12 +6,15 @@ Radhouse is a self-hosted platform being built for persistent AI agents: agents
 that retain their workspaces, work on useful assignments, and collaborate within
 permissions you control.
 
-**Status: early development.** The offline controller proof and VS1-B's durable
-Hermes execution path are implemented. A task records its exact runtime dispatch
-before contacting Hermes, reattaches after a lost reply or controller restart,
-and receives a reviewed publication through either simulated operator channel.
-There is no installable fleet release yet; the features below remain the intended
-version 1.0.
+**Status: early development.** The offline controller proof, VS1-B's durable
+Hermes execution path, and the first operator work-home contract are implemented.
+A task records its exact runtime dispatch before contacting Hermes, reattaches
+after a lost reply or controller restart, and receives a reviewed publication
+through either simulated operator channel. The small TypeScript work home lists
+assigned agents and owned project tasks, starts work, exposes server-authorized
+controls, and prepares an exact result review. There is no installable fleet
+release or production authentication adapter yet; the features below remain the
+intended version 1.0.
 
 ## Why Radhouse?
 
@@ -92,6 +95,18 @@ container and volume. It uses synthetic identities and fake agent/model/service
 adapters. The Hermes HTTP adapter has separate bounded transport tests and makes
 no model request. See [the demo guide](docs/vs0-demo.md) for prerequisites,
 resource limits, evidence, and the remaining integration work.
+
+The operator client has its own pinned, inspectable build:
+
+```sh
+cd web
+npm ci
+npm test
+```
+
+An application composition root may explicitly serve the compiled directory at
+`/app/`. Static files contain no user data; every API request still requires the
+composition root's real authentication adapter and current Radhouse authorization.
 
 ## Read the plan
 

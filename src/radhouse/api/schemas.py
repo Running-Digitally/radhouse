@@ -122,5 +122,35 @@ class EventsResponse(StrictModel):
     resync_required: bool
 
 
+class ActionResponse(StrictModel):
+    enabled: bool
+    reason: str | None
+
+
+class AgentResponse(StrictModel):
+    bot_id: str
+    display_name: str
+    role_name: str
+    provider_binding: str
+    state: str
+
+
+class TaskCardResponse(StrictModel):
+    task: TaskResponse
+    cancel: ActionResponse
+    pause: ActionResponse
+    resume: ActionResponse
+    review: ActionResponse
+
+
+class WorkHomeResponse(StrictModel):
+    principal_id: str
+    role: Literal["admin", "operator", "viewer"]
+    project_id: str
+    agents: tuple[AgentResponse, ...]
+    tasks: tuple[TaskCardResponse, ...]
+    start: ActionResponse
+
+
 class ErrorResponse(StrictModel):
     code: str
