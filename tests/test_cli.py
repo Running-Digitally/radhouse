@@ -14,6 +14,7 @@ def test_config_check_reads_no_secret_and_emits_bounded_summary(tmp_path: Path, 
         "bot_count": 1,
         "database": "radhouse",
         "deployment_id": "example-home",
+        "provider_count": 1,
         "result": "valid",
         "schema_version": 1,
     }

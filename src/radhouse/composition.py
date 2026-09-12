@@ -20,6 +20,11 @@ from radhouse.integrations.hermes import (
     HermesRunsClient,
     RoutingAgentWork,
 )
+from radhouse.integrations.openai_compatible import (
+    OpenAICompatibleProvider,
+    ProviderRequirements,
+    RoutingProvider,
+)
 from radhouse.secrets import read_secret_file
 from radhouse.storage.postgres import ApplicationPostgresStore
 
@@ -35,7 +40,7 @@ class ControllerComposition:
     service: Service
     coordinator: Coordinator
     web_root: Path
-    _clients: tuple[HermesRunsClient, ...]
+    _clients: tuple[object, ...]
     _closed: bool = False
 
     def close(self) -> None:
@@ -54,10 +59,11 @@ class ControllerComposition:
 
 def compose_controller(
     config: RadhouseConfig,
-    provider: ProviderPort,
+    provider: ProviderPort | None = None,
     *,
     clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     client_factory: Callable[..., HermesRunsClient] = HermesRunsClient,
+    provider_factory: Callable[..., OpenAICompatibleProvider] = OpenAICompatibleProvider,
 ) -> ControllerComposition:
     """Build one controller from validated config without contacting a service."""
 
@@ -67,9 +73,34 @@ def compose_controller(
         expected_database=config.database.name,
         deployment_id=config.database.deployment_id,
     )
-    clients: list[HermesRunsClient] = []
+    clients: list[object] = []
     adapters = {}
     try:
+        if provider is None:
+            providers = {}
+            for configured in config.providers:
+                token = (
+                    read_secret_file(configured.token.path)
+                    if configured.token is not None
+                    else None
+                )
+                adapter = provider_factory(
+                    configured.binding,
+                    configured.endpoint,
+                    configured.model,
+                    ProviderRequirements(
+                        required_capabilities=frozenset(configured.requirements.required),
+                        admitted_capabilities=frozenset(configured.requirements.admitted),
+                        minimum_context_tokens=configured.requirements.minimum_context_tokens,
+                    ),
+                    bearer_token=token,
+                    allow_plaintext_private_network=(
+                        configured.allow_plaintext_private_network
+                    ),
+                )
+                clients.append(adapter)
+                providers[configured.binding] = adapter
+            provider = RoutingProvider(providers)
         for bot in config.bots:
             token = read_secret_file(bot.token.path)
             client = client_factory(bot.endpoint, token)
@@ -97,6 +128,6 @@ def compose_controller(
             tuple(clients),
         )
     except Exception:
-        for client in clients:
+        for client in reversed(clients):
             client.close()
         raise

@@ -12,7 +12,11 @@ import yaml
 
 
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+_MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+\-]{0,255}$")
 _MAX_CONFIG_BYTES = 1024 * 1024
+_PRIVATE_NETWORKS = tuple(
+    ipaddress.ip_network(cidr) for cidr in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
+)
 
 
 class ConfigurationError(ValueError):
@@ -70,6 +74,76 @@ class WebConfig(StrictModel):
     _root = field_validator("root")(_absolute_path)
 
 
+Capability = Literal["text", "tools", "structured_output", "vision"]
+
+
+class ProviderRequirementsConfig(StrictModel):
+    required: tuple[Capability, ...] = ("text",)
+    admitted: tuple[Capability, ...] = ("text",)
+    minimum_context_tokens: int | None = Field(default=None, ge=1, le=16_777_216)
+
+    @field_validator("required", "admitted", mode="before")
+    @classmethod
+    def yaml_capabilities(cls, value: Any) -> Any:
+        return tuple(value) if isinstance(value, list) else value
+
+    @model_validator(mode="after")
+    def valid_capabilities(self) -> "ProviderRequirementsConfig":
+        if (
+            not self.required
+            or "text" not in self.required
+            or len(set(self.required)) != len(self.required)
+            or len(set(self.admitted)) != len(self.admitted)
+            or not set(self.required) <= set(self.admitted)
+        ):
+            raise ValueError("invalid provider capabilities")
+        return self
+
+
+class ProviderConfig(StrictModel):
+    binding: str
+    endpoint: str
+    model: str
+    token: SecretFile | None = None
+    allow_plaintext_private_network: bool = False
+    requirements: ProviderRequirementsConfig = ProviderRequirementsConfig()
+
+    _binding = field_validator("binding")(_identifier)
+
+    @field_validator("model")
+    @classmethod
+    def model_id(cls, value: str) -> str:
+        if _MODEL_ID.fullmatch(value) is None:
+            raise ValueError("invalid model identifier")
+        return value
+
+    @model_validator(mode="after")
+    def secure_endpoint(self) -> "ProviderConfig":
+        parsed = urlsplit(self.endpoint)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+            or parsed.path not in {"", "/", "/v1", "/v1/"}
+        ):
+            raise ValueError("invalid provider endpoint")
+        if parsed.scheme == "http":
+            try:
+                address = ipaddress.ip_address(parsed.hostname)
+            except ValueError:
+                raise ValueError("plaintext provider endpoint must be an IP address") from None
+            if not (
+                address.is_loopback
+                or self.allow_plaintext_private_network
+                and any(address in network for network in _PRIVATE_NETWORKS)
+            ):
+                raise ValueError("plaintext provider endpoint is not admitted")
+        return self
+
+
 class BotRuntimeConfig(StrictModel):
     bot_id: str
     endpoint: str
@@ -110,9 +184,10 @@ class RadhouseConfig(StrictModel):
     database: DatabaseConfig
     coordinator: CoordinatorConfig
     web: WebConfig
+    providers: tuple[ProviderConfig, ...] = Field(min_length=1, max_length=20)
     bots: tuple[BotRuntimeConfig, ...] = Field(min_length=1, max_length=100)
 
-    @field_validator("bots", mode="before")
+    @field_validator("bots", "providers", mode="before")
     @classmethod
     def yaml_sequence(cls, value: Any) -> Any:
         # Safe YAML represents sequences as lists. Convert that one container
@@ -123,10 +198,15 @@ class RadhouseConfig(StrictModel):
     def unique_bot_homes(self) -> "RadhouseConfig":
         bot_ids = [bot.bot_id for bot in self.bots]
         endpoints = [bot.endpoint for bot in self.bots]
+        provider_bindings = [provider.binding for provider in self.providers]
         if len(set(bot_ids)) != len(bot_ids):
             raise ValueError("bot IDs must be unique")
         if len(set(endpoints)) != len(endpoints):
             raise ValueError("each bot requires a distinct Hermes home endpoint")
+        if len(set(provider_bindings)) != len(provider_bindings):
+            raise ValueError("provider bindings must be unique")
+        if any(bot.provider_binding not in set(provider_bindings) for bot in self.bots):
+            raise ValueError("every bot provider binding must be configured")
         return self
 
 

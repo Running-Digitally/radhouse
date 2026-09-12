@@ -14,6 +14,15 @@ coordinator:
 web:
   root: /opt/radhouse/web
 
+providers:
+  - binding: local-chat
+    endpoint: https://inference.example.invalid/v1
+    model: local-chat
+    requirements:
+      required: [text, tools]
+      admitted: [text, tools]
+      minimum_context_tokens: 8192
+
 bots:
   - bot_id: researcher-001
     endpoint: https://researcher-001.example.invalid

@@ -15,6 +15,10 @@ coordinator:
   worker_id: controller-01
 web:
   root: /opt/radhouse/web
+providers:
+  - binding: local-chat
+    endpoint: https://inference.example.invalid/v1
+    model: local-chat
 bots:
   - bot_id: researcher-001
     endpoint: https://agent.example.invalid
@@ -35,6 +39,11 @@ def test_public_base_and_private_overlay_produce_one_validated_config(tmp_path: 
     overlay = write(tmp_path / "private.yaml", """\
 coordinator:
   interval_seconds: 12
+providers:
+  - binding: nemo-chat
+    endpoint: http://192.168.50.9:8000/v1
+    model: nemo-chat
+    allow_plaintext_private_network: true
 bots:
   - bot_id: researcher-001
     endpoint: https://researcher.private.example
@@ -49,6 +58,7 @@ bots:
     assert config.coordinator.worker_id == "controller-01"
     assert config.coordinator.interval_seconds == 12
     assert config.bots[0].provider_binding == "nemo-chat"
+    assert config.providers[0].binding == "nemo-chat"
     assert config.bots[0].token.path == "/run/secrets/private-hermes-token"
 
 
@@ -72,6 +82,20 @@ def test_literal_loopback_http_is_allowed_for_a_managed_local_tunnel(tmp_path: P
         BASE.replace("https://agent.example.invalid", "http://127.0.0.1:8080"),
     ))
     assert config.bots[0].endpoint == "http://127.0.0.1:8080"
+
+
+def test_plaintext_provider_requires_literal_loopback_or_explicit_rfc1918_admission(tmp_path: Path):
+    remote = BASE.replace(
+        "https://inference.example.invalid/v1", "http://192.168.50.9:8000/v1",
+    )
+    with pytest.raises(ConfigurationError, match="configuration_invalid"):
+        load_config(write(tmp_path / "refused.yaml", remote))
+
+    admitted = remote.replace(
+        "    model: local-chat", "    model: local-chat\n    allow_plaintext_private_network: true",
+    )
+    config = load_config(write(tmp_path / "admitted.yaml", admitted))
+    assert config.providers[0].allow_plaintext_private_network is True
 
 
 @pytest.mark.parametrize("change", [
