@@ -119,6 +119,8 @@ composition root's real authentication adapter and current Radhouse authorizatio
   reusable Proxmox or supplied-VM roles, readiness states, and handoff evidence.
 - [Configuration and private overlays](docs/configuration.md): strict public YAML,
   private replacement values, secret-file references, and endpoint boundaries.
+- [PostgreSQL storage boundary](docs/storage.md): separate fixture/application
+  guards, deployment identity, schema compatibility, and remaining migration work.
 - Integration profiles for [Hermes](docs/integrations/hermes.md),
   [Authentik](docs/integrations/authentik.md), and
   [Buzz](docs/integrations/buzz.md): pinned qualification candidates, boundaries,

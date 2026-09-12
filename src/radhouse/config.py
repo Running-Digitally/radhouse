@@ -43,9 +43,17 @@ class SecretFile(StrictModel):
 
 class DatabaseConfig(StrictModel):
     dsn: SecretFile
+    name: str
     deployment_id: str
 
     _deployment_id = field_validator("deployment_id")(_identifier)
+
+    @field_validator("name")
+    @classmethod
+    def database_name(cls, value: str) -> str:
+        if not re.fullmatch(r"[a-z][a-z0-9_]{0,62}", value):
+            raise ValueError("invalid database name")
+        return value
 
 
 class CoordinatorConfig(StrictModel):

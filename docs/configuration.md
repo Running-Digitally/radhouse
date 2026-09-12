@@ -13,7 +13,8 @@ repository or in an explicitly private deployment repository.
 
 Version 1 of the schema covers the currently implemented controller pieces:
 
-- a database DSN supplied through an absolute secret-file path;
+- an expected database name and deployment identity, with the DSN supplied
+  through an absolute secret-file path;
 - one bounded coordinator identity, interval, and per-cycle task limit;
 - an explicit absolute path to the built operator assets; and
 - one distinct Hermes-home endpoint, token-file path, profile, and stable

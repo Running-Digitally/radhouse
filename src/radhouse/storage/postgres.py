@@ -1,4 +1,4 @@
-"""Transactional PostgreSQL adapter for the explicitly owned local VS0 fixture.
+"""Transactional PostgreSQL adapters for application and owned fixture stores.
 
 DDL belongs exclusively to the test bootstrap. Each context opens an independent
 connection and briefly serializes fixture transactions; no external effect runs
@@ -29,6 +29,13 @@ class FixtureBoundaryError(ValueError):
     """A target is outside the disposable, owned local fixture boundary."""
 
 
+class ApplicationStorageError(ValueError):
+    """A configured database is not the expected initialized Radhouse store."""
+
+
+_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+
+
 def _connection_parameters(dsn: str, run_id: str) -> dict:
     if not re.fullmatch(r"[0-9a-f]{8,48}", run_id):
         raise FixtureBoundaryError("invalid_fixture_run_id")
@@ -56,6 +63,32 @@ def _connection_parameters(dsn: str, run_id: str) -> dict:
     params.update(host=str(address), hostaddr=str(supplied_address),
                   connect_timeout=5, application_name="radhouse-vs0",
                   options="-c search_path=public")
+    return params
+
+
+def _application_connection_parameters(dsn: str, expected_database: str) -> dict:
+    if not re.fullmatch(r"[a-z][a-z0-9_]{0,62}", expected_database):
+        raise ApplicationStorageError("invalid_expected_database")
+    try:
+        params = conninfo_to_dict(dsn)
+    except (psycopg.Error, ValueError) as exc:
+        raise ApplicationStorageError("invalid_database_dsn") from exc
+    allowed = {
+        "host", "hostaddr", "port", "dbname", "user", "password", "sslmode",
+        "sslrootcert", "sslcert", "sslkey", "connect_timeout",
+        "channel_binding", "target_session_attrs",
+    }
+    if set(params) - allowed:
+        raise ApplicationStorageError("unsupported_database_dsn_parameter")
+    if not params.get("host"):
+        raise ApplicationStorageError("database_host_required")
+    if params.get("dbname") != expected_database:
+        raise ApplicationStorageError("database_name_mismatch")
+    params.update(
+        connect_timeout=5,
+        application_name="radhouse-controller",
+        options="-c search_path=public",
+    )
     return params
 
 
@@ -107,6 +140,45 @@ class PostgresStore:
             if (len(rows) != 1 or rows[0]["run_id"] != self.run_id
                     or rows[0]["database"] != f"radhouse_vs0_{self.run_id}"):
                 raise FixtureBoundaryError("fixture_ownership_mismatch")
+            connection.execute("SELECT pg_advisory_xact_lock(%s)", (self._lock,))
+            try:
+                yield PostgresUnitOfWork(connection)
+            except psycopg.IntegrityError as exc:
+                raise Rejected("storage_conflict") from exc
+
+
+class ApplicationPostgresStore:
+    """Store for a pre-migrated database with a pinned deployment identity."""
+
+    schema_version = 1
+
+    def __init__(self, dsn: str, expected_database: str, deployment_id: str):
+        if not _IDENTIFIER.fullmatch(deployment_id):
+            raise ApplicationStorageError("invalid_deployment_id")
+        self._params = _application_connection_parameters(dsn, expected_database)
+        self.expected_database = expected_database
+        self.deployment_id = deployment_id
+        self._lock = int.from_bytes(
+            hashlib.sha256(deployment_id.encode()).digest()[:8], "big", signed=True,
+        )
+
+    @contextmanager
+    def transaction(self) -> Iterator["PostgresUnitOfWork"]:
+        with psycopg.connect(**self._params, row_factory=dict_row) as connection:
+            try:
+                rows = connection.execute(
+                    "SELECT deployment_id,schema_version,current_database() AS database "
+                    "FROM public.radhouse_metadata WHERE singleton"
+                ).fetchall()
+            except psycopg.Error as exc:
+                raise ApplicationStorageError("database_schema_missing") from exc
+            if (
+                len(rows) != 1
+                or rows[0]["deployment_id"] != self.deployment_id
+                or rows[0]["schema_version"] != self.schema_version
+                or rows[0]["database"] != self.expected_database
+            ):
+                raise ApplicationStorageError("database_identity_mismatch")
             connection.execute("SELECT pg_advisory_xact_lock(%s)", (self._lock,))
             try:
                 yield PostgresUnitOfWork(connection)
