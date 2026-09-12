@@ -46,7 +46,7 @@ class ControllerComposition:
     def close(self) -> None:
         if self._closed:
             return
-        for client in self._clients:
+        for client in reversed(self._clients):
             client.close()
         self._closed = True
 
