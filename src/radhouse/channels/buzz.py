@@ -75,6 +75,8 @@ class BuzzBoundary:
         # otherwise-valid project/conversation binding.
         value = json.loads(body) if body else {}
         envelope = value.get("envelope", {}) if isinstance(value, dict) else {}
+        if not isinstance(envelope, dict):
+            raise Rejected("invalid_request", 422)
         if (envelope and (envelope.get("conversation_id") != binding.conversation_id
                           or envelope.get("channel") != "buzz")
                 or request.query_params.get("conversation_id", binding.conversation_id) != binding.conversation_id):
@@ -110,9 +112,13 @@ def create_buzz_app(service, local_auth, config, controller_origin, *, transport
             request._body = bytes(body)
             from starlette.concurrency import run_in_threadpool
             await run_in_threadpool(boundary.verify, request, bytes(body))
-            return await call_next(request)
+            response = await call_next(request)
+            # The mounted app sees /buzz/... paths. Protect every native
+            # response, including private reads and validation failures.
+            response.headers["Cache-Control"] = "no-store"
+            return response
         except Rejected as error:
             return JSONResponse({"code": error.code}, status_code=error.status, headers={"Cache-Control": "no-store"})
         except (ValueError, UnicodeError):
-            return JSONResponse({"code": "invalid_request"}, status_code=422)
+            return JSONResponse({"code": "invalid_request"}, status_code=422, headers={"Cache-Control": "no-store"})
     return app

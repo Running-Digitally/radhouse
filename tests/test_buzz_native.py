@@ -77,11 +77,23 @@ def test_native_login_keeps_origin_csrf_and_key_membership_checks(native, clock)
     assert response.json()["conversation_id"] == conversation
     assert "session_token" not in response.json()
     assert send("/auth/reauthenticate", {"password": password, "totp_code": totp.at(clock())}).status_code == 403
-    assert send("/projects").status_code == 200
+    projects = send("/projects")
+    assert projects.status_code == 200
+    assert projects.headers["Cache-Control"] == "no-store"
     state["member"] = False
     assert send("/projects").status_code == 403
     state["member"] = True; state["role"] = "bot"
     assert send("/projects").status_code == 403
+
+
+@pytest.mark.parametrize("malformed", [[], ["bad"], "bad", None, 1])
+def test_native_malformed_envelope_is_sanitized(native, clock, malformed):
+    send, _, _, totp, password, *_ = native
+    login = send("/auth/login", {"username": "alice", "password": password, "totp_code": totp.at(clock())})
+    response = send("/tasks", {"envelope": malformed}, csrf=login.json()["csrf_token"])
+    assert response.status_code == 422
+    assert response.json() == {"code": "invalid_request"}
+    assert response.headers["Cache-Control"] == "no-store"
 
 
 def test_native_web_share_one_task_and_publication(native, service, alice, start, envelope, clock):
