@@ -81,17 +81,36 @@ function task(value: unknown): TaskSummary {
     result: nullableString(item.result),
     result_digest: nullableString(item.result_digest),
     observation_sequence: integer(item.observation_sequence),
+    files: (Array.isArray(item.files) ? item.files : []).map((value) => {
+      const file = record(value); return { name: string(file.name), content: string(file.content) };
+    }),
+    follows_task_id: item.follows_task_id == null ? null : string(item.follows_task_id),
+    guidance: (Array.isArray(item.guidance) ? item.guidance : []).map((value) => {
+      const receipt = record(value); return { id: string(receipt.id), kind: string(receipt.kind),
+        text: nullableString(receipt.text), choice: nullableString(receipt.choice), state: string(receipt.state) };
+    }),
+    permission_request: permission(item.permission_request),
   };
+}
+
+function permission(value: unknown): TaskSummary["permission_request"] {
+  if (value == null) return null;
+  const item = record(value);
+  if (typeof item.allow_once !== "boolean") throw new Error("invalid_permission");
+  return { request_id: string(item.request_id), command: string(item.command), digest: string(item.digest), allow_once: item.allow_once };
 }
 
 function taskCard(value: unknown): TaskCard {
   const item = record(value);
+  const published = item.publication == null ? null : record(item.publication);
   return {
     task: task(item.task),
     cancel: action(item.cancel),
     pause: action(item.pause),
     resume: action(item.resume),
     review: action(item.review),
+    publication: published === null ? null : { publication_id: string(published.publication_id),
+      digest: string(published.digest), audience: stringArray(published.audience) },
   };
 }
 

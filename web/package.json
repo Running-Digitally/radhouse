@@ -8,6 +8,7 @@
     "test": "npm run build && node --test test/*.test.mjs"
   },
   "devDependencies": {
+    "@playwright/test": "1.60.0",
     "typescript": "7.0.2"
   }
 }

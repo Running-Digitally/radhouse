@@ -1,7 +1,6 @@
 """Owner-run initialization for one explicitly targeted Radhouse database."""
 from dataclasses import dataclass
 import hashlib
-from pathlib import Path
 import re
 
 import psycopg
@@ -9,13 +8,12 @@ from psycopg import sql
 from psycopg.rows import dict_row
 
 from radhouse.storage.postgres import (
-    ApplicationStorageError, _application_connection_parameters, schema_digest,
+    ApplicationStorageError, _application_connection_parameters, schema_digest, SCHEMA_VERSION, MIGRATIONS,
 )
 
 
 _ROLE = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
-_SCHEMA_VERSION = 1
-_MIGRATION = Path(__file__).parent / "migrations" / "0001_initial.sql"
+_SCHEMA_VERSION = SCHEMA_VERSION
 
 
 class MigrationError(ValueError):
@@ -94,7 +92,7 @@ def initialize_database(
         raise MigrationError(str(error)) from None
     params["application_name"] = "radhouse-migration"
     try:
-        source = _MIGRATION.read_bytes()
+        sources = [path.read_bytes() for path in MIGRATIONS]
         migration_digest = schema_digest()
     except ApplicationStorageError as error:
         raise MigrationError(str(error)) from None
@@ -118,11 +116,17 @@ def initialize_database(
                     "SELECT deployment_id,schema_version,migration_sha256 "
                     "FROM public.radhouse_metadata WHERE singleton"
                 ).fetchall()
-                if len(rows) != 1 or rows[0] != {
-                    "deployment_id": deployment_id, "schema_version": _SCHEMA_VERSION,
-                    "migration_sha256": migration_digest,
-                }:
+                version = rows[0]["schema_version"] if len(rows) == 1 else None
+                if (version not in range(1, _SCHEMA_VERSION + 1)
+                        or rows[0]["deployment_id"] != deployment_id
+                        or rows[0]["migration_sha256"] != schema_digest(version)):
                     raise MigrationError("database_identity_mismatch")
+                if version < _SCHEMA_VERSION:
+                    for source in sources[version:]:
+                        connection.execute(source.decode("utf-8"))
+                    connection.execute("UPDATE public.radhouse_metadata SET schema_version=%s,migration_sha256=%s WHERE singleton",
+                                       (_SCHEMA_VERSION, migration_digest))
+                    result = "upgraded"
             else:
                 existing = connection.execute(
                     "SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace "
@@ -130,7 +134,8 @@ def initialize_database(
                 ).fetchone()
                 if existing is not None:
                     raise MigrationError("database_not_empty")
-                connection.execute(source.decode("utf-8"))
+                for source in sources:
+                    connection.execute(source.decode("utf-8"))
                 connection.execute(
                     "INSERT INTO public.radhouse_metadata"
                     "(singleton,deployment_id,schema_version,migration_sha256) "

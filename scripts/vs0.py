@@ -184,12 +184,13 @@ class Run:
             connection.execute("CREATE TABLE fixture_ownership(singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton),run_id text UNIQUE NOT NULL)")
             connection.execute("INSERT INTO fixture_ownership(run_id) VALUES (%s)", (self.run_id,))
             connection.execute((ROOT / "tests/fixtures/vs0-schema.sql").read_text())
-            migration = (ROOT / "src/radhouse/storage/migrations/0001_initial.sql").read_bytes()
-            connection.execute(migration.decode())
+            from radhouse.storage.postgres import MIGRATIONS, SCHEMA_VERSION, schema_digest
+            for migration in MIGRATIONS:
+                connection.execute(migration.read_text())
             connection.execute(
                 "INSERT INTO radhouse_metadata"
-                "(singleton,deployment_id,schema_version,migration_sha256) VALUES (true,%s,1,%s)",
-                (f"fixture-{self.run_id}", hashlib.sha256(migration).hexdigest()),
+                "(singleton,deployment_id,schema_version,migration_sha256) VALUES (true,%s,%s,%s)",
+                (f"fixture-{self.run_id}", SCHEMA_VERSION, schema_digest()),
             )
             connection.execute(sql.SQL("CREATE ROLE radhouse_runtime LOGIN PASSWORD {} NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT").format(sql.Literal(runtime_password)))
             connection.execute(sql.SQL("REVOKE ALL ON DATABASE {} FROM PUBLIC").format(sql.Identifier(self.manifest["database"])))

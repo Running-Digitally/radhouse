@@ -71,3 +71,21 @@ project, bot grant, Radhouse conversation binding, Argon2id password, encrypted
 TOTP secret, and revokes that person's earlier sessions. Passwords, TOTP secrets,
 database credentials, and the local-auth encryption key are accepted only by
 protected file reference and are never emitted in the command receipt.
+
+## Existing installation upgrade and optional Buzz desktop
+
+This version requires schema 2. Stop API/coordinator writers and retain a verified
+database backup before `radhouse migrate --apply`. The initializer accepts the
+exact schema-1 checksum, preserves tasks/publications, and fences old binaries.
+After new work is admitted, preserve schema-2 data for a forward fix; an older
+database restore is not an automatic application rollback. See
+[storage compatibility](../../docs/storage.md).
+
+The optional [Buzz desktop patch](../../integrations/buzz-desktop/README.md)
+defines the pinned client, public build values, relay membership connection,
+controller overlay, key registration and real-client acceptance checks. It uses
+the existing controller session, Origin, CSRF and fresh MFA requirements.
+Configure per-bot `approval_commands` only for already granted exact commands;
+the default empty list permits denying a runtime request but grants no new
+execution permission. Hermes acknowledges guidance receipt without an applied
+instruction receipt; the UI preserves that distinction.

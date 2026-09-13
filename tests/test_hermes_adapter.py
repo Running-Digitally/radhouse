@@ -18,6 +18,30 @@ def client(handler):
     )
 
 
+def test_steering_and_approval_target_exact_run_and_single_request():
+    calls = []
+    def handler(request):
+        calls.append(request)
+        if request.url.path.endswith("/steer"):
+            assert json.loads(request.content) == {"input": "Focus on cost"}
+            return httpx.Response(200, json={"run_id": "run-1", "accepted": True})
+        assert json.loads(request.content) == {"request_id": "permission-1", "choice": "once"}
+        return httpx.Response(200, json={"run_id": "run-1", "request_id": "permission-1", "choice": "once", "resolved": 1})
+    with client(handler) as gateway:
+        assert gateway.steer("run-1", "Focus on cost")
+        assert gateway.approve("run-1", "permission-1", "once")
+        with pytest.raises(ValueError): gateway.approve("run-1", "permission-1", "always")
+    assert len(calls) == 2
+    assert all("idempotency-key" not in request.headers for request in calls)
+
+
+def test_approval_status_keeps_only_bounded_action_identity():
+    with client(lambda _: httpx.Response(200, json={"run_id": "run-1", "status": "waiting_for_approval",
+        "approval": {"request_id": "request-1", "command": "cat report.txt", "private_metadata": "omit"}})) as gateway:
+        run = gateway.status("run-1")
+    assert run.permission_request == {"run_id": "run-1", "request_id": "request-1", "command": "cat report.txt"}
+
+
 def test_start_and_identical_replay_use_the_pinned_runs_contract():
     requests = []
 

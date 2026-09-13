@@ -15,6 +15,7 @@ from radhouse.config import ConfigurationError, load_config
 from radhouse.secrets import SecretFileError, read_secret_file
 from radhouse.storage.migrations import MigrationError, initialize_database
 from radhouse.storage.postgres import ApplicationStorageError
+from radhouse.domain.tasks import Rejected
 
 
 def parser() -> argparse.ArgumentParser:
@@ -48,6 +49,14 @@ def parser() -> argparse.ArgumentParser:
     user.add_argument("--bot-display-name", required=True)
     user.add_argument("--bot-role-name", required=True)
     user.add_argument("--apply", action="store_true")
+    binding = commands.add_parser("buzz-bind", help="bind one approved public key to an existing person/project")
+    binding.add_argument("--config", required=True)
+    binding.add_argument("--overlay")
+    binding.add_argument("--principal-id", required=True)
+    binding.add_argument("--pubkey", required=True)
+    binding.add_argument("--channel-id", required=True)
+    binding.add_argument("--project-id", required=True)
+    binding.add_argument("--apply", action="store_true")
     serve = commands.add_parser("serve", help="serve the authenticated operator interface")
     serve.add_argument("--config", required=True)
     serve.add_argument("--overlay")
@@ -101,6 +110,10 @@ def main(arguments: list[str] | None = None) -> int:
                     controller.service, auth.auth_context,
                     web_root=controller.web_root, local_auth=auth,
                 )
+                if config.buzz is not None:
+                    from radhouse.channels.buzz import create_buzz_app
+                    app.mount("/buzz", create_buzz_app(controller.service, auth, config.buzz,
+                                                       config.authentication.expected_origin))
                 uvicorn.run(
                     app, host=args.host, port=args.port, proxy_headers=True,
                     forwarded_allow_ips="127.0.0.1", access_log=False,
@@ -115,6 +128,20 @@ def main(arguments: list[str] | None = None) -> int:
                 "task_count": len(cycle.receipts),
                 "errors": sum(receipt.error_code is not None for receipt in cycle.receipts),
             }
+        elif args.command == "buzz-bind":
+            if not args.apply:
+                output = {**_summary(config), "result": "apply_required"}
+            else:
+                from radhouse.channels.buzz_registry import bind_key
+                from radhouse.storage.postgres import ApplicationPostgresStore
+                conversation = next((item for item in config.buzz.conversations if item.channel_id == args.channel_id), None) if config.buzz else None
+                if conversation is None:
+                    raise Rejected("buzz_conversation_not_configured")
+                store = ApplicationPostgresStore(read_secret_file(config.database.dsn.path), config.database.name, config.database.deployment_id)
+                revision = bind_key(store, principal_id=args.principal_id, pubkey=args.pubkey,
+                                    conversation_id=conversation.conversation_id, project_id=args.project_id)
+                output = {"result": "bound", "principal_id": args.principal_id, "pubkey": args.pubkey,
+                          "conversation_id": conversation.conversation_id, "project_id": args.project_id, "revision": revision}
         elif args.command == "local-user":
             if not args.apply:
                 output = {**_summary(config), "result": "apply_required"}
@@ -162,6 +189,7 @@ def main(arguments: list[str] | None = None) -> int:
         ConfigurationError,
         LocalAuthError,
         MigrationError,
+        Rejected,
         SecretFileError,
     ) as error:
         print(json.dumps({"result": "refused", "code": str(error)}, sort_keys=True))

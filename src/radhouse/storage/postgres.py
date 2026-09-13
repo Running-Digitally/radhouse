@@ -36,11 +36,17 @@ class ApplicationStorageError(ValueError):
 
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _INITIAL_MIGRATION = Path(__file__).parent / "migrations" / "0001_initial.sql"
+SCHEMA_VERSION = 2
+MIGRATIONS = (_INITIAL_MIGRATION, Path(__file__).parent / "migrations" / "0002_operator_context.sql")
 
 
-def schema_digest() -> str:
+def schema_digest(version: int = SCHEMA_VERSION) -> str:
     try:
-        return hashlib.sha256(_INITIAL_MIGRATION.read_bytes()).hexdigest()
+        if version == 1:
+            return hashlib.sha256(_INITIAL_MIGRATION.read_bytes()).hexdigest()
+        if version != SCHEMA_VERSION:
+            raise ApplicationStorageError("unsupported_schema_version")
+        return hashlib.sha256(b"radhouse-schema-v2\0" + b"\0".join(path.read_bytes() for path in MIGRATIONS)).hexdigest()
     except OSError:
         raise ApplicationStorageError("database_migration_missing") from None
 
@@ -119,6 +125,9 @@ def _snapshot(row, kind):
     value = dict(row["snapshot"])
     if kind is Task:
         value["blockers"] = tuple(value["blockers"])
+        from radhouse.domain.tasks import InputFile
+        value["files"] = tuple(InputFile(**item) for item in value.get("files", []))
+        value["guidance"] = tuple(value.get("guidance", []))
     if kind in (Review, Publication):
         value["audience"] = tuple(value["audience"])
     if kind is Review:
@@ -159,7 +168,7 @@ class PostgresStore:
 class ApplicationPostgresStore:
     """Store for a pre-migrated database with a pinned deployment identity."""
 
-    schema_version = 1
+    schema_version = SCHEMA_VERSION
 
     def __init__(self, dsn: str, expected_database: str, deployment_id: str):
         if not _IDENTIFIER.fullmatch(deployment_id):
@@ -228,6 +237,23 @@ class PostgresUnitOfWork:
         return _snapshot(self._connection.execute(
             "SELECT snapshot FROM public.tasks WHERE task_id=%s", (task_id,),
         ).fetchone(), Task)
+
+    def bindings(self, channel: str, subject: str, principal_id: str) -> list[Binding]:
+        return [Binding(**row) for row in self._connection.execute(
+            "SELECT channel,subject,conversation_id,principal_id,project_id,revision,active "
+            "FROM public.channel_bindings WHERE channel=%s AND subject=%s "
+            "AND principal_id=%s AND active ORDER BY conversation_id LIMIT 100",
+            (channel, subject, principal_id),
+        ).fetchall()]
+
+    def audience(self, bot_id: str, project_id: str) -> tuple[str, ...]:
+        return tuple(row["principal_id"] for row in self._connection.execute(
+            "SELECT a.principal_id FROM public.actors a "
+            "JOIN public.bot_grants b USING(principal_id) "
+            "JOIN public.project_members p USING(principal_id) "
+            "WHERE a.active AND b.bot_id=%s AND p.project_id=%s "
+            "ORDER BY a.principal_id LIMIT 100", (bot_id, project_id),
+        ).fetchall())
 
     def tasks(self) -> list[Task]:
         return [_snapshot(row, Task) for row in self._connection.execute(

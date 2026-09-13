@@ -23,6 +23,7 @@ from radhouse.storage.postgres import (
     ApplicationStorageError,
     _application_connection_parameters,
     schema_digest,
+    SCHEMA_VERSION,
 )
 
 
@@ -72,7 +73,7 @@ def _verified_connection(connection, deployment_id: str, database: str) -> None:
     if (
         len(rows) != 1
         or rows[0]["deployment_id"] != deployment_id
-        or rows[0]["schema_version"] != 1
+        or rows[0]["schema_version"] != SCHEMA_VERSION
         or rows[0]["migration_sha256"] != schema_digest()
         or rows[0]["database"] != database
     ):
@@ -242,71 +243,86 @@ class LocalAuthService:
         except (psycopg.Error, ApplicationStorageError, LocalAuthError):
             raise Rejected("service_unavailable", 503) from None
 
-    def login(self, username: str, password: str, totp_code: str, source: str) -> LocalSession:
+    def _csrf(self, token: str) -> str:
+        # Stable for this session, so opening another tab does not invalidate
+        # an in-flight command in the original tab. The cookie alone is never
+        # accepted as CSRF proof.
+        return self._keyed_digest("csrf:" + token)
+
+    def _verify_credentials(self, connection, username, password, totp_code, source, now):
         try:
             normalized = _username(username)
         except LocalAuthError:
             normalized = "invalid"
         if len(password) > 1024 or not re.fullmatch(r"[0-9]{6}", totp_code):
             raise Rejected("invalid_credentials", 401)
-        now = self._clock()
         username_hash = self._keyed_digest(normalized)
         source_hash = self._keyed_digest(source)
         lock = int.from_bytes(bytes.fromhex(username_hash)[:8], "big", signed=True)
+        connection.execute("SELECT pg_advisory_xact_lock(%s)", (lock,))
+        throttle = connection.execute(
+            "SELECT * FROM public.local_login_throttles "
+            "WHERE username_hash=%s AND source_hash=%s FOR UPDATE",
+            (username_hash, source_hash),
+        ).fetchone()
+        if throttle and throttle["locked_until"] and throttle["locked_until"] > now:
+            raise Rejected("invalid_credentials", 401)
+        credential = connection.execute(
+            "SELECT c.*,a.active FROM public.local_credentials c "
+            "JOIN public.actors a USING(principal_id) WHERE c.username=%s",
+            (normalized,),
+        ).fetchone()
+        encoded = credential["password_hash"] if credential else self._dummy_hash
+        password_ok = False
+        try:
+            password_ok = self._passwords.verify(encoded, password)
+        except (VerifyMismatchError, VerificationError, InvalidHashError):
+            pass
+        counter = None
+        if credential and credential["active"] and password_ok:
+            try:
+                secret = self._fernet.decrypt(bytes(credential["totp_secret_ciphertext"]))
+                totp = pyotp.TOTP(secret.decode("ascii"))
+                current = int(now.timestamp()) // totp.interval
+                last = credential["last_totp_counter"]
+                matches = [candidate for candidate in range(current - 1, current + 2)
+                           if (last is None or candidate > last)
+                           and hmac.compare_digest(totp.at(candidate * totp.interval), totp_code)]
+                counter = max(matches) if matches else None
+            except (InvalidToken, UnicodeError, ValueError):
+                pass
+        if not credential or not credential["active"] or not password_ok or counter is None:
+            self._record_failure(connection, username_hash, source_hash, throttle, now)
+            connection.commit()  # Authentication failures must retain their throttle.
+            raise Rejected("invalid_credentials", 401)
+        connection.execute(
+            "DELETE FROM public.local_login_throttles WHERE username_hash=%s AND source_hash=%s",
+            (username_hash, source_hash),
+        )
+        if self._passwords.check_needs_rehash(encoded):
+            connection.execute(
+                "UPDATE public.local_credentials SET password_hash=%s,updated_at=%s "
+                "WHERE principal_id=%s", (self._passwords.hash(password), now, credential["principal_id"]),
+            )
+        connection.execute(
+            "UPDATE public.local_credentials SET last_totp_counter=%s WHERE principal_id=%s",
+            (counter, credential["principal_id"]),
+        )
+        return credential
+
+    def login(self, username: str, password: str, totp_code: str, source: str, *, expected_principal: str | None = None) -> LocalSession:
+        now = self._clock()
         try:
             with self._connection() as connection:
                 _verified_connection(connection, self._deployment_id, self._database)
-                connection.execute("SELECT pg_advisory_xact_lock(%s)", (lock,))
-                throttle = connection.execute(
-                    "SELECT * FROM public.local_login_throttles "
-                    "WHERE username_hash=%s AND source_hash=%s FOR UPDATE",
-                    (username_hash, source_hash),
-                ).fetchone()
-                if throttle and throttle["locked_until"] and throttle["locked_until"] > now:
-                    raise Rejected("invalid_credentials", 401)
-                credential = connection.execute(
-                    "SELECT c.*,a.active FROM public.local_credentials c "
-                    "JOIN public.actors a USING(principal_id) WHERE c.username=%s",
-                    (normalized,),
-                ).fetchone()
-                encoded = credential["password_hash"] if credential else self._dummy_hash
-                password_ok = False
-                try:
-                    password_ok = self._passwords.verify(encoded, password)
-                except (VerifyMismatchError, VerificationError, InvalidHashError):
-                    pass
-                totp_ok = False
-                counter = None
-                if credential and credential["active"] and password_ok:
-                    try:
-                        secret = self._fernet.decrypt(bytes(credential["totp_secret_ciphertext"]))
-                        totp = pyotp.TOTP(secret.decode("ascii"))
-                        counter = int(now.timestamp()) // totp.interval
-                        totp_ok = totp.verify(totp_code, for_time=now, valid_window=1)
-                        last = credential["last_totp_counter"]
-                        totp_ok = bool(totp_ok and (last is None or counter > last))
-                    except (InvalidToken, UnicodeError, ValueError):
-                        totp_ok = False
-                if not credential or not credential["active"] or not password_ok or not totp_ok:
-                    self._record_failure(connection, username_hash, source_hash, throttle, now)
-                    # Preserve throttling even though authentication is denied.
-                    connection.commit()
-                    raise Rejected("invalid_credentials", 401)
-                connection.execute(
-                    "DELETE FROM public.local_login_throttles WHERE username_hash=%s AND source_hash=%s",
-                    (username_hash, source_hash),
-                )
-                if self._passwords.check_needs_rehash(encoded):
-                    connection.execute(
-                        "UPDATE public.local_credentials SET password_hash=%s,updated_at=%s "
-                        "WHERE principal_id=%s", (self._passwords.hash(password), now, credential["principal_id"]),
-                    )
-                connection.execute(
-                    "UPDATE public.local_credentials SET last_totp_counter=%s WHERE principal_id=%s",
-                    (counter, credential["principal_id"]),
-                )
+                credential = self._verify_credentials(connection, username, password, totp_code, source, now)
+                # Native Buzz adds a verified key/person binding. This narrows
+                # login before issuing a cookie; password/TOTP and subsequent
+                # Origin/CSRF/session checks remain identical to ordinary login.
+                if expected_principal is not None and credential["principal_id"] != expected_principal:
+                    raise Rejected("identity_binding_denied", 403)
                 token = secrets.token_urlsafe(32)
-                csrf = secrets.token_urlsafe(32)
+                csrf = self._csrf(token)
                 assurance_until = now + self._assurance_ttl
                 connection.execute(
                     "INSERT INTO public.local_sessions"
@@ -315,9 +331,35 @@ class LocalAuthService:
                     (_digest(token), credential["principal_id"], _digest(csrf), now, now,
                      now + self._idle_ttl, now + self._absolute_ttl, assurance_until),
                 )
-                binding = self._binding(connection, credential["principal_id"], normalized)
-                return LocalSession(token, csrf, credential["principal_id"], normalized,
+                binding = self._binding(connection, credential["principal_id"], credential["username"])
+                return LocalSession(token, csrf, credential["principal_id"], credential["username"],
                                     assurance_until, **binding)
+        except Rejected:
+            raise
+        except (psycopg.Error, ApplicationStorageError):
+            raise Rejected("authentication_unavailable", 503) from None
+
+    def reauthenticate(self, request: Request, password: str, totp_code: str) -> LocalSession:
+        session = self.session(request)  # Enforces current cookie, origin and CSRF.
+        now = self._clock()
+        try:
+            with self._connection() as connection:
+                _verified_connection(connection, self._deployment_id, self._database)
+                credential = self._verify_credentials(
+                    connection, session.username, password, totp_code, self._source(request), now,
+                )
+                if credential["principal_id"] != session.principal_id:
+                    raise Rejected("authentication_required", 401)
+                until = now + self._assurance_ttl
+                updated = connection.execute(
+                    "UPDATE public.local_sessions SET assurance_until=%s "
+                    "WHERE token_hash=%s AND principal_id=%s AND revoked_at IS NULL "
+                    "AND idle_expires_at>%s AND absolute_expires_at>%s",
+                    (until, _digest(session.token), session.principal_id, now, now),
+                )
+                if updated.rowcount != 1:
+                    raise Rejected("authentication_required", 401)
+                return replace(session, assurance_until=until)
         except Rejected:
             raise
         except (psycopg.Error, ApplicationStorageError):
@@ -392,7 +434,7 @@ class LocalAuthService:
 
     def refresh(self, request: Request) -> LocalSession:
         session = self.session(request)
-        csrf = secrets.token_urlsafe(32)
+        csrf = self._csrf(session.token)
         try:
             with self._connection() as connection:
                 _verified_connection(connection, self._deployment_id, self._database)

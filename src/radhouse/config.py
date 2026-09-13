@@ -4,7 +4,7 @@ from __future__ import annotations
 import ipaddress
 from pathlib import Path
 import re
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -184,6 +184,19 @@ class BotRuntimeConfig(StrictModel):
     profile: str
     runtime_revision: str
     provider_binding: str
+    approval_commands: tuple[str, ...] = ()
+
+    @field_validator("approval_commands", mode="before")
+    @classmethod
+    def command_list(cls, value):
+        return tuple(value) if isinstance(value, list) else value
+
+    @field_validator("approval_commands")
+    @classmethod
+    def exact_commands(cls, value):
+        if len(value) > 32 or any(not item or len(item) > 8192 or "redact" in item.lower() or "***" in item for item in value):
+            raise ValueError("invalid approved runtime command")
+        return value
 
     _bot_id = field_validator("bot_id")(_identifier)
     _profile = field_validator("profile")(_identifier)
@@ -212,12 +225,40 @@ class BotRuntimeConfig(StrictModel):
         return value.rstrip("/")
 
 
+class BuzzConversationConfig(StrictModel):
+    channel_id: str
+    conversation_id: str
+
+    _channel = field_validator("channel_id")(_identifier)
+    _conversation = field_validator("conversation_id")(_identifier)
+
+
+class BuzzConfig(StrictModel):
+    relay_origin: str
+    relay_pubkey: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    conversations: tuple[BuzzConversationConfig, ...] = Field(min_length=1, max_length=20)
+
+    _origin = field_validator("relay_origin")(LocalAuthConfig.origin.__func__)
+
+    @field_validator("conversations", mode="before")
+    @classmethod
+    def sequences(cls, value):
+        return tuple(value) if isinstance(value, list) else value
+
+    @model_validator(mode="after")
+    def unique(self):
+        if len({item.channel_id for item in self.conversations}) != len(self.conversations):
+            raise ValueError("duplicate Buzz channel")
+        return self
+
+
 class RadhouseConfig(StrictModel):
     schema_version: Literal[1]
     database: DatabaseConfig
     coordinator: CoordinatorConfig
     web: WebConfig
     authentication: LocalAuthConfig | None = None
+    buzz: BuzzConfig | None = None
     providers: tuple[ProviderConfig, ...] = Field(min_length=1, max_length=20)
     bots: tuple[BotRuntimeConfig, ...] = Field(min_length=1, max_length=100)
 
@@ -230,6 +271,10 @@ class RadhouseConfig(StrictModel):
 
     @model_validator(mode="after")
     def unique_bot_homes(self) -> "RadhouseConfig":
+        if self.buzz is not None and (self.authentication is None or not self.authentication.secure_cookie
+                or self.authentication.cookie_name != "radhouse_session"
+                or not self.authentication.expected_origin.startswith("https://")):
+            raise ValueError("Buzz desktop requires HTTPS and the bounded native cookie contract")
         bot_ids = [bot.bot_id for bot in self.bots]
         endpoints = [bot.endpoint for bot in self.bots]
         provider_bindings = [provider.binding for provider in self.providers]

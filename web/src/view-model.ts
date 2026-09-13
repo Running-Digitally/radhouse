@@ -11,6 +11,8 @@ const phaseLabels: Record<Phase, string> = {
 const reasonLabels: Record<string, string> = {
   read_only_role: "Your access is read-only.",
   no_assigned_agents: "Ask an administrator to assign an agent.",
+  agents_unavailable: "Your agents are temporarily unavailable. Your draft can wait here.",
+  already_published: "This result has already been published to its reviewed audience.",
   task_closed: "This task is already finished.",
   task_not_pausable: "Pause becomes available while the agent is working.",
   task_not_paused: "This task is not paused.",

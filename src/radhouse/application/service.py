@@ -13,12 +13,12 @@ from uuid import uuid4
 from radhouse.channels.mapping import verify_envelope
 from radhouse.channels.commands import Envelope
 from radhouse.application.ports import AgentWorkPort, ProviderPort, Store, UnitOfWork
-from radhouse.application.views import ActionView, TaskCard, WorkHome
+from radhouse.application.views import ActionView, ProjectView, TaskCard, WorkHome
 from radhouse.domain.access import AuthContext, require_access, require_assurance
 from radhouse.domain.releases import Publication, Review, digest, validate_review
 from radhouse.domain.tasks import (AgentDispatch, Attempt, Delivery, Event,
     Observation, ProviderDescription, Rejected, RuntimeCapabilities, RuntimeDispatch,
-    RuntimeFailure, RuntimeResult, SavedCommand, StartTask, Task)
+    RuntimeFailure, RuntimeResult, SavedCommand, StartTask, Task, Operation, runtime_input)
 
 
 def fingerprint(value: object) -> str:
@@ -27,8 +27,9 @@ def fingerprint(value: object) -> str:
 
 class Service:
     def __init__(self, store: Store, work: AgentWorkPort, provider: ProviderPort,
-                 clock: Callable[[], datetime]):
+                 clock: Callable[[], datetime], *, approval_commands: dict[str, tuple[str, ...]] | None = None):
         self.store, self.work, self.provider, self.clock = store, work, provider, clock
+        self.approval_commands = approval_commands or {}
 
     def _now(self) -> datetime:
         value = self.clock()
@@ -70,6 +71,9 @@ class Service:
     def admit(self, actor: AuthContext, envelope: Envelope, start: StartTask) -> Task:
         if not start.brief.strip() or len(start.brief) > 4096 or not 1 <= start.budget <= 100:
             raise Rejected("invalid_task", 422)
+        if (len(start.files) > 4 or sum(len(f.content.encode()) for f in start.files) > 65536
+                or any(not f.name or len(f.name) > 200 or any(c in f.name for c in "/\\\x00\n\r") for f in start.files)):
+            raise Rejected("invalid_input_files", 422)
         body = asdict(start)
         identity = fingerprint(body)
         event_identity = fingerprint({"kind": "start", "key": envelope.command_key, "body": body})
@@ -85,6 +89,13 @@ class Service:
             if bot.provider_binding != start.provider_binding:
                 raise Rejected("provider_binding_denied", 403)
             self._binding(tx, actor, envelope, start.project_id)
+            previous_result = None
+            if start.follows_task_id:
+                previous = self._task(tx, start.follows_task_id)
+                self._authorize(tx, actor, previous, envelope, write=True)
+                if previous.project_id != start.project_id or previous.phase != "closed" or previous.result is None:
+                    raise Rejected("followup_context_unavailable")
+                previous_result = previous.result
             delivery = tx.delivery(envelope.channel, envelope.event_id)
             if delivery:
                 if delivery.principal_id != actor.principal_id or delivery.fingerprint != event_identity:
@@ -100,7 +111,8 @@ class Service:
                 self._authorize(tx, actor, task, envelope, write=True)
             else:
                 task = Task(str(uuid4()), actor.principal_id, start.bot_id, start.project_id,
-                            start.brief, start.provider_binding, start.resource_key, start.budget)
+                            start.brief, start.provider_binding, start.resource_key, start.budget,
+                            files=start.files, follows_task_id=start.follows_task_id, previous_result=previous_result)
                 tx.insert_task(task)
                 tx.save_command(SavedCommand(actor.principal_id, envelope.command_key, identity, task.task_id))
                 tx.add_event(Event(task.task_id, "admitted", task.state_revision))
@@ -113,6 +125,14 @@ class Service:
             task = self._task(tx, task_id)
             self._authorize(tx, actor, task, envelope)
             return task
+
+    def guide(self, actor, task_id, expected, text, *, envelope):
+        from radhouse.application.runtime_controls import control
+        return control(self, actor, task_id, expected, envelope, text=text)
+
+    def respond_permission(self, actor, task_id, expected, request_id, digest, choice, *, envelope):
+        from radhouse.application.runtime_controls import control
+        return control(self, actor, task_id, expected, envelope, request_id=request_id, digest=digest, choice=choice)
 
     def coordination_candidates(self, limit: int) -> tuple[str, ...]:
         if not 1 <= limit <= 100:
@@ -135,6 +155,25 @@ class Service:
             return self.run(task_id, worker_id)
         return self.recover(task_id)
 
+    def projects(self, actor: AuthContext) -> tuple[ProjectView, ...]:
+        with self.store.transaction() as tx:
+            access = tx.access(actor.principal_id)
+            if access is None or not access.active:
+                raise Rejected("access_denied", 403)
+            result = []
+            for binding in tx.bindings(actor.channel, actor.subject, actor.principal_id):
+                project = tx.project(binding.project_id)
+                if project and project.state == "active" and project.project_id in access.projects:
+                    result.append(ProjectView(project.project_id, project.display_name,
+                                              binding.conversation_id, binding.revision))
+            return tuple(result)
+
+    def review_audience(self, actor: AuthContext, task_id: str, *, envelope: Envelope) -> tuple[str, ...]:
+        with self.store.transaction() as tx:
+            task = self._task(tx, task_id)
+            self._authorize(tx, actor, task, envelope, write=True)
+            return tx.audience(task.bot_id, task.project_id)
+
     def work_home(self, actor: AuthContext, *, envelope: Envelope) -> WorkHome:
         with self.store.transaction() as tx:
             access = tx.access(actor.principal_id)
@@ -151,12 +190,16 @@ class Service:
             tasks = tuple(
                 task for task in tx.tasks()
                 if task.owner_id == actor.principal_id and task.project_id == binding.project_id
+                and task.bot_id in access.bots
             )
+            publications = {task.task_id: tx.publication(task.task_id) for task in tasks}
 
         can_write = access.role in {"admin", "operator"}
+        ready = any(agent.state == "ready" for agent in agents)
         start = ActionView(
-            can_write and bool(agents),
-            None if can_write and agents else "read_only_role" if not can_write else "no_assigned_agents",
+            can_write and ready,
+            None if can_write and ready else "read_only_role" if not can_write
+            else "agents_unavailable" if agents else "no_assigned_agents",
         )
 
         def action(enabled: bool, reason: str) -> ActionView:
@@ -170,19 +213,21 @@ class Service:
             cancellable = task.phase != "closed" and "cancel_requested" not in task.blockers
             pausable = task.phase in {"active", "recovering"} and not paused and cancellable
             resumable = paused and task.phase not in {"closed", "stopping"}
-            reviewable = task.outcome == "completed" and task.result is not None
+            publication = publications[task.task_id]
+            reviewable = task.outcome == "completed" and task.result is not None and publication is None
             if not can_write:
                 review = ActionView(False, "read_only_role")
             elif reviewable and (actor.assurance_until is None or actor.assurance_until <= self._now()):
                 review = ActionView(False, "fresh_assurance_required")
             else:
-                review = action(reviewable, "result_not_ready")
+                review = action(reviewable, "already_published" if publication else "result_not_ready")
             cards.append(TaskCard(
                 task,
                 action(cancellable, "task_closed"),
                 action(pausable, "task_not_pausable"),
                 action(resumable, "task_not_paused"),
                 review,
+                publication,
             ))
         return WorkHome(
             actor.principal_id, access.role, binding.project_id, project.display_name,
@@ -240,7 +285,7 @@ class Service:
                                   generation=attempt.generation, budget_remaining=task.budget_remaining - 1,
                                   blockers=(), observation_sequence=0)
             session_id = task.task_id
-            request_digest = fingerprint({"input": task.brief, "session_id": session_id})
+            request_digest = fingerprint({"input": runtime_input(task), "session_id": session_id})
             tx.save_dispatch(AgentDispatch(
                 attempt.attempt_id, task.task_id, attempt.attempt_id, session_id,
                 task.provider_binding, request_digest, "prepared",
@@ -321,7 +366,7 @@ class Service:
             if worker_id is not None and attempt.worker_id != worker_id:
                 return task
             expected_digest = fingerprint({
-                "input": task.brief, "session_id": dispatch.session_id,
+                "input": runtime_input(task), "session_id": dispatch.session_id,
             })
             if dispatch.request_digest != expected_digest:
                 blockers = tuple(sorted(set(task.blockers) | {"operation_unknown"}))
@@ -441,10 +486,14 @@ class Service:
                 blockers = tuple(x for x in current.blockers if x not in {
                     "operation_unknown", "runtime_stop", "runtime_unavailable",
                 })
-                if (current.phase, current.blockers) == ("active", blockers):
+                permission = result.permission_request
+                if permission is not None:
+                    permission = {**permission, "digest": fingerprint(permission),
+                                  "allow_once": permission.get("command") in self.approval_commands.get(current.bot_id, ())}
+                if (current.phase, current.blockers, current.permission_request) == ("active", blockers, permission):
                     return current
                 return self._save(tx, current, current.evolve(
-                    phase="active", blockers=blockers), "runtime_running")
+                    phase="active", blockers=blockers, permission_request=permission), "runtime_running")
         return self._finish_work(task_id, dispatch.key, result)
 
     def _finish_work(self, task_id: str, dispatch_key: str, result: RuntimeResult) -> Task:
@@ -476,6 +525,7 @@ class Service:
             updated = task.evolve(
                 phase="closed", outcome=terminal, blockers=tuple(sorted(blockers)),
                 result=content, result_digest=digest(content) if content is not None else None,
+                permission_request=None,
             )
             return self._save(tx, task, updated, terminal)
 

@@ -23,7 +23,9 @@ The initial schema now lives in the packaged `0001_initial.sql` migration and is
 also executed by the disposable fixture. `initialize_database()` accepts an
 explicit owner DSN, expected database, deployment ID, and existing runtime role.
 It takes a deployment-scoped advisory lock, initializes only an empty database,
-and otherwise requires exact current metadata. It refuses to run as the runtime
+and otherwise requires exact supported metadata. Version 2 accepts the exact
+version-1 checksum, applies the ordered marker migration in the same transaction,
+and preserves existing task and publication rows. It refuses to run as the runtime
 identity or grant an overprivileged, inheriting, role-member, or object-owning
 runtime identity.
 
@@ -31,7 +33,7 @@ The initializer grants schema use, table DML, and sequence use, then explicitly
 removes writes to the deployment metadata and fixture marker. It also removes
 database/schema creation and temporary-table permission. It returns a bounded
 receipt with the database, deployment identity, schema version, migration digest,
-and whether the schema was initialized or already current.
+and whether the schema was initialized, upgraded or already current.
 
 The CLI wrapper requires the schema-owner DSN in a private, regular, bounded
 single-line file. A missing `--apply` returns `apply_required` without reading
@@ -48,8 +50,13 @@ Do not retain the schema-owner DSN beside the application runtime secret after
 the admitted migration window. The JSON result contains only the database and
 deployment identity, schema version, migration digest, and result code.
 
-Upgrade migrations, a backup gate, and recovery proof remain before retained
-deployment. The runtime application role must not own schema objects or receive
+Version 2 marks the extended task snapshot contract (selected files, previous
+result context, guidance and permission receipts). Old binaries fail their
+version check before reading or writing this state. Stop both writers and retain
+a verified database backup before upgrading a retained deployment. Restore the
+old database with the old binary only before admitting new work; afterwards,
+preserve version-2 data for a forward fix unless loss of newer work is explicitly
+approved. The runtime application role must not own schema objects or receive
 create, role, database, or migration authority. A matching metadata row proves
 target identity and compatibility; it does not grant migration permission or
 prove backup coverage.
