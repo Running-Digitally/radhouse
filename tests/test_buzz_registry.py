@@ -13,6 +13,7 @@ def test_binding_is_idempotent_and_rotation_revokes_old_key(store):
     assert bind_key(store, pubkey=one, **arguments) == 1
     assert bind_key(store, pubkey=one, **arguments) == 1
     assert bind_key(store, pubkey=two, **arguments) == 2
+    assert bind_key(store, pubkey=two, **arguments) == 2
     with store.transaction() as tx:
         assert not tx.binding("buzz", one, "one-buzz-room").active
         assert tx.binding("buzz", two, "one-buzz-room").active

@@ -31,9 +31,10 @@ def _bind_key(store, principal_id, pubkey, conversation_id, project_id):
         rows = connection.execute("SELECT subject,revision,active,project_id FROM channel_bindings "
             "WHERE channel='buzz' AND principal_id=%s AND conversation_id=%s FOR UPDATE",
             (principal_id, conversation_id)).fetchall()
-        if (len(rows) == 1 and rows[0]["subject"] == pubkey and rows[0]["active"]
-                and rows[0]["project_id"] == project_id):
-            return rows[0]["revision"]
+        active = [row for row in rows if row["active"]]
+        if (len(active) == 1 and active[0]["subject"] == pubkey
+                and active[0]["project_id"] == project_id):
+            return active[0]["revision"]
         revision = max((row["revision"] for row in rows), default=0) + 1
         connection.execute("UPDATE channel_bindings SET active=false,revision=%s "
             "WHERE channel='buzz' AND principal_id=%s AND conversation_id=%s", (revision, principal_id, conversation_id))
