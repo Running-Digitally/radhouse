@@ -36,6 +36,11 @@ stack must trust the controller certificate; never disable verification.
 
 Run the pinned desktop's documented dependency setup, `just ci`, and desktop
 packaging command (`pnpm --dir desktop tauri:build`) with those values set.
+For a local macOS qualification bundle without an Apple signing identity, use
+`pnpm --dir desktop tauri:build --config '{"bundle":{"macOS":{"signingIdentity":"-"}}}'`
+and verify it with `codesign --verify --deep --strict /path/to/Buzz.app`.
+This produces a local ad-hoc signature, not Apple notarization. The default
+unsigned packaging output is not sufficient evidence of a valid app signature.
 Retain the original desktop bundle and qualify the patched bundle before
 replacing the everyday installation. A Rust check without these values proves
 compilation, not a configured installation.
