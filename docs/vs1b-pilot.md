@@ -119,7 +119,12 @@ real local-account adapter uses Argon2id passwords, encrypted TOTP factors,
 replay denial, throttled failures, revocable database sessions, secure cookies,
 exact-origin enforcement, and session-bound CSRF tokens. Real OIDC composition,
 administrator invitation/recovery UX, and an unfamiliar-person browser usability
-pilot remain before this increment is qualified.
+pilot remain before this increment is fully qualified. The everyday workflow now
+also includes authorized project selection, four selected UTF-8 reference files
+within 64 KiB, follow-up assignments, active-run guidance, exact permission
+responses, audience selection, inline MFA refresh and result download. Its
+browser walkthrough is automated against the actual API and owned PostgreSQL;
+the unfamiliar-person acceptance exercise remains a live qualification gate.
 
 The small TypeScript interface is backed by the existing FastAPI application.
 The first screen contains assigned agents, current work, blocked/needs-attention
@@ -146,11 +151,21 @@ changed.
 
 ## Increment C: real Buzz parity
 
-The Buzz adapter converts a verified signed event and an active conversation/key
-binding into the same application commands used by the work home. It records the
-Buzz event ID as the delivery identity, rejects mirrors and stale bindings, and
-delivers Radhouse task events back to the room with a durable delivery receipt.
-It never calls Hermes directly.
+The owner-approved minimal desktop profile is implemented as a
+[patch against the pinned Buzz source](../integrations/buzz-desktop/README.md).
+Its channel panel bundles the same work-home code and calls the same application
+commands through `/buzz`. Fresh signed HTTP requests prove the native key and
+exact configured channel; a separately signed fixed query checks current relay
+membership. Ordinary Radhouse cookies, Origin, CSRF and MFA still apply.
+
+Transport signatures are single-use. Durable application command/delivery
+identities survive a lost response and may be retried with fresh signatures.
+The private panel resynchronizes authorized task/events/publication snapshots;
+it does not post private results into the room or consume chat reactions as
+commands. Room-message delivery receipts and mobile clients belong to a later
+profile. The panel never calls Hermes directly. See the
+[accepted implementation contract](operator-buzz-completion.md) for this
+deliberate desktop scope and its remaining live acceptance gates.
 
 Native protected review in Buzz displays the exact task, artifact digest,
 audience, and expiry. The signed Buzz key must already be bound to the currently

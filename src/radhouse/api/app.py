@@ -9,13 +9,14 @@ from typing import Annotated, TYPE_CHECKING
 
 from fastapi import Depends, FastAPI, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from radhouse.api.schemas import (
     AdmitRequest, ErrorResponse, EventsResponse, PublicationResponse,
     PublishRequest, ReviewRequest, ReviewResponse, StateRequest, TaskResponse,
-    WorkHomeResponse, LoginRequest, AuthSessionResponse,
+    WorkHomeResponse, LoginRequest, AuthSessionResponse, ProjectResponse, ReauthenticateRequest,
+    GuidanceRequest, PermissionRequest,
 )
 from radhouse.domain.access import AuthContext
 from radhouse.channels.commands import Envelope
@@ -29,6 +30,7 @@ if TYPE_CHECKING:
 def create_app(
     service: "Service", authenticate: Callable[[Request], AuthContext],
     *, web_root: Path | None = None, local_auth: "LocalAuthService | None" = None,
+    login_principal: Callable | None = None, session_binding: Callable | None = None,
 ) -> FastAPI:
     if not callable(authenticate):
         raise TypeError("authenticate must be an explicitly supplied callable")
@@ -47,7 +49,7 @@ def create_app(
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         if request.url.scheme == "https":
             response.headers["Strict-Transport-Security"] = "max-age=31536000"
-        if request.url.path.startswith(("/auth/", "/tasks", "/reviews", "/work-home")):
+        if request.url.path.startswith(("/auth/", "/tasks", "/reviews", "/work-home", "/projects")):
             response.headers["Cache-Control"] = "no-store"
         return response
 
@@ -71,7 +73,14 @@ def create_app(
     BindingRevision = Annotated[int, Query(ge=1)]
     errors = {status: {"model": ErrorResponse} for status in (401, 403, 404, 409, 422)}
 
-    def session_response(session: "LocalSession") -> AuthSessionResponse:
+    def session_response(session: "LocalSession", request: Request) -> AuthSessionResponse:
+        if session_binding is not None:
+            from dataclasses import replace
+            binding = session_binding(request)
+            if session.principal_id != binding.principal_id:
+                raise Rejected("identity_binding_denied", 403)
+            session = replace(session, conversation_id=binding.conversation_id,
+                              binding_revision=binding.revision, project_id=binding.project_id)
         return AuthSessionResponse(
             principal_id=session.principal_id,
             username=session.username,
@@ -94,6 +103,7 @@ def create_app(
             session = local_auth.login(
                 body.username, body.password, body.totp_code,
                 request.client.host if request.client is not None else "unknown",
+                expected_principal=login_principal(request) if login_principal else None,
             )
             response.set_cookie(
                 local_auth.cookie_name, session.token, max_age=12 * 60 * 60,
@@ -101,12 +111,12 @@ def create_app(
                 path="/",
             )
             response.headers["Cache-Control"] = "no-store"
-            return session_response(session)
+            return session_response(session, request)
 
         @app.get("/auth/session", response_model=AuthSessionResponse, responses=errors)
         def current_session(request: Request, response: Response):
             response.headers["Cache-Control"] = "no-store"
-            return session_response(local_auth.refresh(request))
+            return session_response(local_auth.refresh(request), request)
 
         @app.post("/auth/logout", status_code=204, responses=errors)
         def logout(request: Request, response: Response):
@@ -119,6 +129,10 @@ def create_app(
             response.headers["Cache-Control"] = "no-store"
             return response
 
+        @app.post("/auth/reauthenticate", response_model=AuthSessionResponse, responses=errors)
+        def reauthenticate(body: ReauthenticateRequest, request: Request):
+            return session_response(local_auth.reauthenticate(request, body.password, body.totp_code), request)
+
     def read_envelope(actor: AuthContext, conversation: str, revision: int) -> Envelope:
         # Reads check the same current binding, without adding a delivery receipt.
         return Envelope(actor.channel, "read", conversation, revision, "read")
@@ -128,6 +142,28 @@ def create_app(
         return service.work_home(
             actor, envelope=read_envelope(actor, conversation_id, binding_revision)
         )
+
+    @app.get("/projects", response_model=tuple[ProjectResponse, ...], responses=errors)
+    def projects(actor: Actor, request: Request):
+        values = service.projects(actor)
+        if session_binding is not None:
+            binding = session_binding(request)
+            values = tuple(item for item in values if item.conversation_id == binding.conversation_id)
+        return values
+
+    @app.get("/tasks/{task_id}/review-audience", response_model=tuple[str, ...], responses=errors)
+    def review_audience(task_id: str, actor: Actor, conversation_id: Conversation, binding_revision: BindingRevision):
+        return service.review_audience(actor, task_id, envelope=read_envelope(actor, conversation_id, binding_revision))
+
+    @app.get("/tasks/{task_id}/result", responses=errors)
+    def download_result(task_id: str, actor: Actor, conversation_id: Conversation, binding_revision: BindingRevision):
+        task = service.get(actor, task_id, envelope=read_envelope(actor, conversation_id, binding_revision))
+        if task.result is None:
+            raise Rejected("result_not_ready", 409)
+        return PlainTextResponse(task.result, headers={
+            "Content-Disposition": 'attachment; filename="radhouse-result.txt"',
+            "Cache-Control": "no-store",
+        })
 
     @app.post("/tasks", response_model=TaskResponse, responses=errors)
     def admit(body: AdmitRequest, actor: Actor):
@@ -140,6 +176,15 @@ def create_app(
     @app.post("/tasks/{task_id}/cancel", response_model=TaskResponse, responses=errors)
     def cancel(task_id: str, body: StateRequest, actor: Actor):
         return service.cancel(actor, task_id, body.expected_state_revision, envelope=body.envelope.command())
+
+    @app.post("/tasks/{task_id}/guidance", response_model=TaskResponse, responses=errors)
+    def guide(task_id: str, body: GuidanceRequest, actor: Actor):
+        return service.guide(actor, task_id, body.expected_state_revision, body.text, envelope=body.envelope.command())
+
+    @app.post("/tasks/{task_id}/permission", response_model=TaskResponse, responses=errors)
+    def permission(task_id: str, body: PermissionRequest, actor: Actor):
+        return service.respond_permission(actor, task_id, body.expected_state_revision,
+            body.request_id, body.digest, body.choice, envelope=body.envelope.command())
 
     @app.post("/tasks/{task_id}/pause", response_model=TaskResponse, responses=errors)
     def pause(task_id: str, body: StateRequest, actor: Actor):

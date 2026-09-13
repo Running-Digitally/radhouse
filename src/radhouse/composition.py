@@ -112,7 +112,8 @@ def compose_controller(
                 clock=clock,
             )
         work = RoutingAgentWork(adapters)
-        service = Service(store, work, provider, clock)
+        service = Service(store, work, provider, clock,
+                          approval_commands={bot.bot_id: bot.approval_commands for bot in config.bots})
         coordinator = Coordinator(
             service,
             config.coordinator.worker_id,

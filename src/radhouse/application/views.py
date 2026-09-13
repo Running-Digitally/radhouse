@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 from radhouse.domain.access import BotProfile
 from radhouse.domain.tasks import Task
+from radhouse.domain.releases import Publication
 
 
 @dataclass(frozen=True)
@@ -12,12 +13,21 @@ class ActionView:
 
 
 @dataclass(frozen=True)
+class ProjectView:
+    project_id: str
+    display_name: str
+    conversation_id: str
+    binding_revision: int
+
+
+@dataclass(frozen=True)
 class TaskCard:
     task: Task
     cancel: ActionView
     pause: ActionView
     resume: ActionView
     review: ActionView
+    publication: Publication | None = None
 
 
 @dataclass(frozen=True)

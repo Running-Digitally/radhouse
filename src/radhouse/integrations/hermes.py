@@ -17,7 +17,7 @@ import httpx
 
 from radhouse.application.ports import AgentWorkPort
 from radhouse.domain.tasks import (
-    Attempt, RuntimeCapabilities, RuntimeDispatch, RuntimeFailure, RuntimeResult, Task,
+    Attempt, RuntimeCapabilities, RuntimeDispatch, RuntimeFailure, RuntimeResult, Task, runtime_input,
 )
 
 
@@ -54,6 +54,7 @@ class HermesRun:
     run_id: str
     status: HermesState
     output: str | None = None
+    permission_request: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -174,7 +175,39 @@ class HermesRunsClient:
         output = payload.get("output")
         if output is not None and not isinstance(output, str):
             raise HermesGatewayError("runtime_malformed_response")
-        return HermesRun(run_id=run_id, status=_response_state(payload), output=output)
+        permission = None
+        if payload.get("status") == "waiting_for_approval":
+            value = payload.get("approval")
+            if not isinstance(value, dict):
+                raise HermesGatewayError("runtime_malformed_response")
+            request_id = _response_identifier(value, "request_id")
+            command = value.get("command")
+            if not isinstance(command, str) or not command or len(command.encode()) > 8192:
+                raise HermesGatewayError("runtime_malformed_response")
+            permission = {"request_id": request_id, "command": command, "run_id": run_id}
+        return HermesRun(run_id=run_id, status=_response_state(payload), output=output, permission_request=permission)
+
+    def steer(self, run_id: str, text: str) -> bool:
+        run_id = _validated_identifier(run_id, "run")
+        if not text.strip() or len(text) > 4096:
+            raise ValueError("invalid_guidance")
+        payload, _ = self._request("POST", f"v1/runs/{run_id}/steer", expected_status=200, body={"input": text})
+        if payload.get("run_id") != run_id or payload.get("accepted") is not True:
+            raise HermesGatewayError("runtime_response_mismatch")
+        return True
+
+    def approve(self, run_id: str, request_id: str, choice: str) -> bool:
+        run_id = _validated_identifier(run_id, "run")
+        request_id = _validated_identifier(request_id, "approval")
+        if choice not in {"once", "deny"}:
+            raise ValueError("invalid_approval_choice")
+        payload, _ = self._request("POST", f"v1/runs/{run_id}/approval", expected_status=200,
+                                   body={"request_id": request_id, "choice": choice})
+        if (payload.get("run_id") != run_id or payload.get("request_id") != request_id
+                or payload.get("choice") != choice or type(payload.get("resolved")) is not int
+                or payload["resolved"] != 1):
+            raise HermesGatewayError("runtime_response_mismatch")
+        return True
 
     def stop(self, run_id: str) -> HermesRun:
         run_id = _validated_identifier(run_id, "run")
@@ -287,7 +320,7 @@ class HermesAgentWorkAdapter:
         capabilities = self.capabilities(task)
         submitted_at = self.clock().astimezone(timezone.utc)
         accepted = self.client.start_or_attach(
-            input_text=task.brief,
+            input_text=runtime_input(task),
             session_id=task.task_id,
             dispatch_key=dispatch_key,
         )
@@ -305,7 +338,7 @@ class HermesAgentWorkAdapter:
     def result(self, _task: Task, dispatch: RuntimeDispatch) -> RuntimeResult:
         run = self.client.status(dispatch.run_id)
         if run.status in {"queued", "running", "waiting_for_approval", "stopping"}:
-            return RuntimeResult("running")
+            return RuntimeResult("running", permission_request=run.permission_request)
         if run.status == "completed":
             return RuntimeResult("completed", run.output)
         if run.status == "cancelled":
@@ -318,6 +351,12 @@ class HermesAgentWorkAdapter:
         return self.client.stop(dispatch.run_id).status in {
             "stopping", "cancelled", "completed", "failed", "interrupted",
         }
+
+    def steer(self, _task: Task, dispatch: RuntimeDispatch, text: str) -> bool:
+        return self.client.steer(dispatch.run_id, text)
+
+    def approve(self, _task: Task, dispatch: RuntimeDispatch, request_id: str, choice: str) -> bool:
+        return self.client.approve(dispatch.run_id, request_id, choice)
 
 
 class RoutingAgentWork:
@@ -347,3 +386,9 @@ class RoutingAgentWork:
 
     def stop(self, task: Task, dispatch: RuntimeDispatch) -> bool:
         return self._adapter(task).stop(task, dispatch)
+
+    def steer(self, task: Task, dispatch: RuntimeDispatch, text: str) -> bool:
+        return self._adapter(task).steer(task, dispatch, text)
+
+    def approve(self, task: Task, dispatch: RuntimeDispatch, request_id: str, choice: str) -> bool:
+        return self._adapter(task).approve(task, dispatch, request_id, choice)

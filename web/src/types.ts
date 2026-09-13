@@ -33,7 +33,11 @@ export interface TaskSummary {
   model_id: string | null;
   result: string | null;
   result_digest: string | null;
-  observation_sequence: number;
+    observation_sequence: number;
+    files: { name: string; content: string }[];
+    follows_task_id: string | null;
+    guidance: { id: string; kind: string; text: string | null; choice: string | null; state: string }[];
+    permission_request: { request_id: string; command: string; digest: string; allow_once: boolean } | null;
 }
 
 export interface TaskCard {
@@ -42,6 +46,7 @@ export interface TaskCard {
   pause: ActionState;
   resume: ActionState;
   review: ActionState;
+  publication: { publication_id: string; digest: string; audience: string[] } | null;
 }
 
 export interface WorkHome {
@@ -52,6 +57,26 @@ export interface WorkHome {
   agents: AgentSummary[];
   tasks: TaskCard[];
   start: ActionState;
+}
+
+export interface Project {
+  project_id: string;
+  display_name: string;
+  conversation_id: string;
+  binding_revision: number;
+}
+
+export interface TaskEvent {
+  kind: string;
+  state_revision: number;
+  cursor: number;
+}
+
+export interface TaskEvents {
+  task: TaskSummary;
+  events: TaskEvent[];
+  cursor: number;
+  resync_required: boolean;
 }
 
 export interface Review {

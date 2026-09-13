@@ -17,6 +17,7 @@ dependencies = [
     "pyotp==2.9.0",
     "pyyaml==6.0.3",
     "uvicorn==0.41.0",
+    "coincurve==20.0.0",
 ]
 
 [project.scripts]
@@ -32,3 +33,7 @@ markers = ["postgres: requires the owned local PostgreSQL fixture"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/radhouse"]
+
+[tool.uv]
+# Coincurve 20's CMake settings require scikit-build-core's 0.9 interface.
+build-constraint-dependencies = ["scikit-build-core==0.9.10"]

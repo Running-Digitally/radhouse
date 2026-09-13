@@ -6,18 +6,20 @@ Radhouse is a self-hosted platform being built for persistent AI agents: agents
 that retain their workspaces, work on useful assignments, and collaborate within
 permissions you control.
 
-**Status: early development.** The offline controller proof, VS1-B's durable
-Hermes execution path, and the first operator work-home contract are implemented.
-A task records its exact runtime dispatch before contacting Hermes, reattaches
-after a lost reply or controller restart, and receives a reviewed publication
-through either simulated operator channel. The small TypeScript work home lists
-assigned agents and owned project tasks, starts work, exposes server-authorized
-controls, and prepares an exact result review. A bounded coordinator cycle claims
-and advances eligible work while preserving human pauses and continuing past one
-sanitized task failure. The first supplied-VM deployment assets and a
-database-backed local-account adapter now exist, but the live pilot, OIDC
-adapter, Buzz transport, recovery qualification, and installable fleet release
-remain incomplete.
+**Status: early development.** Durable Hermes execution, the everyday operator
+workflow, and a pinned Buzz desktop task-panel patch are implemented. Both
+surfaces use one controller for selected files, follow-up assignments, progress,
+guidance, permission decisions and protected publication. Local qualification
+uses an owned PostgreSQL database, the actual API and a browser walkthrough;
+the native transport adds signed identity and live relay membership checks to
+the existing MFA session boundary.
+
+The native desktop patch still needs qualification against the private relay
+and deployed controller. Official mobile clients, OIDC composition,
+administrator invitation/recovery UX and an installable fleet release remain
+incomplete. See the [implementation and acceptance packet](docs/operator-buzz-completion.md)
+and [maintained desktop patch](integrations/buzz-desktop/README.md). This is not
+a claim that all of Radhouse V1 is released.
 
 The offline-safe composition root reads protected database and per-bot Hermes
 secret files, routes runtime operations by durable bot ID, and owns client
@@ -91,10 +93,14 @@ network profiles, and shared-service integrations still need qualification.
 
 ## Run the first controller proof
 
-With Python 3.14, uv, and a running local Docker daemon:
+With Python 3.14, uv, Node.js and a running local Docker daemon:
 
 ```sh
 uv sync --locked
+npm --prefix web ci
+npm --prefix web run build
+# Install the pinned browser once (plus OS libraries on Linux when required).
+cd web && npx playwright install chromium && cd ..
 uv run python scripts/vs0.py verify
 ```
 
@@ -104,6 +110,11 @@ container and volume. It uses synthetic identities and fake agent/model/service
 adapters. The Hermes HTTP adapter has separate bounded transport tests and makes
 no model request. See [the demo guide](docs/vs0-demo.md) for prerequisites,
 resource limits, evidence, and the remaining integration work.
+
+The proof includes the actual API/browser workflow with signed synthetic Buzz
+requests. To use an already installed Chrome instead of Playwright Chromium, set
+`RADHOUSE_BROWSER_CHANNEL=chrome`. Live relay and native desktop qualification
+remain separate.
 
 The operator client has its own pinned, inspectable build:
 

@@ -26,7 +26,11 @@ button, input, select, textarea { font: inherit; }
 .section, .start-panel { margin-top: 24px; }
 .section-title { margin: 0 0 14px; font-size: 1.2rem; }
 .start-panel { padding: 24px; border: 1px solid #cfc6af; border-radius: 20px; background: #fbf5e7; box-shadow: var(--shadow); }
-.start-form { display: grid; grid-template-columns: minmax(180px, .55fr) minmax(280px, 1.45fr) auto; gap: 14px; align-items: end; }
+.start-form { display: grid; grid-template-columns: minmax(180px, .55fr) minmax(280px, 1.45fr); gap: 14px; align-items: end; }
+.start-form .field--files, .start-form .file-status, .start-form .notice, .start-form > button { grid-column: 1 / -1; }
+.start-form > button { justify-self: start; }
+.file-status { margin: 0; }
+.file-status:empty { display: none; }
 .field { display: grid; gap: 7px; }
 .field__label { color: #4d554b; font-size: .82rem; font-weight: 700; }
 .field__control { width: 100%; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--ink); padding: 11px 12px; }
@@ -60,6 +64,15 @@ textarea.field__control { resize: vertical; min-height: 48px; }
 .notice { margin: 14px 0; border-radius: 12px; padding: 12px 14px; background: #e7efe9; color: var(--green-dark); }
 .notice--error { background: #f8e2dc; color: #7c3528; }
 .empty, .loading { border: 1px dashed #c9c1ae; border-radius: 14px; padding: 22px; color: var(--muted); text-align: center; }
+.project-picker { margin-top: 18px; max-width: 24rem; }
+.audience-choice { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
+.digest { color: var(--muted); font: .78rem/1.5 ui-monospace, monospace; overflow-wrap: anywhere; }
+.download { display: inline-flex; text-decoration: none; margin-top: 12px; align-items: center; }
+.review-panel > .button + .button { margin-left: 8px; }
+.history-panel { margin-top: 20px; border-top: 1px solid var(--line); padding-top: 18px; }
+.timeline { border-left: 2px solid var(--line); padding-left: 24px; color: var(--muted); }
+.timeline li { padding: 5px 0; }
+button:focus-visible, a:focus-visible { outline: 3px solid #b86635; outline-offset: 3px; }
 
 @media (max-width: 760px) {
   .shell { width: min(100% - 22px, 1080px); padding-top: 28px; }
@@ -70,5 +83,5 @@ textarea.field__control { resize: vertical; min-height: 48px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { scroll-behavior: auto !important; }
+  *, *::before, *::after { scroll-behavior: auto; }
 }
