@@ -33,6 +33,7 @@ class Service:
         self.store, self.work, self.provider, self.clock = store, work, provider, clock
         self.approval_commands = approval_commands or {}
         self.conversation_scope = conversation_scope
+        self.review_links = None
 
     def _now(self) -> datetime:
         value = self.clock()

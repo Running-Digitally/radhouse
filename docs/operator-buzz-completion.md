@@ -1,562 +1,224 @@
-# Everyday operator workflow and native Buzz parity
-
-Status: the conversational desktop pilot is implemented and its selected-file,
-contextual follow-up, opposite-surface private publication and reconnect flow
-passed on 2026-09-14. Package 1 remains open for the owner-selected durable
-steering correction below. This
-packet owns the implementation plan and acceptance gaps for packages 1 and 3.
-It is not a release or live-deployment receipt.
-
-## Outcome and existing authority
-
-The owner requested completion of the everyday operator experience and the
-equivalent Buzz task/review experience. Preserve the accepted contracts in
-`boundary-experience.md`, `work-model.md`, `integrations/buzz.md`, and
-`vs1b-pilot.md`. This is D2 software work. Local implementation and disposable
-tests proceed; connecting a private installation and privileged host changes
-remain distinct decisions. On 2026-09-13 the owner explicitly approved:
-"Implement the minimal desktop patch" against the pinned Buzz source.
-
-Product source baseline: `b7082be874ce802e8aa13fe4fa77a1657fd76546`.
-Buzz compatibility source: `092c6a7277698bd373ccbc1d008fc1507094ae74`.
-
-## Delivery slices
-
-### Durable steering during genuine multi-step work
-
-The owner revised Package 1 acceptance: short, single-turn work completes
-immediately, and a later conversation message becomes a contextual follow-up.
-Live steering is proven during a longer Researcher assignment with genuine tool
-checkpoints, using existing bounded authority. A completed no-tools response must
-not trigger an extra model call merely to make steering possible. This is a D2
-runtime/controller contract change, using
-Radhouse main `95b851af9bbe87c781f0136bd68de03b967eface` and the existing Hermes
-0.21.1 restriction overlay `c67fb3378943dc6454b5680f3fc17919facd8fad`.
-
-The accepted outcome is explicit: a human update stays on the current task/run,
-can enter a subsequent ordinary model request after a tool batch, and has a
-durable outcome visible in the web work home and Buzz. **Applied** means a model
-response completed for a request that included the update. It does not mean the
-model obeyed every instruction. **Unknown** is a separate outcome when a crash
-or lost runtime observation prevents that confirmation. Never relabel uncertain
-application as definitely not applied, resend guidance automatically, resurrect
-a completed task, reset task budget, or silently enable tools.
-
-Hermes owns the durable receipt and application evidence; Radhouse owns the human
-command, its exact task/run association, permission checks and presentation.
-Use the existing runtime database/owner and controller JSON guidance snapshots;
-add no service, identity, network path or PostgreSQL schema migration. Retain the
-delivery state independently from application state so old clients safely report
-only receipt rather than claiming application. Older guidance records remain
-unconfirmed. The no-ID Hermes steering path retains its existing compatibility.
-
-The opt-in protocol is:
-
-```text
-POST /v1/runs/{run_id}/steer
-  {control_id: "control:<64 lowercase hex>", input: <exact UTF-8 string>}
-
-HTTP 200 receipt, including a valid request that arrived too late:
-  object: "hermes.run.steer"
-  run_id, control_id, input_sha256
-  accepted: boolean (whether ever admitted)
-  state: accepted | applied | too_late | not_applied | unknown
-  revision: positive monotonic integer
-  reason: bounded code or null
-  checkpoint_id, api_request_id: bounded identifiers or null
-  replayed: boolean
-
-GET /v1/runs/{run_id}
-  guidance_receipts: the same durable receipts, without object/replayed
-
-features.runs_steering_receipts:
-  supported: true, durable: true, version: 1, max_receipts: 64
-  checkpoint: "after_tool_batch"
-  max_extra_model_calls: 0
-  applied_evidence: "completed_provider_response"
-```
-
-Hash the exact input bytes without trimming. A repeated ID with the same hash
-returns its latest receipt without enqueueing; a changed hash conflicts. Resolve
-an existing ID before checking whether the run is still active. Owner checks,
-run identity, bounds and conflict refusals remain enforced. Requests without a
-durable receipt capability are refused before a new Radhouse guidance operation
-is submitted. A normal task may still run on an older compatible runtime.
-
-The runtime consumes ID-mode guidance after a genuine completed tool batch,
-before the next ordinary model request. Append the actual update through the
-existing session persistence path without rewriting a stored tool result or
-interrupting an in-flight request. Guidance does not add iterations, reset a
-budget, or force a final response to continue. The normal tool loop and its
-existing iteration limit determine whether another request occurs. Later tool
-batches may accept later guidance; the durable per-run cap remains 64 receipts.
-
-Acceptance and final completion sealing share an atomic boundary. A message
-after completion receives `too_late`; an admitted message with no subsequent
-checkpoint becomes `not_applied` with `no_next_model_turn`. This includes a
-short no-tools task that finishes its first response. Persist request-start
-intent before the natural provider call and application confirmation after its
-response. On interruption, never-sent updates become `not_applied`; updates whose
-provider outcome cannot be established become `unknown`. A failed guided request
-must not automatically resend the update through model retry or fallback.
-
-Radhouse passes its already durable `control:<sha256>` command identity and
-merges receipts only for the exact recorded run/control ID/input hash. Validate
-receipt revisions and terminal transitions; reject conflicting evidence. Merge
-outcomes during normal polling and before closing the task. A closed task with
-an unresolved ID-mode delivery can receive a bounded read-only reconciliation;
-this cannot dispatch or reopen its run. Stop reconciliation on an authoritative
-terminal outcome or retained expiry/unknown disposition. A terminal GET can race
-an in-flight POST, so missing receipts stay eligible until the original dispatch
-retention expires. Track the original attempt through pause/resume and never
-query a newer run on behalf of an older update. Permission decisions
-keep their existing independent exact-command/MFA path.
-
-Affected contracts and call paths:
-
-- `domain/tasks.py` adds a typed runtime guidance receipt and optional result
-  receipts; persistent guidance dictionaries carry separate delivery and
-  application fields. `application/ports.py` and `integrations/hermes.py` carry
-  the stable control ID, capability and exact typed response.
-- `application/runtime_controls.py` persists intent before transport and merges
-  the immediate receipt. `application/service.py` reconciles GET observations,
-  including the completion/lost-reply race, without any POST retry.
-- `application/conversations.py` and `channels/buzz_conversations.py` issue
-  deduplicated, truthful update outcomes in the existing private conversation.
-  Guidance changes must not duplicate an already delivered result.
-- The shared web client preserves/displays application outcomes and keeps a
-  focused guidance draft stable during background refresh. The maintained pinned
-  Buzz client receives those shared assets; no native identity or mobile change
-  is needed.
-
-Implement in three reviewable slices: Hermes persistence/checkpoint with a
-deterministic fake provider; controller receipt/reconciliation with owned
-PostgreSQL; then web/native presentation and full qualification. Tests must cover
-single-call no-tools completion and real multi-step tool paths, late/final-seal races, iteration
-limits, lost acknowledgements, duplicates/conflicts, restart before/after provider
-send, stale receipt revisions, terminal-task reconciliation, private conversation
-deduplication and unchanged permission/no-tools boundaries. Use barriers in the
-disposable fixture rather than slowing a production run or relying on timing.
-
-Package 1 acceptance now requires:
-
-- Short, tools-disabled work completes with one natural model call. A subsequent
-  Buzz message becomes a new task with the previous result as explicit context.
-- One deliberately longer, multi-step Researcher assignment starts in Buzz and
-  uses only the already admitted bounded read-only tool authority. Review the
-  exact assignment, tools and run limits before the live execution.
-- Submit an update in that same Buzz conversation while the assignment is
-  active. Verify its exact task/run/control/hash receipt, the natural later
-  model request that includes it, and its effect in the resulting work.
-- Preserve one task identity and dispatch, at-most-once guidance submission,
-  durable outcomes, and restart/reconnect recovery. A timing miss remains
-  `too_late` or `not_applied`, not a successful steering proof.
-- Buzz owns the assignment, progress, guidance and result conversation; the web
-  interface supports detailed review and administration. Private publication,
-  MFA, signatures, membership and existing grant boundaries remain unchanged.
-
-This supersedes the in-progress final-response continuation design. Retain the
-receipt/reconciliation machinery and remove special continuation counters,
-forced text-only requests and tests that require a second no-tools model call.
-The owner explicitly requested implementation and the multi-step proof under
-existing bounded authority. The unused optional one-call timing task is no
-longer needed. No new access, broader tools, model changes or VM250 mutations
-are implied by this revision.
-
-### Hermes dispatch acknowledgement compatibility
-
-The first live conversation exposed a D1 adapter mismatch: pinned Hermes returns
-`status: started` in a fresh HTTP 202 acknowledgement, while Radhouse accepts only
-durable run states. This incorrectly creates an unknown-dispatch hold and an
-unnecessary idempotent reattachment. In `integrations/hermes.py`, normalize that
-exact acknowledgement to internal `queued` only in `start_or_attach`; status
-polling and all identity/replay checks remain strict. Qualify the actual wire
-response through the adapter and coordinator: one POST, an accepted durable run,
-no attention hold, then normal completion by GET. Keep negative coverage for
-unknown status values and replay disagreement. No schema, runtime, grant or
-desktop change is needed. Preserve the first result and exercise the correction
-with the one already-planned follow-up after reviewed deployment.
-
-### Accepted redirect: Researcher is an agent in Buzz
-
-The owner clarified that Radhouse agents must appear and converse as agents in
-Buzz, then approved this redirect. Acceptance is an actual operator journey:
-open Researcher from Buzz's agent directory, message it in a private DM, see its
-acknowledgment and progress, discuss the result, review it in Buzz, and continue
-the same conversation/task in Radhouse. Retain the native protected-review
-component as a contextual action; the general task form is not the Buzz entrypoint.
-
-This D2 slice uses the existing relay protocols at the pinned Buzz revision:
-kind 0 identity, kind 10100 runtime profile, owner-attested kind 30177 discovery,
-kind 41010 two-person DM, and kind 9 conversation messages with NIP-10 reply tags.
-Source verification established that expanding a DM creates a new channel and
-does not expose the original DM's history. Ordinary mutable rooms are excluded
-from the first private conversation link. Only the owner and Researcher are
-members; no unrelated private chat or bot memory is copied.
-
-Researcher receives its own relay key, held by the trusted controller adapter,
-and signs its own messages. The user's key remains in Buzz. An owner-signed
-profile attestation/discovery record makes Researcher discoverable without
-installing or launching another local agent harness. Radhouse remains the sole
-task, permission and Hermes execution authority. Buzz profile/presence describes
-conversation availability; it does not imply that a held runtime is ready.
-
-Program design and delivery sequence:
-
-1. `channels/buzz_relay.py` owns bounded, pinned-origin NIP-98 queries and signed
-   event delivery. `domain/conversations.py` owns immutable link/message/route
-   values. `storage/conversations.py` and schema migration 3 own linked history,
-   ingress deduplication, frozen routing decisions and signed outgoing receipts.
-2. `application/conversations.py` maps an admitted message to the existing
-   `Service.admit/get/guide` operations. A reply retains its explicit task target;
-   an unthreaded message with one active task steers that task. A separate-work
-   instruction creates a new task; multiple plausible active tasks receive a
-   clarification. Ordinary status questions read state. Completed-task discussion
-   retains the selected result through the existing follow-up contract. No LLM
-   gets to infer permissions, an audience, a provider or a protected approval.
-3. `channels/buzz_conversations.py` reads the exact linked DM, verifies author,
-   signature, relay membership/type and the current Radhouse binding before
-   admission or delivery, then drains durable outgoing events. Integrate bounded
-   cycles into the existing coordinator process; add no separate worker service.
-   A relay outage must not prevent existing Radhouse work from advancing.
-4. Add authenticated conversation read/send routes to the existing API and
-   conversation display/composer to the web work home. Web-origin messages retain
-   the real author and explicit Radhouse provenance when mirrored by Researcher;
-   the adapter never signs as the human. Mirror only work explicitly linked to
-   this conversation. Native Buzz keeps its normal agent profile, DM and composer;
-   amend the maintained patch only for enrollment and contextual protected review.
-5. Exercise real signed relay events with disposable keys and PostgreSQL, then
-   the actual desktop journey. Qualify duplication, echo suppression, reordered
-   events, lost delivery acknowledgment, crash after task admission, exact reply
-   targeting, revocation, DM expansion, runtime hold and protected review denial.
-   Only then prepare the exact private enrollment and migration/rollout diff.
-
-Call path: verified owner DM event -> durable inbox and fixed command identity ->
-current actor/link/grant check -> existing Radhouse task command -> coordinator ->
-Hermes. Task evidence -> audience-scoped conversation message -> persist one
-signed event -> relay acknowledgment. Every committed prefix is recoverable:
-admission can be replayed with the same command key, non-idempotent guidance keeps
-its existing at-most-once receipt, and relay delivery reuses the same event bytes.
-No network call runs inside a database transaction. Retain failed inbox/outbox
-records and show a bounded error; do not convert a failed query into an empty
-history. Bound polling, batches, payloads and history; stop visibly on a saturated
-cursor window rather than dropping messages.
-
-Enrollment uses a preconfigured candidate: exact agent public key and protected
-signing-key file, owner key/principal, bot, project and existing owner binding.
-The signed, MFA-authenticated native action opens the immutable owner/agent DM,
-signs the existing NIP-OA ownership attestation and a public kind-30177 directory
-event, and submits them to the controller. The human key never leaves Buzz.
-The controller checks these signatures and the fresh exact DM membership,
-retains the enrollment and exact signed profile events, and publishes them
-idempotently before activating conversation processing. No request can choose
-a new owner, agent key, bot, project, provider, or network destination.
-The stored attestation is a relay delegation credential: only the adapter reads
-it, it is excluded from history/API responses, and relay calls remain pinned
-to the admitted DM and media origin. Candidate configuration admits no runtime
-work until enrollment completes. Removing the candidate or revoking the owner
-binding stops subsequent ingress and delivery. Existing native protected
-reviews accept the enrolled DM through that same owner binding.
-
-The recovered live assignment exposed a runtime enforcement gap: it received
-the complete reference and explicit no-tools instruction but invoked tools.
-Schema 3 therefore also preserves an immutable per-task `disable_tools` flag.
-An explicit structured flag or the operator brief's phrases "use no tools",
-"do not use tools", "don't use tools" or "no tool calls" narrows the task to
-zero model-invoked tools; attachment/result text never sets this policy. The
-Hermes adapter requires advertised `features.runs_disable_tools.supported`
-before dispatch and sends `disable_tools: true` under the same durable dispatch
-identity. An older runtime stops the task with retained state rather than
-silently ignoring the restriction. Ordinary assignments keep the existing
-configured toolset. This controls model tools, not operating-system access.
-
-The private rollout must retain all schema-2 tasks and the pending walkthrough
-assignment. Migration 3 is additive and owner-run, while runtime remains DML-only;
-older controllers are fenced by the schema version. Disable the optional bridge
-to roll back behavior while retaining new conversation data. No restore over
-newer work, model switch, extra runtime or expanded room grant is included.
-The owner's redirect authorizes implementation and local qualification. The
-concrete agent enrollment/access and live migration are separate rollout steps;
-prepare them fully before any additional required live decision.
-
-The implementation was reviewed twice locally. The protocol/recovery review
-corrected timestamp-tie pagination, the required `channel_add_policy: owner_only`
-profile field, duplicate acknowledgment handling and stable guidance targets.
-The authority/operation review added a shared configured scope for web and Buzz,
-isolated an invalid delegation to its own conversation, retained archive cursors,
-and avoided repeated membership requests for already processed messages.
-These were self-reviews, not independent reviewer approvals.
-
-Qualification on 14 September: 325 product tests passed with zero skips, including
-the browser journey and exact schema-1/schema-2 upgrades. Eight client tests
-passed. The pinned real Buzz relay accepted owner discovery/attestation, the
-private agent DM, authenticated file upload/retrieval, one deduplicated task and
-its signed result. All 106 equal-timestamp messages survived pagination. Repeat
-that isolated check with `python tests/qualification/run_buzz.py /path/to/buzz`
-after building the exact upstream relay with `cargo build --locked -p buzz-relay`.
-Its model and S3 byte store are synthetic; protocol, media authorization and
-membership execute the real relay code. No private service or model is used.
-
-The native patch passes style/type/build checks and 6,488 desktop JavaScript
-tests. The default parallel native suite reproduces its prior shared-counter
-race in `cheap_discovery_never_spawns_login_shell_even_when_cold`; the unchanged
-suite passes serially with 3,177 tests and 19 existing ignored tests. Remaining
-web build and 2,098 mobile tests pass. The maintained patch applies and reverses
-cleanly at the pinned upstream. Private enrollment and the installed native
-walkthrough remain live acceptance work; these local results do not close them.
-
-1. Complete the work-home read/action journey: choose an authorized project and
-   assigned ready bot, retain an unsent draft through refresh, submit exactly
-   once after a lost response, show task progress/history, select an eligible
-   publication audience, refresh human assurance without losing work, download
-   the result, and start a second assignment. Verify API and browser behavior.
-2. Add selected input files and task-scoped follow-up handling through explicit
-   runtime capabilities. Received and applied instructions must be distinct.
-   An unsupported runtime must report a real gap rather than silently starting
-   another task or claiming an instruction was applied. Access requests may
-   never create an effective resource grant merely by updating a UI record.
-3. Add the Buzz identity/command boundary using verified signed commands,
-   current person/key/conversation bindings, controller-owned fresh human
-   assurance, source-event deduplication and the existing service transactions.
-   Read/event delivery uses authorized snapshots; Hermes remains reachable only
-   through the controller coordinator.
-4. Qualify the native Buzz client path and both-direction task/review flows.
-   Finish with duplicate/reconnect/revocation/changed-audience/changed-content
-   negatives and a complete unfamiliar-operator walkthrough.
-
-## Program boundaries
-
-`web/src/{api,app,contract,types,view-model}.ts` owns presentation and checked
-transport values. `application/service.py` owns access-filtered workspace and
-task queries, admission and review. `application/ports.py` and
-`storage/postgres.py` own bounded queries through the existing transaction.
-`auth/local.py` owns session validity and fresh password/TOTP assurance.
-`api/app.py` maps authenticated requests to those services. The UI never
-calculates grants and never sends a replacement model route.
-
-```text
-human action -> checked client request with stable command identity
-  -> authentication + current project/conversation binding
-  -> shared service transaction -> durable task/review/publication
-  -> authorized work-home/events response
-
-lost response -> retain original command identity -> retry same request
-stale revision -> refresh current state -> explicit human retry
-expired assurance -> inline fresh sign-in -> re-read exact review
-revoked access -> deny read/action and remove protected display
-```
-
-Fresh assurance must not create another user session or revive revoked access.
-Project selection lists only current active memberships/bindings. History and
-result reads remain filtered by current bot and project grants. Publication
-audiences come from the server and are rechecked in the commit transaction.
-
-## Native Buzz integration decision
-
-Verified source evidence:
-
-- `desktop/src/features/workflows/ui/WorkflowApprovalCard.tsx` explicitly renders
-  "Approval actions are not yet available in Desktop."
-- `crates/buzz-relay/src/api/workflows.rs` exposes structured reads of relay-owned
-  approvals, not an external protected-decision hook.
-- `crates/buzz-acp/src/acp.rs` auto-approves ACP permission requests; using that
-  harness would violate the accepted human decision and single execution owner.
-
-Approved smallest client change: a Radhouse task panel in the existing Buzz
-desktop channel/thread surface, configured for one explicit controller origin.
-Reuse the client's native key signer; bind the exact community/channel/thread,
-method/body and event identity; ask for fresh human assurance in the native
-panel when required. Show exact action, artifact content/digest, audience and
-expiry before commit. The panel calls the Radhouse controller directly and
-never the Buzz workflow approval or ACP execution path. Keep private keys in
-Buzz's existing custody and do not export Radhouse credentials into chat.
-
-Ship the integration as a reviewable patch against the pinned upstream source,
-with application/rollback checks, native transport tests and shared-component
-browser tests. Selecting and
-operating a patched desktop client creates an ongoing upstream-compatibility
-obligation and requires an explicit owner decision. Official mobile clients
-would remain unchanged; this would prove desktop parity only. Mobile protected
-reviews and official mobile push must remain accurately classified.
-
-Selected input is deliberately bounded to four UTF-8 reference files and 64 KiB
-in total. A follow-up creates a new explicitly admitted task and includes a
-snapshot of the selected previous result; active guidance stays on the existing
-run without resetting budget or changing the immutable dispatch input. Unpatched
-Hermes 0.21.1 acknowledges receipt without per-instruction application evidence.
-The identified protocol above requires the optional durable-receipt capability;
-legacy records remain unconfirmed. Controls commit their receipt before
-transport and are never automatically reposted after a lost reply or controller
-restart. Receipt reconciliation uses GET only.
-
-Runtime permission responses are exact request/run/digest decisions with fresh
-human assurance. Deny is available; allow-once additionally requires an exact
-operator-configured command in that bot's existing grant. No session/permanent
-approval, new external resource grant, or runtime permission bypass is added.
-
-### Native transport and authority contract
-
-The native transport is a bounded Rust command in the pinned desktop client.
-Build-time configuration pins one HTTPS controller and one relay origin/key.
-The command rejects a different active community, uses the current native
-signing key, forbids redirects and non-operator routes, and bounds request size,
-response size and elapsed time. It signs the exact HTTP method, URL, body and
-channel plus a separately signed, fixed relay membership query. Cookies remain
-in native process memory, scoped to the current identity/community; neither
-cookies nor keys are returned to JavaScript or written to disk.
-
-The controller keeps its existing local-auth cookie, Origin and CSRF checks
-unchanged. `/buzz` adds signature verification, an exact configured channel
-mapping, a fresh relay query for the authoritative relay-signed kind-39002
-membership snapshot, and the current Radhouse person/key binding. Each request
-uses a fresh relay nonce; the controller signature binds that membership proof,
-so relay replay rejection also rejects duplicate signed ingress. Application
-command identities still permit safe retries signed as new requests.
-
-Login also checks the verified key's expected Radhouse principal before issuing
-a session. Protected decisions require the same current local MFA assurance as
-the web interface. There is no bearer-token or CSRF-bypass path. A revoked key,
-member, bot grant, project membership or local session fails closed.
-
-The desktop mounts the same locally bundled work-home components inside its
-channel panel. It does not load remote executable UI. Every visible task and
-publication refreshes from the shared controller, and reconnect obtains a full
-authorized snapshot. Only the configured channel conversation is admitted;
-no inferred thread, DM, mobile, or room-wide publication authority is added.
-
-### Database compatibility and rollback
-
-Schema version 2 marks the extended task snapshot contract. The owner initializer
-accepts only the exact version-1 checksum or exact current checksum, applies the
-ordered upgrade in one transaction, and keeps existing tasks and publications.
-The runtime role retains DML-only access. Version-1 controller/auth binaries are
-fenced by the metadata version before they can process new task snapshots.
-
-Before a private upgrade, stop API/coordinator writers and retain a verified
-database backup plus the previous application/configuration pins. Before new
-work is admitted, a rollback can restore that snapshot and previous binary.
-After new tasks or decisions are admitted, prefer disabling the optional Buzz
-mount or stopping the affected worker while retaining version-2 data for a
-forward fix. Restoring an older database would lose newer work and requires an
-explicit decision; it is never an automatic application rollback.
-
-## Verification and completion
-
-Use a disposable local PostgreSQL instance, fake runtime/provider, synthetic
-users and signed events. No private credentials or live model calls are needed
-for development. Test the complete UI against the actual API, including lost
-responses, multi-tab sessions, stale content, read-only users and revoked grants.
-Then qualify the selected native client and relay composition before accepting
-the private rollout. Passing synthetic API tests alone does not complete either
-package.
-
-### Executed local evidence — 2026-09-13
-
-- `RADHOUSE_BROWSER_CHANNEL=chrome .venv/bin/python scripts/vs0.py verify`:
-  248 tests, zero failures/errors/skips; both simulated channel directions,
-  fresh-process recovery, exactly one run per completed task, and unknown
-  runtime evidence retained without redispatch. Owned Docker fixture cleanup
-  completed. The source was the baseline plus this implementation diff.
-- `npm --prefix web test`: build and all eight client tests pass. The browser
-  walkthrough exercises selected files, a completed result, native-signed
-  protected publication, return to web and a follow-up containing the prior
-  result. It uses real PostgreSQL/API with synthetic keys and runtime; it is not
-  an installed Tauri-client test. The resulting work-home screenshot was reviewed.
-- Pinned Buzz: TypeScript, Biome, Rust checks/Clippy, desktop builds, 6,488
-  JavaScript tests and 2,098 unchanged mobile tests pass. The complete desktop
-  native suite passes serially (3,176 tests, 19 existing ignored tests), including
-  all three new transport tests. Default parallel `just ci` exposed the existing
-  global login-shell-counter test failure under concurrency; that test passes alone and the complete
-  native workspace passes with `RUST_TEST_THREADS=1`. No test was disabled and no
-  source allowlist was broadened to hide the failure. Default parallel CI is
-  therefore not recorded as green.
-- The exact exported desktop patch applies to a fresh pinned checkout, passes
-  reverse-application checks and returns the checkout to a clean state. Its
-  manifest pins the patch and the canonical shared-component content digests.
-
-Private acceptance still needs a healthy relay, verified relay public key,
-existing-person/channel binding, native TLS and configured desktop build,
-Linux/Python dependency installation, schema upgrade/backup proof and a real
-operator walkthrough in both directions. The approved patch does not close
-official mobile push, mobile reviews, OIDC, invitation/recovery administration
-or the wider full-V1 release requirements.
-
-### Revised steering qualification — 2026-09-14
-
-The current controller/shared-client source passed the full owned PostgreSQL and
-browser gate: 368 tests, zero failures/errors/skips, fixture cleanup complete.
-The web build and nine client tests passed. The browser regression verifies
-focused empty guidance input, draft preservation, queued/applied distinction and
-reconnect. Controller tests cover completed no-tools contextual follow-ups,
-exact receipt correlation, lost POST replies, newer GET evidence, closed and
-paused original-attempt reconciliation, retention expiry and native outcome/result
-deduplication. The first new browser test exposed a test synchronization race
-after reload; it was corrected to wait for rendered data and the full gate then
-passed. This is local evidence; Package 1 still requires the live multi-step
-Buzz acceptance described above.
-
-An additional focused pass covered 115 cases, including both ordinary and
-explicit-reply contextual follow-ups. The pinned Buzz full CI passed (6,491
-desktop JavaScript, 3,177 Rust and 2,098 mobile tests, with 19 existing Rust
-ignores); the macOS bundle built and passed deep strict signature verification.
-The matching Hermes overlay passed 248 distinct local cases. These include a
-single-call no-tools finish, guidance in a real subsequent tool-loop request,
-provider uncertainty, restart and duplicate prevention. No live steering task
-or deployment is included in this qualification.
-
-### File chooser refresh correction — 2026-09-14
-
-The installed macOS walkthrough exposed a refresh race: rebuilding the form
-while the native file chooser was open detached its input and lost the chosen
-reference. The shared component now suspends routine refresh while the chooser
-is open, invalidates any refresh already in flight, and resumes on selection or
-cancellation. The browser regression holds the real chooser open beyond a full
-refresh cycle, checks that the input survives, and verifies refresh resumes while
-the selected filename remains. It fails on the previous implementation and passes
-with this correction. Both web and maintained desktop consume the correction;
-contracts, authorization and task dispatch behavior are unchanged.
-
-### Live enrollment discovery correction (D1)
-
-The first installed enrollment succeeded and its native profile resolved, but
-Agents rendered only local managed records/personas. The DM label also kept a
-pre-profile cache entry until refresh. This violates the accepted native-agent
-journey. Correct the existing Agents grid to include relay-confirmed agents
-owned by the current identity and absent from successful local inventory. Reuse
-the exact-key profile surface, shared provenance marker and existing relay
-query; never synthesize a local runtime or offer local lifecycle controls.
-After confirmed enrollment, refresh the relay/profile/channel query caches before
-opening the DM. No controller, schema, relay policy, identity or task change.
-
-Affected call paths: AgentsView → UnifiedAgentsSection → external identity card;
-RadhousePanel enrollment → existing React Query invalidation → goChannel.
-Validation: owner-only selection/deduplication/archive cases; browser Agents →
-exact profile → Message, including absent local Start/Stop controls; established
-Buzz gates; installed native directory and both authorized walkthroughs.
-Availability retains Buzz's exact relay presence semantics. A stored profile's
-`online` field is not a liveness proof and must not synthesize a green dot.
-
-Review cycle 1 checked the directory's ownership/local-inventory boundary and
-found the existing Agents grid omitted all relay-only identities. The corrective
-card reads the established relay query, filters exact ownership/local duplicates
-and archived keys, and routes only to the existing profile. Review cycle 2
-checked async enrollment/cache behavior: pending profile reads are cancelled,
-per-key missing entries evicted before aggregate refresh, and unmounted surfaces
-cannot navigate a different community. Three selection tests, TypeScript, and
-three browser tests pass, including Agents → exact profile → Message. The browser
-fixture uses installed Chrome; the initial default Playwright executable was
-absent. Its initial missing-profile fixture was corrected to include the signed
-profile needed for the Message action. These are local self-reviews.
-
-The pinned relay handles kind-20001 presence only on authenticated WebSockets;
-this controller uses its admitted bounded HTTP polling transport. Native presence
-can therefore read Offline while conversation processing is healthy. Keep this
-limitation visible; do not fake an Online badge from the saved kind-10100 profile.
-A persistent WebSocket presence lifecycle is separate follow-up work.
-
-The complete `RUST_TEST_THREADS=1 just ci` gate passed after this correction,
-including 3,177 native Rust tests (19 existing ignored), 6,491 desktop JavaScript
-tests and 2,098 mobile tests, plus workspace Rust, formatting, lint and builds.
-The maintained patch was applied and reversed on the exact clean upstream.
-`git diff --check` passes for ordinary files; its one patch-file warning is a
-required blank unified-diff context line, retained with the verified patch hash.
+# Official Buzz conversations and Radhouse web review
+
+Status: owner-selected architecture, 14 September 2026. Packages 1 and 3 remain
+open under the acceptance below. The earlier custom desktop pilot is historical
+proof; it is superseded as the default product path. Preserve its branches,
+source, application rollback and evidence until official-client acceptance passes.
+
+## Product decision and verified baseline
+
+Buzz is the ordinary conversation surface. Researcher is a standard signed Buzz
+identity in an owner-only private conversation. Radhouse owns task identity,
+execution, guidance, review, publication and authority. Its web interface owns
+detailed evidence, protected review and administration. No embedded Radhouse
+panel, private native HTTP bridge, vendored UI or custom Agents-directory code
+is required in a Buzz client.
+
+Radhouse source baseline is main `0cc970ec59859701c12a920ce8ccdd26838a1271`.
+PR #7 already merged the durable guidance controller and the maintained desktop
+patch before this redirect. Supersede that patch through a new reviewed product
+change; do not rewrite history or remove retained recovery material. The new
+steering desktop build was never installed.
+
+The actual official desktop release is `desktop-v0.5.23`, commit
+`b9392d9d78744df365f9276e1ffe8c1baa5ea903`. The former patch used newer source
+`092c6a7277698bd373ccbc1d008fc1507094ae74` with the same displayed version; those
+pins are not interchangeable. The retained official macOS bundle passes deep
+strict signing checks, Gatekeeper's Notarized Developer ID assessment and its
+stapled notarization ticket. It is signed by Block, Inc., team `EYF346PHUG`, and
+its executable matches the originally retained digest. Restoration on Lisa
+preserves the previous patched application and all application data.
+
+The restored official desktop visibly displays Researcher's standard profile,
+exact agent public key, owner association, private two-member conversation,
+existing history and ordinary message composer. A local Agents-directory card
+is not an acceptance requirement. No upstream desktop change is needed for
+this verified conversation path. Offline presence is accurate: the server-side
+HTTP adapter does not hold Buzz's WebSocket presence lease.
+
+The upstream mobile code has standard kind-0 profile/owner verification,
+kind-10100 agent recognition and private-DM membership/rendering paths. That is
+source evidence, not proof of a particular installed iOS or Android binary.
+At the exact desktop-release source pin, 249 focused mobile tests passed with
+the unchanged upstream lockfile enforced, covering profiles, private channels,
+membership, replies and reconnect. No source or mobile-client patch was needed.
+The owner confirmed Researcher's private conversation opens in both official
+iPhone and Android clients, and explicitly waived installed-version inventory.
+The official-client preflight is complete. No phone installation, login, permission change,
+push configuration or network grant is included. The existing mobile push
+production gate remains separate.
+
+## Conversation behavior
+
+- A first message creates one durable task. Explicit separate work can use the
+  existing `New task:` form; no model infers permissions or routes commands.
+- With one active task, an ordinary message is guidance for that exact task.
+  Multiple active tasks require an explicit reply. Freeze routing before the
+  command effect and reuse the signed event identity on delivery recovery.
+- With no active task, a later message follows the most recently selected
+  completed work and snapshots its result as context. An explicit reply always
+  selects its own task. Determine recency from durable owner task-selection
+  messages, not random task UUIDs or delayed bot progress. Never reopen a run.
+- Short tools-disabled tasks finish with their natural single response. Guidance
+  does not force another response, reset the budget or silently enable tools.
+- Researcher posts bounded progress, a concise result preview and a task-specific
+  web-review link. Full work remains in Radhouse. Truncated previews are labelled.
+- The existing `status` request is read-only and can return a fresh review link
+  for the selected completed task. It creates neither a task nor a model call.
+- After protected web publication, post one correlated publication-status event
+  into the same private conversation. Restart or replay must not duplicate it.
+
+## Durable guidance contract retained
+
+Hermes queues identified guidance after a completed tool batch and includes it
+in the next ordinary model request. The existing max-turns limit governs that
+request. The reviewed overlay adds zero model calls for steering.
+
+Retain `hermes-guidance-v1`: exact run/control/input-SHA256 correlation;
+monotonic receipts; independent delivery and application outcomes; at-most-once
+POST; GET-only reconciliation through terminal tasks, pause/resume and retained
+expiry; durable recovery of accepted, applied, too-late, not-applied and unknown
+outcomes. New guidance retains its authenticated source channel/event before
+the runtime POST. Standard Buzz replies bind outcomes to that exact input; if
+a web mirror is still pending, child delivery waits for its signed parent.
+In the UI, accepted means queued. Applied means a model response
+completed for a request containing the guidance, not guaranteed obedience.
+
+The optional capability remains `runs_steering_receipts` version 1, durable,
+with `checkpoint=after_tool_batch`, `max_extra_model_calls=0` and
+`applied_evidence=completed_provider_response`. New guidance requires that
+capability. Missing receipts and uncertain provider completion remain unknown;
+never resend to manufacture confirmation. Existing no-tools enforcement and
+exact permission/MFA controls remain unchanged.
+
+The retained Hermes overlay is based on `c67fb3378943dc6454b5680f3fc17919facd8fad`
+and locally committed at `27e563d0af4a7fac6bf654db67444b026ecf0d71`. It passed 249
+distinct local cases; the frozen VM260 rollout has four helper regression cases.
+The approved isolated Linux qualification also passed all 249 cases without
+changing live runtime state. Source deployment, journal migration and live
+inference remain pending.
+
+## Authenticated web-review locator
+
+Use a short-lived signed locator, not an authentication credential. Reuse the
+existing Researcher signing identity and the existing authentication service;
+add no key, service, broker or PostgreSQL schema solely for navigation.
+
+The proposed version-1 locator contains the task, immutable result digest,
+project, exact conversation link and binding revision, agent identity, intended
+principal, issue time and expiry. Use a fixed 15-minute lifetime. Sign canonical
+bytes with the existing Schnorr implementation under a review-link-specific
+domain separator; a review signature must not be usable as a Nostr event or
+NIP-98 authorization. Encode only bounded validated fields. No task contents,
+password, session cookie, MFA data or return-to URL belongs in the locator.
+
+Deliver an HTTPS URL under the configured Radhouse origin, with the locator in
+`/app/#review=...`. The fragment keeps it out of HTTP request URLs and referrers.
+The browser submits it to a same-origin, CSRF-protected resolver after normal
+sign-in/MFA. Verify exact signature, purpose, fields, lifetime, audience, current
+configured agent/link/binding, task ownership, project access and result digest.
+Derive the authorized web binding from current server state. A locator alone
+must never read a task, create a session, prepare a review or publish.
+
+Return only the authorized task/project navigation target. Keep that target
+through sign-in and assurance refresh; focus the exact task in the web review.
+Every subsequent read and protected operation retains its existing independent
+ACL/binding, fresh-assurance, result-digest and publication checks. The resolver
+is read-only. Reopening a valid locator with the same authenticated audience is
+navigation, not a replayable bearer grant.
+
+Expired, tampered, wrong-audience, stale-binding and changed-result links fail
+closed with a clear message. Work remains available through the ordinary
+permitted web home; a signed `status` request can issue a fresh locator. Persist
+the original completion message/link before relay delivery and never rewrite
+an already signed outbox event on reconnect. A stale delayed delivery does not
+justify replaying work or creating another publication.
+
+The current Radhouse web ingress admits Lisa. Mobile foreground conversation
+support does not grant phones a new web-review route. Preserve the existing
+private network and firewall boundaries.
+
+## Affected components and implementation slices
+
+This is D2 structural integration work. Complete the official-client preflight
+before dependent implementation, then deliver these end-to-end slices:
+
+1. Server conversation and link slice: add the domain-separated locator service,
+   compose it with existing configured agent keys and web origin, and add an
+   authenticated resolver in `api/app.py`/schemas. Update
+   `application/conversations.py` and `storage/conversations.py` for durable
+   conversation focus and read-only status links. Update
+   `channels/buzz_conversations.py` for bounded completion previews and stable
+   publication-status messages. Publication needs its own undelivered selector:
+   publishing currently does not increment task state revision.
+2. Web slice: resolve the URL fragment after normal authentication, preserve the
+   target through assurance refresh, select the exact authorized project/task,
+   and reuse the existing review/publication actions. Ordinary conversation
+   remains in Buzz; the web surface supports history/evidence and administration.
+3. Remove the active custom-client dependency: stop mounting `/buzz` native HTTP
+   routes in `cli.py`; supersede/remove `channels/buzz.py`, the embedded-client
+   enrollment routes and web-only-to-native hooks. Remove the maintained patch
+   payload from the active integration path, retaining a supersession pointer
+   and immutable Git history. Keep the signed binding, owner-attestation
+   verification, stored enrollment and `ConfiguredBuzzConversation` checks used
+   by the server adapter. New enrollment is not silently enabled by weakening
+   those checks; generic official setup remains a separately specified path.
+
+No source change is proposed to official Buzz at this point. If exact official
+mobile/client evidence demonstrates a generic missing feature, identify the
+specific call path and propose the smallest upstream contribution. Never make
+the private desktop patch the default workaround.
+
+## Tests and review gates
+
+Exercise real signed relay events and owned PostgreSQL, including first-message
+admission, latest completed context, explicit replies, multiple active tasks,
+delayed/duplicate delivery, lost acknowledgment, restart and revoked bindings.
+Retain the already qualified natural-checkpoint/no-tools guidance regressions.
+
+Test locator tampering, expiry, wrong principal/project/task/digest, revoked or
+changed binding, disabled agent, absent/stale authentication/MFA, forged keys,
+malformed/oversized input, no open redirect and no permission from possession.
+Verify a login/assurance round trip selects the exact task, and that a successful
+web publication yields one stable signed Buzz status event across replay.
+Old native routes must be unavailable in the deployed API composition.
+
+Use focused tests while iterating, then the required product verification and
+browser gates. Read consequential authority and recovery code through review
+cycles; local tests alone do not close the live acceptance. Preserve any failed
+or uncertain observation accurately.
+
+## Package 1 and 3 live acceptance
+
+Use the restored unmodified official Buzz desktop and the existing private
+Researcher/Hermes/Nemo binding. Verify mobile foreground identity/conversation
+compatibility separately on the already admitted clients.
+
+1. Verify the recognizable Researcher identity and exact owner-only private DM.
+2. From official Buzz, reply to the retained completed short no-tools assignment
+   with one deliberately longer multi-step follow-up. Verify exactly one new
+   durable task/dispatch/run and an exact previous-result snapshot; the old run
+   remains completed. Use the three prepared public references and existing
+   bounded read-only tool authority.
+3. Submit one correlated guidance message while that task is active. Verify
+   queued-to-applied evidence, the later ordinary request, and the changed result.
+   Expect one batch of three reads and final text on ordinary model turn two.
+4. The unchanged Hermes budget finalizer permits at most two additional
+   tool-free summary attempts after exhaustion, so the existing ceiling is four
+   calls. It is not introduced for steering. Session call counts exclude those
+   summaries: require a complete normalized transcript showing the expected
+   tool/guidance/final-text ordering, or report uncertainty/fallback separately.
+   No task or guidance retry, extra proof run or forced no-tools continuation.
+5. Open the short-lived task-specific link from official Buzz, complete normal
+   Radhouse authentication/MFA, review the exact result and publish once to the
+   existing private owner audience. Verify the resulting status in Buzz.
+6. Reconnect the official client and restart the admitted services while idle.
+   Verify identical task/run/control/result/publication identities, retained
+   guidance outcome and no additional dispatch, instruction or publication.
+
+A timing miss or missing application evidence leaves steering acceptance open.
+Do not silently repeat the assignment. Retain only sanitized IDs, digests,
+counts and semantic checks in operational evidence, not task contents or secrets.
+Keep private exposure, current firewall restrictions, signed identity checks,
+MFA, DML-only runtime access, exact model binding and bounded tools. Do not
+change VM250, public DNS, Cloudflare, mobile clients or unrelated infrastructure.

@@ -110,10 +110,6 @@ def main(arguments: list[str] | None = None) -> int:
                     controller.service, auth.auth_context,
                     web_root=controller.web_root, local_auth=auth,
                 )
-                if config.buzz is not None:
-                    from radhouse.channels.buzz import create_buzz_app
-                    app.mount("/buzz", create_buzz_app(controller.service, auth, config.buzz,
-                                                       config.authentication.expected_origin, enrollment=controller.enrollment))
                 uvicorn.run(
                     app, host=args.host, port=args.port, proxy_headers=True,
                     forwarded_allow_ips="127.0.0.1", access_log=False,

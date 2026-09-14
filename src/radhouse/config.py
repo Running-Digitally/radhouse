@@ -316,7 +316,7 @@ class RadhouseConfig(StrictModel):
         if self.buzz is not None and (self.authentication is None or not self.authentication.secure_cookie
                 or self.authentication.cookie_name != "radhouse_session"
                 or not self.authentication.expected_origin.startswith("https://")):
-            raise ValueError("Buzz desktop requires HTTPS and the bounded native cookie contract")
+            raise ValueError("Buzz integration requires HTTPS and the bounded native cookie contract")
         bot_ids = [bot.bot_id for bot in self.bots]
         endpoints = [bot.endpoint for bot in self.bots]
         provider_bindings = [provider.binding for provider in self.providers]
