@@ -3,11 +3,11 @@
   "upstream_commit": "092c6a7277698bd373ccbc1d008fc1507094ae74",
   "desktop_version": "0.5.23",
   "patch": "0001-radhouse-task-panel.patch",
-  "patch_sha256": "db380834709a926100efbe27af89135df13638939e844491de24aa53c780b722",
+  "patch_sha256": "c01b6c9fac759bb1a0bfbc148da8680c0d61a3998bbec9fc102ecfb21a4302b9",
   "radhouse_source_baseline": "b7082be874ce802e8aa13fe4fa77a1657fd76546",
   "shared_source_sha256": {
     "web/src/api.ts": "22196b9fbc4cc231e51957cc1822548bae7f556a4795945c01d7c765af530263",
-    "web/src/app.ts": "8598accd18035d54af94b2ba43800e65013e44bfdc91748986ed53f519eb3ceb",
+    "web/src/app.ts": "767cafeef4871088c7a2ab34f9a69efd67367ea631f38680f1582676f6b1f7af",
     "web/src/commands.ts": "a482ebf884fe6587994236287bccd86dcd132def8155ea3765a6c9a170c2eaf2",
     "web/src/contract.ts": "9cbe8d41898f51c379eae0413f92bb762f7aa039924c652fec40b799fc241c8b",
     "web/src/types.ts": "df8f5a7050cee3958d586a552373a648cb70e46e72daecde10f2bfe8ff3cdec8",
@@ -16,5 +16,5 @@
   },
   "qualification": "isolated; live relay and native client acceptance pending",
   "mobile_changes": false,
-  "local_patch_commit": "851b6bde27858f939a34b0e349167e64224001d7"
+  "local_patch_commit": "bc8a0d56d484334c147ec83a2dbc8f609e83ff34"
 }

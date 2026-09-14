@@ -12,6 +12,7 @@ let selectedProject = "";
 let loadGeneration = 0;
 let sessionEpoch = 0;
 let actionsInFlight = 0;
+let filePickerOpen = false;
 const drafts = new Map<string, { brief: string; bot: string; files: { name: string; content: string }[]; followsTaskId?: string }>();
 const reviews = new Map<string, Review>();
 const expanded = new Set<string>();
@@ -104,6 +105,7 @@ function applySession(session: AuthSession): void {
 function loginScreen(message?: string): void {
   loadGeneration++;
   sessionEpoch++;
+  filePickerOpen = false;
   api = null;
   signedIn = null;
   selectedProject = "";
@@ -358,7 +360,15 @@ function startPanel(home: WorkHome): HTMLElement {
   fileLabel.classList.add("field--files");
   fileLabel.append(element("span", "field__label", "Reference files (text, up to 64 KB total)"), files);
   const fileStatus = element("p", "muted file-status", draft.files.map((file) => file.name).join(", "));
+  files.addEventListener("click", () => {
+    // The native chooser still owns this input while it is open. Invalidate
+    // a refresh already in flight, then preserve the form until it closes.
+    filePickerOpen = true;
+    loadGeneration++;
+  });
+  files.addEventListener("cancel", () => { filePickerOpen = false; });
   files.addEventListener("change", () => {
+    filePickerOpen = false;
     void action(submit, async () => {
       const selected = Array.from(files.files ?? []);
       if (selected.length > 4 || selected.reduce((size, file) => size + file.size, 0) > 65536) {
@@ -451,7 +461,7 @@ void load();
 const interval = window.setInterval(() => {
   // Temporary assurance/audience forms retain their fields; every submit still
   // performs current server checks. Prepared reviews can refresh normally.
-  if (api && actionsInFlight === 0 && page.querySelector(".review-panel form, .audience-choice") === null
+  if (api && !filePickerOpen && actionsInFlight === 0 && page.querySelector(".review-panel form, .audience-choice") === null
       && !Array.from(page.querySelectorAll<HTMLTextAreaElement>(".guidance-form textarea")).some((input) => input.value)) void load();
 }, 10_000);
 
