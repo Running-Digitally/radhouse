@@ -1,5 +1,6 @@
 import json
 from dataclasses import replace
+from hashlib import sha256
 from datetime import datetime, timezone
 
 import httpx
@@ -17,6 +18,57 @@ def client(handler):
         "http://127.0.0.1:8642", "control-secret",
         transport=httpx.MockTransport(handler),
     )
+
+
+def guidance_payload(state="accepted"):
+    return {"object": "hermes.run.steer", "run_id": "run-1", "control_id": "control:" + "a" * 64,
+            "input_sha256": sha256("  Focus on cost\n".encode()).hexdigest(), "accepted": state != "too_late",
+            "state": state, "revision": 1, "reason": None, "checkpoint_id": None,
+            "api_request_id": None, "replayed": False}
+
+
+@pytest.mark.parametrize("state", ["accepted", "applied", "too_late", "not_applied", "unknown"])
+def test_identified_guidance_round_trip_preserves_exact_input_and_outcome(state):
+    calls = []
+    payload = guidance_payload(state)
+    if state == "applied":
+        payload.update(checkpoint_id="checkpoint:1", api_request_id="request:2")
+    def handler(request):
+        calls.append(request)
+        if request.method == "POST":
+            assert json.loads(request.content) == {"input": "  Focus on cost\n", "control_id": payload["control_id"]}
+            return httpx.Response(200, json=payload)
+        return httpx.Response(200, json={"run_id": "run-1", "status": "completed", "output": "Result",
+                                        "guidance_receipts": [payload]})
+    with client(handler) as gateway:
+        receipt = gateway.steer("run-1", "  Focus on cost\n", control_id=payload["control_id"])
+        assert gateway.status("run-1").guidance_receipts == (receipt,)
+        assert receipt.state == state and receipt.accepted is (state != "too_late")
+    assert [r.method for r in calls] == ["POST", "GET"]
+
+
+@pytest.mark.parametrize("change", [
+    {"run_id": "other-run"}, {"control_id": "control:" + "b" * 64}, {"input_sha256": "0" * 64},
+    {"state": "finished"}, {"state": []}, {"revision": True}, {"revision": 0}, {"accepted": False},
+    {"state": "too_late"}, {"reason": "Private diagnostic text"}, {"checkpoint_id": []},
+    {"state": "applied"}, {"replayed": "false"}, {"object": "unknown"},
+])
+def test_identified_guidance_rejects_unverifiable_acknowledgement_without_retry(change):
+    calls = []
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(200, json={**guidance_payload(), **change})
+    with client(handler) as gateway:
+        with pytest.raises(HermesGatewayError):
+            gateway.steer("run-1", "  Focus on cost\n", control_id="control:" + "a" * 64)
+    assert len(calls) == 1
+
+
+def test_duplicate_or_unbounded_guidance_receipts_are_not_accepted():
+    for receipts in ([guidance_payload()] * 2, [guidance_payload()] * 65, {}, [None]):
+        with client(lambda _: httpx.Response(200, json={"run_id": "run-1", "status": "running", "guidance_receipts": receipts})) as gateway:
+            with pytest.raises(HermesGatewayError, match="runtime_malformed_guidance"):
+                gateway.status("run-1")
 
 
 def test_steering_and_approval_target_exact_run_and_single_request():
@@ -144,6 +196,20 @@ def test_capability_preflight_requires_durable_bounded_idempotency():
     with client(lambda _request: response) as gateway:
         capabilities = gateway.capabilities()
     assert capabilities.idempotency_retention_seconds == 86_400
+
+
+@pytest.mark.parametrize("change,supported", [({}, True), ({"max_extra_model_calls": 1}, False),
+    ({"max_extra_model_calls": False}, False), ({"checkpoint": "final_response"}, False),
+    ({"durable": False}, False), ({"max_receipts": 65}, False), ({"version": True}, False),
+    ({"applied_evidence": "queued"}, False)])
+def test_guidance_capability_requires_natural_checkpoint_and_no_extra_calls(change, supported):
+    capability = {"supported": True, "durable": True, "version": 1, "max_receipts": 64,
+                  "checkpoint": "after_tool_batch", "max_extra_model_calls": 0,
+                  "applied_evidence": "completed_provider_response", **change}
+    with client(lambda _: httpx.Response(200, json={"features": {
+        "runs_idempotency": {"supported": True, "durable": True, "retention_seconds": 86400},
+        "runs_steering_receipts": capability}})) as gateway:
+        assert gateway.capabilities().guidance_receipts is supported
 
 
 @pytest.mark.parametrize("support", [None, {}, {"supported": False}, {"supported": "true"}, {"supported": True}])

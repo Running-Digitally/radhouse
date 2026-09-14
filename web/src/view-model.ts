@@ -1,4 +1,18 @@
-import type { ActionState, Phase, TaskCard } from "./types.js";
+import type { ActionState, Phase, TaskCard, TaskSummary } from "./types.js";
+
+export function guidanceStatus(receipt: TaskSummary["guidance"][number]): string {
+  const labels = {
+    accepted: "Queued for this run’s next tool checkpoint.",
+    applied: "Used in a completed model response. Review the result to check how it was followed.",
+    too_late: "The run is no longer accepting guidance. This update was not used; include it in a follow-up.",
+    not_applied: "The run ended without using this update at a later checkpoint. It was not resent; include it in a follow-up.",
+    unknown: "The runtime could not confirm whether this update was used. It will not be resent automatically.",
+  };
+  if (receipt.application_state) return labels[receipt.application_state];
+  return receipt.state === "accepted" ? "Received by the agent; application is not yet confirmed."
+    : ["submitted", "unknown"].includes(receipt.state) ? "Delivery outcome unknown. This instruction will not be sent again automatically."
+    : "The agent did not accept this instruction.";
+}
 
 const phaseLabels: Record<Phase, string> = {
   queued: "Ready to begin",

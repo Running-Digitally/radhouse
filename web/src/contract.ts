@@ -88,7 +88,9 @@ function task(value: unknown): TaskSummary {
     follows_task_id: item.follows_task_id == null ? null : string(item.follows_task_id),
     guidance: (Array.isArray(item.guidance) ? item.guidance : []).map((value) => {
       const receipt = record(value); return { id: string(receipt.id), kind: string(receipt.kind),
-        text: nullableString(receipt.text), choice: nullableString(receipt.choice), state: string(receipt.state) };
+        text: nullableString(receipt.text), choice: nullableString(receipt.choice), state: string(receipt.state),
+        application_state: receipt.application_state == null ? null
+          : oneOf(receipt.application_state, ["accepted", "applied", "too_late", "not_applied", "unknown"] as const) };
     }),
     permission_request: permission(item.permission_request),
   };

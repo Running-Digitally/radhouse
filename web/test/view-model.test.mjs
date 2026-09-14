@@ -1,12 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { actionReason, blockerMessages, phaseLabel } from "../dist/view-model.js";
+import { actionReason, blockerMessages, guidanceStatus, phaseLabel } from "../dist/view-model.js";
 import { parseWorkHome } from "../dist/contract.js";
 
 test("phase labels use operator language", () => {
   assert.equal(phaseLabel("active"), "Working");
   assert.equal(phaseLabel("recovering"), "Needs attention");
+});
+
+test("guidance labels distinguish receipt, completed response, lateness and uncertainty", () => {
+  const label = application_state => guidanceStatus({ state: "accepted", application_state });
+  assert.match(label("accepted"), /Queued/);
+  assert.doesNotMatch(label("accepted"), /Used in/);
+  assert.match(label("applied"), /completed model response/);
+  assert.match(label("applied"), /Review the result/);
+  assert.match(label("too_late"), /no longer accepting.*not used/);
+  assert.match(label("not_applied"), /ended without using/);
+  assert.match(label("unknown"), /could not confirm.*not be resent/);
+  assert.match(label(null), /not yet confirmed/);
 });
 
 test("server action reasons become useful explanations", () => {

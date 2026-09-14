@@ -1,8 +1,9 @@
 # Everyday operator workflow and native Buzz parity
 
-Status: operator foundation implemented; conversational Buzz redirect approved
-on 2026-09-14 and being implemented. The task panel alone does not complete
-Package 3. This
+Status: the conversational desktop pilot is implemented and its selected-file,
+contextual follow-up, opposite-surface private publication and reconnect flow
+passed on 2026-09-14. Package 1 remains open for the owner-selected durable
+steering correction below. This
 packet owns the implementation plan and acceptance gaps for packages 1 and 3.
 It is not a release or live-deployment receipt.
 
@@ -20,6 +21,147 @@ Product source baseline: `b7082be874ce802e8aa13fe4fa77a1657fd76546`.
 Buzz compatibility source: `092c6a7277698bd373ccbc1d008fc1507094ae74`.
 
 ## Delivery slices
+
+### Durable steering during genuine multi-step work
+
+The owner revised Package 1 acceptance: short, single-turn work completes
+immediately, and a later conversation message becomes a contextual follow-up.
+Live steering is proven during a longer Researcher assignment with genuine tool
+checkpoints, using existing bounded authority. A completed no-tools response must
+not trigger an extra model call merely to make steering possible. This is a D2
+runtime/controller contract change, using
+Radhouse main `95b851af9bbe87c781f0136bd68de03b967eface` and the existing Hermes
+0.21.1 restriction overlay `c67fb3378943dc6454b5680f3fc17919facd8fad`.
+
+The accepted outcome is explicit: a human update stays on the current task/run,
+can enter a subsequent ordinary model request after a tool batch, and has a
+durable outcome visible in the web work home and Buzz. **Applied** means a model
+response completed for a request that included the update. It does not mean the
+model obeyed every instruction. **Unknown** is a separate outcome when a crash
+or lost runtime observation prevents that confirmation. Never relabel uncertain
+application as definitely not applied, resend guidance automatically, resurrect
+a completed task, reset task budget, or silently enable tools.
+
+Hermes owns the durable receipt and application evidence; Radhouse owns the human
+command, its exact task/run association, permission checks and presentation.
+Use the existing runtime database/owner and controller JSON guidance snapshots;
+add no service, identity, network path or PostgreSQL schema migration. Retain the
+delivery state independently from application state so old clients safely report
+only receipt rather than claiming application. Older guidance records remain
+unconfirmed. The no-ID Hermes steering path retains its existing compatibility.
+
+The opt-in protocol is:
+
+```text
+POST /v1/runs/{run_id}/steer
+  {control_id: "control:<64 lowercase hex>", input: <exact UTF-8 string>}
+
+HTTP 200 receipt, including a valid request that arrived too late:
+  object: "hermes.run.steer"
+  run_id, control_id, input_sha256
+  accepted: boolean (whether ever admitted)
+  state: accepted | applied | too_late | not_applied | unknown
+  revision: positive monotonic integer
+  reason: bounded code or null
+  checkpoint_id, api_request_id: bounded identifiers or null
+  replayed: boolean
+
+GET /v1/runs/{run_id}
+  guidance_receipts: the same durable receipts, without object/replayed
+
+features.runs_steering_receipts:
+  supported: true, durable: true, version: 1, max_receipts: 64
+  checkpoint: "after_tool_batch"
+  max_extra_model_calls: 0
+  applied_evidence: "completed_provider_response"
+```
+
+Hash the exact input bytes without trimming. A repeated ID with the same hash
+returns its latest receipt without enqueueing; a changed hash conflicts. Resolve
+an existing ID before checking whether the run is still active. Owner checks,
+run identity, bounds and conflict refusals remain enforced. Requests without a
+durable receipt capability are refused before a new Radhouse guidance operation
+is submitted. A normal task may still run on an older compatible runtime.
+
+The runtime consumes ID-mode guidance after a genuine completed tool batch,
+before the next ordinary model request. Append the actual update through the
+existing session persistence path without rewriting a stored tool result or
+interrupting an in-flight request. Guidance does not add iterations, reset a
+budget, or force a final response to continue. The normal tool loop and its
+existing iteration limit determine whether another request occurs. Later tool
+batches may accept later guidance; the durable per-run cap remains 64 receipts.
+
+Acceptance and final completion sealing share an atomic boundary. A message
+after completion receives `too_late`; an admitted message with no subsequent
+checkpoint becomes `not_applied` with `no_next_model_turn`. This includes a
+short no-tools task that finishes its first response. Persist request-start
+intent before the natural provider call and application confirmation after its
+response. On interruption, never-sent updates become `not_applied`; updates whose
+provider outcome cannot be established become `unknown`. A failed guided request
+must not automatically resend the update through model retry or fallback.
+
+Radhouse passes its already durable `control:<sha256>` command identity and
+merges receipts only for the exact recorded run/control ID/input hash. Validate
+receipt revisions and terminal transitions; reject conflicting evidence. Merge
+outcomes during normal polling and before closing the task. A closed task with
+an unresolved ID-mode delivery can receive a bounded read-only reconciliation;
+this cannot dispatch or reopen its run. Stop reconciliation on an authoritative
+terminal outcome or retained expiry/unknown disposition. A terminal GET can race
+an in-flight POST, so missing receipts stay eligible until the original dispatch
+retention expires. Track the original attempt through pause/resume and never
+query a newer run on behalf of an older update. Permission decisions
+keep their existing independent exact-command/MFA path.
+
+Affected contracts and call paths:
+
+- `domain/tasks.py` adds a typed runtime guidance receipt and optional result
+  receipts; persistent guidance dictionaries carry separate delivery and
+  application fields. `application/ports.py` and `integrations/hermes.py` carry
+  the stable control ID, capability and exact typed response.
+- `application/runtime_controls.py` persists intent before transport and merges
+  the immediate receipt. `application/service.py` reconciles GET observations,
+  including the completion/lost-reply race, without any POST retry.
+- `application/conversations.py` and `channels/buzz_conversations.py` issue
+  deduplicated, truthful update outcomes in the existing private conversation.
+  Guidance changes must not duplicate an already delivered result.
+- The shared web client preserves/displays application outcomes and keeps a
+  focused guidance draft stable during background refresh. The maintained pinned
+  Buzz client receives those shared assets; no native identity or mobile change
+  is needed.
+
+Implement in three reviewable slices: Hermes persistence/checkpoint with a
+deterministic fake provider; controller receipt/reconciliation with owned
+PostgreSQL; then web/native presentation and full qualification. Tests must cover
+single-call no-tools completion and real multi-step tool paths, late/final-seal races, iteration
+limits, lost acknowledgements, duplicates/conflicts, restart before/after provider
+send, stale receipt revisions, terminal-task reconciliation, private conversation
+deduplication and unchanged permission/no-tools boundaries. Use barriers in the
+disposable fixture rather than slowing a production run or relying on timing.
+
+Package 1 acceptance now requires:
+
+- Short, tools-disabled work completes with one natural model call. A subsequent
+  Buzz message becomes a new task with the previous result as explicit context.
+- One deliberately longer, multi-step Researcher assignment starts in Buzz and
+  uses only the already admitted bounded read-only tool authority. Review the
+  exact assignment, tools and run limits before the live execution.
+- Submit an update in that same Buzz conversation while the assignment is
+  active. Verify its exact task/run/control/hash receipt, the natural later
+  model request that includes it, and its effect in the resulting work.
+- Preserve one task identity and dispatch, at-most-once guidance submission,
+  durable outcomes, and restart/reconnect recovery. A timing miss remains
+  `too_late` or `not_applied`, not a successful steering proof.
+- Buzz owns the assignment, progress, guidance and result conversation; the web
+  interface supports detailed review and administration. Private publication,
+  MFA, signatures, membership and existing grant boundaries remain unchanged.
+
+This supersedes the in-progress final-response continuation design. Retain the
+receipt/reconciliation machinery and remove special continuation counters,
+forced text-only requests and tests that require a second no-tools model call.
+The owner explicitly requested implementation and the multi-step proof under
+existing bounded authority. The unused optional one-call timing task is no
+longer needed. No new access, broader tools, model changes or VM250 mutations
+are implied by this revision.
 
 ### Hermes dispatch acknowledgement compatibility
 
@@ -240,11 +382,12 @@ reviews and official mobile push must remain accurately classified.
 Selected input is deliberately bounded to four UTF-8 reference files and 64 KiB
 in total. A follow-up creates a new explicitly admitted task and includes a
 snapshot of the selected previous result; active guidance stays on the existing
-run without resetting budget or changing the immutable dispatch input. Hermes
-0.21.1 acknowledges receipt of guidance but does not provide a per-instruction
-application receipt. The UI reports that limitation instead of asserting it was
-applied. Non-idempotent controls commit their receipt before transport and are
-never automatically replayed after a lost reply or controller restart.
+run without resetting budget or changing the immutable dispatch input. Unpatched
+Hermes 0.21.1 acknowledges receipt without per-instruction application evidence.
+The identified protocol above requires the optional durable-receipt capability;
+legacy records remain unconfirmed. Controls commit their receipt before
+transport and are never automatically reposted after a lost reply or controller
+restart. Receipt reconciliation uses GET only.
 
 Runtime permission responses are exact request/run/digest decisions with fresh
 human assurance. Deny is available; allow-once additionally requires an exact
@@ -337,6 +480,29 @@ Linux/Python dependency installation, schema upgrade/backup proof and a real
 operator walkthrough in both directions. The approved patch does not close
 official mobile push, mobile reviews, OIDC, invitation/recovery administration
 or the wider full-V1 release requirements.
+
+### Revised steering qualification — 2026-09-14
+
+The current controller/shared-client source passed the full owned PostgreSQL and
+browser gate: 368 tests, zero failures/errors/skips, fixture cleanup complete.
+The web build and nine client tests passed. The browser regression verifies
+focused empty guidance input, draft preservation, queued/applied distinction and
+reconnect. Controller tests cover completed no-tools contextual follow-ups,
+exact receipt correlation, lost POST replies, newer GET evidence, closed and
+paused original-attempt reconciliation, retention expiry and native outcome/result
+deduplication. The first new browser test exposed a test synchronization race
+after reload; it was corrected to wait for rendered data and the full gate then
+passed. This is local evidence; Package 1 still requires the live multi-step
+Buzz acceptance described above.
+
+An additional focused pass covered 115 cases, including both ordinary and
+explicit-reply contextual follow-ups. The pinned Buzz full CI passed (6,491
+desktop JavaScript, 3,177 Rust and 2,098 mobile tests, with 19 existing Rust
+ignores); the macOS bundle built and passed deep strict signature verification.
+The matching Hermes overlay passed 248 distinct local cases. These include a
+single-call no-tools finish, guidance in a real subsequent tool-loop request,
+provider uncertainty, restart and duplicate prevention. No live steering task
+or deployment is included in this qualification.
 
 ### File chooser refresh correction — 2026-09-14
 

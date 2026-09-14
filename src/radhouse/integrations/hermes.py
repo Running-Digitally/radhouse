@@ -7,6 +7,7 @@ binding, such as ``nemo-chat``.
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import ipaddress
+import hashlib
 import json
 import re
 import time
@@ -17,7 +18,7 @@ import httpx
 
 from radhouse.application.ports import AgentWorkPort
 from radhouse.domain.tasks import (
-    Attempt, RuntimeCapabilities, RuntimeDispatch, RuntimeFailure, RuntimeResult, Task, runtime_input,
+    Attempt, RuntimeCapabilities, RuntimeDispatch, RuntimeFailure, RuntimeGuidanceReceipt, RuntimeResult, Task, runtime_input,
 )
 
 
@@ -55,12 +56,14 @@ class HermesRun:
     status: HermesState
     output: str | None = None
     permission_request: dict | None = None
+    guidance_receipts: tuple[RuntimeGuidanceReceipt, ...] | None = None
 
 
 @dataclass(frozen=True)
 class HermesCapabilities:
     idempotency_retention_seconds: int
     disable_tools: bool = False
+    guidance_receipts: bool = False
 
 
 class HermesRunsClient:
@@ -142,8 +145,18 @@ class HermesRunsClient:
         ):
             raise HermesGatewayError("runtime_idempotency_unavailable")
         restriction = features.get("runs_disable_tools")
+        steering = features.get("runs_steering_receipts")
+        identified_steering = (isinstance(steering, dict)
+            and steering.get("supported") is True and steering.get("durable") is True
+            and type(steering.get("version")) is int and steering["version"] == 1
+            and type(steering.get("max_receipts")) is int and 1 <= steering["max_receipts"] <= 64
+            and steering.get("checkpoint") == "after_tool_batch"
+            and type(steering.get("max_extra_model_calls")) is int
+            and steering["max_extra_model_calls"] == 0
+            and steering.get("applied_evidence") == "completed_provider_response")
         return HermesCapabilities(idempotency_retention_seconds=retention,
-            disable_tools=isinstance(restriction, dict) and restriction.get("supported") is True)
+            disable_tools=isinstance(restriction, dict) and restriction.get("supported") is True,
+            guidance_receipts=identified_steering)
 
     def start_or_attach(
         self, *, input_text: str, session_id: str, dispatch_key: str, disable_tools: bool = False
@@ -191,13 +204,32 @@ class HermesRunsClient:
             if not isinstance(command, str) or not command or len(command.encode()) > 8192:
                 raise HermesGatewayError("runtime_malformed_response")
             permission = {"request_id": request_id, "command": command, "run_id": run_id}
-        return HermesRun(run_id=run_id, status=_response_state(payload), output=output, permission_request=permission)
+        receipts = None
+        if "guidance_receipts" in payload:
+            values = payload["guidance_receipts"]
+            if not isinstance(values, list) or len(values) > 64:
+                raise HermesGatewayError("runtime_malformed_guidance")
+            receipts = tuple(_guidance_receipt(value, run_id) for value in values)
+            if len({receipt.control_id for receipt in receipts}) != len(receipts):
+                raise HermesGatewayError("runtime_malformed_guidance")
+        return HermesRun(run_id=run_id, status=_response_state(payload), output=output,
+                         permission_request=permission, guidance_receipts=receipts)
 
-    def steer(self, run_id: str, text: str) -> bool:
+    def steer(self, run_id: str, text: str, *, control_id: str | None = None) -> bool | RuntimeGuidanceReceipt:
         run_id = _validated_identifier(run_id, "run")
         if not text.strip() or len(text) > 4096:
             raise ValueError("invalid_guidance")
-        payload, _ = self._request("POST", f"v1/runs/{run_id}/steer", expected_status=200, body={"input": text})
+        if control_id is not None and re.fullmatch(r"control:[a-f0-9]{64}", control_id) is None:
+            raise ValueError("invalid_guidance_identity")
+        payload, _ = self._request("POST", f"v1/runs/{run_id}/steer", expected_status=200,
+                                  body={"input": text, **({"control_id": control_id} if control_id is not None else {})})
+        if control_id is not None:
+            if payload.get("object") != "hermes.run.steer" or type(payload.get("replayed")) is not bool:
+                raise HermesGatewayError("runtime_malformed_guidance")
+            receipt = _guidance_receipt(payload, run_id)
+            if receipt.control_id != control_id or receipt.input_sha256 != hashlib.sha256(text.encode()).hexdigest():
+                raise HermesGatewayError("runtime_guidance_identity_mismatch")
+            return receipt
         if payload.get("run_id") != run_id or payload.get("accepted") is not True:
             raise HermesGatewayError("runtime_response_mismatch")
         return True
@@ -276,9 +308,37 @@ def _response_identifier(payload: dict, name: str) -> str:
 
 def _response_state(payload: dict) -> HermesState:
     value = payload.get("status")
-    if value not in _STATES:
+    if not isinstance(value, str) or value not in _STATES:
         raise HermesGatewayError("runtime_malformed_response")
     return value
+
+
+def _guidance_receipt(value: object, run_id: str) -> RuntimeGuidanceReceipt:
+    if not isinstance(value, dict):
+        raise HermesGatewayError("runtime_malformed_guidance")
+    if (value.get("run_id") != run_id
+            or not isinstance(value.get("control_id"), str)
+            or re.fullmatch(r"control:[a-f0-9]{64}", value["control_id"]) is None
+            or not isinstance(value.get("input_sha256"), str)
+            or re.fullmatch(r"[a-f0-9]{64}", value["input_sha256"]) is None
+            or type(value.get("accepted")) is not bool
+            or not isinstance(value.get("state"), str)
+            or value["state"] not in {"accepted", "applied", "too_late", "not_applied", "unknown"}
+            or type(value.get("revision")) is not int or not 1 <= value["revision"] <= 1000000
+            or (value["state"] == "too_late") == value["accepted"]):
+        raise HermesGatewayError("runtime_malformed_guidance")
+    reason = value.get("reason")
+    if reason is not None and (not isinstance(reason, str) or re.fullmatch(r"[a-z][a-z0-9_]{0,79}", reason) is None):
+        raise HermesGatewayError("runtime_malformed_guidance")
+    for field in ("checkpoint_id", "api_request_id"):
+        item = value.get(field)
+        if item is not None and (not isinstance(item, str) or _IDENTIFIER.fullmatch(item) is None):
+            raise HermesGatewayError("runtime_malformed_guidance")
+    if value["state"] == "applied" and (value.get("checkpoint_id") is None or value.get("api_request_id") is None):
+        raise HermesGatewayError("runtime_malformed_guidance")
+    return RuntimeGuidanceReceipt(run_id, value["control_id"], value["input_sha256"],
+        value["accepted"], value["state"], value["revision"], reason,
+        value.get("checkpoint_id"), value.get("api_request_id"))
 
 
 def _status_code(status: int, path: str) -> str:
@@ -320,6 +380,7 @@ class HermesAgentWorkAdapter:
         return RuntimeCapabilities(
             runtime_revision=self.runtime_revision,
             idempotency_retention_seconds=capabilities.idempotency_retention_seconds,
+            guidance_receipts=capabilities.guidance_receipts,
         )
 
     def start_or_attach(
@@ -346,23 +407,30 @@ class HermesAgentWorkAdapter:
 
     def result(self, _task: Task, dispatch: RuntimeDispatch) -> RuntimeResult:
         run = self.client.status(dispatch.run_id)
+        if any(item.get("protocol") == "hermes-guidance-v1" and item.get("run_id") == dispatch.run_id
+               for item in _task.guidance) and run.guidance_receipts is None:
+            raise HermesGatewayError("runtime_guidance_receipts_unavailable")
+        receipts = run.guidance_receipts
         if run.status in {"queued", "running", "waiting_for_approval", "stopping"}:
-            return RuntimeResult("running", permission_request=run.permission_request)
+            return RuntimeResult("running", permission_request=run.permission_request, guidance_receipts=receipts)
         if run.status == "completed":
-            return RuntimeResult("completed", run.output)
+            return RuntimeResult("completed", run.output, guidance_receipts=receipts)
         if run.status == "cancelled":
-            return RuntimeResult("cancelled", run.output)
+            return RuntimeResult("cancelled", run.output, guidance_receipts=receipts)
         if run.status == "interrupted":
-            return RuntimeResult("unknown")
-        return RuntimeResult("failed", run.output)
+            return RuntimeResult("unknown", guidance_receipts=receipts, guidance_terminal=True)
+        return RuntimeResult("failed", run.output, guidance_receipts=receipts)
 
     def stop(self, _task: Task, dispatch: RuntimeDispatch) -> bool:
         return self.client.stop(dispatch.run_id).status in {
             "stopping", "cancelled", "completed", "failed", "interrupted",
         }
 
-    def steer(self, _task: Task, dispatch: RuntimeDispatch, text: str) -> bool:
-        return self.client.steer(dispatch.run_id, text)
+    def steer(self, _task: Task, dispatch: RuntimeDispatch, text: str, *, control_id: str) -> RuntimeGuidanceReceipt:
+        receipt = self.client.steer(dispatch.run_id, text, control_id=control_id)
+        if not isinstance(receipt, RuntimeGuidanceReceipt):
+            raise HermesGatewayError("runtime_malformed_guidance")
+        return receipt
 
     def approve(self, _task: Task, dispatch: RuntimeDispatch, request_id: str, choice: str) -> bool:
         return self.client.approve(dispatch.run_id, request_id, choice)
@@ -396,8 +464,8 @@ class RoutingAgentWork:
     def stop(self, task: Task, dispatch: RuntimeDispatch) -> bool:
         return self._adapter(task).stop(task, dispatch)
 
-    def steer(self, task: Task, dispatch: RuntimeDispatch, text: str) -> bool:
-        return self._adapter(task).steer(task, dispatch, text)
+    def steer(self, task: Task, dispatch: RuntimeDispatch, text: str, *, control_id: str) -> RuntimeGuidanceReceipt:
+        return self._adapter(task).steer(task, dispatch, text, control_id=control_id)
 
     def approve(self, task: Task, dispatch: RuntimeDispatch, request_id: str, choice: str) -> bool:
         return self._adapter(task).approve(task, dispatch, request_id, choice)
