@@ -7,15 +7,18 @@ that retain their workspaces, work on useful assignments, and collaborate within
 permissions you control.
 
 **Status: early development.** Durable Hermes execution, the everyday operator
-workflow, and a pinned Buzz desktop task-panel patch are implemented. Both
-surfaces use one controller for selected files, follow-up assignments, progress,
-guidance, permission decisions and protected publication. Local qualification
+workflow, and a pinned Buzz desktop integration are implemented. Researcher has
+an owner-attested agent profile and private Buzz conversation shared with the
+web work home. Both surfaces use one controller for selected files, follow-up
+assignments, progress, guidance, permission decisions and protected publication. Local qualification
 uses an owned PostgreSQL database, the actual API and a browser walkthrough;
 the native transport adds signed identity and live relay membership checks to
 the existing MFA session boundary.
 
-The native desktop patch still needs qualification against the private relay
-and deployed controller. Official mobile clients, OIDC composition,
+The private pilot has verified agent discovery, its two-member conversation,
+selected-file dispatch and a completed no-tools result across Buzz and the web.
+The full protected-review and follow-up walkthrough remains in progress.
+Official mobile clients, OIDC composition,
 administrator invitation/recovery UX and an installable fleet release remain
 incomplete. See the [implementation and acceptance packet](docs/operator-buzz-completion.md)
 and [maintained desktop patch](integrations/buzz-desktop/README.md). This is not
@@ -113,8 +116,8 @@ resource limits, evidence, and the remaining integration work.
 
 The proof includes the actual API/browser workflow with signed synthetic Buzz
 requests. To use an already installed Chrome instead of Playwright Chromium, set
-`RADHOUSE_BROWSER_CHANNEL=chrome`. Live relay and native desktop qualification
-remain separate.
+`RADHOUSE_BROWSER_CHANNEL=chrome`. These disposable tests are separate from the
+private installation's live acceptance evidence.
 
 The operator client has its own pinned, inspectable build:
 
