@@ -6,23 +6,26 @@ Radhouse is a self-hosted platform being built for persistent AI agents: agents
 that retain their workspaces, work on useful assignments, and collaborate within
 permissions you control.
 
-**Status: early development.** Durable Hermes execution, the everyday operator
-workflow, and a pinned Buzz desktop integration are implemented. Researcher has
-an owner-attested agent profile and private Buzz conversation shared with the
-web work home. Both surfaces use one controller for selected files, follow-up
-assignments, progress, guidance, permission decisions and protected publication. Local qualification
-uses an owned PostgreSQL database, the actual API and a browser walkthrough;
-the native transport adds signed identity and live relay membership checks to
-the existing MFA session boundary.
+**Status: early development.** Durable Hermes execution and the everyday
+operator workflow are implemented. Researcher has an owner-attested standard
+Buzz identity and private conversation. Ordinary messages start assignments,
+steer genuine multi-step work or follow up on completed results. Short no-tools
+work finishes naturally; steering never adds a forced model call.
 
-The private pilot has verified agent discovery, its two-member conversation,
-selected-file dispatch and a completed no-tools result across Buzz and the web.
-The full protected-review and follow-up walkthrough remains in progress.
-Official mobile clients, OIDC composition,
-administrator invitation/recovery UX and an installable fleet release remain
-incomplete. See the [implementation and acceptance packet](docs/operator-buzz-completion.md)
-and [maintained desktop patch](integrations/buzz-desktop/README.md). This is not
-a claim that all of Radhouse V1 is released.
+The server-side Buzz adapter preserves task/event identity, deduplication and
+recovery. It sends progress, a concise result and a short-lived task-specific
+link to Radhouse web, where normal authentication/MFA, exact artifact review and
+publication checks apply. Links grant no access by possession. Publication
+status returns to Buzz. Unmodified official clients are the default; the former
+custom desktop integration is [superseded](integrations/buzz-desktop/README.md).
+
+Official desktop and owner-confirmed mobile conversations pass the client
+preflight. The revised server/web integration is under local qualification;
+live multi-step guidance, secure review-link and publication acceptance remain
+open. OIDC composition, administrator invitation/recovery UX and an installable
+fleet release remain incomplete. See the
+[implementation and acceptance packet](docs/operator-buzz-completion.md).
+This is not a claim that all of Radhouse V1 is released.
 
 The offline-safe composition root reads protected database and per-bot Hermes
 secret files, routes runtime operations by durable bot ID, and owns client

@@ -1015,23 +1015,28 @@ cannot be enforced, the space is not eligible for that content. Previously
 delivered copies retain the existing limits on recall. Bot-local memory and
 unrelated private histories remain outside the link.
 
-#### Native protected reviews require a real integration
+#### Protected review belongs to Radhouse web
 
-The controller supplies the reviewable action/version/audience and validates the
-human decision through the same use case in both clients. A native Buzz panel
-must show those exact fields, support any required reauthentication/MFA, and
-submit a decision bound to that action and revision. A valid Nostr signature
-alone does not establish Radhouse role, current session or required MFA assurance.
-Keep sign-in/recovery factors outside bots and ordinary room messages. Do not
-turn the integration's service identity into the approving human.
+The owner selected official-client conversations on 14 September 2026. This
+supersedes the earlier requirement for an embedded native review panel. Ordinary
+Buzz messages start work, guide active multi-step assignments and follow up on
+completed results. Radhouse sends concise progress/results and an expiring,
+audience-bound task locator to the exact web review.
 
-Use supported APIs and UI extension mechanisms where they meet this contract;
-otherwise identify the smallest upstream contribution or maintained patch needed
-before committing to a fork. Native approval components, identity/session linking,
-attachment authorization and membership control remain engineering work. A chat
-bridge plus an external approval link does not satisfy the selected release
-requirement. An unsupported protected action remains visibly blocked until its
-native path is qualified; chat-only support must not be labeled full parity.
+The locator is navigation only. Normal authentication/MFA, current roles,
+project/task access, signed conversation binding, artifact digest and audience
+remain independently enforced before review and publication. A signed bot
+message, chat reaction or possession of a link never authorizes a decision.
+Publication status returns to the private Buzz conversation with durable
+correlation and duplicate prevention. Keep sign-in/recovery factors outside
+bots and ordinary room messages.
+
+Use standard relay identities, events and private conversations supported by
+unmodified official clients. The private desktop panel, native HTTP bridge,
+vendored UI and custom Agents directory are superseded. Preserve their history
+and rollback until the [revised acceptance](operator-buzz-completion.md) passes.
+If a generic client capability is absent, identify the smallest upstream
+contribution instead of restoring a private fork as the default.
 
 Buzz's current architecture document describes signed events, subscriptions and
 an HTTP bridge, plus its own agent harness and workflow engine. The harness
@@ -1241,7 +1246,7 @@ proof through both real operator interfaces:
 | Step | Inputs and proof |
 | --- | --- |
 | VS1-A: qualify the prepared services | Consume the deployment owner's verified guest handoff and the pinned runtime, identity and collaboration recipes. Test actual caller/egress restrictions, durable runtime admission, bounded overlap/cancellation, provider attribution, identity assurance, channel audience and recovery. Use synthetic content and scoped canaries. Reuse component evidence where applicable; the final product adapter must still pass its own boundary tests. |
-| VS1-B: one useful task through both interfaces | Deploy the thin controller/work home and the real Buzz adapter/native review surface onto the qualified targets. An unfamiliar operator starts bounded research, follows the same task across both surfaces, receives one cited artifact and completes an exact protected review. Verify current permissions, persistence and recovery. Complete the minimum SSO binding here when the selected pilot profile enables SSO. |
+| VS1-B: one useful task through both interfaces | Deploy the thin controller/work home and the server-side Buzz conversation adapter and web review navigation onto the qualified targets. An unfamiliar operator starts bounded research, follows the same task across both surfaces, receives one cited artifact and completes an exact protected review. Verify current permissions, persistence and recovery. Complete the minimum SSO binding here when the selected pilot profile enables SSO. |
 
 The deployer supplies a small, versioned configuration and evidence handoff for
 each selected role. Record the exact guest/image/runtime identity, allowed
@@ -1256,7 +1261,7 @@ This is a handoff contract to refine for VS1, not another standing service.
 | --- | --- |
 | Empty guest to application host | Replace any empty-guest maintenance/rollback mode as the workload is installed. Preserve weekly OS updates and restarts, advance notice, bounded work preparation, mandatory progression after grace, and verified recovery. Do not leave an update gap when an empty-guest timer stops applying. |
 | Network and credentials | Admit exact control-to-runtime, selected inference, identity and collaboration paths. A guest with package-download access and SSH is not ready for these connections. Installation of Docker does not grant bots its socket or a management identity. |
-| Identity to protected Buzz decisions | Bind validated OIDC identities and separately verified Buzz keys to the same Radhouse person. Qualify native review freshness/MFA, current roles and audience, key/session revocation and outage behavior. Nostr membership, SSO login or a signed chat message alone cannot authorize a protected decision. |
+| Identity to protected Buzz decisions | Bind validated OIDC identities and separately verified Buzz keys to the same Radhouse person. Qualify web review freshness/MFA, current roles and audience, key/session revocation and outage behavior. Nostr membership, SSO login or a signed chat message alone cannot authorize a protected decision. |
 | Runtime to controller | Use stable task/attempt/operation mappings and reconcile authoritative runtime/effect state after reconnect. Runtime leases, finite deduplication and event buffers do not replace controller durability or prove an old executor can no longer act. |
 | Persistent data and capacity | Prove enforceable storage limits, scheduled protection and an isolated restore before retained work. Budget portable sets, full-VM copies and restore staging together without double counting shared allocations; measure achievable RPO. A reserved backup allowance or a running guest is not recovery coverage or fleet-capacity evidence. |
 

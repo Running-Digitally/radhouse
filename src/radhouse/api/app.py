@@ -16,7 +16,7 @@ from radhouse.api.schemas import (
     AdmitRequest, ErrorResponse, EventsResponse, PublicationResponse,
     PublishRequest, ReviewRequest, ReviewResponse, StateRequest, TaskResponse,
     WorkHomeResponse, LoginRequest, AuthSessionResponse, ProjectResponse, ReauthenticateRequest,
-    GuidanceRequest, PermissionRequest,
+    GuidanceRequest, PermissionRequest, ReviewLocatorRequest,
 )
 from radhouse.domain.access import AuthContext
 from radhouse.channels.commands import Envelope
@@ -30,8 +30,6 @@ if TYPE_CHECKING:
 def create_app(
     service: "Service", authenticate: Callable[[Request], AuthContext],
     *, web_root: Path | None = None, local_auth: "LocalAuthService | None" = None,
-    login_principal: Callable | None = None, session_binding: Callable | None = None,
-    enrollment=None,
 ) -> FastAPI:
     if not callable(authenticate):
         raise TypeError("authenticate must be an explicitly supplied callable")
@@ -74,19 +72,9 @@ def create_app(
     BindingRevision = Annotated[int, Query(ge=1)]
     from radhouse.api.conversations import install_conversation_routes
     install_conversation_routes(app,service,authenticated)
-    if enrollment is not None:
-        from radhouse.api.buzz_enrollment import install_enrollment_routes
-        install_enrollment_routes(app, enrollment, authenticated)
     errors = {status: {"model": ErrorResponse} for status in (401, 403, 404, 409, 422)}
 
     def session_response(session: "LocalSession", request: Request) -> AuthSessionResponse:
-        if session_binding is not None:
-            from dataclasses import replace
-            binding = session_binding(request)
-            if session.principal_id != binding.principal_id:
-                raise Rejected("identity_binding_denied", 403)
-            session = replace(session, conversation_id=binding.conversation_id,
-                              binding_revision=binding.revision, project_id=binding.project_id)
         return AuthSessionResponse(
             principal_id=session.principal_id,
             username=session.username,
@@ -109,7 +97,6 @@ def create_app(
             session = local_auth.login(
                 body.username, body.password, body.totp_code,
                 request.client.host if request.client is not None else "unknown",
-                expected_principal=login_principal(request) if login_principal else None,
             )
             response.set_cookie(
                 local_auth.cookie_name, session.token, max_age=12 * 60 * 60,
@@ -152,10 +139,13 @@ def create_app(
     @app.get("/projects", response_model=tuple[ProjectResponse, ...], responses=errors)
     def projects(actor: Actor, request: Request):
         values = service.projects(actor)
-        if session_binding is not None:
-            binding = session_binding(request)
-            values = tuple(item for item in values if item.conversation_id == binding.conversation_id)
         return values
+
+    @app.post("/reviews/resolve", responses=errors)
+    def resolve_review(body: ReviewLocatorRequest, actor: Actor):
+        if service.review_links is None:
+            raise Rejected("review_link_denied", 403)
+        return service.review_links.resolve(actor, body.locator)
 
     @app.get("/tasks/{task_id}/review-audience", response_model=tuple[str, ...], responses=errors)
     def review_audience(task_id: str, actor: Actor, conversation_id: Conversation, binding_revision: BindingRevision):

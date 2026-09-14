@@ -42,8 +42,9 @@ source evidence, not proof of a particular installed iOS or Android binary.
 At the exact desktop-release source pin, 249 focused mobile tests passed with
 the unchanged upstream lockfile enforced, covering profiles, private channels,
 membership, replies and reconnect. No source or mobile-client patch was needed.
-The owner's already-paired mobile app versions and foreground Researcher
-visibility must be confirmed. No phone installation, login, permission change,
+The owner confirmed Researcher's private conversation opens in both official
+iPhone and Android clients, and explicitly waived installed-version inventory.
+The official-client preflight is complete. No phone installation, login, permission change,
 push configuration or network grant is included. The existing mobile push
 production gate remains separate.
 

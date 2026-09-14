@@ -147,7 +147,7 @@ Hermes and service adapters.
 
 The next steps are [VS1-A service qualification and VS1-B's useful task through
 both real interfaces](architecture-review.md#prepared-infrastructure-and-the-path-into-the-live-pilot).
-They add the thin TypeScript work home and native Buzz review path against
+They add the thin TypeScript work home and official Buzz conversation path against
 qualified services. Installation-specific addresses, credentials, and evidence
 belong in a private deployment overlay; this repository keeps reusable contracts
 and synthetic examples.
