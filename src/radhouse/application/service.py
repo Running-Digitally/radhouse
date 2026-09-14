@@ -149,22 +149,27 @@ class Service:
         return control(self, actor, task_id, expected, envelope, request_id=request_id, digest=digest, choice=choice)
 
     def coordination_candidates(self, limit: int) -> tuple[str, ...]:
+        from radhouse.application.guidance import pending
         if not 1 <= limit <= 100:
             raise ValueError("invalid_coordination_limit")
         held = {"human_pause", "grant_withdrawal", "budget_exhausted"}
         with self.store.transaction() as tx:
             tasks = tx.tasks()
-        return tuple(
+        active = tuple(
             task.task_id for task in tasks
             if task.phase != "closed"
-            and (task.phase == "stopping" or not set(task.blockers) & held)
-        )[:limit]
+            and (task.phase == "stopping" or not set(task.blockers) & held or pending(task))
+        )
+        closed = tuple(task.task_id for task in tasks if task.phase == "closed" and pending(task))
+        return (active + closed)[:limit]
 
     def advance(self, task_id: str, worker_id: str) -> Task:
         with self.store.transaction() as tx:
             task = self._task(tx, task_id)
-        if task.phase == "closed":
-            return task
+        if task.phase == "closed" or (task.phase != "stopping" and
+                set(task.blockers) & {"human_pause", "grant_withdrawal", "budget_exhausted"}):
+            return self.refresh_guidance(task_id)
+        self.refresh_guidance(task_id, exclude_current=True)
         if task.phase == "queued":
             return self.run(task_id, worker_id)
         return self.recover(task_id)
@@ -490,6 +495,9 @@ class Service:
             result = self.work.result(current, runtime_dispatch)
         except RuntimeFailure:
             return self._needs_attention(task_id, dispatch.key)
+        from radhouse.application.guidance import reconcile
+        reconcile(self, task_id, dispatch.run_id, result.guidance_receipts,
+                  terminal=result.guidance_terminal or result.state in {"completed", "failed", "cancelled"})
         if result.state == "unknown":
             return self._needs_attention(task_id, dispatch.key)
         if result.state == "running":
@@ -547,10 +555,38 @@ class Service:
         with self.store.transaction() as tx:
             task = self._task(tx, task_id)
             if task.phase == "closed":
-                return task
+                closed = True
+            else:
+                closed = False
             if task.attempt_id is None:
                 return task
+        if closed:
+            return self.refresh_guidance(task_id)
         return self._drive(task_id, None)
+
+    def refresh_guidance(self, task_id: str, *, exclude_current=False) -> Task:
+        """Reconcile exact original dispatches, including before a pause/resume."""
+        from radhouse.application.guidance import pending, reconcile
+        with self.store.transaction() as tx:
+            task = self._task(tx, task_id)
+            if not pending(task):
+                return task
+            attempts = {entry["attempt_id"] for entry in task.guidance
+                        if entry.get("protocol") == "hermes-guidance-v1" and not entry.get("application_final")}
+            if exclude_current:
+                attempts.discard(task.attempt_id)
+            dispatches = [tx.dispatch(attempt) for attempt in attempts]
+        for dispatch in dispatches:
+            if dispatch is None or dispatch.task_id != task_id or dispatch.run_id is None:
+                raise RuntimeFailure("runtime_guidance_dispatch_mismatch")
+            if dispatch.retention_until is not None and self._now() >= dispatch.retention_until:
+                task = reconcile(self, task_id, dispatch.run_id, (), terminal=True,
+                                 missing_reason="receipt_retention_expired", settle_missing=True)
+            else:
+                result = self.work.result(task, self._runtime_dispatch(dispatch))
+                task = reconcile(self, task_id, dispatch.run_id, result.guidance_receipts,
+                                 terminal=result.guidance_terminal or result.state in {"completed", "failed", "cancelled"})
+        return task
 
     def _hold(self, actor: AuthContext, task_id: str, expected_state_revision: int,
               envelope: Envelope, reason: str) -> Task:

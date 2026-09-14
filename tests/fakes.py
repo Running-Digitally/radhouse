@@ -153,7 +153,7 @@ class FakeAgentWork(_FakeLedger):
         self.clock = clock or (lambda: datetime.now(timezone.utc))
 
     def capabilities(self, _task: Task) -> RuntimeCapabilities:
-        return RuntimeCapabilities("fake-runtime-v1", 86_400)
+        return RuntimeCapabilities("fake-runtime-v1", 86_400, guidance_receipts=True)
 
     def start_or_attach(
         self, task: Task, attempt: Attempt, dispatch_key: str

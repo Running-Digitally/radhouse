@@ -106,6 +106,7 @@ class AgentDispatch:
 class RuntimeCapabilities:
     runtime_revision: str
     idempotency_retention_seconds: int
+    guidance_receipts: bool = False
 
 
 @dataclass(frozen=True)
@@ -119,10 +120,25 @@ class RuntimeDispatch:
 
 
 @dataclass(frozen=True)
+class RuntimeGuidanceReceipt:
+    run_id: str
+    control_id: str
+    input_sha256: str
+    accepted: bool
+    state: Literal["accepted", "applied", "too_late", "not_applied", "unknown"]
+    revision: int
+    reason: str | None = None
+    checkpoint_id: str | None = None
+    api_request_id: str | None = None
+
+
+@dataclass(frozen=True)
 class RuntimeResult:
     state: Literal["running", "completed", "failed", "cancelled", "unknown"]
     content: str | None = None
     permission_request: dict | None = None
+    guidance_receipts: tuple[RuntimeGuidanceReceipt, ...] | None = None
+    guidance_terminal: bool = False
 
 
 def runtime_input(task: Task) -> str:

@@ -1,6 +1,6 @@
 import { ApiError, RadhouseApi, operatorClient } from "./api.js";
 import type { AuthSession, AgentEnrollment } from "./api.js";
-import { actionReason, blockerMessages, phaseLabel } from "./view-model.js";
+import { actionReason, blockerMessages, guidanceStatus, phaseLabel } from "./view-model.js";
 import type { Project, Review, TaskCard, TaskEvents, WorkHome } from "./types.js";
 import { conversationPanel } from "./conversations.js";
 import type { ConversationDraft, ConversationHistory, ConversationLink } from "./conversations.js";
@@ -21,6 +21,7 @@ const reviews = new Map<string, Review>();
 const expanded = new Set<string>();
 const timelines = new Map<string, TaskEvents>();
 const conversationDrafts = new Map<string, ConversationDraft>();
+const guidanceDrafts = new Map<string, string>();
 let conversationLinks: ConversationLink[] = [];
 let conversationHistory: ConversationHistory | null = null;
 let selectedConversation = "";
@@ -54,6 +55,9 @@ function errorMessage(error: unknown): string {
       review_expired: "The review expired. Prepare a fresh review of the current result.",
       bot_unavailable: "This agent is unavailable. Your assignment draft is retained.",
       invalid_input_files: "Choose up to four UTF-8 text files, no more than 64 KB in total.",
+      runtime_guidance_receipts_unavailable: "This runtime cannot confirm live guidance yet. Include the update in a follow-up.",
+      task_not_accepting_control: "This task cannot accept guidance now. Include the update in a follow-up.",
+      control_outcome_unknown: "An earlier instruction is still unconfirmed. Check its outcome before sending another.",
     };
     return labels[error.code] ?? "Radhouse could not complete the action. Refresh to check its current state.";
   }
@@ -119,7 +123,7 @@ function loginScreen(message?: string): void {
   selectedProject = "";
   projects = [];
   // Private display state never crosses an account change.
-  drafts.clear(); reviews.clear(); expanded.clear(); timelines.clear(); conversationDrafts.clear();
+  drafts.clear(); reviews.clear(); expanded.clear(); timelines.clear(); conversationDrafts.clear(); guidanceDrafts.clear();
   conversationLinks = []; conversationHistory = null; selectedConversation = "";
   enrollmentCandidates = [];
   page.replaceChildren();
@@ -269,9 +273,7 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
   if (task.files.length) article.append(element("p", "muted", `Reference files: ${task.files.map((file) => file.name).join(", ")}`));
   if (task.follows_task_id) article.append(element("p", "muted", "Includes the result of your previous assignment."));
   for (const receipt of task.guidance) {
-    const status = receipt.state === "accepted" ? "Received by the agent; application is not yet confirmed."
-      : ["submitted", "unknown"].includes(receipt.state) ? "Delivery outcome unknown. This instruction will not be sent again automatically."
-      : "The agent did not accept this instruction.";
+    const status = guidanceStatus(receipt);
     article.append(notice(`${receipt.text ?? `Permission response: ${receipt.choice}`} — ${status}`));
   }
   if (home.role !== "viewer" && task.phase === "active" && task.blockers.length === 0) {
@@ -295,12 +297,14 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
       const guidance = element("form", "guidance-form");
       const label = element("label", "field"); const input = element("textarea", "field__control");
       input.name = `guide-${task.task_id}`; input.maxLength = 4096; input.required = true;
+      input.value = guidanceDrafts.get(task.task_id) ?? "";
+      input.addEventListener("input", () => guidanceDrafts.set(task.task_id, input.value));
       label.append(element("span", "field__label", "Guide the current assignment"), input);
       const send = element("button", "button button--secondary", "Send guidance"); send.type = "submit";
       guidance.append(label, send);
       guidance.addEventListener("submit", (event) => {
         event.preventDefault(); const current = api; if (!current) return;
-        void action(send, async () => { await current.guide(task, input.value); await load(); });
+        void action(send, async () => { await current.guide(task, input.value); guidanceDrafts.delete(task.task_id); await load(); });
       });
       article.append(guidance);
     }
@@ -467,7 +471,7 @@ function render(home: WorkHome, message?: string): void {
   const allowed = new Set(home.tasks.map((card) => card.task.task_id));
   for (const id of reviews.keys()) if (!allowed.has(id)) reviews.delete(id);
   for (const id of timelines.keys()) if (!allowed.has(id)) timelines.delete(id);
-  if (focusName === "brief" || focusName === "agent" || focusName === "project" || focusName.startsWith("conversation-")) {
+  if (focusName === "brief" || focusName === "agent" || focusName === "project" || focusName.startsWith("conversation-") || focusName.startsWith("guide-")) {
     const next = Array.from(page.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>("[name]")).find(node => node.name === focusName);
     next?.focus(); if (next instanceof HTMLTextAreaElement && selection) next.setSelectionRange(selection[0] ?? 0, selection[1] ?? 0);
   }
@@ -510,8 +514,9 @@ const interval = window.setInterval(() => {
   // Temporary assurance/audience forms retain their fields; every submit still
   // performs current server checks. Prepared reviews can refresh normally.
   if (api && !filePickerOpen && actionsInFlight === 0 && page.querySelector(".review-panel form, .audience-choice") === null
-      && !Array.from(page.querySelectorAll<HTMLTextAreaElement>(".guidance-form textarea")).some((input) => input.value)) void load();
+      && !Array.from(page.querySelectorAll<HTMLTextAreaElement>(".guidance-form textarea")).some((input) =>
+        input.value || input === (page.getRootNode() as Document | ShadowRoot).activeElement)) void load();
 }, 10_000);
 
-return () => { disposed = true; loadGeneration++; sessionEpoch++; window.clearInterval(interval); drafts.clear(); reviews.clear(); timelines.clear(); conversationDrafts.clear(); page.replaceChildren(); };
+return () => { disposed = true; loadGeneration++; sessionEpoch++; window.clearInterval(interval); drafts.clear(); reviews.clear(); timelines.clear(); conversationDrafts.clear(); guidanceDrafts.clear(); page.replaceChildren(); };
 }
