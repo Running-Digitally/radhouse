@@ -106,31 +106,12 @@ def test_enrollment_rejects_changed_authority_before_profile_publication(
         assert tx.conversation_link(link.link_id) is None
 
 
-def test_enrollment_api_returns_only_public_receipt(enrollment, service):
-    registry, _, _, actor, command, attestation, link = enrollment
-    with TestClient(
-        create_app(service, lambda request: actor, enrollment=registry)
-    ) as client:
-        query = {
-            "conversation_id": command.conversation_id,
-            "binding_revision": command.binding_revision,
-        }
-        candidates = client.get("/agent-enrollment", params=query)
-        assert candidates.status_code == 200 and len(candidates.json()) == 1
-        response = client.post(
-            "/agent-enrollment",
-            json={
-                "envelope": asdict(command),
-                "link_id": link.link_id,
-                "channel_id": link.channel_id,
-                "attestation": attestation,
-            },
-        )
-        assert response.status_code == 200, response.text
-        assert response.json()["ready"]
-        history = client.get(f"/conversations/{link.link_id}/messages", params=query)
-        assert history.status_code == 200
-        assert attestation[3] not in history.text + response.text + candidates.text
+def test_native_enrollment_http_surface_is_removed(service, alice):
+    with TestClient(create_app(service, lambda request: alice)) as client:
+        assert client.get("/agent-enrollment").status_code == 404
+        assert client.post("/agent-enrollment", json={}).status_code == 404
+        assert client.get("/buzz/auth/session").status_code == 404
+        assert client.post("/buzz/tasks", json={}).status_code == 404
 
 
 def test_candidate_removal_or_change_stops_an_enrolled_worker(enrollment):

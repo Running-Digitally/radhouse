@@ -137,6 +137,9 @@ def compose_controller(
         # Removing a candidate must not leave its old web composer operational.
         service.conversation_scope = lambda link: any(
             item.candidate.active and item.matches(link) for item in conversation_cycles)
+        if config.buzz and config.authentication:
+            from radhouse.application.review_links import ReviewLinks
+            service.review_links = ReviewLinks(service, config.authentication.expected_origin, conversation_cycles)
         return ControllerComposition(
             config,
             store,

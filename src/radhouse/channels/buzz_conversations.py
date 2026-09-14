@@ -180,13 +180,10 @@ class BuzzConversationCycle:
                     continue
                 text = self.conversations.describe(task)
                 if task.result:
-                    # Preserve complete result in the controller; no misleading
-                    # partial artifact is presented as a complete review.
-                    text = (
-                        task.result
-                        if len(task.result.encode()) <= 60000
-                        else "Your result is ready. Open its review to read the complete artifact."
-                    )
+                    preview = task.result[:1200]
+                    text = preview + ("\n\n[Preview — full result in Radhouse]" if len(task.result) > 1200 else "")
+                    if self.service.review_links is not None:
+                        text += "\n\nReview in Radhouse (sign-in required):\n" + self.service.review_links.issue(tx, self.link, task)
                 tx.save_conversation_message(
                     ConversationMessage(
                         message_id,
@@ -201,6 +198,24 @@ class BuzzConversationCycle:
                     ),
                     processed=True,
                 )
+
+    def _publication_messages(self):
+        # Publication does not change task.state_revision. Discover it separately
+        # and persist one message before preparing any signed delivery.
+        with self.store.transaction() as tx:
+            self.conversations.authorize(tx, self.link)
+            for task_id in tx.conversation_unannounced_publications(self.link.link_id):
+                task = tx.task(task_id)
+                if (task is None or task.owner_id != self.link.principal_id
+                        or task.bot_id != self.link.bot_id or task.project_id != self.link.project_id):
+                    raise Rejected("conversation_task_denied", 403)
+                publication = tx.publication(task_id)
+                tx.save_conversation_message(ConversationMessage(
+                    "publication:" + publication.publication_id, self.link.link_id,
+                    self.link.bot_id, "Reviewed in Radhouse and published to the approved audience.",
+                    "radhouse", int(self.service._now().timestamp()), task_id=task_id,
+                    state="publication", task_state_revision=task.state_revision,
+                ), processed=True)
 
     def _prepare_outbox(self):
         # Iterate history in bounded pages. Existing deliveries are retained and
@@ -263,6 +278,7 @@ class BuzzConversationCycle:
     def egress(self):
         self._authorized()
         self._task_messages()
+        self._publication_messages()
         self._prepare_outbox()
         with self.store.transaction() as tx:
             pending = tx.conversation_outgoing(self.link.link_id)

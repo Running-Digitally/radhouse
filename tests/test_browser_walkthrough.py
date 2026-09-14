@@ -14,20 +14,17 @@ import pytest
 import uvicorn
 
 from radhouse.api.app import create_app
-from radhouse.channels.buzz import create_buzz_app
 from radhouse.channels.nostr import encoded, sha256
-from tests.test_buzz_native import native, signed
 from tests.test_local_reauthentication import local_client
 
 pytestmark = pytest.mark.postgres
 
 
-def test_web_and_native_surface_walkthrough(native, local_client, service, clock, tmp_path):
+def test_web_review_and_followup_walkthrough(local_client, service, clock, tmp_path):
     root = Path(__file__).resolve().parents[1]
     playwright = os.environ.get("RADHOUSE_PLAYWRIGHT_MODULE", str(root / "web/node_modules/@playwright/test/index.mjs"))
     assert Path(playwright).is_file(), "Run npm ci in web/ and install Playwright Chromium before verification"
-    _, _, _, totp, password, conversation, key, buzz_config, relay_read = native
-    auth = local_client[1]
+    _, auth, totp, password = local_client
     clock.now = datetime.now(timezone.utc)
     sock = socket.socket()
     sock.bind(("127.0.0.1", 0))
@@ -35,24 +32,6 @@ def test_web_and_native_surface_walkthrough(native, local_client, service, clock
     auth._expected_origin = origin
     auth.secure_cookie = False  # Only this owned loopback fixture.
     app = create_app(service, auth.auth_context, local_auth=auth, web_root=root / "web")
-    app.mount("/buzz", create_buzz_app(service, auth, buzz_config, origin, transport=httpx.MockTransport(relay_read)))
-
-    @app.get("/_fixture/native")
-    def native_page():
-        return HTMLResponse("<!doctype html><html><body></body></html>")
-
-    @app.post("/_fixture/sign")
-    async def fixture_sign(request: Request):
-        # Test-owned synthetic key only; this route is never production code.
-        value = await request.json()
-        body = value.get("body", "").encode()
-        query = encoded([{"kinds": [39002], "authors": [buzz_config.relay_pubkey], "#d": ["room-1"], "limit": 1}])
-        now = int(clock().timestamp())
-        membership = signed(key, "https://relay.test/query", "POST", query, now)
-        authorization = signed(key, origin + "/buzz" + value["path"], value["method"], body, now,
-            [["h", "room-1"], ["relay", "https://relay.test"], ["membership", sha256(membership.encode())]])
-        return {"Authorization": authorization, "X-Buzz-Membership": membership}
-
     server = uvicorn.Server(uvicorn.Config(app, log_level="error", access_log=False))
     server_thread = threading.Thread(target=lambda: server.run(sockets=[sock]), daemon=True)
     stop = threading.Event()
@@ -77,7 +56,7 @@ def test_web_and_native_surface_walkthrough(native, local_client, service, clock
             followup = next(task for task in tasks if task.follows_task_id)
             original = next(task for task in tasks if not task.follows_task_id)
             assert followup.follows_task_id == original.task_id
-            assert tx.publication(original.task_id).channel == "buzz"
+            assert tx.publication(original.task_id).channel == "radhouse"
     finally:
         stop.set(); server.should_exit = True
         worker.join(timeout=5); server_thread.join(timeout=5); sock.close()

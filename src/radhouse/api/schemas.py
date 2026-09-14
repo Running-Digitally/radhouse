@@ -50,6 +50,10 @@ class StartTaskSchema(StrictModel):
         return StartTask(**value)
 
 
+class ReviewLocatorRequest(StrictModel):
+    locator: Annotated[str, Field(min_length=1, max_length=3200)]
+
+
 class AdmitRequest(StrictModel):
     envelope: EnvelopeSchema
     start: StartTaskSchema

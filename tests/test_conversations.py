@@ -227,3 +227,39 @@ def test_operator_brief_controls_tool_restriction_but_attachment_does_not(
     response = app.process(link, incoming.message_id)
     with store.transaction() as tx:
         assert tx.task(response.task_id).disable_tools is restricted
+
+
+def test_latest_completed_selection_and_status_keep_context_across_restart(chat, service, store):
+    app, link = chat
+    first = send(chat)
+    done_first = service.run(first.task_id)
+    second = send(chat, "New task: An unrelated short assignment.")
+    service.run(second.task_id)
+    assert send(chat, "status").task_id == second.task_id
+    # Explicitly select earlier work, then simulate a reconstructed controller.
+    assert send(chat, "status", reply=first.message_id).task_id == first.task_id
+    continued = send((Conversations(service), link), "Explain this result further.")
+    with store.transaction() as tx:
+        task = tx.task(continued.task_id)
+        assert task.follows_task_id == first.task_id
+        assert task.previous_result == done_first.result
+        assert len(tx.tasks()) == 3
+
+
+def test_delayed_bot_or_owner_event_cannot_replace_newer_selected_context(chat, service, store):
+    app, link = chat
+    first = send(chat)
+    service.run(first.task_id)
+    selected = replace(message(link, "New task: The current topic."), created_at=link.activated_at + 20)
+    app.receive(link, selected)
+    second = app.process(link, selected.message_id)
+    service.run(second.task_id)
+    delayed = replace(message(link, "status", reply=first.message_id), created_at=link.activated_at + 1)
+    app.receive(link, delayed)
+    app.process(link, delayed.message_id)
+    with store.transaction() as tx:
+        tx.save_conversation_message(ConversationMessage("delayed-progress", link.link_id, link.bot_id,
+            "Old progress", "radhouse", link.activated_at + 50, task_id=first.task_id), processed=True)
+    followup = send(chat, "Continue the selected topic.")
+    with store.transaction() as tx:
+        assert tx.task(followup.task_id).follows_task_id == second.task_id
