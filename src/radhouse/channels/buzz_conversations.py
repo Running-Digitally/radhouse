@@ -142,6 +142,21 @@ class BuzzConversationCycle:
                     or task.project_id != self.link.project_id
                 ):
                     raise Rejected("conversation_task_denied", 403)
+                # Guidance changes must not repost the completed result. Their
+                # own stable identity also deduplicates reconnect/restart delivery.
+                from radhouse.application.guidance import PROTOCOL, outcome_message_id, outcome_text
+                for receipt in task.guidance:
+                    outcome = receipt.get("application_state")
+                    if receipt.get("protocol") != PROTOCOL or outcome not in {"applied", "too_late", "not_applied", "unknown"}:
+                        continue
+                    outcome_id = outcome_message_id(task.task_id, receipt)
+                    if tx.conversation_message(outcome_id) is None:
+                        tx.save_conversation_message(ConversationMessage(
+                            outcome_id, self.link.link_id, self.link.bot_id,
+                            outcome_text(receipt), "radhouse", int(self.service._now().timestamp()),
+                            task_id=task.task_id, state="guidance",
+                            task_state_revision=task.state_revision,
+                        ), processed=True)
                 identity = sha256(
                     encoded(
                         [
