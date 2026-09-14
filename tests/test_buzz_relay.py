@@ -55,6 +55,8 @@ def relay():
         state["calls"].append(
             (request.url.path, json.loads(request.content), auth["id"])
         )
+        if "raw" in state:
+            return httpx.Response(state["status"], content=state["raw"])
         return httpx.Response(state["status"], json=state["response"])
 
     client = BuzzRelay(
@@ -145,6 +147,37 @@ def test_delivery_requires_exact_acknowledgment(relay, response):
     client, _, state, *_ = relay
     state["response"] = response
     with pytest.raises(Rejected, match="buzz_delivery_unconfirmed"):
+        client.publish(client.event(9, "reply"))
+
+
+@pytest.mark.parametrize(
+    "path,status,body,expected",
+    [
+        ("/events", 400, {"error": "invalid: root tag does not match thread ancestry"}, "buzz_thread_ancestry_rejected"),
+        ("/query", 400, {"error": "invalid: root tag does not match thread ancestry"}, "buzz_relay_unavailable"),
+        ("/events", 401, {"error": "invalid: root tag does not match thread ancestry"}, "buzz_relay_denied"),
+        ("/events", 403, {"error": "invalid: root tag does not match thread ancestry"}, "buzz_relay_denied"),
+        ("/events", 500, {"error": "invalid: root tag does not match thread ancestry"}, "buzz_relay_unavailable"),
+        ("/events", 400, {"error": "invalid: reply target not found"}, "buzz_relay_unavailable"),
+        ("/events", 400, {"error": "invalid: root tag does not match thread ancestry", "extra": True}, "buzz_relay_unavailable"),
+        ("/events", 400, [], "buzz_relay_unavailable"),
+    ],
+)
+def test_only_exact_ancestry_rejection_is_permanent(relay, path, status, body, expected):
+    client, _, state, *_ = relay
+    state.update(status=status, response=body)
+    with pytest.raises(Rejected, match=expected):
+        client._request(path, {})
+
+
+@pytest.mark.parametrize("raw,expected", [
+    (b"not-json", "buzz_relay_unavailable"),
+    (b"x" * 1048577, "buzz_response_limit"),
+])
+def test_ancestry_error_body_remains_bounded_and_validated(relay, raw, expected):
+    client, _, state, *_ = relay
+    state.update(status=400, raw=raw)
+    with pytest.raises(Rejected, match=expected):
         client.publish(client.event(9, "reply"))
 
 

@@ -4,6 +4,8 @@ from dataclasses import dataclass
 
 from radhouse.domain.tasks import InputFile
 
+BUZZ_THREAD_ANCESTRY_REJECTED = "buzz_thread_ancestry_rejected"
+
 
 @dataclass(frozen=True)
 class ConversationLink:

@@ -39,6 +39,7 @@ def bridge(service, store, clock):
         "lost_ack": False,
         "files": {},
         "reads": 0,
+        "publish_attempts": [],
     }
 
     def receive(request):
@@ -69,6 +70,7 @@ def bridge(service, store, clock):
         body = json.loads(request.content)
         if request.url.path == "/events":
             event = verify_event(body, body["kind"])
+            state["publish_attempts"].append(event)
             markers = {t[3]: t[1] for t in event["tags"]
                        if len(t) >= 4 and t[0] == "e" and t[3] in {"root", "reply"}}
             if "reply" in markers:
@@ -216,6 +218,52 @@ def test_transport_lost_ack_and_restart_reuse_task_and_signed_reply(
     assert len(results) == 1
     assert ["e", state["messages"][0]["id"], "", "reply"] in results[0]["tags"]
     assert restarted.run("egress")["count"] == 0
+
+
+def test_retained_rejected_reply_does_not_block_new_delivery_or_retry_on_restart(
+    bridge, service, store, fake_work,
+):
+    cycle, state, owner = bridge
+    original = incoming(cycle, owner)
+    state["messages"] = [original]
+    cycle.ingress()
+    with store.transaction() as tx:
+        first = tx.tasks()[0]
+    service.run(first.task_id)
+    cycle.egress()
+    followup = incoming(cycle, owner, "Adapt the result.",
+                        tags=[["e", original["id"], "", "reply"]], offset=1)
+    state["messages"].append(followup)
+    cycle.ingress()
+    cycle._task_messages()
+    # Reproduce an immutable signed event retained from the old adapter.
+    with store.transaction() as tx:
+        message = tx.conversation_message("reply:" + followup["id"])["message"]
+        bad = cycle.relay.event(9, message.content, [
+            ["h", cycle.link.channel_id],
+            ["e", followup["id"], "", "root"],
+            ["e", followup["id"], "", "reply"],
+        ])
+        tx.conversation_enqueue(message.message_id, cycle.link.link_id, message.message_id, bad)
+        second = next(t for t in tx.tasks() if t.task_id != first.task_id)
+    assert cycle.run("egress")["error_code"] is None
+    assert bad["id"] not in state["published"]
+    service.run(second.task_id)
+    restarted = BuzzConversationCycle(service, cycle.relay, cycle.link)
+    for _ in range(2):
+        assert restarted.run("ingress")["error_code"] is None
+        assert restarted.run("egress")["error_code"] is None
+    with store.transaction() as tx:
+        retained = tx._connection.execute(
+            "SELECT * FROM conversation_outbox WHERE delivery_key=%s", (message.message_id,),
+        ).fetchone()
+        assert retained["event"] == bad and retained["delivered"] is False
+        assert retained["error_code"] == "buzz_thread_ancestry_rejected"
+        assert not tx.conversation_outgoing(cycle.link.link_id)
+        assert len(tx.tasks()) == 2
+    assert sum(e["id"] == bad["id"] for e in state["publish_attempts"]) == 1
+    assert any(["radhouse-review", second.task_id] in e["tags"] for e in state["published"].values())
+    assert fake_work.start_count == 2
 
 
 @pytest.mark.parametrize("markers", [("reply",), ("root", "reply"), ("root",)])

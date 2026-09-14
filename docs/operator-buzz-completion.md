@@ -190,38 +190,54 @@ or uncertain observation accurately.
 
 ## Package 1 and 3 live acceptance
 
-Use the restored unmodified official Buzz desktop and the existing private
-Researcher/Hermes/Nemo binding. Verify mobile foreground identity/conversation
-compatibility separately on the already admitted clients.
+The next milestone is a useful Researcher assignment reliably completed from an
+unmodified official Buzz client. Keep packages open until demonstrated; a local
+test pass or nominal runtime completion is insufficient. Official desktop
+identity/conversation visibility and owner-confirmed mobile foreground access
+are already established. The custom desktop fork remains superseded.
 
-1. Verify the recognizable Researcher identity and exact owner-only private DM.
-2. From official Buzz, reply to the retained completed short no-tools assignment
-   with one deliberately longer multi-step follow-up. Verify exactly one new
-   durable task/dispatch/run and an exact previous-result snapshot; the old run
-   remains completed. Use the three prepared public references and existing
-   bounded read-only tool authority.
-3. Submit one correlated guidance message while that task is active. Verify
-   queued-to-applied evidence, the later ordinary request, and the changed result.
-   Expect one batch of three reads and final text on ordinary model turn two.
-4. The unchanged Hermes budget finalizer permits at most two additional
-   tool-free summary attempts after exhaustion, so the existing ceiling is four
-   calls. It is not introduced for steering. Session call counts exclude those
-   summaries: require a complete normalized transcript showing the expected
-   tool/guidance/final-text ordering, or report uncertainty/fallback separately.
-   No task or guidance retry, extra proof run or forced no-tools continuation.
-5. Open the short-lived task-specific link from official Buzz, complete normal
-   Radhouse authentication/MFA, review the exact result and publish once to the
-   existing private owner audience. Verify the resulting status in Buzz.
-6. Reconnect the official client and restart the admitted services while idle.
-   Verify identical task/run/control/result/publication identities, retained
-   guidance outcome and no additional dispatch, instruction or publication.
+Prove the following in order, with separate bounded checks:
 
-A timing miss or missing application evidence leaves steering acceptance open.
-Do not silently repeat the assignment. Retain only sanitized IDs, digests,
-counts and semantic checks in operational evidence, not task contents or secrets.
-Keep private exposure, current firewall restrictions, signed identity checks,
-MFA, DML-only runtime access, exact model binding and bounded tools. Do not
-change VM250, public DNS, Cloudflare, mobile clients or unrelated infrastructure.
+1. Correct reply ancestry and empty-success reporting. Retain the failed
+   walkthrough and its exact task/run/source-event evidence.
+2. Qualify the existing Hermes/Nemo tool path independently of Buzz. Start with
+   one useful question over one admitted reference. Distinguish provider response
+   shape, runtime execution/persistence and controller integration failures.
+   Require real tool execution and a nonempty useful answer; report missing
+   evidence instead of interpreting an empty terminal status as success.
+3. Use official Buzz for one useful assignment: one signed owner event creates
+   one durable task, Researcher posts progress and a concise result, a subsequent
+   message becomes a contextual follow-up, and its exact detailed review opens
+   in authenticated Radhouse web. Short finished work stays finished.
+4. Prove steering separately on substantive research. The question must require
+   several admitted sources, evidence comparison, gap/contradiction analysis and
+   a recommendation. Source selection and analysis should naturally require
+   successive tool/model turns. Three immediate reads in one batch are not a
+   sufficient substitute. Submit one guidance event while active and verify its
+   exact task/control/input correlation, durable outcome and effect on a later
+   model turn and the resulting recommendation.
+5. Keep protected publication, authentication denials, deduplication, reconnect
+   and idle-service restart recovery as separate checks. Reuse already-qualified
+   safeguards and prior applicable evidence; do not overload one run with every
+   property. Publication stays in the web interface and its status returns to
+   Buzz. Retain exact task/run/control/result/publication identities.
+
+Before another live research run, make the exact question, admitted sources and
+tools, expected natural checkpoints and maximum provider-call budget reviewable.
+Count all provider requests, including thinking continuation, truncated tool-call
+recovery and finalizer requests. The current two-turn setting is not itself a
+hard wire-call cap: truncated-argument retries occur within a turn. Use an exact
+qualified cap before claiming a maximum; any necessary budget increase requires
+an explicit owner decision. Do not add artificial delays, busywork, forced model
+calls for completed responses, fallback providers or broader tools.
+
+A short task that closes before guidance receives a contextual follow-up. A
+failed or inconclusive research proof remains open; do not silently repeat it.
+Keep queued/applied/too-late/unknown outcomes honest and preserve unsent or
+uncertain guidance. Retain only sanitized IDs, digests, counts and semantic
+checks in operational evidence. Preserve private exposure, firewall restrictions,
+MFA, signed identity, DML-only runtime access and the Hermes/Nemo binding. No
+VM250 mutation, client fork, model switch or unrelated access is included.
 
 ## Official-client walkthrough corrections, 14 September
 
@@ -252,3 +268,20 @@ changes do not rewrite the retained failed walkthrough, regenerate signed
 outbox rows, or authorize another proof task. Any delivery repair must first
 prove the rejected event IDs absent at the relay and preserve their provenance;
 an unknown delivery remains immutable. Live acceptance remains open.
+
+### Retained rejected deliveries
+
+The ancestry fix cannot rewrite three already signed, rejected replies. A
+bounded D1 recovery extends the existing transport → egress → outbox selector:
+only the relay's HTTP 400 `/events` response with the exact JSON error
+`invalid: root tag does not match thread ancestry` is a permanent delivery
+rejection. Retain its event, signature, message and delivery IDs unchanged,
+with `delivered=false` and `buzz_thread_ancestry_rejected`. Egress records that
+outcome and continues; subsequent cycles omit only that known permanent error.
+All authentication, uncertain-delivery, missing-parent and other failures keep
+their existing stop/retry behavior. Parse the error within existing response
+size/time bounds. No schema, new queue, re-signing or fabricated acknowledgement.
+
+Tests must demonstrate exact error classification, preserved signed bytes and
+failure evidence, later valid delivery, and no retry after reconnect. Task/run
+identity and work dispatch remain independent of this delivery-only correction.

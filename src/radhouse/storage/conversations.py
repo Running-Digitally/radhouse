@@ -5,6 +5,7 @@ from dataclasses import asdict
 from psycopg.types.json import Jsonb
 
 from radhouse.domain.conversations import (
+    BUZZ_THREAD_ANCESTRY_REJECTED,
     ConversationLink,
     ConversationMessage,
     MessageRoute,
@@ -254,8 +255,9 @@ class ConversationQueries:
     def conversation_outgoing(self, link_id, limit=20):
         return self._connection.execute(
             "SELECT o.* FROM conversation_outbox o JOIN conversation_messages m ON m.message_id=o.message_id "
-            "WHERE o.link_id=%s AND NOT o.delivered ORDER BY m.sequence LIMIT %s",
-            (link_id, min(max(limit, 1), 100)),
+            "WHERE o.link_id=%s AND NOT o.delivered AND o.error_code IS DISTINCT FROM %s "
+            "ORDER BY m.sequence LIMIT %s",
+            (link_id, BUZZ_THREAD_ANCESTRY_REJECTED, min(max(limit, 1), 100)),
         ).fetchall()
 
     def conversation_undelivered_messages(self, link_id, limit=20):
