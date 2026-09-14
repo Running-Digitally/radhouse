@@ -14,7 +14,7 @@ from coincurve import PrivateKey
 import httpx
 
 from radhouse.channels.nostr import encoded, sha256, verify_event
-from radhouse.domain.conversations import ConversationLink
+from radhouse.domain.conversations import BUZZ_THREAD_ANCESTRY_REJECTED, ConversationLink
 from radhouse.domain.tasks import Rejected
 
 
@@ -101,7 +101,8 @@ class BuzzRelay:
             with self.client.stream(
                 "POST", url, content=body, headers=headers
             ) as response:
-                if response.status_code != 200:
+                ancestry_candidate = path == "/events" and response.status_code == 400
+                if response.status_code != 200 and not ancestry_candidate:
                     raise Rejected(
                         "buzz_relay_denied"
                         if response.status_code in {401, 403}
@@ -113,6 +114,12 @@ class BuzzRelay:
                     if time.monotonic() > deadline or len(data) + len(chunk) > 1048576:
                         raise Rejected("buzz_response_limit", 503)
                     data.extend(chunk)
+                if ancestry_candidate:
+                    if json.loads(data) == {
+                        "error": "invalid: root tag does not match thread ancestry"
+                    }:
+                        raise Rejected(BUZZ_THREAD_ANCESTRY_REJECTED, 503)
+                    raise Rejected("buzz_relay_unavailable", 503)
             return json.loads(data)
         except httpx.HTTPError, ValueError, UnicodeError:
             raise Rejected("buzz_relay_unavailable", 503) from None

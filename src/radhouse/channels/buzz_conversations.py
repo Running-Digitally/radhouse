@@ -6,7 +6,7 @@ from radhouse.application.conversations import Conversations
 from radhouse.application.service import fingerprint
 from radhouse.channels.buzz_files import reference_files
 from radhouse.channels.nostr import encoded, sha256
-from radhouse.domain.conversations import ConversationMessage
+from radhouse.domain.conversations import BUZZ_THREAD_ANCESTRY_REJECTED, ConversationMessage
 from radhouse.domain.tasks import Rejected
 
 
@@ -318,6 +318,10 @@ class BuzzConversationCycle:
                     tx.conversation_acknowledge(
                         delivery["delivery_key"], error=error.code
                     )
+                if error.code == BUZZ_THREAD_ANCESTRY_REJECTED:
+                    # Definitively rejected signed events stay immutable and
+                    # undelivered, but must not block unrelated valid replies.
+                    continue
                 raise
             with self.store.transaction() as tx:
                 tx.conversation_acknowledge(delivery["delivery_key"])
