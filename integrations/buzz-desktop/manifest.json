@@ -15,6 +15,7 @@
     "web/styles.css": "9f9626dca1639afca64773ea0b087a4b75b2b569d820aed9c2b53520da18fa62",
     "web/src/conversations.ts": "105d920a64e568d5728204c70b07f3aaf8994cf5c21f18627a7b6443ff8895f5"
   },
-  "qualification": "Durable guidance at natural tool checkpoints; full revised local qualification in progress. No live steering rollout yet.",
-  "mobile_changes": false
+  "qualification": "Full pinned Buzz just ci passed with RUST_TEST_THREADS=1. Revised shared UI passed the Radhouse PostgreSQL/browser gate (368 tests) and nine client tests. The macOS bundle built and passed deep strict signature verification. Live steering validation is pending.",
+  "mobile_changes": false,
+  "local_patch_commit": "4a8258ecb3dd09ab583002df1541db4c43c90667"
 }

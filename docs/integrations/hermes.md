@@ -61,6 +61,15 @@ installation-specific endpoints stay outside the public configuration.
 
 ## Recovery and maintenance
 
+Live guidance requires the optional version-1 durable receipt capability at
+`features.runs_steering_receipts`: ordinary post-tool checkpoints and zero extra
+model calls. The [operator design](../operator-buzz-completion.md#durable-steering-during-genuine-multi-step-work)
+owns the exact wire contract and acceptance. An accepted update is queued until
+a later natural model response confirms it was included. Short tools-disabled
+work finishes normally; a later message becomes contextual follow-up work.
+The controller retains exact guidance/run correlation and reconciles outcomes
+through GET, including after task completion, without resending the instruction.
+
 Persist Radhouse task, attempt, dispatch, and operation identities independently
 of Hermes session retention. Reattach with the original attempt key after reconnect. A
 missing runtime event or expired runtime deduplication record does not authorize

@@ -117,13 +117,14 @@ def test_completed_result_discussion_keeps_selected_context(chat, service, store
         assert len(tx.tasks()) == 2
 
 
-def test_short_no_tools_work_finishes_and_later_buzz_message_is_contextual_followup(chat, service, fake_work, store):
+@pytest.mark.parametrize("threaded", [False, True])
+def test_short_no_tools_work_finishes_and_later_buzz_message_is_contextual_followup(chat, service, fake_work, store, threaded):
     first = send(chat, "Use no tools. Give a short comparison.")
     done = service.run(first.task_id)
     assert done.disable_tools and done.phase == "closed" and done.guidance == ()
     # A new conversational message after completion is new contextual work,
     # never an attempt to reopen the completed provider response.
-    second = send(chat, "Explain which choice is easier to maintain.", reply=first.message_id)
+    second = send(chat, "Explain which choice is easier to maintain.", reply=first.message_id if threaded else None)
     followup = service.run(second.task_id)
     assert followup.task_id != done.task_id and followup.follows_task_id == done.task_id
     assert followup.previous_result == done.result and followup.guidance == ()
