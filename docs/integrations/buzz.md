@@ -51,8 +51,9 @@ binding checks.
 
 ## Failure and qualification gate
 
-A Buzz outage does not cancel admitted controller work. Radhouse records pending
-delivery and resynchronizes authorized state after reconnect. Duplicate,
+A Buzz outage does not cancel admitted controller work. The selected native
+desktop panel resynchronizes authorized state after reconnect; it does not
+publish task data as room messages. Duplicate,
 out-of-order, mirrored, stale, or replayed events cannot create a second task,
 repeat an effect, revive cancelled work, or approve changed content. An older
 restore cannot revive revoked memberships or key bindings.
@@ -61,5 +62,7 @@ Before the live pilot, prove pinned startup, migrations, listener and caller
 restrictions, database and media isolation, key/person binding, both-direction
 task continuation, native protected review, event replay and gap recovery,
 revocation, resource ceilings, update/rollback, consistent backup, and isolated
-restore. The current private preparation supplies a candidate composition and
-offline checks only; it has not yet supplied guest-level or end-to-end proof.
+restore. The maintained [desktop patch](../../integrations/buzz-desktop/README.md)
+and [implementation packet](../operator-buzz-completion.md) distinguish local
+qualification from the required real relay/client proof. A separately qualified
+private Buzz service does not, by itself, prove Radhouse task parity.

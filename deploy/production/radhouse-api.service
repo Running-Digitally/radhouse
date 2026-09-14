@@ -1,0 +1,32 @@
+[Unit]
+Description=Radhouse authenticated operator service
+After=network-online.target docker.service radhouse-hermes-tunnel.service
+Wants=network-online.target radhouse-hermes-tunnel.service
+
+[Service]
+Type=simple
+User=radhouse
+Group=radhouse
+WorkingDirectory=/opt/radhouse/app
+ExecStart=/opt/radhouse/app/.venv/bin/radhouse serve --config /etc/radhouse/config.yaml --host ${RADHOUSE_LISTEN_HOST} --port ${RADHOUSE_LISTEN_PORT} --ssl-certfile /etc/radhouse/tls/server.crt --ssl-keyfile /etc/radhouse/tls/server.key
+Environment=RADHOUSE_LISTEN_HOST=127.0.0.1
+Environment=RADHOUSE_LISTEN_PORT=8443
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

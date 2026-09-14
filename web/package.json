@@ -1,0 +1,14 @@
+{
+  "name": "@running-digitally/radhouse-work-home",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.60.0",
+    "typescript": "7.0.2"
+  }
+}

@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from radhouse.channels.commands import Envelope
-from radhouse.domain.tasks import StartTask
+from radhouse.domain.tasks import InputFile, StartTask
 
 Identifier = Annotated[str, Field(min_length=1, max_length=200)]
 Revision = Annotated[int, Field(ge=1)]
@@ -28,6 +28,11 @@ class EnvelopeSchema(StrictModel):
         return Envelope(**self.model_dump())
 
 
+class InputFileSchema(StrictModel):
+    name: Annotated[str, Field(min_length=1, max_length=200, pattern=r"^[^/\\\x00-\x1f]+$")]
+    content: Annotated[str, Field(max_length=65536)]
+
+
 class StartTaskSchema(StrictModel):
     bot_id: Identifier
     project_id: Identifier
@@ -35,9 +40,13 @@ class StartTaskSchema(StrictModel):
     provider_binding: Identifier
     resource_key: Identifier | None = None
     budget: Annotated[int, Field(ge=1, le=100)] = 3
+    files: Annotated[list[InputFileSchema], Field(max_length=4)] = []
+    follows_task_id: Identifier | None = None
 
     def command(self) -> StartTask:
-        return StartTask(**self.model_dump())
+        value = self.model_dump()
+        value["files"] = tuple(InputFile(**item) for item in value["files"])
+        return StartTask(**value)
 
 
 class AdmitRequest(StrictModel):
@@ -48,6 +57,16 @@ class AdmitRequest(StrictModel):
 class StateRequest(StrictModel):
     envelope: EnvelopeSchema
     expected_state_revision: Revision
+
+
+class GuidanceRequest(StateRequest):
+    text: Annotated[str, Field(min_length=1, max_length=4096)]
+
+
+class PermissionRequest(StateRequest):
+    request_id: Identifier
+    digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    choice: Literal["once", "deny"]
 
 
 class ReviewRequest(StateRequest):
@@ -82,6 +101,10 @@ class TaskResponse(StrictModel):
     result: str | None
     result_digest: str | None
     observation_sequence: int
+    files: tuple[InputFileSchema, ...] = ()
+    follows_task_id: str | None = None
+    guidance: tuple[dict, ...] = ()
+    permission_request: dict | None = None
 
 
 class ReviewResponse(StrictModel):
@@ -122,5 +145,65 @@ class EventsResponse(StrictModel):
     resync_required: bool
 
 
+class ActionResponse(StrictModel):
+    enabled: bool
+    reason: str | None
+
+
+class AgentResponse(StrictModel):
+    bot_id: str
+    display_name: str
+    role_name: str
+    provider_binding: str
+    state: str
+
+
+class TaskCardResponse(StrictModel):
+    task: TaskResponse
+    cancel: ActionResponse
+    pause: ActionResponse
+    resume: ActionResponse
+    review: ActionResponse
+    publication: PublicationResponse | None = None
+
+
+class WorkHomeResponse(StrictModel):
+    principal_id: str
+    role: Literal["admin", "operator", "viewer"]
+    project_id: str
+    project_name: str
+    agents: tuple[AgentResponse, ...]
+    tasks: tuple[TaskCardResponse, ...]
+    start: ActionResponse
+
+
+class ProjectResponse(StrictModel):
+    project_id: str
+    display_name: str
+    conversation_id: str
+    binding_revision: int
+
+
+class ReauthenticateRequest(StrictModel):
+    password: Annotated[str, Field(min_length=1, max_length=1024)]
+    totp_code: Annotated[str, Field(pattern=r"^[0-9]{6}$")]
+
+
 class ErrorResponse(StrictModel):
     code: str
+
+
+class LoginRequest(StrictModel):
+    username: Annotated[str, Field(min_length=3, max_length=64)]
+    password: Annotated[str, Field(min_length=1, max_length=1024)]
+    totp_code: Annotated[str, Field(pattern=r"^[0-9]{6}$")]
+
+
+class AuthSessionResponse(StrictModel):
+    principal_id: str
+    username: str
+    assurance_until: datetime
+    conversation_id: str
+    binding_revision: int
+    project_id: str
+    csrf_token: str

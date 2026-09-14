@@ -1,4 +1,4 @@
-"""Transactional PostgreSQL adapter for the explicitly owned local VS0 fixture.
+"""Transactional PostgreSQL adapters for application and owned fixture stores.
 
 DDL belongs exclusively to the test bootstrap. Each context opens an independent
 connection and briefly serializes fixture transactions; no external effect runs
@@ -10,6 +10,7 @@ from dataclasses import asdict, replace
 from datetime import datetime
 import hashlib
 import ipaddress
+from pathlib import Path
 import re
 from typing import Iterator
 
@@ -18,15 +19,36 @@ from psycopg.conninfo import conninfo_to_dict
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from radhouse.domain.access import Access, Binding
+from radhouse.domain.access import Access, Binding, BotProfile, ProjectProfile
 from radhouse.domain.releases import Publication, Review
 from radhouse.domain.tasks import (
-    Attempt, Delivery, Event, Operation, Rejected, SavedCommand, Task,
+    AgentDispatch, Attempt, Delivery, Event, Operation, Rejected, SavedCommand, Task,
 )
 
 
 class FixtureBoundaryError(ValueError):
     """A target is outside the disposable, owned local fixture boundary."""
+
+
+class ApplicationStorageError(ValueError):
+    """A configured database is not the expected initialized Radhouse store."""
+
+
+_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+_INITIAL_MIGRATION = Path(__file__).parent / "migrations" / "0001_initial.sql"
+SCHEMA_VERSION = 2
+MIGRATIONS = (_INITIAL_MIGRATION, Path(__file__).parent / "migrations" / "0002_operator_context.sql")
+
+
+def schema_digest(version: int = SCHEMA_VERSION) -> str:
+    try:
+        if version == 1:
+            return hashlib.sha256(_INITIAL_MIGRATION.read_bytes()).hexdigest()
+        if version != SCHEMA_VERSION:
+            raise ApplicationStorageError("unsupported_schema_version")
+        return hashlib.sha256(b"radhouse-schema-v2\0" + b"\0".join(path.read_bytes() for path in MIGRATIONS)).hexdigest()
+    except OSError:
+        raise ApplicationStorageError("database_migration_missing") from None
 
 
 def _connection_parameters(dsn: str, run_id: str) -> dict:
@@ -59,6 +81,32 @@ def _connection_parameters(dsn: str, run_id: str) -> dict:
     return params
 
 
+def _application_connection_parameters(dsn: str, expected_database: str) -> dict:
+    if not re.fullmatch(r"[a-z][a-z0-9_]{0,62}", expected_database):
+        raise ApplicationStorageError("invalid_expected_database")
+    try:
+        params = conninfo_to_dict(dsn)
+    except (psycopg.Error, ValueError) as exc:
+        raise ApplicationStorageError("invalid_database_dsn") from exc
+    allowed = {
+        "host", "hostaddr", "port", "dbname", "user", "password", "sslmode",
+        "sslrootcert", "sslcert", "sslkey", "connect_timeout",
+        "channel_binding", "target_session_attrs",
+    }
+    if set(params) - allowed:
+        raise ApplicationStorageError("unsupported_database_dsn_parameter")
+    if not params.get("host"):
+        raise ApplicationStorageError("database_host_required")
+    if params.get("dbname") != expected_database:
+        raise ApplicationStorageError("database_name_mismatch")
+    params.update(
+        connect_timeout=5,
+        application_name="radhouse-controller",
+        options="-c search_path=public",
+    )
+    return params
+
+
 def _json(value) -> Jsonb:
     def normalize(item):
         if isinstance(item, datetime):
@@ -77,10 +125,17 @@ def _snapshot(row, kind):
     value = dict(row["snapshot"])
     if kind is Task:
         value["blockers"] = tuple(value["blockers"])
+        from radhouse.domain.tasks import InputFile
+        value["files"] = tuple(InputFile(**item) for item in value.get("files", []))
+        value["guidance"] = tuple(value.get("guidance", []))
     if kind in (Review, Publication):
         value["audience"] = tuple(value["audience"])
     if kind is Review:
         value["expires_at"] = datetime.fromisoformat(value["expires_at"])
+    if kind is AgentDispatch:
+        for field in ("submitted_at", "retention_until"):
+            if value[field] is not None:
+                value[field] = datetime.fromisoformat(value[field])
     return kind(**value)
 
 
@@ -103,6 +158,46 @@ class PostgresStore:
             if (len(rows) != 1 or rows[0]["run_id"] != self.run_id
                     or rows[0]["database"] != f"radhouse_vs0_{self.run_id}"):
                 raise FixtureBoundaryError("fixture_ownership_mismatch")
+            connection.execute("SELECT pg_advisory_xact_lock(%s)", (self._lock,))
+            try:
+                yield PostgresUnitOfWork(connection)
+            except psycopg.IntegrityError as exc:
+                raise Rejected("storage_conflict") from exc
+
+
+class ApplicationPostgresStore:
+    """Store for a pre-migrated database with a pinned deployment identity."""
+
+    schema_version = SCHEMA_VERSION
+
+    def __init__(self, dsn: str, expected_database: str, deployment_id: str):
+        if not _IDENTIFIER.fullmatch(deployment_id):
+            raise ApplicationStorageError("invalid_deployment_id")
+        self._params = _application_connection_parameters(dsn, expected_database)
+        self.expected_database = expected_database
+        self.deployment_id = deployment_id
+        self._lock = int.from_bytes(
+            hashlib.sha256(deployment_id.encode()).digest()[:8], "big", signed=True,
+        )
+
+    @contextmanager
+    def transaction(self) -> Iterator["PostgresUnitOfWork"]:
+        with psycopg.connect(**self._params, row_factory=dict_row) as connection:
+            try:
+                rows = connection.execute(
+                    "SELECT deployment_id,schema_version,migration_sha256,current_database() AS database "
+                    "FROM public.radhouse_metadata WHERE singleton"
+                ).fetchall()
+            except psycopg.Error as exc:
+                raise ApplicationStorageError("database_schema_missing") from exc
+            if (
+                len(rows) != 1
+                or rows[0]["deployment_id"] != self.deployment_id
+                or rows[0]["schema_version"] != self.schema_version
+                or rows[0]["migration_sha256"] != schema_digest()
+                or rows[0]["database"] != self.expected_database
+            ):
+                raise ApplicationStorageError("database_identity_mismatch")
             connection.execute("SELECT pg_advisory_xact_lock(%s)", (self._lock,))
             try:
                 yield PostgresUnitOfWork(connection)
@@ -143,10 +238,42 @@ class PostgresUnitOfWork:
             "SELECT snapshot FROM public.tasks WHERE task_id=%s", (task_id,),
         ).fetchone(), Task)
 
+    def bindings(self, channel: str, subject: str, principal_id: str) -> list[Binding]:
+        return [Binding(**row) for row in self._connection.execute(
+            "SELECT channel,subject,conversation_id,principal_id,project_id,revision,active "
+            "FROM public.channel_bindings WHERE channel=%s AND subject=%s "
+            "AND principal_id=%s AND active ORDER BY conversation_id LIMIT 100",
+            (channel, subject, principal_id),
+        ).fetchall()]
+
+    def audience(self, bot_id: str, project_id: str) -> tuple[str, ...]:
+        return tuple(row["principal_id"] for row in self._connection.execute(
+            "SELECT a.principal_id FROM public.actors a "
+            "JOIN public.bot_grants b USING(principal_id) "
+            "JOIN public.project_members p USING(principal_id) "
+            "WHERE a.active AND b.bot_id=%s AND p.project_id=%s "
+            "ORDER BY a.principal_id LIMIT 100", (bot_id, project_id),
+        ).fetchall())
+
     def tasks(self) -> list[Task]:
         return [_snapshot(row, Task) for row in self._connection.execute(
             "SELECT snapshot FROM public.tasks ORDER BY task_id"
         ).fetchall()]
+
+    def bots(self, principal_id: str) -> list[BotProfile]:
+        return [BotProfile(**row) for row in self._connection.execute(
+            "SELECT b.bot_id,b.display_name,b.role_name,b.provider_binding,b.state "
+            "FROM public.bots b JOIN public.bot_grants g ON g.bot_id=b.bot_id "
+            "WHERE g.principal_id=%s ORDER BY b.display_name,b.bot_id",
+            (principal_id,),
+        ).fetchall()]
+
+    def project(self, project_id: str) -> ProjectProfile | None:
+        row = self._connection.execute(
+            "SELECT project_id,owner_id,display_name,state FROM public.projects "
+            "WHERE project_id=%s", (project_id,),
+        ).fetchone()
+        return ProjectProfile(**row) if row else None
 
     def insert_task(self, task: Task) -> None:
         self._connection.execute(
@@ -269,6 +396,24 @@ class PostgresUnitOfWork:
         )
         if cursor.rowcount != 1:
             raise Rejected("operation_conflict")
+
+    def dispatch(self, key: str) -> AgentDispatch | None:
+        return _snapshot(self._connection.execute(
+            "SELECT snapshot FROM public.agent_dispatches WHERE dispatch_key=%s", (key,),
+        ).fetchone(), AgentDispatch)
+
+    def save_dispatch(self, dispatch: AgentDispatch) -> None:
+        cursor = self._connection.execute(
+            "INSERT INTO public.agent_dispatches(dispatch_key,task_id,attempt_id,state,run_id,snapshot) "
+            "VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT(dispatch_key) DO UPDATE SET "
+            "state=EXCLUDED.state,run_id=EXCLUDED.run_id,snapshot=EXCLUDED.snapshot "
+            "WHERE agent_dispatches.task_id=EXCLUDED.task_id "
+            "AND agent_dispatches.attempt_id=EXCLUDED.attempt_id",
+            (dispatch.key, dispatch.task_id, dispatch.attempt_id, dispatch.state,
+             dispatch.run_id, _json(dispatch)),
+        )
+        if cursor.rowcount != 1:
+            raise Rejected("dispatch_conflict")
 
     def add_event(self, event: Event) -> None:
         self._connection.execute(

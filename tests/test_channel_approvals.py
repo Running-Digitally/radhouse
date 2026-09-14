@@ -43,6 +43,11 @@ class BoundaryService:
         self.calls.append(("get", actor, task_id, envelope))
         return Task(task_id, actor.principal_id, "bot-alpha", "personal-alice", "report", "synthetic", None, 3)
 
+    def work_home(self, actor, *, envelope):
+        from radhouse.application.views import ActionView, WorkHome
+        self.calls.append(("work_home", actor, envelope))
+        return WorkHome(actor.principal_id, "operator", "personal-alice", "Alice's work", (), (), ActionView(False, "no_assigned_agents"))
+
 
 @pytest.mark.parametrize("adapter", [None, False, "fixture-auth"])
 def test_factory_requires_explicit_callable_authentication(adapter):
@@ -128,6 +133,23 @@ def test_reads_require_bound_conversation_context():
     assert service.calls == [("get", actor, "task-one", read_context)]
 
 
+def test_work_home_receives_only_authenticated_actor_and_read_context():
+    service = BoundaryService()
+    actor, envelope = _identity(), _envelope()
+    with TestClient(create_app(service, lambda request: actor)) as client:
+        response = client.get("/work-home", params={
+            "conversation_id": envelope.conversation_id,
+            "binding_revision": envelope.binding_revision,
+        })
+    assert response.status_code == 200
+    assert response.json()["principal_id"] == "alice"
+    assert response.json()["project_name"] == "Alice's work"
+    assert service.calls == [(
+        "work_home", actor,
+        Envelope(actor.channel, "read", envelope.conversation_id, 1, "read"),
+    )]
+
+
 def test_errors_expose_only_bounded_public_code():
     service = BoundaryService(Rejected("binding_denied", 403))
     with TestClient(create_app(service, lambda request: _identity())) as client:
@@ -139,7 +161,9 @@ def test_errors_expose_only_bounded_public_code():
 def test_internal_worker_controls_have_no_operator_route():
     routes = create_app(BoundaryService(), lambda request: _identity()).openapi()["paths"]
     assert set(routes) == {
-        "/tasks", "/tasks/{task_id}", "/tasks/{task_id}/cancel", "/tasks/{task_id}/pause",
+        "/tasks/{task_id}/guidance", "/tasks/{task_id}/permission",
+        "/projects", "/tasks/{task_id}/review-audience", "/tasks/{task_id}/result",
+        "/work-home", "/tasks", "/tasks/{task_id}", "/tasks/{task_id}/cancel", "/tasks/{task_id}/pause",
         "/tasks/{task_id}/resume", "/tasks/{task_id}/review", "/reviews/{review_id}/publish",
         "/tasks/{task_id}/publication", "/tasks/{task_id}/events",
     }
@@ -190,7 +214,7 @@ def _completed(service, actor, envelope, start):
 @pytest.mark.postgres
 @pytest.mark.parametrize("first,second", [("radhouse", "buzz"), ("buzz", "radhouse")])
 def test_two_channel_reverse_review_and_duplicate_publication(
-    service, alice, envelope, start, fake_operations, first, second,
+    service, alice, envelope, start, fake_work, first, second,
 ):
     source, destination = envelope(first), envelope(second)
     with _driver(service, alice, first) as originating, _driver(service, alice, second) as reviewing:
@@ -225,8 +249,7 @@ def test_two_channel_reverse_review_and_duplicate_publication(
         assert events.status_code == 200
         assert events.json()["task"]["task_id"] == task_id
         assert sum(event["kind"] == "published" for event in events.json()["events"]) == 1
-    assert fake_operations.effect_count == 1
-    assert fake_operations.execute_count == 1
+    assert fake_work.start_count == 1
 
 
 @pytest.mark.postgres
@@ -266,7 +289,7 @@ def test_publication_command_key_cannot_authorize_another_task(
     ("missing_grant", "access_denied"),
 ])
 def test_denied_channel_admission_has_no_task_or_dispatch(
-    service, store, alice, viewer, envelope, start, fake_runtime, fake_operations, case, code,
+    service, store, alice, viewer, envelope, start, fake_work, case, code,
 ):
     actor = viewer if case == "viewer" else alice
     source = envelope(principal=actor.principal_id, project_id="project-shared")
@@ -288,7 +311,7 @@ def test_denied_channel_admission_has_no_task_or_dispatch(
     with store.transaction() as tx:
         assert tx.tasks() == []
         assert tx.delivery(source.channel, source.event_id) is None
-    assert fake_runtime.start_count == fake_operations.effect_count == 0
+    assert fake_work.start_count == 0
 
 
 @pytest.mark.postgres

@@ -1119,7 +1119,7 @@ on a feature branch for review.
 | `src/radhouse/storage/postgres.py` | Transactional persistence, request/operation uniqueness, optimistic revisions, scoped reads and resource claims |
 | `src/radhouse/api/{schemas,app}.py` | Strict command/response schemas and an app factory requiring an authentication adapter; no default or environment-switchable synthetic sign-in |
 | `src/radhouse/channels/{commands,mapping}.py` | Shared normalized channel envelope, configured actor/conversation mapping, duplicate/echo rejection and delivery state; no live Buzz transport |
-| `tests/{fakes,conftest}.py`, `tests/fixtures/vs0.json`, `tests/fixtures/vs0-schema.sql` | Synthetic clients/runtime/provider, independently retained fake-effect evidence, fixture-owned identities and disposable database bootstrap |
+| `tests/{fakes,conftest}.py`, `tests/fixtures/vs0.json`, `tests/fixtures/vs0-schema.sql` | Synthetic clients/runtime/provider, independently retained fake-effect evidence, fixture-owned identities and disposable database guard; the fixture then runs the packaged initial migration |
 | `tests/{test_task_flow,test_recovery,test_channel_approvals,test_concurrency}.py` | The end-to-end and denial/race evidence listed below |
 | `scripts/vs0.py`, `deploy/dev/compose.vs0.yaml` | One bounded verification/demo entrypoint and an explicitly local disposable PostgreSQL service |
 | `docs/vs0-demo.md`, this packet and `README.md` | Exact reproduction steps, resulting evidence, implemented file map and remaining qualification; clearly label simulated surfaces |

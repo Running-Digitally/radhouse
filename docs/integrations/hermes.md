@@ -1,7 +1,7 @@
 # Hermes runtime profile
 
 Hermes is Radhouse's first agent runtime. Radhouse owns the authorized task,
-current grants, budgets, operation identities, and released outcome. Hermes owns
+current grants, budgets, dispatch and operation identities, and released outcome. Hermes owns
 agent execution inside one persistent bot VM. The adapter between them must not
 turn runtime messages into authoritative permission or publication decisions.
 
@@ -13,6 +13,17 @@ license and release notes when the pin changes.
 The first transport candidate is Hermes's HTTP Runs API. One gateway owns one
 Hermes home. Separate sessions may overlap when their resource claims do not
 conflict; Radhouse does not impose a blanket one-task-per-bot rule.
+
+The controller's implemented runtime router selects that gateway from the
+task's durable bot ID for capability discovery, start/attach, result polling,
+and exact-run stop. A missing bot route becomes a bounded unavailable-runtime
+state. Provider names, model names, session text, or a returned run ID cannot
+select another bot's gateway.
+
+Task admission also compares the requested binding with the selected bot's
+durable provider assignment. An operator cannot move a task to another provider
+by changing an API request; changing that assignment remains an administrator
+configuration operation.
 
 ## Bot guest boundary
 
@@ -50,8 +61,8 @@ installation-specific endpoints stay outside the public configuration.
 
 ## Recovery and maintenance
 
-Persist Radhouse task, attempt, and operation identities independently of Hermes
-session retention. Reattach with the original attempt key after reconnect. A
+Persist Radhouse task, attempt, dispatch, and operation identities independently
+of Hermes session retention. Reattach with the original attempt key after reconnect. A
 missing runtime event or expired runtime deduplication record does not authorize
 another external effect; reconcile the target's durable receipt first.
 
