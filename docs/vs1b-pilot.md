@@ -149,35 +149,24 @@ explanations for unavailable actions, reconnect without duplicate submission,
 and protected review failure when assurance, revision, content, or audience has
 changed.
 
-## Increment C: real Buzz parity
+## Increment C: official Buzz conversations and web review
 
-The owner-approved minimal desktop profile is implemented as a
-[patch against the pinned Buzz source](../integrations/buzz-desktop/README.md).
-Its channel panel bundles the same work-home code and calls the same application
-commands through `/buzz`. Fresh signed HTTP requests prove the native key and
-exact configured channel; a separately signed fixed query checks current relay
-membership. Ordinary Radhouse cookies, Origin, CSRF and MFA still apply.
+Researcher uses a standard signed relay identity and an owner-only private
+conversation in unmodified official Buzz clients. The Radhouse server adapter
+consumes signed events, checks the current binding and relay membership, and
+preserves one durable task/attempt/run across duplicates and recovery.
 
-Transport signatures are single-use. Durable application command/delivery
-identities survive a lost response and may be retried with fresh signatures.
-The private panel resynchronizes authorized task/events/publication snapshots;
-it does not post private results into the room or consume chat reactions as
-commands. Room-message delivery receipts and mobile clients belong to a later
-profile. The panel never calls Hermes directly. See the
-[accepted implementation contract](operator-buzz-completion.md) for this
-deliberate desktop scope and its remaining live acceptance gates.
+Messages during genuine multi-step work become correlated guidance; messages
+after completed short work become contextual follow-ups. No extra model turn
+exists solely for steering. Researcher posts progress, a concise result and an
+expiring audience-bound task locator. The locator opens exact Radhouse web
+review after normal authentication/MFA; it neither grants access nor approves
+publication. Web publication returns one durable status message to Buzz.
 
-Native protected review in Buzz displays the exact task, artifact digest,
-audience, and expiry. The signed Buzz key must already be bound to the currently
-authenticated Radhouse person, and the commit still requires fresh human
-assurance and all ordinary Radhouse authorization checks. A reaction or ordinary
-chat reply is not an approval.
-
-Acceptance for increment C runs the same task in both directions: start in
-Radhouse and review in Buzz, then start in Buzz and review in Radhouse. Duplicate,
-late, mirrored, restored, and revoked events create no second task, model call,
-publication, or permission. A Buzz outage delays delivery but does not cancel or
-repeat admitted agent work.
+The former embedded desktop panel and `/buzz` HTTP bridge are superseded.
+Preserve the historical patch and rollback evidence until the
+[official-client acceptance](operator-buzz-completion.md) passes. No maintained
+client fork is required by this architecture.
 
 ## Affected code and verification order
 
@@ -185,11 +174,11 @@ repeat admitted agent work.
 | --- | --- | --- |
 | A | `domain/tasks.py`, `application/ports.py`, `application/service.py`, PostgreSQL migration/store, `integrations/hermes.py` | fake Runs API, PostgreSQL restart/recovery, adapter timeouts, stop isolation, provider-switch continuity |
 | B | work-home/query API, OIDC authentication adapter, `web/` TypeScript client | API authorization, checked response contract, browser-level operator/viewer journeys, reconnect and stale-review cases |
-| C | `channels/buzz.py`, binding and delivery storage, native Buzz review component | signed-event fixtures followed by the pinned real relay/client, cross-surface recovery and revocation |
+| C | `channels/buzz_conversations.py`, `application/review_links.py`, binding/delivery storage, web review navigation | signed-event fixtures followed by the pinned real relay/client, cross-surface recovery and revocation |
 
 Implement and review in that order. Increment A fixes the task/runtime ownership
 contract before a UI or relay depends on it. Increment B proves the core remains
-usable without Buzz. Increment C adds the accepted interchangeable operator
+usable without Buzz. Increment C adds the accepted conversational operator
 surface without creating another execution or policy owner.
 
 ## Deployment boundary

@@ -94,7 +94,7 @@ class Conversations:
         if target is None and not message.reply_to:
             if len(active) > 1 and not _NEW.match(message.content):
                 return MessageRoute("clarify")
-            target = active[0] if active else None
+            target = active[0] if active else tx.task(tx.conversation_focus(link))
         if _STATUS.fullmatch(message.content.strip()):
             return MessageRoute("status", target.task_id if target else None)
         if _NEW.match(message.content):
@@ -107,10 +107,6 @@ class Conversations:
                     "start", follows_task_id=target.task_id if target.result else None
                 )
             return MessageRoute("guide", target.task_id, target.state_revision)
-        # An unthreaded continuation after one completed result keeps that
-        # selected context. Multiple completed tasks require an explicit reply.
-        if len(tasks) == 1 and tasks[0].phase == "closed" and tasks[0].result:
-            return MessageRoute("start", follows_task_id=tasks[0].task_id)
         if len(tasks) > 1:
             return MessageRoute("clarify")
         return MessageRoute("start")
@@ -236,6 +232,9 @@ class Conversations:
                 if task
                 else "There is no active task in this conversation. Reply to a task message to ask about that work."
             )
+            if task and task.result and self.service.review_links is not None:
+                with self.store.transaction() as tx:
+                    reply += "\n\nReview in Radhouse (sign-in required):\n" + self.service.review_links.issue(tx, link, task)
         else:
             reply = "Which task do you mean? Reply to its message so I can keep your instruction with the right work."
         completed = replace(

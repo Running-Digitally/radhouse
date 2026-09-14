@@ -46,6 +46,12 @@ class BuzzRelay:
     def close(self):
         self.client.close()
 
+    def sign_review_locator(self, locator):
+        from radhouse.application.review_links import ReviewLocator
+        if not isinstance(locator, ReviewLocator) or locator.agent_pubkey != self.pubkey:
+            raise Rejected("review_link_denied", 403)
+        return self._key.sign_schnorr(locator.signing_digest()).hex()
+
     def event(self, kind, content, tags=(), *, created_at=None):
         """Return one signed event; retries must reuse these exact bytes."""
         if kind not in {0, 9, 10100, 20001, 24242, 27235, 41010}:

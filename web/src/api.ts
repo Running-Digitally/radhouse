@@ -13,20 +13,11 @@ export interface AuthSession {
   csrf_token: string;
 }
 
-export interface AgentEnrollment {
-  link_id: string;
-  agent_pubkey: string;
-  owner_pubkey: string;
-  display_name: string;
-  channel_id: string | null;
-  ready: boolean;
-}
-
 export type Transport = (path: string, init: RequestInit) => Promise<Response>;
 const browserTransport: Transport = (path, init) => fetch(path, { ...init,
   credentials: "same-origin", redirect: "error", signal: AbortSignal.timeout(20_000) });
 
-export function operatorClient(transport: Transport = browserTransport, channel: "radhouse" | "buzz" = "radhouse") {
+export function operatorClient(transport: Transport = browserTransport) {
   return {
     currentSession: () => authRequest<AuthSession>("/auth/session", {}, transport),
     login: (username: string, password: string, totpCode: string) => authRequest<AuthSession>("/auth/login", {
@@ -34,7 +25,7 @@ export function operatorClient(transport: Transport = browserTransport, channel:
       headers: { "Content-Type": "application/json" },
     }, transport),
     fromSession: (session: AuthSession) => new RadhouseApi(session.conversation_id, session.binding_revision,
-      session.csrf_token, undefined, transport, channel),
+      session.csrf_token, undefined, transport),
   };
 }
 
@@ -52,7 +43,6 @@ export class RadhouseApi {
     private readonly csrfToken: string,
     commands?: CommandLedger,
     private readonly transport: Transport = browserTransport,
-    private readonly channel: "radhouse" | "buzz" = "radhouse",
   ) {
     let storage: Storage | null = null;
     try { storage = globalThis.sessionStorage ?? null; } catch { /* Browser policy. */ }
@@ -60,7 +50,7 @@ export class RadhouseApi {
   }
 
   forProject(project: Project): RadhouseApi {
-    return new RadhouseApi(project.conversation_id, project.binding_revision, this.csrfToken, this.commands, this.transport, this.channel);
+    return new RadhouseApi(project.conversation_id, project.binding_revision, this.csrfToken, this.commands, this.transport);
   }
 
   async projects(): Promise<Project[]> {
@@ -108,7 +98,7 @@ export class RadhouseApi {
     const prepared = await this.commands.prepare(this.conversationId, path, body,
       this.conversationId, this.bindingRevision);
     const response = await this.request<T>(path, { method: "POST",
-      body: JSON.stringify({ ...body, envelope: { ...prepared.envelope, channel: this.channel } }) });
+      body: JSON.stringify({ ...body, envelope: { ...prepared.envelope, channel: "radhouse" } }) });
     this.commands.complete(prepared.key);
     return response;
   }
@@ -130,8 +120,16 @@ export class RadhouseApi {
     return this.request(`/conversations?${this.query()}`);
   }
 
-  async enrollmentCandidates(): Promise<AgentEnrollment[]> {
-    return this.request(`/agent-enrollment?${this.query()}`);
+  async resolveReview(locator: string): Promise<{ task_id: string; project_id: string; conversation_id: string; binding_revision: number }> {
+    const value = await this.request<{ task_id: string; project_id: string; conversation_id: string; binding_revision: number }>("/reviews/resolve", {
+      method: "POST", body: JSON.stringify({ locator }),
+    });
+    if (!value || !/^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value.task_id)
+        || typeof value.project_id !== "string" || typeof value.conversation_id !== "string"
+        || !Number.isSafeInteger(value.binding_revision) || value.binding_revision < 1) {
+      throw new ApiError("invalid_server_response", 502);
+    }
+    return value;
   }
 
   async conversationHistory(linkId: string, before?: number): Promise<ConversationHistory> {
