@@ -25,6 +25,7 @@ def review_link(enrollment, service, store, bridge):
     service.review_links = ReviewLinks(service, "https://radhouse.test", (configured,))
     app = Conversations(service)
     event = incoming(bridge[0], bridge[2], "Use no tools. Give a short synthetic summary.")
+    state["messages"].append(event)
     message = ConversationMessage(event["id"], link.link_id, link.principal_id,
                                   event["content"], "buzz", link.activated_at)
     app.receive(link, message, event=event)
