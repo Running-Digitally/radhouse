@@ -177,6 +177,7 @@ class Conversations:
             "buzz", message_id, link.conversation_id, link.binding_revision, message_id
         )
         task = None
+        response_id = "reply:" + message_id
         if route.action == "start":
             task = self.service.admit(
                 actor,
@@ -208,11 +209,10 @@ class Conversations:
                 receipt = next(
                     (g for g in task.guidance if g.get("id") == control_id), None
                 )
-                reply = (
-                    "Your update was received by the runtime; it has not confirmed applying it."
-                    if receipt and receipt["state"] == "accepted"
-                    else "Your update is recorded, but runtime delivery is unconfirmed. I have not restarted the task."
-                )
+                from radhouse.application.guidance import TERMINAL, outcome_message_id, outcome_text
+                reply = outcome_text(receipt or {})
+                if receipt and receipt.get("application_state") in TERMINAL:
+                    response_id = outcome_message_id(task.task_id, receipt)
             except Rejected as error:
                 if error.code not in {
                     "stale_state",
@@ -220,6 +220,7 @@ class Conversations:
                     "control_outcome_unknown",
                     "permission_response_required",
                     "task_control_limit",
+                    "runtime_guidance_receipts_unavailable",
                 }:
                     raise
                 task = self.service.get(actor, route.task_id, envelope=envelope)
@@ -241,7 +242,7 @@ class Conversations:
             message, task_id=task.task_id if task else None, state=route.action
         )
         response = ConversationMessage(
-            "reply:" + message_id,
+            response_id,
             link.link_id,
             link.bot_id,
             reply,

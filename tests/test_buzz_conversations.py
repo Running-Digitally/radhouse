@@ -11,6 +11,8 @@ from radhouse.channels.buzz_relay import BuzzRelay
 from radhouse.channels.nostr import nip98, sha256, verify_event
 from radhouse.domain.conversations import ConversationLink
 from tests.test_buzz_relay import signed
+from tests.test_runtime_controls import receipt
+from radhouse.domain.tasks import RuntimeResult
 
 pytestmark = pytest.mark.postgres
 
@@ -137,6 +139,41 @@ def incoming(cycle, owner, text="Summarize the reference.", tags=(), offset=0):
         text,
         cycle.link.activated_at + offset,
     )
+
+
+@pytest.mark.parametrize("initial", ["accepted", "too_late"])
+def test_guidance_outcome_is_one_native_message_across_poll_and_reconnect(
+    bridge, service, store, fake_work, initial,
+):
+    cycle, state, owner = bridge
+    state["messages"] = [incoming(cycle, owner)]
+    cycle.ingress()
+    with store.transaction() as tx:
+        task_id = tx.tasks()[0].task_id
+    fake_work.result = lambda *_: RuntimeResult("running", guidance_receipts=())
+    service.run(task_id)
+    cycle.egress()
+    values = []
+    fake_work.steer = lambda task, run, text, control_id: values.append(receipt(run, control_id, text, initial)) or values[-1]
+    state["messages"].append(incoming(cycle, owner, "Focus on costs.", offset=1))
+    cycle.ingress()
+    assert len(values) == 1
+    value = (replace(values[0], state="applied", revision=2, checkpoint_id="checkpoint-1", api_request_id="request-2")
+             if initial == "accepted" else values[0])
+    fake_work.result = lambda *_: RuntimeResult("completed", "Synthetic final result", guidance_receipts=(value,))
+    done = service.recover(task_id)
+    for _ in range(3):
+        cycle = BuzzConversationCycle(service, cycle.relay, cycle.link)
+        assert cycle.run("egress")["error_code"] is None
+    with store.transaction() as tx:
+        history = [row["message"] for row in tx.conversation_history(cycle.link.link_id)]
+        outcomes = [m for m in history if m.message_id.startswith("guidance:")]
+        assert len(outcomes) == 1
+        assert outcomes[0].task_id == task_id
+        assert ("completed model response" if initial == "accepted" else "no longer accepting guidance") in outcomes[0].content
+        assert len([m for m in history if m.state == "result"]) == 1
+        assert tx.task(task_id).result_digest == done.result_digest
+    assert len(values) == 1 and fake_work.start_count == 1
 
 
 def test_transport_lost_ack_and_restart_reuse_task_and_signed_reply(

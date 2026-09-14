@@ -37,7 +37,8 @@ export interface TaskSummary {
     observation_sequence: number;
     files: { name: string; content: string }[];
     follows_task_id: string | null;
-    guidance: { id: string; kind: string; text: string | null; choice: string | null; state: string }[];
+    guidance: { id: string; kind: string; text: string | null; choice: string | null; state: string;
+      application_state: "accepted" | "applied" | "too_late" | "not_applied" | "unknown" | null }[];
     permission_request: { request_id: string; command: string; digest: string; allow_once: boolean } | null;
 }
 

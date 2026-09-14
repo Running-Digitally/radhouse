@@ -1668,13 +1668,18 @@ index 0000000..f57f42d
 +}
 diff --git a/desktop/src/shared/radhouse/app.ts b/desktop/src/shared/radhouse/app.ts
 new file mode 100644
-index 0000000..c21878b
+index 0000000..c15b824
 --- /dev/null
 +++ b/desktop/src/shared/radhouse/app.ts
-@@ -0,0 +1,1108 @@
+@@ -0,0 +1,1127 @@
 +import { ApiError, type RadhouseApi, operatorClient } from "./api.js";
 +import type { AuthSession, AgentEnrollment } from "./api.js";
-+import { actionReason, blockerMessages, phaseLabel } from "./view-model.js";
++import {
++  actionReason,
++  blockerMessages,
++  guidanceStatus,
++  phaseLabel,
++} from "./view-model.js";
 +import type {
 +  Project,
 +  Review,
@@ -1723,6 +1728,7 @@ index 0000000..c21878b
 +  const expanded = new Set<string>();
 +  const timelines = new Map<string, TaskEvents>();
 +  const conversationDrafts = new Map<string, ConversationDraft>();
++  const guidanceDrafts = new Map<string, string>();
 +  let conversationLinks: ConversationLink[] = [];
 +  let conversationHistory: ConversationHistory | null = null;
 +  let selectedConversation = "";
@@ -1773,6 +1779,12 @@ index 0000000..c21878b
 +          "This agent is unavailable. Your assignment draft is retained.",
 +        invalid_input_files:
 +          "Choose up to four UTF-8 text files, no more than 64 KB in total.",
++        runtime_guidance_receipts_unavailable:
++          "This runtime cannot confirm live guidance yet. Include the update in a follow-up.",
++        task_not_accepting_control:
++          "This task cannot accept guidance now. Include the update in a follow-up.",
++        control_outcome_unknown:
++          "An earlier instruction is still unconfirmed. Check its outcome before sending another.",
 +      };
 +      return (
 +        labels[error.code] ??
@@ -1873,6 +1885,7 @@ index 0000000..c21878b
 +    expanded.clear();
 +    timelines.clear();
 +    conversationDrafts.clear();
++    guidanceDrafts.clear();
 +    conversationLinks = [];
 +    conversationHistory = null;
 +    selectedConversation = "";
@@ -2184,12 +2197,7 @@ index 0000000..c21878b
 +        ),
 +      );
 +    for (const receipt of task.guidance) {
-+      const status =
-+        receipt.state === "accepted"
-+          ? "Received by the agent; application is not yet confirmed."
-+          : ["submitted", "unknown"].includes(receipt.state)
-+            ? "Delivery outcome unknown. This instruction will not be sent again automatically."
-+            : "The agent did not accept this instruction.";
++      const status = guidanceStatus(receipt);
 +      article.append(
 +        notice(
 +          `${receipt.text ?? `Permission response: ${receipt.choice}`} — ${status}`,
@@ -2249,6 +2257,10 @@ index 0000000..c21878b
 +        input.name = `guide-${task.task_id}`;
 +        input.maxLength = 4096;
 +        input.required = true;
++        input.value = guidanceDrafts.get(task.task_id) ?? "";
++        input.addEventListener("input", () =>
++          guidanceDrafts.set(task.task_id, input.value),
++        );
 +        label.append(
 +          element("span", "field__label", "Guide the current assignment"),
 +          input,
@@ -2266,6 +2278,7 @@ index 0000000..c21878b
 +          if (!current) return;
 +          void action(send, async () => {
 +            await current.guide(task, input.value);
++            guidanceDrafts.delete(task.task_id);
 +            await load();
 +          });
 +        });
@@ -2681,7 +2694,8 @@ index 0000000..c21878b
 +      focusName === "brief" ||
 +      focusName === "agent" ||
 +      focusName === "project" ||
-+      focusName.startsWith("conversation-")
++      focusName.startsWith("conversation-") ||
++      focusName.startsWith("guide-")
 +    ) {
 +      const next = Array.from(
 +        page.querySelectorAll<
@@ -2763,7 +2777,11 @@ index 0000000..c21878b
 +      page.querySelector(".review-panel form, .audience-choice") === null &&
 +      !Array.from(
 +        page.querySelectorAll<HTMLTextAreaElement>(".guidance-form textarea"),
-+      ).some((input) => input.value)
++      ).some(
++        (input) =>
++          input.value ||
++          input === (page.getRootNode() as Document | ShadowRoot).activeElement,
++      )
 +    )
 +      void load();
 +  }, 10_000);
@@ -2777,6 +2795,7 @@ index 0000000..c21878b
 +    reviews.clear();
 +    timelines.clear();
 +    conversationDrafts.clear();
++    guidanceDrafts.clear();
 +    page.replaceChildren();
 +  };
 +}
@@ -2878,10 +2897,10 @@ index 0000000..1885ffe
 +}
 diff --git a/desktop/src/shared/radhouse/contract.ts b/desktop/src/shared/radhouse/contract.ts
 new file mode 100644
-index 0000000..eedc03b
+index 0000000..f88c4ff
 --- /dev/null
 +++ b/desktop/src/shared/radhouse/contract.ts
-@@ -0,0 +1,168 @@
+@@ -0,0 +1,178 @@
 +import type {
 +  ActionState,
 +  AgentSummary,
@@ -2993,6 +3012,16 @@ index 0000000..eedc03b
 +          text: nullableString(receipt.text),
 +          choice: nullableString(receipt.choice),
 +          state: string(receipt.state),
++          application_state:
++            receipt.application_state == null
++              ? null
++              : oneOf(receipt.application_state, [
++                  "accepted",
++                  "applied",
++                  "too_late",
++                  "not_applied",
++                  "unknown",
++                ] as const),
 +        };
 +      },
 +    ),
@@ -3779,10 +3808,10 @@ index 0000000..9baa879
 +}
 diff --git a/desktop/src/shared/radhouse/types.ts b/desktop/src/shared/radhouse/types.ts
 new file mode 100644
-index 0000000..26c5381
+index 0000000..bfa7327
 --- /dev/null
 +++ b/desktop/src/shared/radhouse/types.ts
-@@ -0,0 +1,118 @@
+@@ -0,0 +1,125 @@
 +export type Role = "admin" | "operator" | "viewer";
 +export type Phase = "queued" | "active" | "recovering" | "stopping" | "closed";
 +
@@ -3828,6 +3857,13 @@ index 0000000..26c5381
 +    text: string | null;
 +    choice: string | null;
 +    state: string;
++    application_state:
++      | "accepted"
++      | "applied"
++      | "too_late"
++      | "not_applied"
++      | "unknown"
++      | null;
 +  }[];
 +  permission_request: {
 +    request_id: string;
@@ -3903,11 +3939,33 @@ index 0000000..26c5381
 +}
 diff --git a/desktop/src/shared/radhouse/view-model.ts b/desktop/src/shared/radhouse/view-model.ts
 new file mode 100644
-index 0000000..e2dacc2
+index 0000000..390ec77
 --- /dev/null
 +++ b/desktop/src/shared/radhouse/view-model.ts
-@@ -0,0 +1,56 @@
-+import type { ActionState, Phase, TaskCard } from "./types.js";
+@@ -0,0 +1,78 @@
++import type { ActionState, Phase, TaskCard, TaskSummary } from "./types.js";
++
++export function guidanceStatus(
++  receipt: TaskSummary["guidance"][number],
++): string {
++  const labels = {
++    accepted: "Queued for this run’s next tool checkpoint.",
++    applied:
++      "Used in a completed model response. Review the result to check how it was followed.",
++    too_late:
++      "The run is no longer accepting guidance. This update was not used; include it in a follow-up.",
++    not_applied:
++      "The run ended without using this update at a later checkpoint. It was not resent; include it in a follow-up.",
++    unknown:
++      "The runtime could not confirm whether this update was used. It will not be resent automatically.",
++  };
++  if (receipt.application_state) return labels[receipt.application_state];
++  return receipt.state === "accepted"
++    ? "Received by the agent; application is not yet confirmed."
++    : ["submitted", "unknown"].includes(receipt.state)
++      ? "Delivery outcome unknown. This instruction will not be sent again automatically."
++      : "The agent did not accept this instruction.";
++}
 +
 +const phaseLabels: Record<Phase, string> = {
 +  queued: "Ready to begin",
