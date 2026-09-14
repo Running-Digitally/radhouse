@@ -237,10 +237,11 @@ class BuzzConfig(StrictModel):
     relay_origin: str
     relay_pubkey: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
     conversations: tuple[BuzzConversationConfig, ...] = Field(min_length=1, max_length=20)
+    agents: tuple["BuzzAgentConfig", ...] = Field(default=(), max_length=20)
 
     _origin = field_validator("relay_origin")(LocalAuthConfig.origin.__func__)
 
-    @field_validator("conversations", mode="before")
+    @field_validator("conversations", "agents", mode="before")
     @classmethod
     def sequences(cls, value):
         return tuple(value) if isinstance(value, list) else value
@@ -249,7 +250,48 @@ class BuzzConfig(StrictModel):
     def unique(self):
         if len({item.channel_id for item in self.conversations}) != len(self.conversations):
             raise ValueError("duplicate Buzz channel")
+        if len({item.link_id for item in self.agents}) != len(self.agents):
+            raise ValueError("duplicate Buzz agent link")
+        if len({item.agent_pubkey for item in self.agents}) != len(self.agents):
+            raise ValueError("duplicate Buzz agent identity")
+        for agent in self.agents:
+            if agent.owner_pubkey == agent.agent_pubkey:
+                raise ValueError("Buzz agent cannot use its owner's identity")
+            if not any((agent.channel_id is None or c.channel_id==agent.channel_id)
+                       and c.conversation_id==agent.conversation_id for c in self.conversations):
+                raise ValueError("Buzz agent needs its exact admitted conversation")
         return self
+
+
+class BuzzAgentConfig(StrictModel):
+    link_id: str
+    channel_id: str | None = None
+    conversation_id: str
+    principal_id: str
+    owner_pubkey: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    agent_pubkey: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    bot_id: str
+    project_id: str
+    activated_at: int | None = Field(default=None,ge=1)
+    binding_revision: int = Field(default=1,ge=1)
+    active: bool = True
+    signing_key: SecretFile
+
+    _ids=field_validator("link_id","conversation_id","principal_id","bot_id","project_id")(_identifier)
+
+    @field_validator("channel_id")
+    @classmethod
+    def optional_channel(cls, value):
+        return _identifier(value) if value is not None else None
+
+    def link(self):
+        from radhouse.domain.conversations import ConversationLink
+        if self.channel_id is None or self.activated_at is None:
+            raise ValueError("Buzz agent has not been enrolled")
+        return ConversationLink(**self.model_dump(exclude={"signing_key"}))
+
+
+BuzzConfig.model_rebuild()
 
 
 class RadhouseConfig(StrictModel):
@@ -286,6 +328,8 @@ class RadhouseConfig(StrictModel):
             raise ValueError("provider bindings must be unique")
         if any(bot.provider_binding not in set(provider_bindings) for bot in self.bots):
             raise ValueError("every bot provider binding must be configured")
+        if self.buzz and any(agent.bot_id not in bot_ids for agent in self.buzz.agents):
+            raise ValueError("Buzz agent requires its configured bot runtime")
         return self
 
 

@@ -20,10 +20,10 @@ index c8184a0..a0f85f1 100644
  pub use social::*;
 diff --git a/desktop/src-tauri/src/commands/radhouse.rs b/desktop/src-tauri/src/commands/radhouse.rs
 new file mode 100644
-index 0000000..82d2f6f
+index 0000000..1132984
 --- /dev/null
 +++ b/desktop/src-tauri/src/commands/radhouse.rs
-@@ -0,0 +1,357 @@
+@@ -0,0 +1,363 @@
 +//! Bounded native transport for one explicitly configured Radhouse controller.
 +//! The existing Radhouse cookie, Origin and CSRF checks remain in force.
 +
@@ -39,6 +39,9 @@ index 0000000..82d2f6f
 +
 +use crate::app_state::AppState;
 +use crate::relay::relay_api_base_url_with_override;
++
++mod enrollment;
++pub use enrollment::radhouse_enroll_agent;
 +
 +struct Session {
 +    scope: String,
@@ -107,6 +110,9 @@ index 0000000..82d2f6f
 +    let parts: Vec<_> = route.split('/').collect();
 +    match (method, parts.as_slice()) {
 +        ("GET", ["", "projects" | "work-home"]) => true,
++        ("GET" | "POST", ["", "agent-enrollment"]) => true,
++        ("GET", ["", "conversations"]) => true,
++        ("GET" | "POST", ["", "conversations", id, "messages"]) => identifier(id),
 +        ("GET", ["", "auth", "session"]) => true,
 +        ("POST", ["", "auth", "login" | "logout" | "reauthenticate"]) => true,
 +        ("POST", ["", "tasks"]) => true,
@@ -381,6 +387,186 @@ index 0000000..82d2f6f
 +        assert!(tags.contains(&vec!["u".into(), "https://radhouse.test/buzz/tasks".into()]));
 +    }
 +}
+diff --git a/desktop/src-tauri/src/commands/radhouse/enrollment.rs b/desktop/src-tauri/src/commands/radhouse/enrollment.rs
+new file mode 100644
+index 0000000..eed5de6
+--- /dev/null
++++ b/desktop/src-tauri/src/commands/radhouse/enrollment.rs
+@@ -0,0 +1,174 @@
++//! Owner-side enrollment of an exact controller-configured external agent.
++//! Only public signatures leave the signer; no agent runtime is launched here.
++
++use nostr::{EventBuilder, Keys, Kind, PublicKey, Tag};
++use serde::{Deserialize, Serialize};
++use tauri::State;
++
++use crate::app_state::AppState;
++use crate::relay::{
++    assert_expected_relay_scope, assert_expected_signer, submit_signed_event_at_with_keys,
++};
++
++#[derive(Deserialize)]
++struct Candidate {
++    link_id: String,
++    agent_pubkey: String,
++    owner_pubkey: String,
++    display_name: String,
++}
++
++#[derive(Deserialize, Serialize)]
++/// Public receipt used to open the enrolled agent's ordinary Buzz DM.
++pub struct EnrollmentReceipt {
++    link_id: String,
++    channel_id: String,
++    agent_pubkey: String,
++    ready: bool,
++}
++
++fn owner_signatures(
++    keys: &Keys,
++    candidate: &Candidate,
++) -> Result<(nostr::Event, Vec<String>), String> {
++    if candidate.owner_pubkey != keys.public_key().to_hex()
++        || candidate.agent_pubkey == candidate.owner_pubkey
++        || candidate.display_name.is_empty()
++        || candidate.display_name.len() > 200
++    {
++        return Err("The configured Researcher identity does not match this owner".into());
++    }
++    let agent =
++        PublicKey::from_hex(&candidate.agent_pubkey).map_err(|_| "Invalid Researcher key")?;
++    let auth = buzz_sdk_pkg::nip_oa::compute_auth_tag(keys, &agent, "")
++        .map_err(|_| "Could not attest Researcher ownership")?;
++    let attestation = serde_json::from_str(&auth).map_err(|_| "Invalid ownership attestation")?;
++    let content = serde_json::json!({"name": candidate.display_name, "parallelism": 1, "respond_to": "owner-only"});
++    let tag =
++        Tag::parse(["d", candidate.agent_pubkey.as_str()]).map_err(|_| "Invalid Researcher tag")?;
++    let event = EventBuilder::new(Kind::Custom(30177), content.to_string())
++        .tags([tag])
++        .sign_with_keys(keys)
++        .map_err(|_| "Could not sign Researcher discovery")?;
++    Ok((event, attestation))
++}
++
++/// Enroll one preconfigured external agent using the current owner's native key.
++#[tauri::command]
++pub async fn radhouse_enroll_agent(
++    link_id: String,
++    channel_id: String,
++    conversation_id: String,
++    binding_revision: u64,
++    csrf: String,
++    state: State<'_, AppState>,
++) -> Result<EnrollmentReceipt, String> {
++    if !super::identifier(&link_id) || !super::identifier(&conversation_id) || binding_revision == 0
++    {
++        return Err("Invalid Researcher enrollment".into());
++    }
++    let (_, relay, _) = super::config()?;
++    let keys = state.signing_keys()?;
++    let owner = keys.public_key().to_hex();
++    let path = format!(
++        "/agent-enrollment?conversation_id={conversation_id}&binding_revision={binding_revision}"
++    );
++    let response = super::operator_request(
++        path,
++        "GET".into(),
++        String::new(),
++        channel_id.clone(),
++        csrf.clone(),
++        &state,
++    )
++    .await?;
++    if response.status != 200 {
++        return Err("Sign in to Radhouse before connecting Researcher".into());
++    }
++    let candidates: Vec<Candidate> =
++        serde_json::from_str(&response.body).map_err(|_| "Invalid enrollment candidates")?;
++    if candidates.len() > 20 {
++        return Err("Too many enrollment candidates".into());
++    }
++    let candidate = candidates
++        .iter()
++        .find(|item| item.link_id == link_id)
++        .ok_or("Researcher is not configured for this owner")?;
++    let (directory, attestation) = owner_signatures(&keys, candidate)?;
++    assert_expected_relay_scope(
++        Some(&relay),
++        &crate::relay::relay_api_base_url_with_override(&state),
++    )?;
++    assert_expected_signer(Some(&owner), &state.signing_keys()?.public_key().to_hex())?;
++    let dm = super::super::dms::open_dm_with_scope(
++        vec![candidate.agent_pubkey.clone()],
++        Some(&relay),
++        Some(&owner),
++        &state,
++    )
++    .await?;
++    let published = submit_signed_event_at_with_keys(&directory, &state, &relay, &keys).await?;
++    if !published.accepted || published.event_id != directory.id.to_hex() {
++        return Err("Researcher discovery was not confirmed; retry to finish connecting".into());
++    }
++    assert_expected_relay_scope(
++        Some(&relay),
++        &crate::relay::relay_api_base_url_with_override(&state),
++    )?;
++    assert_expected_signer(Some(&owner), &state.signing_keys()?.public_key().to_hex())?;
++    let command = uuid::Uuid::new_v4().to_string();
++    let body = serde_json::json!({"link_id": link_id, "channel_id": dm.id, "attestation": attestation,
++        "envelope": {"channel": "buzz", "event_id": command, "command_key": command,
++            "conversation_id": conversation_id, "binding_revision": binding_revision, "mirrored": false}});
++    let response = super::operator_request(
++        "/agent-enrollment".into(),
++        "POST".into(),
++        body.to_string(),
++        channel_id,
++        csrf,
++        &state,
++    )
++    .await?;
++    if response.status != 200 {
++        return Err("Researcher connection is incomplete. Confirm your Radhouse sign-in and retry; the same private DM will be reused.".into());
++    }
++    let receipt: EnrollmentReceipt =
++        serde_json::from_str(&response.body).map_err(|_| "Invalid Researcher receipt")?;
++    if receipt.link_id != link_id
++        || receipt.channel_id != dm.id
++        || receipt.agent_pubkey != candidate.agent_pubkey
++        || !receipt.ready
++    {
++        return Err("Researcher connection could not be verified".into());
++    }
++    Ok(receipt)
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn owner_signs_only_discovery_and_attestation_for_configured_agent() {
++        let owner = Keys::generate();
++        let agent = Keys::generate();
++        let candidate = Candidate {
++            link_id: "researcher".into(),
++            agent_pubkey: agent.public_key().to_hex(),
++            owner_pubkey: owner.public_key().to_hex(),
++            display_name: "Researcher".into(),
++        };
++        let (event, attestation) = owner_signatures(&owner, &candidate).unwrap();
++        assert_eq!(event.kind, Kind::Custom(30177));
++        assert_eq!(event.pubkey, owner.public_key());
++        event.verify().unwrap();
++        let verified = buzz_sdk_pkg::nip_oa::verify_auth_tag(
++            &serde_json::to_string(&attestation).unwrap(),
++            &agent.public_key(),
++        )
++        .unwrap();
++        assert_eq!(verified, owner.public_key());
++        assert!(!event.content.contains(&owner.secret_key().to_secret_hex()));
++        assert!(owner_signatures(&Keys::generate(), &candidate).is_err());
++    }
++}
 diff --git a/desktop/src-tauri/src/egress_guard.rs b/desktop/src-tauri/src/egress_guard.rs
 index db58dda..f0a3348 100644
 --- a/desktop/src-tauri/src/egress_guard.rs
@@ -423,15 +609,16 @@ index 29e74cf..91059e6 100644
      ("src/relay_admission.rs", 1, 0),
      ("src/archive/mod_tests.rs", 1, 0),
 diff --git a/desktop/src-tauri/src/lib.rs b/desktop/src-tauri/src/lib.rs
-index e3ac459..ff6fbb6 100644
+index e3ac459..5e84729 100644
 --- a/desktop/src-tauri/src/lib.rs
 +++ b/desktop/src-tauri/src/lib.rs
-@@ -521,6 +521,9 @@ pub fn run() {
+@@ -521,6 +521,10 @@ pub fn run() {
              Ok(())
          })
          .invoke_handler(tauri::generate_handler![
 +            radhouse_config,
 +            radhouse_request,
++            radhouse_enroll_agent,
 +            radhouse_clear_session,
              terminal_runtime::terminal_attach,
              terminal_runtime::terminal_detach,
@@ -464,11 +651,12 @@ index f1c5f5a..b9eaa28 100644
      ) : null;
 diff --git a/desktop/src/features/radhouse/RadhousePanel.tsx b/desktop/src/features/radhouse/RadhousePanel.tsx
 new file mode 100644
-index 0000000..cc65fa8
+index 0000000..0d9a365
 --- /dev/null
 +++ b/desktop/src/features/radhouse/RadhousePanel.tsx
-@@ -0,0 +1,115 @@
-+import { useEffect, useRef, useState } from "react";
+@@ -0,0 +1,148 @@
++import { useCallback, useEffect, useRef, useState } from "react";
++import { useAppNavigation } from "@/app/navigation/useAppNavigation";
 +import { invokeTauri } from "@/shared/api/tauri";
 +import { mountWorkHome } from "@/shared/radhouse/app";
 +import { operatorClient } from "@/shared/radhouse/api";
@@ -495,6 +683,14 @@ index 0000000..cc65fa8
 +    relay: string;
 +  } | null>(null);
 +  const [open, setOpen] = useState(false);
++  const { goChannel } = useAppNavigation();
++  const openConversation = useCallback(
++    async (channel: string) => {
++      setOpen(false);
++      await goChannel(channel);
++    },
++    [goChannel],
++  );
 +  useEffect(() => {
 +    let current = true;
 +    void invokeTauri<{ origin: string; relay: string }>("radhouse_config")
@@ -517,19 +713,20 @@ index 0000000..cc65fa8
 +        variant="outline"
 +        onClick={() => setOpen(true)}
 +      >
-+        Radhouse tasks
++        Review work
 +      </Button>
 +      <Dialog open={open} onOpenChange={setOpen}>
 +        <DialogContent className="max-w-6xl h-[85vh] flex flex-col overflow-hidden">
-+          <DialogTitle>Radhouse tasks</DialogTitle>
++          <DialogTitle>Researcher · work and decisions</DialogTitle>
 +          <DialogDescription>
-+            Private task controls · {configuration.origin}
++            Review results and decisions for your Radhouse agent.
 +          </DialogDescription>
 +          {open && (
 +            <TaskSurface
 +              key={`${pubkey}:${channelId}`}
 +              channelId={channelId}
 +              pubkey={pubkey}
++              onOpenConversation={openConversation}
 +            />
 +          )}
 +        </DialogContent>
@@ -541,9 +738,11 @@ index 0000000..cc65fa8
 +function TaskSurface({
 +  channelId,
 +  pubkey,
++  onOpenConversation,
 +}: {
 +  channelId: string;
 +  pubkey: string;
++  onOpenConversation: (channel: string) => Promise<void>;
 +}) {
 +  const host = useRef<HTMLDivElement>(null);
 +  useEffect(() => {
@@ -573,14 +772,35 @@ index 0000000..cc65fa8
 +        status: result.status,
 +      });
 +    };
-+    const dispose = mountWorkHome(page, operatorClient(transport, "buzz"));
++    const dispose = mountWorkHome(page, operatorClient(transport, "buzz"), {
++      controlsOnly: true,
++      enrollAgent: async (candidate, session) => {
++        if (candidate.ready && candidate.channel_id) {
++          await onOpenConversation(candidate.channel_id);
++          return;
++        }
++        const receipt = await invokeTauri<{
++          ready: boolean;
++          channel_id: string;
++        }>("radhouse_enroll_agent", {
++          linkId: candidate.link_id,
++          channelId,
++          conversationId: session.conversation_id,
++          bindingRevision: session.binding_revision,
++          csrf: session.csrf_token,
++        });
++        if (!receipt.ready)
++          throw new Error("Researcher connection is incomplete");
++        await onOpenConversation(receipt.channel_id);
++      },
++    });
 +    return () => {
 +      dispose();
 +      void invokeTauri("radhouse_clear_session", { pubkey }).catch(
 +        () => undefined,
 +      );
 +    };
-+  }, [channelId, pubkey]);
++  }, [channelId, pubkey, onOpenConversation]);
 +  return <div ref={host} className="flex-1 min-h-0 overflow-y-auto" />;
 +}
 diff --git a/desktop/src/shared/radhouse/LICENSE b/desktop/src/shared/radhouse/LICENSE
@@ -802,10 +1022,10 @@ index 0000000..b6a3f93
 +Update these files from that source and requalify the patch; do not maintain a second implementation here.
 diff --git a/desktop/src/shared/radhouse/api.ts b/desktop/src/shared/radhouse/api.ts
 new file mode 100644
-index 0000000..7d241bf
+index 0000000..f57f42d
 --- /dev/null
 +++ b/desktop/src/shared/radhouse/api.ts
-@@ -0,0 +1,361 @@
+@@ -0,0 +1,409 @@
 +import type {
 +  Project,
 +  Review,
@@ -815,6 +1035,11 @@ index 0000000..7d241bf
 +} from "./types.js";
 +import { parseWorkHome } from "./contract.js";
 +import { CommandLedger } from "./commands.js";
++import type {
++  ConversationLink,
++  ConversationHistory,
++  ConversationMessage,
++} from "./conversations.js";
 +
 +export interface AuthSession {
 +  principal_id: string;
@@ -824,6 +1049,15 @@ index 0000000..7d241bf
 +  binding_revision: number;
 +  project_id: string;
 +  csrf_token: string;
++}
++
++export interface AgentEnrollment {
++  link_id: string;
++  agent_pubkey: string;
++  owner_pubkey: string;
++  display_name: string;
++  channel_id: string | null;
++  ready: boolean;
 +}
 +
 +export type Transport = (path: string, init: RequestInit) => Promise<Response>;
@@ -1000,6 +1234,40 @@ index 0000000..7d241bf
 +    }
 +  }
 +
++  async conversations(): Promise<ConversationLink[]> {
++    return this.request(`/conversations?${this.query()}`);
++  }
++
++  async enrollmentCandidates(): Promise<AgentEnrollment[]> {
++    return this.request(`/agent-enrollment?${this.query()}`);
++  }
++
++  async conversationHistory(
++    linkId: string,
++    before?: number,
++  ): Promise<ConversationHistory> {
++    const page = before === undefined ? "tail=true" : `before=${before}`;
++    return this.request(
++      `/conversations/${encodeURIComponent(linkId)}/messages?${this.query()}&${page}`,
++    );
++  }
++
++  async sendMessage(
++    linkId: string,
++    content: string,
++    replyTo: string | null,
++    files: { name: string; content: string }[],
++  ): Promise<ConversationMessage> {
++    return this.command(
++      `/conversations/${encodeURIComponent(linkId)}/messages`,
++      {
++        content,
++        reply_to: replyTo,
++        files,
++      },
++    );
++  }
++
 +  async start(input: {
 +    botId: string;
 +    projectId: string;
@@ -1169,12 +1437,12 @@ index 0000000..7d241bf
 +}
 diff --git a/desktop/src/shared/radhouse/app.ts b/desktop/src/shared/radhouse/app.ts
 new file mode 100644
-index 0000000..812ce57
+index 0000000..c21878b
 --- /dev/null
 +++ b/desktop/src/shared/radhouse/app.ts
-@@ -0,0 +1,970 @@
+@@ -0,0 +1,1108 @@
 +import { ApiError, type RadhouseApi, operatorClient } from "./api.js";
-+import type { AuthSession } from "./api.js";
++import type { AuthSession, AgentEnrollment } from "./api.js";
 +import { actionReason, blockerMessages, phaseLabel } from "./view-model.js";
 +import type {
 +  Project,
@@ -1183,10 +1451,24 @@ index 0000000..812ce57
 +  TaskEvents,
 +  WorkHome,
 +} from "./types.js";
++import { conversationPanel } from "./conversations.js";
++import type {
++  ConversationDraft,
++  ConversationHistory,
++  ConversationLink,
++} from "./conversations.js";
 +
 +export function mountWorkHome(
 +  page: HTMLElement,
 +  client = operatorClient(),
++  options: {
++    controlsOnly?: boolean;
++    taskId?: string;
++    enrollAgent?: (
++      candidate: AgentEnrollment,
++      session: AuthSession,
++    ) => Promise<void>;
++  } = {},
 +): () => void {
 +  let disposed = false;
 +  let api: RadhouseApi | null = null;
@@ -1209,6 +1491,11 @@ index 0000000..812ce57
 +  const reviews = new Map<string, Review>();
 +  const expanded = new Set<string>();
 +  const timelines = new Map<string, TaskEvents>();
++  const conversationDrafts = new Map<string, ConversationDraft>();
++  let conversationLinks: ConversationLink[] = [];
++  let conversationHistory: ConversationHistory | null = null;
++  let selectedConversation = "";
++  let enrollmentCandidates: AgentEnrollment[] = [];
 +
 +  function element<K extends keyof HTMLElementTagNameMap>(
 +    tag: K,
@@ -1354,6 +1641,11 @@ index 0000000..812ce57
 +    reviews.clear();
 +    expanded.clear();
 +    timelines.clear();
++    conversationDrafts.clear();
++    conversationLinks = [];
++    conversationHistory = null;
++    selectedConversation = "";
++    enrollmentCandidates = [];
 +    page.replaceChildren();
 +    const card = element("section", "login-card");
 +    card.append(
@@ -1608,6 +1900,14 @@ index 0000000..812ce57
 +        `${agent?.display_name ?? task.bot_id} · ${home.project_name} · Private task`,
 +      ),
 +    );
++    if (task.disable_tools)
++      article.append(
++        element(
++          "p",
++          "task-card__context",
++          "Tools disabled for this assignment",
++        ),
++      );
 +    const blockers = blockerMessages(card);
 +    if (blockers.length) {
 +      const list = element("ul", "blockers");
@@ -1994,7 +2294,11 @@ index 0000000..812ce57
 +    const identity = element("div");
 +    identity.append(
 +      element("p", "eyebrow", "Radhouse · A home for your agents"),
-+      element("h1", "page-title", "Your work home"),
++      element(
++        "h1",
++        "page-title",
++        options.controlsOnly ? "Review your work" : "Your work home",
++      ),
 +    );
 +    const context = element("label", "field project-picker");
 +    const picker = element("select", "field__control");
@@ -2011,6 +2315,8 @@ index 0000000..812ce57
 +      reviews.clear();
 +      timelines.clear();
 +      expanded.clear();
++      selectedConversation = "";
++      conversationHistory = null;
 +      void load();
 +    });
 +    context.append(element("span", "field__label", "Project"), picker);
@@ -2024,7 +2330,72 @@ index 0000000..812ce57
 +    );
 +    page.append(header);
 +    if (message) page.append(notice(message));
-+    page.append(startPanel(home));
++    if (options.enrollAgent && signedIn) {
++      for (const candidate of enrollmentCandidates) {
++        const panel = element("section", "agent-card");
++        panel.append(
++          element("h2", "section-title", candidate.display_name),
++          element(
++            "p",
++            "muted",
++            candidate.ready
++              ? "Message your agent in its Buzz conversation. Return here when its work needs a review or a decision."
++              : "Connect your Radhouse agent to Buzz. It will appear in your agent directory with its own private conversation.",
++          ),
++        );
++        panel.append(
++          button(
++            candidate.ready
++              ? `Open ${candidate.display_name} in Buzz`
++              : `Connect ${candidate.display_name}`,
++            async () => {
++              if (signedIn) await options.enrollAgent?.(candidate, signedIn);
++            },
++            true,
++          ),
++        );
++        page.append(panel);
++      }
++    }
++    const conversation = conversationLinks.find(
++      (link) => link.link_id === selectedConversation,
++    );
++    if (
++      !options.controlsOnly &&
++      conversation &&
++      conversationHistory &&
++      api &&
++      signedIn
++    ) {
++      const draft = conversationDrafts.get(conversation.link_id) ?? {
++        content: "",
++        reply: null,
++        files: [],
++      };
++      conversationDrafts.set(conversation.link_id, draft);
++      page.append(
++        conversationPanel(
++          api,
++          conversation,
++          conversationHistory,
++          draft,
++          signedIn.principal_id,
++          async () => load(),
++          (taskId) => {
++            const card = Array.from(
++              page.querySelectorAll<HTMLElement>("[data-task-id]"),
++            ).find((node) => node.dataset.taskId === taskId);
++            card?.scrollIntoView({ block: "start", behavior: "smooth" });
++            card?.querySelector<HTMLButtonElement>("button")?.focus();
++          },
++          action,
++          (open) => {
++            filePickerOpen = open;
++            if (open) loadGeneration++;
++          },
++        ),
++      );
++    } else if (!options.controlsOnly) page.append(startPanel(home));
 +    const roster = element("section", "section");
 +    roster.append(element("h2", "section-title", "Your agents"));
 +    const grid = element("div", "agent-grid");
@@ -2041,10 +2412,20 @@ index 0000000..812ce57
 +            : "Temporarily unavailable",
 +        ),
 +      );
++      const link = conversationLinks.find(
++        (item) => item.bot_id === agent.bot_id,
++      );
++      if (link)
++        card.append(
++          button(`Talk to ${agent.display_name}`, async () => {
++            selectedConversation = link.link_id;
++            await load();
++          }),
++        );
 +      grid.append(card);
 +    }
 +    roster.append(grid);
-+    page.append(roster);
++    if (!options.controlsOnly) page.append(roster);
 +    const work = element("section", "section");
 +    work.append(element("h2", "section-title", "Your work"));
 +    if (home.tasks.length === 0)
@@ -2056,7 +2437,9 @@ index 0000000..812ce57
 +        ),
 +      );
 +    const list = element("div", "task-list");
-+    for (const card of home.tasks) list.append(taskCard(card, home));
++    for (const card of home.tasks)
++      if (!options.taskId || card.task.task_id === options.taskId)
++        list.append(taskCard(card, home));
 +    work.append(list);
 +    page.append(work);
 +    const allowed = new Set(home.tasks.map((card) => card.task.task_id));
@@ -2066,11 +2449,14 @@ index 0000000..812ce57
 +    if (
 +      focusName === "brief" ||
 +      focusName === "agent" ||
-+      focusName === "project"
++      focusName === "project" ||
++      focusName.startsWith("conversation-")
 +    ) {
-+      const next = page.querySelector<
-+        HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
-+      >(`[name="${focusName}"]`);
++      const next = Array.from(
++        page.querySelectorAll<
++          HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
++        >("[name]"),
++      ).find((node) => node.name === focusName);
 +      next?.focus();
 +      if (next instanceof HTMLTextAreaElement && selection)
 +        next.setSelectionRange(selection[0] ?? 0, selection[1] ?? 0);
@@ -2102,6 +2488,25 @@ index 0000000..812ce57
 +      const scoped = current.forProject(project);
 +      const home = await scoped.home();
 +      if (generation !== loadGeneration) return;
++      const candidates = options.enrollAgent
++        ? await scoped.enrollmentCandidates()
++        : [];
++      if (generation !== loadGeneration) return;
++      const links = options.controlsOnly ? [] : await scoped.conversations();
++      if (generation !== loadGeneration) return;
++      const link =
++        links.find((item) => item.link_id === selectedConversation) ?? links[0];
++      const history = link
++        ? await scoped.conversationHistory(
++            link.link_id,
++            conversationDrafts.get(link.link_id)?.before,
++          )
++        : null;
++      if (generation !== loadGeneration) return;
++      conversationLinks = links;
++      selectedConversation = link?.link_id ?? "";
++      conversationHistory = history;
++      enrollmentCandidates = candidates;
 +      api = scoped;
 +      selectedProject = project.project_id;
 +      projects = available;
@@ -2140,6 +2545,7 @@ index 0000000..812ce57
 +    drafts.clear();
 +    reviews.clear();
 +    timelines.clear();
++    conversationDrafts.clear();
 +    page.replaceChildren();
 +  };
 +}
@@ -2241,10 +2647,10 @@ index 0000000..1885ffe
 +}
 diff --git a/desktop/src/shared/radhouse/contract.ts b/desktop/src/shared/radhouse/contract.ts
 new file mode 100644
-index 0000000..33c5e1f
+index 0000000..eedc03b
 --- /dev/null
 +++ b/desktop/src/shared/radhouse/contract.ts
-@@ -0,0 +1,167 @@
+@@ -0,0 +1,168 @@
 +import type {
 +  ActionState,
 +  AgentSummary,
@@ -2328,6 +2734,7 @@ index 0000000..33c5e1f
 +    brief: string(item.brief),
 +    provider_binding: string(item.provider_binding),
 +    resource_key: nullableString(item.resource_key),
++    disable_tools: item.disable_tools === true,
 +    budget_remaining: integer(item.budget_remaining),
 +    task_revision: integer(item.task_revision),
 +    state_revision: integer(item.state_revision),
@@ -2412,12 +2819,290 @@ index 0000000..33c5e1f
 +    start: action(item.start),
 +  };
 +}
+diff --git a/desktop/src/shared/radhouse/conversations.ts b/desktop/src/shared/radhouse/conversations.ts
+new file mode 100644
+index 0000000..7513d2a
+--- /dev/null
++++ b/desktop/src/shared/radhouse/conversations.ts
+@@ -0,0 +1,272 @@
++import { ApiError, type RadhouseApi } from "./api.js";
++
++export interface ConversationLink {
++  link_id: string;
++  bot_id: string;
++  display_name: string;
++  channel_id: string;
++  error_code: string | null;
++}
++export interface ConversationMessage {
++  message_id: string;
++  author: string;
++  content: string;
++  source: string;
++  state: string;
++  task_id: string | null;
++  created_at: number;
++  sequence: number;
++  files: { name: string; content: string }[];
++}
++export interface ConversationHistory {
++  messages: ConversationMessage[];
++  cursor: number;
++  error_code: string | null;
++}
++export interface ConversationDraft {
++  content: string;
++  reply: ConversationMessage | null;
++  files: { name: string; content: string }[];
++  before?: number;
++  scroll?: number;
++  atBottom?: boolean;
++}
++
++function node<K extends keyof HTMLElementTagNameMap>(
++  tag: K,
++  className: string,
++  text?: string,
++): HTMLElementTagNameMap[K] {
++  const result = document.createElement(tag);
++  result.className = className;
++  if (text !== undefined) result.textContent = text;
++  return result;
++}
++
++/** Shared owner conversation; all content is text, never executable markup. */
++export function conversationPanel(
++  api: RadhouseApi,
++  link: ConversationLink,
++  history: ConversationHistory,
++  draft: ConversationDraft,
++  owner: string,
++  refresh: () => Promise<void>,
++  review: (taskId: string) => void,
++  run: (button: HTMLButtonElement, work: () => Promise<void>) => Promise<void>,
++  filePicker: (open: boolean) => void,
++): HTMLElement {
++  const panel = node("section", "conversation-panel");
++  const heading = node("div", "conversation-heading");
++  heading.append(
++    node("span", "agent-avatar", link.display_name.slice(0, 1)),
++    node("h2", "section-title", link.display_name),
++    node("span", "muted", "Your conversation · also in Buzz"),
++  );
++  panel.append(heading);
++  if (history.error_code) {
++    const hold = node(
++      "p",
++      "notice notice--error",
++      "Buzz delivery needs attention. Your conversation is saved here; replies may be delayed.",
++    );
++    hold.setAttribute("role", "status");
++    panel.append(hold);
++  }
++  const historyControls = node("div", "conversation-history-controls");
++  if (history.messages.length === 100) {
++    const older = node(
++      "button",
++      "button button--secondary",
++      "Earlier messages",
++    );
++    older.type = "button";
++    older.onclick = () =>
++      void run(older, async () => {
++        const first = history.messages[0];
++        if (first) draft.before = first.sequence;
++        await refresh();
++      });
++    historyControls.append(older);
++  }
++  if (draft.before !== undefined) {
++    const latest = node(
++      "button",
++      "button button--secondary",
++      "Latest messages",
++    );
++    latest.type = "button";
++    latest.onclick = () =>
++      void run(latest, async () => {
++        delete draft.before;
++        await refresh();
++      });
++    historyControls.append(latest);
++  }
++  panel.append(historyControls);
++  const list = node("div", "conversation-messages");
++  list.setAttribute("role", "log");
++  list.setAttribute("aria-label", `Conversation with ${link.display_name}`);
++  list.onscroll = () => {
++    draft.scroll = list.scrollTop;
++    draft.atBottom =
++      list.scrollHeight - list.scrollTop - list.clientHeight < 40;
++  };
++  queueMicrotask(() => {
++    if (list.isConnected)
++      list.scrollTop =
++        draft.atBottom !== false ? list.scrollHeight : (draft.scroll ?? 0);
++  });
++  if (!history.messages.length)
++    list.append(
++      node(
++        "p",
++        "empty",
++        "Ask Researcher a question or give it an assignment. Its progress and result will stay in this conversation.",
++      ),
++    );
++  for (const message of history.messages) {
++    const own = message.author === owner;
++    const item = node(
++      "article",
++      `conversation-message${own ? " conversation-message--own" : ""}`,
++    );
++    item.append(
++      node(
++        "p",
++        "message-author",
++        own
++          ? `You · ${message.source === "buzz" ? "Buzz" : "Radhouse"}`
++          : link.display_name,
++      ),
++      node("p", "message-content", message.content),
++    );
++    for (const file of message.files) {
++      const details = node("details", "message-reference");
++      details.append(
++        node("summary", "", file.name),
++        node("pre", "message-content", file.content),
++      );
++      item.append(details);
++    }
++    const controls = node("div", "message-controls");
++    const time = node(
++      "time",
++      "muted",
++      new Date(message.created_at * 1000).toLocaleString(),
++    );
++    time.dateTime = new Date(message.created_at * 1000).toISOString();
++    controls.append(time);
++    if (message.task_id) {
++      const reply = node("button", "button button--secondary", "Reply");
++      reply.type = "button";
++      reply.onclick = () => {
++        draft.reply = message;
++        clearReply.hidden = false;
++        replyLabel.textContent = `Replying to: ${message.content.slice(0, 100)}`;
++        composer.focus();
++      };
++      const details = node(
++        "button",
++        "button button--secondary",
++        message.state === "result" ? "Review result" : "Task details",
++      );
++      details.type = "button";
++      details.onclick = () => {
++        if (message.task_id) review(message.task_id);
++      };
++      controls.append(reply, details);
++    }
++    item.append(controls);
++    list.append(item);
++  }
++  panel.append(list);
++  const form = node("form", "conversation-compose");
++  const replyLabel = node(
++    "p",
++    "muted",
++    draft.reply ? `Replying to: ${draft.reply.content.slice(0, 100)}` : "",
++  );
++  const clearReply = node("button", "button button--secondary", "Clear reply");
++  clearReply.type = "button";
++  clearReply.hidden = draft.reply === null;
++  clearReply.onclick = () => {
++    draft.reply = null;
++    replyLabel.textContent = "";
++    clearReply.hidden = true;
++  };
++  const label = node("label", "field");
++  const composer = node("textarea", "field__control");
++  composer.name = `conversation-${link.link_id}`;
++  composer.rows = 3;
++  composer.required = true;
++  composer.maxLength = 4096;
++  composer.value = draft.content;
++  composer.placeholder = `Message ${link.display_name}…`;
++  composer.oninput = () => {
++    draft.content = composer.value;
++  };
++  label.append(
++    node("span", "field__label", `Message ${link.display_name}`),
++    composer,
++  );
++  const filesLabel = node("label", "field");
++  const files = node("input", "field__control");
++  files.type = "file";
++  files.multiple = true;
++  files.accept = ".txt,.md,.csv,.json,.log";
++  filesLabel.append(
++    node("span", "field__label", "Reference files · text, 64 KB total"),
++    files,
++  );
++  const fileNames = node(
++    "p",
++    "muted",
++    draft.files.map((file) => file.name).join(", "),
++  );
++  const submit = node("button", "button button--primary", "Send message");
++  submit.type = "submit";
++  files.onclick = () => filePicker(true);
++  files.addEventListener("cancel", () => filePicker(false));
++  files.onchange = () => {
++    filePicker(false);
++    void run(submit, async () => {
++      const selected = Array.from(files.files ?? []);
++      if (
++        selected.length > 4 ||
++        selected.reduce((size, file) => size + file.size, 0) > 65536
++      )
++        throw new ApiError("invalid_input_files", 422);
++      const decoder = new TextDecoder("utf-8", { fatal: true });
++      const loaded = await Promise.all(
++        selected.map(async (file) => ({
++          name: file.name,
++          content: decoder.decode(await file.arrayBuffer()),
++        })),
++      );
++      if (loaded.some((file) => file.content.includes("\0")))
++        throw new ApiError("invalid_input_files", 422);
++      draft.files = loaded;
++      fileNames.textContent = loaded.map((file) => file.name).join(", ");
++    });
++  };
++  form.append(replyLabel, clearReply, label, filesLabel, fileNames, submit);
++  form.onsubmit = (event) => {
++    event.preventDefault();
++    if (!draft.content.trim()) return;
++    void run(submit, async () => {
++      await api.sendMessage(
++        link.link_id,
++        draft.content,
++        draft.reply?.message_id ?? null,
++        draft.files,
++      );
++      draft.content = "";
++      draft.reply = null;
++      draft.files = [];
++      delete draft.before;
++      await refresh();
++    });
++  };
++  panel.append(form);
++  return panel;
++}
 diff --git a/desktop/src/shared/radhouse/styles.css b/desktop/src/shared/radhouse/styles.css
 new file mode 100644
-index 0000000..2da67cc
+index 0000000..9baa879
 --- /dev/null
 +++ b/desktop/src/shared/radhouse/styles.css
-@@ -0,0 +1,356 @@
+@@ -0,0 +1,443 @@
 +:root {
 +  color: #20251f;
 +  background: #f3efe5;
@@ -2774,12 +3459,99 @@ index 0000000..2da67cc
 +    scroll-behavior: auto;
 +  }
 +}
++
++.conversation-panel {
++  margin: 1.5rem 0;
++  padding: 1.5rem;
++  border: 1px solid var(--border, #d8ddd7);
++  border-radius: 1.25rem;
++  background: var(--surface, #fff);
++}
++.conversation-heading {
++  display: flex;
++  align-items: center;
++  flex-wrap: wrap;
++  gap: 0.75rem;
++  margin-bottom: 1rem;
++}
++.agent-avatar {
++  display: grid;
++  place-items: center;
++  width: 2.75rem;
++  height: 2.75rem;
++  border-radius: 50%;
++  background: #294c43;
++  color: #fff;
++  font-size: 1.25rem;
++}
++.conversation-messages {
++  display: flex;
++  flex-direction: column;
++  gap: 1rem;
++  max-height: 34rem;
++  overflow-y: auto;
++  padding: 0.5rem;
++}
++.conversation-message {
++  max-width: 88%;
++  align-self: flex-start;
++  padding: 1rem 1.25rem;
++  border-radius: 1rem;
++  background: #f0f3ee;
++  overflow-wrap: anywhere;
++}
++.conversation-message--own {
++  align-self: flex-end;
++  background: #e4eee9;
++}
++.message-author {
++  margin: 0 0 0.5rem;
++  font-size: 0.85rem;
++  font-weight: 650;
++}
++.message-content {
++  margin: 0;
++  white-space: pre-wrap;
++  overflow-wrap: anywhere;
++  font: inherit;
++}
++.message-controls,
++.conversation-history-controls {
++  display: flex;
++  flex-wrap: wrap;
++  align-items: center;
++  gap: 0.5rem;
++  margin-top: 0.75rem;
++}
++.message-controls .button {
++  padding: 0.3rem 0.55rem;
++  font-size: 0.8rem;
++}
++.message-reference {
++  margin-top: 0.75rem;
++}
++.conversation-compose {
++  display: grid;
++  gap: 0.75rem;
++  margin-top: 1.5rem;
++}
++.conversation-compose > .button {
++  justify-self: start;
++}
++@media (max-width: 40rem) {
++  .conversation-panel {
++    padding: 0.75rem;
++  }
++  .conversation-message {
++    max-width: 96%;
++  }
++}
 diff --git a/desktop/src/shared/radhouse/types.ts b/desktop/src/shared/radhouse/types.ts
 new file mode 100644
-index 0000000..02f47b2
+index 0000000..26c5381
 --- /dev/null
 +++ b/desktop/src/shared/radhouse/types.ts
-@@ -0,0 +1,117 @@
+@@ -0,0 +1,118 @@
 +export type Role = "admin" | "operator" | "viewer";
 +export type Phase = "queued" | "active" | "recovering" | "stopping" | "closed";
 +
@@ -2804,6 +3576,7 @@ index 0000000..02f47b2
 +  brief: string;
 +  provider_binding: string;
 +  resource_key: string | null;
++  disable_tools: boolean;
 +  budget_remaining: number;
 +  task_revision: number;
 +  state_revision: number;

@@ -1,9 +1,12 @@
 import { ApiError, RadhouseApi, operatorClient } from "./api.js";
-import type { AuthSession } from "./api.js";
+import type { AuthSession, AgentEnrollment } from "./api.js";
 import { actionReason, blockerMessages, phaseLabel } from "./view-model.js";
 import type { Project, Review, TaskCard, TaskEvents, WorkHome } from "./types.js";
+import { conversationPanel } from "./conversations.js";
+import type { ConversationDraft, ConversationHistory, ConversationLink } from "./conversations.js";
 
-export function mountWorkHome(page: HTMLElement, client = operatorClient()): () => void {
+export function mountWorkHome(page: HTMLElement, client = operatorClient(), options: { controlsOnly?: boolean; taskId?: string;
+  enrollAgent?: (candidate: AgentEnrollment, session: AuthSession) => Promise<void> } = {}): () => void {
 let disposed = false;
 let api: RadhouseApi | null = null;
 let signedIn: AuthSession | null = null;
@@ -17,6 +20,11 @@ const drafts = new Map<string, { brief: string; bot: string; files: { name: stri
 const reviews = new Map<string, Review>();
 const expanded = new Set<string>();
 const timelines = new Map<string, TaskEvents>();
+const conversationDrafts = new Map<string, ConversationDraft>();
+let conversationLinks: ConversationLink[] = [];
+let conversationHistory: ConversationHistory | null = null;
+let selectedConversation = "";
+let enrollmentCandidates: AgentEnrollment[] = [];
 
 function element<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
@@ -111,7 +119,9 @@ function loginScreen(message?: string): void {
   selectedProject = "";
   projects = [];
   // Private display state never crosses an account change.
-  drafts.clear(); reviews.clear(); expanded.clear(); timelines.clear();
+  drafts.clear(); reviews.clear(); expanded.clear(); timelines.clear(); conversationDrafts.clear();
+  conversationLinks = []; conversationHistory = null; selectedConversation = "";
+  enrollmentCandidates = [];
   page.replaceChildren();
   const card = element("section", "login-card");
   card.append(element("p", "eyebrow", "Radhouse · A home for your agents"),
@@ -239,6 +249,7 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
       : task.outcome === "failed" ? "Needs a new assignment" : phaseLabel(task.phase)));
   const agent = home.agents.find((item) => item.bot_id === task.bot_id);
   article.append(heading, element("p", "task-card__context", `${agent?.display_name ?? task.bot_id} · ${home.project_name} · Private task`));
+  if (task.disable_tools) article.append(element("p", "task-card__context", "Tools disabled for this assignment"));
   const blockers = blockerMessages(card);
   if (blockers.length) {
     const list = element("ul", "blockers"); blockers.forEach((text) => { list.append(element("li", "blockers__item", text)); }); article.append(list);
@@ -403,33 +414,61 @@ function render(home: WorkHome, message?: string): void {
   const selection = focused instanceof HTMLTextAreaElement ? [focused.selectionStart, focused.selectionEnd] : null;
   page.replaceChildren();
   const header = element("header", "page-header"); const identity = element("div");
-  identity.append(element("p", "eyebrow", "Radhouse · A home for your agents"), element("h1", "page-title", "Your work home"));
+  identity.append(element("p", "eyebrow", "Radhouse · A home for your agents"), element("h1", "page-title", options.controlsOnly ? "Review your work" : "Your work home"));
   const context = element("label", "field project-picker"); const picker = element("select", "field__control"); picker.name = "project";
   for (const project of projects) { const option = element("option", undefined, project.display_name); option.value = project.project_id; picker.append(option); }
   picker.value = home.project_id;
   picker.addEventListener("change", () => {
-    selectedProject = picker.value; sessionEpoch++; reviews.clear(); timelines.clear(); expanded.clear(); void load();
+    selectedProject = picker.value; sessionEpoch++; reviews.clear(); timelines.clear(); expanded.clear();
+    selectedConversation = ""; conversationHistory = null; void load();
   });
   context.append(element("span", "field__label", "Project"), picker); identity.append(context); header.append(identity);
   header.append(button(`Sign out ${signedIn?.username ?? ""}`, async () => { await api?.logout(); loginScreen(); }));
   page.append(header);
   if (message) page.append(notice(message));
-  page.append(startPanel(home));
+  if (options.enrollAgent && signedIn) {
+    for (const candidate of enrollmentCandidates) {
+      const panel = element("section", "agent-card");
+      panel.append(element("h2", "section-title", candidate.display_name), element("p", "muted",
+        candidate.ready ? "Message your agent in its Buzz conversation. Return here when its work needs a review or a decision."
+          : "Connect your Radhouse agent to Buzz. It will appear in your agent directory with its own private conversation."));
+      panel.append(button(candidate.ready ? `Open ${candidate.display_name} in Buzz` : `Connect ${candidate.display_name}`, async () => {
+        if (signedIn) await options.enrollAgent?.(candidate, signedIn);
+      }, true));
+      page.append(panel);
+    }
+  }
+  const conversation = conversationLinks.find(link => link.link_id === selectedConversation);
+  if (!options.controlsOnly && conversation && conversationHistory && api && signedIn) {
+    const draft = conversationDrafts.get(conversation.link_id) ?? { content: "", reply: null, files: [] };
+    conversationDrafts.set(conversation.link_id, draft);
+    page.append(conversationPanel(api, conversation, conversationHistory, draft, signedIn.principal_id,
+      async () => load(), taskId => {
+        const card = Array.from(page.querySelectorAll<HTMLElement>("[data-task-id]")).find(node => node.dataset.taskId === taskId);
+        card?.scrollIntoView({ block: "start", behavior: "smooth" });
+        card?.querySelector<HTMLButtonElement>("button")?.focus();
+      }, action, open => { filePickerOpen = open; if (open) loadGeneration++; }));
+  } else if (!options.controlsOnly) page.append(startPanel(home));
   const roster = element("section", "section"); roster.append(element("h2", "section-title", "Your agents"));
   const grid = element("div", "agent-grid");
   for (const agent of home.agents) {
     const card = element("article", "agent-card"); card.append(element("h3", "agent-card__name", agent.display_name),
-      element("p", "agent-card__role", agent.role_name), element("p", "muted", agent.state === "ready" ? "Ready for an assignment" : "Temporarily unavailable")); grid.append(card);
+      element("p", "agent-card__role", agent.role_name), element("p", "muted", agent.state === "ready" ? "Ready for an assignment" : "Temporarily unavailable"));
+    const link = conversationLinks.find(item => item.bot_id === agent.bot_id);
+    if (link) card.append(button(`Talk to ${agent.display_name}`, async () => { selectedConversation = link.link_id; await load(); }));
+    grid.append(card);
   }
-  roster.append(grid); page.append(roster);
+  roster.append(grid); if (!options.controlsOnly) page.append(roster);
   const work = element("section", "section"); work.append(element("h2", "section-title", "Your work"));
   if (home.tasks.length === 0) work.append(element("p", "empty", "Start with one clear assignment. Its progress and result will appear here."));
-  const list = element("div", "task-list"); for (const card of home.tasks) list.append(taskCard(card, home)); work.append(list); page.append(work);
+  const list = element("div", "task-list");
+  for (const card of home.tasks) if (!options.taskId || card.task.task_id === options.taskId) list.append(taskCard(card, home));
+  work.append(list); page.append(work);
   const allowed = new Set(home.tasks.map((card) => card.task.task_id));
   for (const id of reviews.keys()) if (!allowed.has(id)) reviews.delete(id);
   for (const id of timelines.keys()) if (!allowed.has(id)) timelines.delete(id);
-  if (focusName === "brief" || focusName === "agent" || focusName === "project") {
-    const next = page.querySelector<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(`[name="${focusName}"]`);
+  if (focusName === "brief" || focusName === "agent" || focusName === "project" || focusName.startsWith("conversation-")) {
+    const next = Array.from(page.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>("[name]")).find(node => node.name === focusName);
     next?.focus(); if (next instanceof HTMLTextAreaElement && selection) next.setSelectionRange(selection[0] ?? 0, selection[1] ?? 0);
   }
 }
@@ -450,6 +489,15 @@ async function load(message?: string): Promise<void> {
     const scoped = current.forProject(project);
     const home = await scoped.home();
     if (generation !== loadGeneration) return;
+    const candidates = options.enrollAgent ? await scoped.enrollmentCandidates() : [];
+    if (generation !== loadGeneration) return;
+    const links = options.controlsOnly ? [] : await scoped.conversations();
+    if (generation !== loadGeneration) return;
+    const link = links.find(item => item.link_id === selectedConversation) ?? links[0];
+    const history = link ? await scoped.conversationHistory(link.link_id, conversationDrafts.get(link.link_id)?.before) : null;
+    if (generation !== loadGeneration) return;
+    conversationLinks = links; selectedConversation = link?.link_id ?? ""; conversationHistory = history;
+    enrollmentCandidates = candidates;
     api = scoped; selectedProject = project.project_id; projects = available; render(home, message);
   } catch (error) {
     if (generation !== loadGeneration) return;
@@ -465,5 +513,5 @@ const interval = window.setInterval(() => {
       && !Array.from(page.querySelectorAll<HTMLTextAreaElement>(".guidance-form textarea")).some((input) => input.value)) void load();
 }, 10_000);
 
-return () => { disposed = true; loadGeneration++; sessionEpoch++; window.clearInterval(interval); drafts.clear(); reviews.clear(); timelines.clear(); page.replaceChildren(); };
+return () => { disposed = true; loadGeneration++; sessionEpoch++; window.clearInterval(interval); drafts.clear(); reviews.clear(); timelines.clear(); conversationDrafts.clear(); page.replaceChildren(); };
 }
