@@ -1169,10 +1169,10 @@ index 0000000..7d241bf
 +}
 diff --git a/desktop/src/shared/radhouse/app.ts b/desktop/src/shared/radhouse/app.ts
 new file mode 100644
-index 0000000..edc5c63
+index 0000000..812ce57
 --- /dev/null
 +++ b/desktop/src/shared/radhouse/app.ts
-@@ -0,0 +1,957 @@
+@@ -0,0 +1,970 @@
 +import { ApiError, type RadhouseApi, operatorClient } from "./api.js";
 +import type { AuthSession } from "./api.js";
 +import { actionReason, blockerMessages, phaseLabel } from "./view-model.js";
@@ -1196,6 +1196,7 @@ index 0000000..edc5c63
 +  let loadGeneration = 0;
 +  let sessionEpoch = 0;
 +  let actionsInFlight = 0;
++  let filePickerOpen = false;
 +  const drafts = new Map<
 +    string,
 +    {
@@ -1343,6 +1344,7 @@ index 0000000..edc5c63
 +  function loginScreen(message?: string): void {
 +    loadGeneration++;
 +    sessionEpoch++;
++    filePickerOpen = false;
 +    api = null;
 +    signedIn = null;
 +    selectedProject = "";
@@ -1903,7 +1905,17 @@ index 0000000..edc5c63
 +      "muted file-status",
 +      draft.files.map((file) => file.name).join(", "),
 +    );
++    files.addEventListener("click", () => {
++      // The native chooser still owns this input while it is open. Invalidate
++      // a refresh already in flight, then preserve the form until it closes.
++      filePickerOpen = true;
++      loadGeneration++;
++    });
++    files.addEventListener("cancel", () => {
++      filePickerOpen = false;
++    });
 +    files.addEventListener("change", () => {
++      filePickerOpen = false;
 +      void action(submit, async () => {
 +        const selected = Array.from(files.files ?? []);
 +        if (
@@ -2110,6 +2122,7 @@ index 0000000..edc5c63
 +    // performs current server checks. Prepared reviews can refresh normally.
 +    if (
 +      api &&
++      !filePickerOpen &&
 +      actionsInFlight === 0 &&
 +      page.querySelector(".review-panel form, .audience-choice") === null &&
 +      !Array.from(

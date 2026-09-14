@@ -194,3 +194,15 @@ Linux/Python dependency installation, schema upgrade/backup proof and a real
 operator walkthrough in both directions. The approved patch does not close
 official mobile push, mobile reviews, OIDC, invitation/recovery administration
 or the wider full-V1 release requirements.
+
+### File chooser refresh correction — 2026-09-14
+
+The installed macOS walkthrough exposed a refresh race: rebuilding the form
+while the native file chooser was open detached its input and lost the chosen
+reference. The shared component now suspends routine refresh while the chooser
+is open, invalidates any refresh already in flight, and resumes on selection or
+cancellation. The browser regression holds the real chooser open beyond a full
+refresh cycle, checks that the input survives, and verifies refresh resumes while
+the selected filename remains. It fails on the previous implementation and passes
+with this correction. Both web and maintained desktop consume the correction;
+contracts, authorization and task dispatch behavior are unchanged.
