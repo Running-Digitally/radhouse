@@ -281,14 +281,15 @@ class BuzzConversationCycle:
                         # this window; a later cycle uses the exact parent event.
                         continue
                     if parent_event:
-                        root = next(
-                            (
-                                t[1]
-                                for t in parent_event["tags"]
-                                if len(t) >= 4 and t[0] == "e" and t[3] == "root"
-                            ),
-                            parent_event["id"],
-                        )
+                        markers = {
+                            t[3]: t[1] for t in parent_event["tags"]
+                            if len(t) >= 4 and t[0] == "e" and t[3] in {"root", "reply"}
+                        }
+                        # Buzz resolves a reply-only parent under that target.
+                        # Without a reply marker (including root-only legacy
+                        # events), the parent is itself a top-level message.
+                        root = (markers.get("root", markers["reply"])
+                                if "reply" in markers else parent_event["id"])
                         tags.extend(
                             [
                                 ["e", root, "", "root"],
