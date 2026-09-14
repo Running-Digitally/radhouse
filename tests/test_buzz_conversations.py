@@ -170,9 +170,12 @@ def test_guidance_outcome_is_one_native_message_across_poll_and_reconnect(
         outcomes = [m for m in history if m.message_id.startswith("guidance:")]
         assert len(outcomes) == 1
         assert outcomes[0].task_id == task_id
+        assert outcomes[0].reply_to == state["messages"][1]["id"]
         assert ("completed model response" if initial == "accepted" else "no longer accepting guidance") in outcomes[0].content
         assert len([m for m in history if m.state == "result"]) == 1
         assert tx.task(task_id).result_digest == done.result_digest
+    outcome_event = next(e for e in state["published"].values() if ["radhouse-mirror", outcomes[0].message_id] in e["tags"])
+    assert ["e", state["messages"][1]["id"], "", "reply"] in outcome_event["tags"]
     assert len(values) == 1 and fake_work.start_count == 1
 
 
@@ -200,6 +203,7 @@ def test_transport_lost_ack_and_restart_reuse_task_and_signed_reply(
         if ["radhouse-review", tasks[0].task_id] in e["tags"]
     ]
     assert len(results) == 1
+    assert ["e", state["messages"][0]["id"], "", "reply"] in results[0]["tags"]
     assert restarted.run("egress")["count"] == 0
 
 
