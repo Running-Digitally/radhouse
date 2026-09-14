@@ -623,6 +623,204 @@ index e3ac459..5e84729 100644
              terminal_runtime::terminal_attach,
              terminal_runtime::terminal_detach,
              terminal_runtime::terminal_close,
+diff --git a/desktop/src/features/agents/AGENTS.md b/desktop/src/features/agents/AGENTS.md
+index 7f1f73b..b30aba6 100644
+--- a/desktop/src/features/agents/AGENTS.md
++++ b/desktop/src/features/agents/AGENTS.md
+@@ -221,6 +221,11 @@ with a TypeScript lookup table or an id comparison in a component.
+    hosting location, availability, or permission. Keep all identity surfaces on
+    the shared provenance context, without per-row directory subscriptions. See
+    [the provenance contract](../../../../docs/agent-management-provenance.md).
++   The Agents grid also includes relay-confirmed identities owned by the current
++   viewer after successful local inventory, excluding local duplicates and
++   archived keys. These cards open the existing exact-key profile and expose no
++   local lifecycle controls. A directory publication is not a local runtime or
++   an availability proof.
+ 14. **Thinking effort has two surfaces: a local-only WRITE control and a
+    read-only two-facts DISPLAY.** The write control is `EffortPickerField`
+    (`ui/EffortPickerField.tsx`), a self-contained section component mounted in
+diff --git a/desktop/src/features/agents/lib/externalOwnedAgents.test.mjs b/desktop/src/features/agents/lib/externalOwnedAgents.test.mjs
+new file mode 100644
+index 0000000..2456661
+--- /dev/null
++++ b/desktop/src/features/agents/lib/externalOwnedAgents.test.mjs
+@@ -0,0 +1,50 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { externalOwnedAgents } from "./externalOwnedAgents.ts";
++
++const owner = "ab".repeat(32);
++const remote = { pubkey: "a7".repeat(32), ownerPubkey: owner };
++const other = { pubkey: "b8".repeat(32), ownerPubkey: "cd".repeat(32) };
++const local = { pubkey: "c9".repeat(32), ownerPubkey: owner };
++
++test("owned relay agent appears without manufacturing a managed runtime", () => {
++  assert.deepEqual(
++    externalOwnedAgents([remote], [], owner, () => false),
++    [remote],
++  );
++});
++test("unknown owner, foreign ownership, local duplicates and archives stay absent", () => {
++  const candidates = [remote, other, local, { pubkey: "d0".repeat(32) }];
++  assert.deepEqual(
++    externalOwnedAgents(candidates, [local], undefined, () => false),
++    [],
++  );
++  assert.deepEqual(
++    externalOwnedAgents(candidates, [local], owner, () => false),
++    [remote],
++  );
++  assert.deepEqual(
++    externalOwnedAgents(
++      candidates,
++      [local],
++      owner,
++      (key) => key === remote.pubkey,
++    ),
++    [],
++  );
++});
++test("normalized keys deduplicate relay and local inventory", () => {
++  const upper = {
++    ...remote,
++    pubkey: remote.pubkey.toUpperCase(),
++    ownerPubkey: owner.toUpperCase(),
++  };
++  assert.deepEqual(
++    externalOwnedAgents([remote, upper], [], owner, () => false),
++    [remote],
++  );
++  assert.deepEqual(
++    externalOwnedAgents([remote], [upper], owner, () => false),
++    [],
++  );
++});
+diff --git a/desktop/src/features/agents/lib/externalOwnedAgents.ts b/desktop/src/features/agents/lib/externalOwnedAgents.ts
+new file mode 100644
+index 0000000..083091c
+--- /dev/null
++++ b/desktop/src/features/agents/lib/externalOwnedAgents.ts
+@@ -0,0 +1,28 @@
++import { normalizePubkey } from "@/shared/lib/pubkey";
++
++/** Relay-confirmed owned identities with no locally managed record. */
++export function externalOwnedAgents<
++  T extends { pubkey: string; ownerPubkey?: string | null },
++>(
++  relay: readonly T[],
++  managed: readonly { pubkey: string }[],
++  owner: string | undefined,
++  isArchived: (pubkey: string) => boolean,
++): T[] {
++  if (!owner) return [];
++  const local = new Set(managed.map((agent) => normalizePubkey(agent.pubkey)));
++  const seen = new Set<string>();
++  return relay.filter((agent) => {
++    const key = normalizePubkey(agent.pubkey);
++    if (
++      !agent.ownerPubkey ||
++      normalizePubkey(agent.ownerPubkey) !== normalizePubkey(owner) ||
++      local.has(key) ||
++      seen.has(key) ||
++      isArchived(key)
++    )
++      return false;
++    seen.add(key);
++    return true;
++  });
++}
+diff --git a/desktop/src/features/agents/ui/ExternalAgentCards.tsx b/desktop/src/features/agents/ui/ExternalAgentCards.tsx
+new file mode 100644
+index 0000000..3e2ddc3
+--- /dev/null
++++ b/desktop/src/features/agents/ui/ExternalAgentCards.tsx
+@@ -0,0 +1,61 @@
++import { useRelayAgentsQuery } from "@/features/agents/hooks";
++import { externalOwnedAgents } from "@/features/agents/lib/externalOwnedAgents";
++import { useIsArchivedPredicate } from "@/features/identity-archive/hooks";
++import { useUserProfileQuery } from "@/features/profile/hooks";
++import { useIdentityQuery } from "@/shared/api/hooks";
++import type { ManagedAgent, RelayAgent } from "@/shared/api/types";
++import { AgentIdentityCard } from "./AgentIdentityCard";
++import { AgentManagementMarker } from "./OtherSetupAgentMarker";
++
++/** Owned relay identities open the same exact-key profile as their DMs. */
++export function ExternalAgentCards({
++  managed,
++  onOpenProfile,
++}: {
++  managed: ManagedAgent[];
++  onOpenProfile: (pubkey: string) => void;
++}) {
++  const identity = useIdentityQuery();
++  const relay = useRelayAgentsQuery();
++  const isArchived = useIsArchivedPredicate();
++  if (!relay.isSuccess) return null;
++  return externalOwnedAgents(
++    relay.data,
++    managed,
++    identity.data?.pubkey,
++    isArchived,
++  ).map((agent) => (
++    <ExternalAgentCard
++      key={agent.pubkey}
++      agent={agent}
++      onOpenProfile={onOpenProfile}
++    />
++  ));
++}
++
++function ExternalAgentCard({
++  agent,
++  onOpenProfile,
++}: {
++  agent: RelayAgent;
++  onOpenProfile: (pubkey: string) => void;
++}) {
++  const profile = useUserProfileQuery(agent.pubkey);
++  const label = profile.data?.displayName || agent.name;
++  return (
++    <AgentIdentityCard
++      ariaLabel={`${label} agent profile`}
++      dataTestId={`external-agent-${agent.pubkey}`}
++      label={label}
++      avatarUrl={profile.data?.avatarUrl}
++      subtitle={profile.data?.about || "Managed outside this device"}
++      footerAccessory={
++        <AgentManagementMarker
++          pubkey={agent.pubkey}
++          ownerPubkey={agent.ownerPubkey}
++        />
++      }
++      onClick={() => onOpenProfile(agent.pubkey)}
++    />
++  );
++}
+diff --git a/desktop/src/features/agents/ui/UnifiedAgentsSection.tsx b/desktop/src/features/agents/ui/UnifiedAgentsSection.tsx
+index 0aac9be..b44dfaf 100644
+--- a/desktop/src/features/agents/ui/UnifiedAgentsSection.tsx
++++ b/desktop/src/features/agents/ui/UnifiedAgentsSection.tsx
+@@ -22,6 +22,7 @@ import {
+   useProtectedBestiePubkey,
+ } from "@protected-feature-components";
+ import { IdentityCardSkeleton } from "@/shared/ui/identity-card-skeleton";
++import { ExternalAgentCards } from "./ExternalAgentCards";
+ import { AgentIdentityCard } from "./AgentIdentityCard";
+ import { AgentRuntimeAvatarControl } from "./AgentRuntimeAvatarControl";
+ import { CreateIdentityCard } from "./CreateIdentityCard";
+@@ -139,6 +140,12 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
+               disabled={isPersonasPending}
+               onClick={onOpenCatalog}
+             />
++            {!agentsError ? (
++              <ExternalAgentCards
++                managed={agents}
++                onOpenProfile={onOpenAgentProfile}
++              />
++            ) : null}
+             {groups.map((group) => {
+               const profileAgent = pickProfileAgent(group.agents, isArchived);
+               return (
 diff --git a/desktop/src/features/channels/ui/ChannelScreenHeader.tsx b/desktop/src/features/channels/ui/ChannelScreenHeader.tsx
 index f1c5f5a..b9eaa28 100644
 --- a/desktop/src/features/channels/ui/ChannelScreenHeader.tsx
@@ -651,11 +849,15 @@ index f1c5f5a..b9eaa28 100644
      ) : null;
 diff --git a/desktop/src/features/radhouse/RadhousePanel.tsx b/desktop/src/features/radhouse/RadhousePanel.tsx
 new file mode 100644
-index 0000000..0d9a365
+index 0000000..c25e685
 --- /dev/null
 +++ b/desktop/src/features/radhouse/RadhousePanel.tsx
-@@ -0,0 +1,148 @@
+@@ -0,0 +1,181 @@
 +import { useCallback, useEffect, useRef, useState } from "react";
++import { useQueryClient } from "@tanstack/react-query";
++import { invalidateChannelState } from "@/features/channels/hooks";
++import { evictUsersBatchEntries } from "@/features/profile/hooks";
++import { relayAgentsQueryKey } from "@/features/agents/hooks";
 +import { useAppNavigation } from "@/app/navigation/useAppNavigation";
 +import { invokeTauri } from "@/shared/api/tauri";
 +import { mountWorkHome } from "@/shared/radhouse/app";
@@ -745,7 +947,9 @@ index 0000000..0d9a365
 +  onOpenConversation: (channel: string) => Promise<void>;
 +}) {
 +  const host = useRef<HTMLDivElement>(null);
++  const queryClient = useQueryClient();
 +  useEffect(() => {
++    let current = true;
 +    const node = host.current;
 +    if (!node) return;
 +    const shadow = node.shadowRoot ?? node.attachShadow({ mode: "open" });
@@ -791,16 +995,43 @@ index 0000000..0d9a365
 +        });
 +        if (!receipt.ready)
 +          throw new Error("Researcher connection is incomplete");
-+        await onOpenConversation(receipt.channel_id);
++        if (!current)
++          throw new Error(
++            "Researcher connected; reopen Review work in this community.",
++          );
++        // The DM was opened before the agent published its profile. Evict
++        // that confirmed-missing entry before aggregate queries refresh.
++        const agentKey = candidate.agent_pubkey.toLowerCase();
++        const containsAgent = (query: { queryKey: readonly unknown[] }) =>
++          (query.queryKey[0] === "user-profile" ||
++            query.queryKey[0] === "users-batch") &&
++          query.queryKey.includes(agentKey);
++        await queryClient.cancelQueries({ predicate: containsAgent });
++        if (!current) return;
++        evictUsersBatchEntries(queryClient, [agentKey]);
++        await Promise.all([
++          queryClient.invalidateQueries({ queryKey: relayAgentsQueryKey }),
++          queryClient.invalidateQueries({
++            queryKey: ["user-profile", agentKey],
++          }),
++          invalidateChannelState(queryClient, receipt.channel_id),
++          queryClient.invalidateQueries({
++            predicate: (query) =>
++              query.queryKey[0] === "users-batch" &&
++              query.queryKey.includes(agentKey),
++          }),
++        ]);
++        if (current) await onOpenConversation(receipt.channel_id);
 +      },
 +    });
 +    return () => {
++      current = false;
 +      dispose();
 +      void invokeTauri("radhouse_clear_session", { pubkey }).catch(
 +        () => undefined,
 +      );
 +    };
-+  }, [channelId, pubkey, onOpenConversation]);
++  }, [channelId, pubkey, onOpenConversation, queryClient]);
 +  return <div ref={host} className="flex-1 min-h-0 overflow-y-auto" />;
 +}
 diff --git a/desktop/src/shared/radhouse/LICENSE b/desktop/src/shared/radhouse/LICENSE
@@ -3732,3 +3963,58 @@ index 0000000..e2dacc2
 +      blockerLabels[blocker] ?? "This task is waiting for a checked condition.",
 +  );
 +}
+diff --git a/desktop/tests/e2e/owned-agent-discovery.spec.ts b/desktop/tests/e2e/owned-agent-discovery.spec.ts
+index 46af9c4..417538c 100644
+--- a/desktop/tests/e2e/owned-agent-discovery.spec.ts
++++ b/desktop/tests/e2e/owned-agent-discovery.spec.ts
+@@ -5,10 +5,21 @@ import { waitForAnimations } from "../helpers/animations";
+ const AGENT = "a7".repeat(32);
+ const OWNER = "deadbeef".repeat(8);
+ 
+-test.beforeEach(async ({ page }) => {
++test.beforeEach(async ({ page }, testInfo) => {
++  const hasProfile = testInfo.title.startsWith("Agents lists");
+   await installMockBridge(page, {
+     managedAgents: [],
+-    searchProfiles: [],
++    oaOwnerIsMe: hasProfile,
++    searchProfiles: hasProfile
++      ? [
++          {
++            pubkey: AGENT,
++            displayName: "Policy-only Scout",
++            ownerPubkey: OWNER,
++            isAgent: true,
++          },
++        ]
++      : [],
+     relayAgents: [
+       {
+         pubkey: AGENT,
+@@ -54,3 +65,26 @@ test("member-add keeps authenticated owner without a user-search duplicate", asy
+     path: "test-results/owned-agent-discovery/member-add-owner.png",
+   });
+ });
++
++test("Agents lists the owned relay-only identity and opens its exact profile", async ({
++  page,
++}) => {
++  await page.getByRole("button", { name: "Agents", exact: true }).click();
++  const card = page.getByTestId(`external-agent-${AGENT}`);
++  await expect(card).toBeVisible();
++  await expect(card).toContainText("Policy-only Scout");
++  await expect(card.getByRole("button")).toHaveCount(1);
++  await card.getByRole("button").click();
++  await expect(page).toHaveURL(new RegExp(`profile=${AGENT}`));
++  await expect(
++    page.getByRole("button", { name: "Message", exact: true }),
++  ).toBeVisible();
++  await expect(
++    page.getByRole("button", { name: "Start", exact: true }),
++  ).toHaveCount(0);
++  await expect(
++    page.getByRole("button", { name: "Stop", exact: true }),
++  ).toHaveCount(0);
++  await page.getByRole("button", { name: "Message", exact: true }).click();
++  await expect(page).toHaveURL(/channels\//);
++});
