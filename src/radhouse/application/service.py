@@ -521,7 +521,7 @@ class Service:
 
     def _finish_work(self, task_id: str, dispatch_key: str, result: RuntimeResult) -> Task:
         content = result.content if result.state == "completed" else None
-        if result.state == "completed" and content is None:
+        if result.state == "completed" and (content is None or not content.strip()):
             return self._needs_attention(task_id, dispatch_key)
         if content is not None and len(content.encode()) > 65536:
             raise Rejected("result_too_large")

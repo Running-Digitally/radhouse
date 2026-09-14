@@ -4,6 +4,7 @@ import pytest
 
 from radhouse.application.coordinator import Coordinator
 from radhouse.domain.tasks import Rejected
+from radhouse.domain.tasks import RuntimeResult
 
 
 class RecordingService:
@@ -78,3 +79,26 @@ def test_human_paused_task_waits_until_the_operator_resumes_it(
     cycle = Coordinator(service, "worker-one").run_once()
     assert cycle.receipts[0].outcome == "completed"
     assert fake_work.start_count == 1
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize("content", [None, "", " \n\t"])
+def test_empty_runtime_completion_stays_unverified_without_redispatch(
+    service, store, alice, envelope, start, fake_work, content,
+):
+    fake_work.result = lambda *_: RuntimeResult("completed", content)
+    task = service.admit(alice, envelope(), start)
+    first = service.run(task.task_id)
+    assert first.phase != "closed" and first.outcome is None
+    assert "operation_unknown" in first.blockers
+    assert first.result is None and first.result_digest is None
+    recovered = service.recover(task.task_id)
+    assert recovered.attempt_id == first.attempt_id
+    assert recovered.phase != "closed" and recovered.outcome is None
+    assert fake_work.start_count == 1
+    with store.transaction() as tx:
+        assert tx.publication(task.task_id) is None
+    fake_work.result = lambda *_: RuntimeResult("failed")
+    failed = service.recover(task.task_id)
+    assert failed.phase == "closed" and failed.outcome == "failed"
+    assert failed.result is None and fake_work.start_count == 1

@@ -222,3 +222,33 @@ counts and semantic checks in operational evidence, not task contents or secrets
 Keep private exposure, current firewall restrictions, signed identity checks,
 MFA, DML-only runtime access, exact model binding and bounded tools. Do not
 change VM250, public DNS, Cloudflare, mobile clients or unrelated infrastructure.
+
+## Official-client walkthrough corrections, 14 September
+
+The first official-client follow-up retained the correct completed parent and
+created one task/run, but did not pass acceptance. The official client used a
+reply-only NIP-10 marker. The adapter incorrectly treated that reply as a new
+thread root, and the relay rejected its acknowledgement and progress events.
+Hermes separately exhausted two thinking-only responses without tools or a
+final result, yet reported completion. No guidance or publication was sent.
+The coordinator is held and the original task and signed outbox remain intact.
+
+This bounded D1 correction changes two existing call paths, without schema,
+client, authority or model changes:
+
+- In `BuzzConversationCycle._prepare_outbox`, derive a reply parent's root from
+  its root marker, otherwise its reply marker. Without a reply marker the parent
+  is top-level, including legacy root-only events. Preserve the
+  immediate parent ID. A transport fixture must enforce the relay's ancestry
+  rule for a reply-only follow-up, then verify one task and stable signed
+  acknowledgement/result events after reconnect and lost acknowledgement.
+- In `Service._finish_work`, treat an absent or whitespace-only completed result
+  as an unverified runtime outcome, using the existing attention/reconciliation
+  state. Do not close successfully, publish, redispatch or create another model
+  call. Verify this through the normal service and durable dispatch path.
+
+Hermes owns its separate correction to unfinished/empty run status. These
+changes do not rewrite the retained failed walkthrough, regenerate signed
+outbox rows, or authorize another proof task. Any delivery repair must first
+prove the rejected event IDs absent at the relay and preserve their provenance;
+an unknown delivery remains immutable. Live acceptance remains open.
