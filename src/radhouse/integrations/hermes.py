@@ -60,6 +60,7 @@ class HermesRun:
 @dataclass(frozen=True)
 class HermesCapabilities:
     idempotency_retention_seconds: int
+    disable_tools: bool = False
 
 
 class HermesRunsClient:
@@ -140,10 +141,12 @@ class HermesRunsClient:
             or not 1 <= retention <= 31 * 24 * 60 * 60
         ):
             raise HermesGatewayError("runtime_idempotency_unavailable")
-        return HermesCapabilities(idempotency_retention_seconds=retention)
+        restriction = features.get("runs_disable_tools")
+        return HermesCapabilities(idempotency_retention_seconds=retention,
+            disable_tools=isinstance(restriction, dict) and restriction.get("supported") is True)
 
     def start_or_attach(
-        self, *, input_text: str, session_id: str, dispatch_key: str
+        self, *, input_text: str, session_id: str, dispatch_key: str, disable_tools: bool = False
     ) -> HermesDispatch:
         if not input_text or len(input_text.encode("utf-8")) > MAX_INPUT_BYTES:
             raise ValueError("invalid_hermes_input")
@@ -153,7 +156,7 @@ class HermesRunsClient:
             "POST",
             "v1/runs",
             expected_status=202,
-            body={"input": input_text, "session_id": session_id},
+            body={"input": input_text, "session_id": session_id, **({"disable_tools": True} if disable_tools else {})},
             headers={"Idempotency-Key": dispatch_key},
         )
         replayed = payload.get("replayed")
@@ -309,6 +312,8 @@ class HermesAgentWorkAdapter:
 
     def capabilities(self, _task: Task) -> RuntimeCapabilities:
         capabilities = self.client.capabilities()
+        if _task.disable_tools and not capabilities.disable_tools:
+            raise HermesGatewayError("runtime_tools_restriction_unavailable")
         return RuntimeCapabilities(
             runtime_revision=self.runtime_revision,
             idempotency_retention_seconds=capabilities.idempotency_retention_seconds,
@@ -323,6 +328,7 @@ class HermesAgentWorkAdapter:
             input_text=runtime_input(task),
             session_id=task.task_id,
             dispatch_key=dispatch_key,
+            **({"disable_tools": True} if task.disable_tools else {}),
         )
         return RuntimeDispatch(
             run_id=accepted.run_id,

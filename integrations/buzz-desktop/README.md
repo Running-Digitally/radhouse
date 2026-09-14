@@ -1,9 +1,11 @@
-# Maintained Buzz desktop task panel
+# Maintained Buzz desktop Researcher integration
 
 The owner approved this minimal desktop patch on 2026-09-13. It targets Buzz
 0.5.23, upstream `092c6a7277698bd373ccbc1d008fc1507094ae74`. It adds a
-**Radhouse tasks** button to the member's channel header. The panel bundles the
-same operator components as Radhouse and uses the existing native signing key;
+**Review work** button to the member's channel header. The approved redirect
+connects an actual Researcher identity in Buzz's agent directory and private DMs.
+The contextual review component bundles the same operator components as Radhouse
+and uses the existing native signing key;
 it does not load executable code from the controller.
 
 `manifest.json` pins the upstream, patch digest and canonical shared-source
@@ -47,7 +49,7 @@ compilation, not a configured installation.
 
 ## Controller and key registration
 
-Apply the schema-2 upgrade described in `docs/storage.md` before starting the
+Apply the schema-3 upgrade described in `docs/storage.md` before starting the
 new controller. The optional private overlay adds:
 
 ```yaml
@@ -61,8 +63,8 @@ buzz:
 
 The existing local-auth configuration must use HTTPS, secure cookies and the
 default `radhouse_session` cookie name. Allow the controller one exact HTTPS
-connection to the relay's fixed `/query` route. Relay/database credentials and
-new service identities are unnecessary. Existing network controls still apply.
+connection to the relay's fixed `/query` and `/events` routes and its authenticated
+content-addressed `/media/` reads. Existing network controls still apply.
 
 Bind the human's public key to an existing Radhouse principal and project using
 the operator CLI. This command checks existing project access; it cannot create
@@ -75,6 +77,24 @@ radhouse buzz-bind --config /etc/radhouse/config.yaml \
   --project-id existing-project --channel-id exact-existing-channel-id \
   --pubkey VERIFIED_HUMAN_HEX_PUBLIC_KEY --apply
 ```
+
+Configure a Researcher candidate under `buzz.agents` with `link_id`,
+`conversation_id`, `principal_id`, `owner_pubkey`, `bot_id`, `project_id`,
+`binding_revision`, `agent_pubkey` and a protected `signing_key: {path: ...}` file.
+The controller verifies the public key matches this file; a client cannot choose
+another identity. Leave `channel_id` and
+`activated_at` absent for initial enrollment. See the configuration types and
+`docs/operator-buzz-completion.md` for the exact enrollment contract.
+
+In the admitted owner's native client, sign in to **Review work** and select
+**Connect Researcher**. The native signer creates an owner attestation and
+directory record, opens the owner/agent DM, then asks the controller to finish
+the retained enrollment. After that, use Buzz's ordinary agent directory, DM,
+composer and reply action. Radhouse provides the same conversation in its web
+home. The native button handles protected decisions and result publication.
+The attestation delegates relay membership through the owner; the controller
+independently restricts work to the configured owner, bot, project and exact DM.
+Enrollment therefore requires the explicit private identity/access decision.
 
 ## Qualification and rollback
 
@@ -90,7 +110,7 @@ no duplicate dispatch/publication and no private display after revoked access.
 For a source rollback, run `git apply --reverse --check` with this patch, then
 `git apply --reverse` only in the owned checkout. Retain unrelated changes.
 For an installed client rollback, restore the retained upstream bundle and
-disable the optional controller Buzz overlay. Preserve the schema-2 database;
+disable the optional controller Buzz overlay. Preserve the schema-3 database;
 an older controller binary cannot consume it safely. After new work is admitted,
 restore of an older database requires an explicit data-loss decision.
 

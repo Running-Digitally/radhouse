@@ -113,7 +113,7 @@ def main(arguments: list[str] | None = None) -> int:
                 if config.buzz is not None:
                     from radhouse.channels.buzz import create_buzz_app
                     app.mount("/buzz", create_buzz_app(controller.service, auth, config.buzz,
-                                                       config.authentication.expected_origin))
+                                                       config.authentication.expected_origin, enrollment=controller.enrollment))
                 uvicorn.run(
                     app, host=args.host, port=args.port, proxy_headers=True,
                     forwarded_allow_ips="127.0.0.1", access_log=False,
@@ -122,11 +122,14 @@ def main(arguments: list[str] | None = None) -> int:
             return 0
         elif args.command == "coordinator-once":
             with compose_controller(config) as controller:
+                ingress=[bridge.run("ingress") for bridge in controller.conversations]
                 cycle = controller.coordinator.run_once()
+                egress=[bridge.run("egress") for bridge in controller.conversations]
             output = {
                 "result": "complete", "worker_id": cycle.worker_id,
                 "task_count": len(cycle.receipts),
                 "errors": sum(receipt.error_code is not None for receipt in cycle.receipts),
+                "conversation_errors":sum(receipt["error_code"] is not None for receipt in ingress+egress),
             }
         elif args.command == "buzz-bind":
             if not args.apply:

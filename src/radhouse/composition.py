@@ -41,6 +41,8 @@ class ControllerComposition:
     coordinator: Coordinator
     web_root: Path
     _clients: tuple[object, ...]
+    conversations: tuple[object, ...] = ()
+    enrollment: object | None = None
     _closed: bool = False
 
     def close(self) -> None:
@@ -119,6 +121,22 @@ def compose_controller(
             config.coordinator.worker_id,
             max_tasks_per_cycle=config.coordinator.max_tasks_per_cycle,
         )
+        conversation_cycles=[]
+        if config.buzz:
+            from radhouse.channels.buzz_relay import BuzzRelay
+            from radhouse.channels.buzz_enrollment import ConfiguredBuzzConversation
+            for agent in config.buzz.agents:
+                relay=BuzzRelay(config.buzz.relay_origin,config.buzz.relay_pubkey,
+                    read_secret_file(agent.signing_key.path),clock=lambda:clock().timestamp())
+                clients.append(relay)
+                if relay.pubkey!=agent.agent_pubkey:
+                    raise ValueError("buzz_agent_key_mismatch")
+                conversation_cycles.append(ConfiguredBuzzConversation(service,relay,agent))
+        from radhouse.channels.buzz_enrollment import BuzzEnrollment
+        # The same configured scope fences web sends/history and relay cycles.
+        # Removing a candidate must not leave its old web composer operational.
+        service.conversation_scope = lambda link: any(
+            item.candidate.active and item.matches(link) for item in conversation_cycles)
         return ControllerComposition(
             config,
             store,
@@ -128,6 +146,8 @@ def compose_controller(
             coordinator,
             Path(config.web.root),
             tuple(clients),
+            tuple(conversation_cycles),
+            BuzzEnrollment(service, tuple(conversation_cycles)) if config.buzz else None,
         )
     except Exception:
         for client in reversed(clients):

@@ -15,6 +15,7 @@ from radhouse.channels.commands import Envelope
 from radhouse.application.ports import AgentWorkPort, ProviderPort, Store, UnitOfWork
 from radhouse.application.views import ActionView, ProjectView, TaskCard, WorkHome
 from radhouse.domain.access import AuthContext, require_access, require_assurance
+from radhouse.domain.conversations import ConversationLink
 from radhouse.domain.releases import Publication, Review, digest, validate_review
 from radhouse.domain.tasks import (AgentDispatch, Attempt, Delivery, Event,
     Observation, ProviderDescription, Rejected, RuntimeCapabilities, RuntimeDispatch,
@@ -27,9 +28,11 @@ def fingerprint(value: object) -> str:
 
 class Service:
     def __init__(self, store: Store, work: AgentWorkPort, provider: ProviderPort,
-                 clock: Callable[[], datetime], *, approval_commands: dict[str, tuple[str, ...]] | None = None):
+                 clock: Callable[[], datetime], *, approval_commands: dict[str, tuple[str, ...]] | None = None,
+                 conversation_scope: Callable[[ConversationLink], bool] | None = None):
         self.store, self.work, self.provider, self.clock = store, work, provider, clock
         self.approval_commands = approval_commands or {}
+        self.conversation_scope = conversation_scope
 
     def _now(self) -> datetime:
         value = self.clock()
@@ -69,12 +72,22 @@ class Service:
             raise Rejected("stale_state")
 
     def admit(self, actor: AuthContext, envelope: Envelope, start: StartTask) -> Task:
+        # An explicit no-tools assignment narrows runtime authority. Only the
+        # operator's brief is considered; reference material cannot set policy.
+        import re
+        if re.search(r"\b(?:use no tools|do not use (?:any )?tools|don't use (?:any )?tools|no tool calls)\b", start.brief, re.I):
+            start = replace(start, disable_tools=True)
+        if type(start.disable_tools) is not bool:
+            raise Rejected("invalid_task", 422)
         if not start.brief.strip() or len(start.brief) > 4096 or not 1 <= start.budget <= 100:
             raise Rejected("invalid_task", 422)
         if (len(start.files) > 4 or sum(len(f.content.encode()) for f in start.files) > 65536
                 or any(not f.name or len(f.name) > 200 or any(c in f.name for c in "/\\\x00\n\r") for f in start.files)):
             raise Rejected("invalid_input_files", 422)
         body = asdict(start)
+        if not start.disable_tools:
+            # Preserve schema-2 command fingerprints for ordinary retries.
+            body.pop("disable_tools")
         identity = fingerprint(body)
         event_identity = fingerprint({"kind": "start", "key": envelope.command_key, "body": body})
         with self.store.transaction() as tx:
@@ -112,7 +125,8 @@ class Service:
             else:
                 task = Task(str(uuid4()), actor.principal_id, start.bot_id, start.project_id,
                             start.brief, start.provider_binding, start.resource_key, start.budget,
-                            files=start.files, follows_task_id=start.follows_task_id, previous_result=previous_result)
+                            files=start.files, follows_task_id=start.follows_task_id, previous_result=previous_result,
+                            disable_tools=start.disable_tools)
                 tx.insert_task(task)
                 tx.save_command(SavedCommand(actor.principal_id, envelope.command_key, identity, task.task_id))
                 tx.add_event(Event(task.task_id, "admitted", task.state_revision))

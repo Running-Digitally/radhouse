@@ -42,6 +42,7 @@ class StartTaskSchema(StrictModel):
     budget: Annotated[int, Field(ge=1, le=100)] = 3
     files: Annotated[list[InputFileSchema], Field(max_length=4)] = []
     follows_task_id: Identifier | None = None
+    disable_tools: bool = False
 
     def command(self) -> StartTask:
         value = self.model_dump()
@@ -105,6 +106,7 @@ class TaskResponse(StrictModel):
     follows_task_id: str | None = None
     guidance: tuple[dict, ...] = ()
     permission_request: dict | None = None
+    disable_tools: bool = False
 
 
 class ReviewResponse(StrictModel):

@@ -1,6 +1,7 @@
 import type { Project, Review, TaskEvents, TaskSummary, WorkHome } from "./types.js";
 import { parseWorkHome } from "./contract.js";
 import { CommandLedger } from "./commands.js";
+import type { ConversationLink, ConversationHistory, ConversationMessage } from "./conversations.js";
 
 export interface AuthSession {
   principal_id: string;
@@ -10,6 +11,15 @@ export interface AuthSession {
   binding_revision: number;
   project_id: string;
   csrf_token: string;
+}
+
+export interface AgentEnrollment {
+  link_id: string;
+  agent_pubkey: string;
+  owner_pubkey: string;
+  display_name: string;
+  channel_id: string | null;
+  ready: boolean;
 }
 
 export type Transport = (path: string, init: RequestInit) => Promise<Response>;
@@ -114,6 +124,26 @@ export class RadhouseApi {
     } catch {
       throw new ApiError("invalid_server_response", 502);
     }
+  }
+
+  async conversations(): Promise<ConversationLink[]> {
+    return this.request(`/conversations?${this.query()}`);
+  }
+
+  async enrollmentCandidates(): Promise<AgentEnrollment[]> {
+    return this.request(`/agent-enrollment?${this.query()}`);
+  }
+
+  async conversationHistory(linkId: string, before?: number): Promise<ConversationHistory> {
+    const page = before === undefined ? "tail=true" : `before=${before}`;
+    return this.request(`/conversations/${encodeURIComponent(linkId)}/messages?${this.query()}&${page}`);
+  }
+
+  async sendMessage(linkId: string, content: string, replyTo: string | null,
+    files: { name: string; content: string }[]): Promise<ConversationMessage> {
+    return this.command(`/conversations/${encodeURIComponent(linkId)}/messages`, {
+      content, reply_to: replyTo, files,
+    });
   }
 
   async start(input: {

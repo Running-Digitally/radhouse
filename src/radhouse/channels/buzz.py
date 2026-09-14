@@ -60,6 +60,21 @@ class BuzzBoundary:
         membership = request.headers.get("x-buzz-membership", "")
         channel = tags.get("h")
         configured = next((item for item in self.config.conversations if item.channel_id == channel), None)
+        if configured is None and isinstance(channel, str):
+            with self.service.store.transaction() as tx:
+                link = tx.conversation_link_for_channel(channel)
+                enrolled = tx.conversation_enrollment(link.link_id) if link else None
+            candidate = next((item for item in self.config.agents if link and item.link_id == link.link_id), None)
+            if (candidate and enrolled and enrolled["ready"] and candidate.active and link.active
+                    and candidate.owner_pubkey == link.owner_pubkey == event["pubkey"]
+                    and candidate.agent_pubkey == link.agent_pubkey
+                    and (candidate.channel_id is None or candidate.channel_id == link.channel_id)
+                    and candidate.principal_id == link.principal_id
+                    and candidate.project_id == link.project_id
+                    and candidate.bot_id == link.bot_id
+                    and candidate.binding_revision == link.binding_revision
+                    and candidate.conversation_id == link.conversation_id):
+                configured = link
         if (configured is None or tags.get("relay") != self.config.relay_origin
                 or tags.get("membership") != sha256(membership.encode()) or tags.get("thread", "") != ""):
             raise Rejected("buzz_conversation_denied", 403)
@@ -93,12 +108,12 @@ class BuzzBoundary:
         return AuthContext(local.principal_id, "buzz", binding.subject, local.assurance_until)
 
 
-def create_buzz_app(service, local_auth, config, controller_origin, *, transport=None):
+def create_buzz_app(service, local_auth, config, controller_origin, *, transport=None, enrollment=None):
     from radhouse.api.app import create_app
     boundary = BuzzBoundary(service, local_auth, config, controller_origin, transport=transport)
     app = create_app(service, boundary.authenticate, local_auth=local_auth,
                      login_principal=lambda request: request.state.buzz_binding.principal_id,
-                     session_binding=lambda request: request.state.buzz_binding)
+                     session_binding=lambda request: request.state.buzz_binding, enrollment=enrollment)
 
     @app.middleware("http")
     async def signed_request(request: Request, call_next):
