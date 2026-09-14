@@ -7,10 +7,24 @@ name = "radhouse"
 version = "0.0.1"
 description = "Durable, permission-aware work for self-hosted agents"
 requires-python = ">=3.14,<3.15"
-dependencies = ["fastapi==0.141.1", "pydantic==2.13.5", "psycopg[binary]==3.3.5"]
+dependencies = [
+    "argon2-cffi==25.1.0",
+    "cryptography==46.0.3",
+    "fastapi==0.141.1",
+    "httpx==0.28.1",
+    "pydantic==2.13.5",
+    "psycopg[binary]==3.3.5",
+    "pyotp==2.9.0",
+    "pyyaml==6.0.3",
+    "uvicorn==0.41.0",
+    "coincurve==20.0.0",
+]
+
+[project.scripts]
+radhouse = "radhouse.cli:main"
 
 [dependency-groups]
-dev = ["pytest==9.1.1", "httpx==0.28.1"]
+dev = ["pytest==9.1.1"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -19,3 +33,7 @@ markers = ["postgres: requires the owned local PostgreSQL fixture"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/radhouse"]
+
+[tool.uv]
+# Coincurve 20's CMake settings require scikit-build-core's 0.9 interface.
+build-constraint-dependencies = ["scikit-build-core==0.9.10"]

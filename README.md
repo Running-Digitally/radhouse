@@ -6,11 +6,26 @@ Radhouse is a self-hosted platform being built for persistent AI agents: agents
 that retain their workspaces, work on useful assignments, and collaborate within
 permissions you control.
 
-**Status: early development.** The first offline controller slice is implemented:
-a durable task can survive a controller crash and receive a reviewed publication
-through two simulated operator channels. The local PostgreSQL proof passes 111
-tests. There is no installable fleet release yet; the features below remain the
-intended version 1.0.
+**Status: early development.** Durable Hermes execution, the everyday operator
+workflow, and a pinned Buzz desktop task-panel patch are implemented. Both
+surfaces use one controller for selected files, follow-up assignments, progress,
+guidance, permission decisions and protected publication. Local qualification
+uses an owned PostgreSQL database, the actual API and a browser walkthrough;
+the native transport adds signed identity and live relay membership checks to
+the existing MFA session boundary.
+
+The native desktop patch still needs qualification against the private relay
+and deployed controller. Official mobile clients, OIDC composition,
+administrator invitation/recovery UX and an installable fleet release remain
+incomplete. See the [implementation and acceptance packet](docs/operator-buzz-completion.md)
+and [maintained desktop patch](integrations/buzz-desktop/README.md). This is not
+a claim that all of Radhouse V1 is released.
+
+The offline-safe composition root reads protected database and per-bot Hermes
+secret files, routes runtime operations by durable bot ID, and owns client
+shutdown without contacting a configured service during construction.
+The `radhouse preflight` command exposes that deterministic local check before
+any online deployment probe.
 
 ## Why Radhouse?
 
@@ -78,26 +93,55 @@ network profiles, and shared-service integrations still need qualification.
 
 ## Run the first controller proof
 
-With Python 3.14, uv, and a running local Docker daemon:
+With Python 3.14, uv, Node.js and a running local Docker daemon:
 
 ```sh
 uv sync --locked
+npm --prefix web ci
+npm --prefix web run build
+# Install the pinned browser once (plus OS libraries on Linux when required).
+cd web && npx playwright install chromium && cd ..
 uv run python scripts/vs0.py verify
 ```
 
 This creates one disposable PostgreSQL fixture, demonstrates recovery in both
 simulated Radhouse/Buzz directions, runs the tests, and removes its owned test
 container and volume. It uses synthetic identities and fake agent/model/service
-adapters. See [the demo guide](docs/vs0-demo.md) for prerequisites, resource limits,
-evidence, and the remaining integration work.
+adapters. The Hermes HTTP adapter has separate bounded transport tests and makes
+no model request. See [the demo guide](docs/vs0-demo.md) for prerequisites,
+resource limits, evidence, and the remaining integration work.
+
+The proof includes the actual API/browser workflow with signed synthetic Buzz
+requests. To use an already installed Chrome instead of Playwright Chromium, set
+`RADHOUSE_BROWSER_CHANNEL=chrome`. Live relay and native desktop qualification
+remain separate.
+
+The operator client has its own pinned, inspectable build:
+
+```sh
+cd web
+npm ci
+npm test
+```
+
+An application composition root may explicitly serve the compiled directory at
+`/app/`. Static files contain no user data; every API request still requires the
+composition root's real authentication adapter and current Radhouse authorization.
 
 ## Read the plan
 
 - [Architecture and first-slice review](docs/architecture-review.md): the proposed
   system structure, accepted boundaries, and the implemented offline slice.
+- [VS1-B useful-task pilot](docs/vs1b-pilot.md): the next implementation slices
+  for durable Hermes execution, the TypeScript work home, and real Buzz parity.
 - [Reference deployment foundation](docs/deployment/reference-foundation.md):
   reusable Proxmox or supplied-VM roles, readiness states, and handoff evidence.
+- [Configuration and private overlays](docs/configuration.md): strict public YAML,
+  private replacement values, secret-file references, and endpoint boundaries.
+- [PostgreSQL storage boundary](docs/storage.md): separate fixture/application
+  guards, deployment identity, schema compatibility, and remaining migration work.
 - Integration profiles for [Hermes](docs/integrations/hermes.md),
+  [OpenAI-compatible local inference](docs/integrations/openai-compatible.md),
   [Authentik](docs/integrations/authentik.md), and
   [Buzz](docs/integrations/buzz.md): pinned qualification candidates, boundaries,
   recovery requirements, and the evidence still needed before a live pilot.

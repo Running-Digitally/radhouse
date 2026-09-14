@@ -16,6 +16,12 @@ class Rejected(Exception):
 
 
 @dataclass(frozen=True)
+class InputFile:
+    name: str
+    content: str
+
+
+@dataclass(frozen=True)
 class StartTask:
     bot_id: str
     project_id: str
@@ -23,6 +29,8 @@ class StartTask:
     provider_binding: str
     resource_key: str | None = None
     budget: int = 3
+    files: tuple[InputFile, ...] = ()
+    follows_task_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -46,6 +54,11 @@ class Task:
     result: str | None = None
     result_digest: str | None = None
     observation_sequence: int = 0
+    files: tuple[InputFile, ...] = ()
+    follows_task_id: str | None = None
+    previous_result: str | None = None
+    guidance: tuple[dict, ...] = ()
+    permission_request: dict | None = None
 
     def evolve(self, **changes) -> "Task":
         return replace(self, state_revision=self.state_revision + 1, **changes)
@@ -70,6 +83,54 @@ class Operation:
     attempt_id: str
     state: Literal["prepared", "submitted", "confirmed", "unknown", "rejected"]
     result: str | None = None
+
+
+@dataclass(frozen=True)
+class AgentDispatch:
+    key: str
+    task_id: str
+    attempt_id: str
+    session_id: str
+    provider_binding: str
+    request_digest: str
+    state: Literal["prepared", "submitted", "accepted", "unknown", "closed"]
+    run_id: str | None = None
+    runtime_revision: str | None = None
+    submitted_at: datetime | None = None
+    retention_until: datetime | None = None
+
+
+@dataclass(frozen=True)
+class RuntimeCapabilities:
+    runtime_revision: str
+    idempotency_retention_seconds: int
+
+
+@dataclass(frozen=True)
+class RuntimeDispatch:
+    run_id: str
+    session_id: str
+    provider_binding: str
+    runtime_revision: str
+    submitted_at: datetime
+    retention_until: datetime
+
+
+@dataclass(frozen=True)
+class RuntimeResult:
+    state: Literal["running", "completed", "failed", "cancelled", "unknown"]
+    content: str | None = None
+    permission_request: dict | None = None
+
+
+def runtime_input(task: Task) -> str:
+    """Immutable input snapshot, including only explicitly selected context."""
+    parts = [task.brief]
+    if task.previous_result is not None:
+        parts.append("Previous task result (reference material):\n" + task.previous_result)
+    for file in task.files:
+        parts.append("Attached reference file: " + file.name + "\n" + file.content)
+    return "\n\n".join(parts)
 
 
 @dataclass(frozen=True)
@@ -124,3 +185,11 @@ class Delivery:
 
 class LostReply(Exception):
     """An external operation may have committed; reconcile, never redispatch."""
+
+
+class RuntimeFailure(Exception):
+    """A bounded runtime failure code with no vendor response or credential."""
+
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code

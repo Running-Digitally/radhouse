@@ -15,7 +15,7 @@ from radhouse.application.service import Service
 from radhouse.domain.access import AuthContext
 from radhouse.domain.tasks import StartTask
 from radhouse.storage.postgres import PostgresStore
-from tests.fakes import FakeOperations, FakeProvider, FakeRuntime, FixedClock, make_envelope
+from tests.fakes import FakeAgentWork, FakeOperations, FakeProvider, FakeRuntime, FixedClock, make_envelope
 
 FIXTURE = Path(__file__).parent / "fixtures" / "vs0.json"
 
@@ -40,11 +40,25 @@ def seed_fixture(dsn: str) -> None:
     data = json.loads(FIXTURE.read_text())
     with psycopg.connect(dsn) as connection:
         # Reverse FK order from the fixture schema. No schema/role authority is used.
-        for table in ("events", "deliveries", "commands", "publications", "reviews", "operations", "budget_reservations", "claims", "task_revisions", "attempts", "tasks", "channel_bindings", "project_members", "bot_grants", "actors"):
+        for table in ("local_sessions", "local_login_throttles", "local_credentials", "events", "deliveries", "commands", "publications", "reviews", "agent_dispatches", "operations", "budget_reservations", "claims", "task_revisions", "attempts", "tasks", "channel_bindings", "project_members", "bot_grants", "bots", "projects", "actors"):
             connection.execute(sql.SQL("DELETE FROM {}").format(sql.Identifier("public", table)))
+        for bot in data["bots"]:
+            connection.execute(
+                "INSERT INTO bots(bot_id,display_name,role_name,provider_binding,state) "
+                "VALUES (%s,%s,%s,%s,%s)",
+                (bot["bot_id"], bot["display_name"], bot["role_name"],
+                 bot["provider_binding"], bot["state"]),
+            )
         for principal in data["principals"]:
             pid = principal["id"]
             connection.execute("INSERT INTO actors(principal_id,role) VALUES (%s,%s)", (pid, principal["role"]))
+        for project in data["projects"]:
+            connection.execute(
+                "INSERT INTO projects(project_id,owner_id,display_name,state) VALUES (%s,%s,%s,%s)",
+                (project["project_id"], project["owner_id"], project["display_name"], project["state"]),
+            )
+        for principal in data["principals"]:
+            pid = principal["id"]
             for bot in principal["bots"]:
                 connection.execute("INSERT INTO bot_grants(principal_id,bot_id) VALUES (%s,%s)", (pid, bot))
             for project in principal["projects"]:
@@ -85,11 +99,15 @@ def fake_operations(tmp_path):
 
 
 @pytest.fixture
-def service_factory(store, fake_runtime, fake_provider, fake_operations, clock):
+def fake_work(tmp_path, clock):
+    return FakeAgentWork(tmp_path / "target.sqlite3", clock=clock)
+
+
+@pytest.fixture
+def service_factory(store, fake_work, fake_provider, clock):
     def factory(**overrides):
-        return Service(overrides.get("store", store), overrides.get("runtime", fake_runtime),
-                       overrides.get("provider", fake_provider), overrides.get("operations", fake_operations),
-                       overrides.get("clock", clock))
+        return Service(overrides.get("store", store), overrides.get("work", fake_work),
+                       overrides.get("provider", fake_provider), overrides.get("clock", clock))
     return factory
 
 

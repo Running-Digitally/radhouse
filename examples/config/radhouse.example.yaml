@@ -1,0 +1,40 @@
+schema_version: 1
+
+database:
+  dsn:
+    path: /run/secrets/radhouse-database-dsn
+  name: radhouse
+  deployment_id: radhouse-example
+
+coordinator:
+  worker_id: controller-example-01
+  interval_seconds: 5
+  max_tasks_per_cycle: 8
+
+web:
+  root: /opt/radhouse/web
+
+providers:
+  - binding: local-chat
+    endpoint: https://inference.example.invalid/v1
+    model: local-chat
+    requirements:
+      required: [text, tools]
+      admitted: [text, tools]
+      minimum_context_tokens: 8192
+
+bots:
+  - bot_id: researcher-001
+    endpoint: https://researcher-001.example.invalid
+    token:
+      path: /run/secrets/researcher-001-hermes-token
+    profile: researcher
+    runtime_revision: hermes-0.21.1
+    provider_binding: local-chat
+  - bot_id: reviewer-001
+    endpoint: https://reviewer-001.example.invalid
+    token:
+      path: /run/secrets/reviewer-001-hermes-token
+    profile: reviewer
+    runtime_revision: hermes-0.21.1
+    provider_binding: local-chat

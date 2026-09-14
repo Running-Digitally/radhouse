@@ -121,6 +121,11 @@ offline foundation exercises both simulated channels first. Retain all accepted
 V1 requirements and the applicable identity, scope and isolation checks before
 live access.
 
+The [VS1-B implementation packet](docs/vs1b-pilot.md) divides that milestone into
+durable Hermes task execution, the TypeScript operator work home, and real Buzz
+parity. The order keeps one authority and recovery path while allowing the core
+product to remain useful when Buzz is disabled.
+
 Prepared VM and component work feeds the
 [handoff into the live pilot](docs/architecture-review.md#prepared-infrastructure-and-the-path-into-the-live-pilot).
 The public [reference foundation](docs/deployment/reference-foundation.md) and

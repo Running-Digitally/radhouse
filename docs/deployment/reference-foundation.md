@@ -66,6 +66,10 @@ and refer to secrets by identifier. A private deployment overlay supplies exact
 hostnames, addresses, storage pools, certificate names, secret locations, and
 backup targets. Installation code must validate the merged configuration and
 must not require private values to be committed to this repository.
+The first implemented schema and a synthetic example are documented in
+[configuration and private overlays](../configuration.md). Parsing is only the
+first preflight stage; live endpoint, secret, capacity, and recovery evidence
+remain required before service startup.
 
 The deployment handoff for each guest records the image and package versions,
 resource limits, allowed callers and destinations, maintenance policy, persistent

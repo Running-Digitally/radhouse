@@ -111,6 +111,23 @@ def test_closed_task_does_not_depend_on_provider_availability(
     assert restarted.run(task.task_id) == closed
 
 
+@pytest.mark.postgres
+def test_task_cannot_override_the_bots_assigned_provider(
+    service, store, alice, envelope, start,
+):
+    with pytest.raises(Rejected) as error:
+        service.admit(
+            alice,
+            envelope(),
+            replace(start, provider_binding="unassigned-provider"),
+        )
+
+    assert error.value.code == "provider_binding_denied"
+    assert error.value.status == 403
+    with store.transaction() as tx:
+        assert tx.tasks() == []
+
+
 def test_harness_rejects_docker_environment_override_before_any_command(monkeypatch):
     from scripts.vs0 import FixtureError, Run
     monkeypatch.setenv("DOCKER_HOST", "tcp://unowned.invalid:2375")

@@ -12,11 +12,13 @@ from uuid import uuid4
 
 from radhouse.channels.mapping import verify_envelope
 from radhouse.channels.commands import Envelope
-from radhouse.application.ports import OperationsPort, ProviderPort, RuntimePort, Store, UnitOfWork
+from radhouse.application.ports import AgentWorkPort, ProviderPort, Store, UnitOfWork
+from radhouse.application.views import ActionView, ProjectView, TaskCard, WorkHome
 from radhouse.domain.access import AuthContext, require_access, require_assurance
 from radhouse.domain.releases import Publication, Review, digest, validate_review
-from radhouse.domain.tasks import (Attempt, Delivery, Event, LostReply, Operation,
-    EffectResult, Observation, ProviderDescription, Rejected, SavedCommand, StartTask, Task)
+from radhouse.domain.tasks import (AgentDispatch, Attempt, Delivery, Event,
+    Observation, ProviderDescription, Rejected, RuntimeCapabilities, RuntimeDispatch,
+    RuntimeFailure, RuntimeResult, SavedCommand, StartTask, Task, Operation, runtime_input)
 
 
 def fingerprint(value: object) -> str:
@@ -24,10 +26,16 @@ def fingerprint(value: object) -> str:
 
 
 class Service:
-    def __init__(self, store: Store, runtime: RuntimePort, provider: ProviderPort,
-                 operations: OperationsPort, clock: Callable[[], datetime]):
-        self.store, self.runtime, self.provider = store, runtime, provider
-        self.operations, self.clock = operations, clock
+    def __init__(self, store: Store, work: AgentWorkPort, provider: ProviderPort,
+                 clock: Callable[[], datetime], *, approval_commands: dict[str, tuple[str, ...]] | None = None):
+        self.store, self.work, self.provider, self.clock = store, work, provider, clock
+        self.approval_commands = approval_commands or {}
+
+    def _now(self) -> datetime:
+        value = self.clock()
+        if value.utcoffset() is None:
+            raise RuntimeFailure("runtime_clock_invalid")
+        return value
 
     @staticmethod
     def _task(tx: UnitOfWork, task_id: str) -> Task:
@@ -63,12 +71,31 @@ class Service:
     def admit(self, actor: AuthContext, envelope: Envelope, start: StartTask) -> Task:
         if not start.brief.strip() or len(start.brief) > 4096 or not 1 <= start.budget <= 100:
             raise Rejected("invalid_task", 422)
+        if (len(start.files) > 4 or sum(len(f.content.encode()) for f in start.files) > 65536
+                or any(not f.name or len(f.name) > 200 or any(c in f.name for c in "/\\\x00\n\r") for f in start.files)):
+            raise Rejected("invalid_input_files", 422)
         body = asdict(start)
         identity = fingerprint(body)
         event_identity = fingerprint({"kind": "start", "key": envelope.command_key, "body": body})
         with self.store.transaction() as tx:
             require_access(tx.access(actor.principal_id), start.bot_id, start.project_id, write=True)
+            bot = next(
+                (candidate for candidate in tx.bots(actor.principal_id)
+                 if candidate.bot_id == start.bot_id),
+                None,
+            )
+            if bot is None or bot.state != "ready":
+                raise Rejected("bot_unavailable", 409)
+            if bot.provider_binding != start.provider_binding:
+                raise Rejected("provider_binding_denied", 403)
             self._binding(tx, actor, envelope, start.project_id)
+            previous_result = None
+            if start.follows_task_id:
+                previous = self._task(tx, start.follows_task_id)
+                self._authorize(tx, actor, previous, envelope, write=True)
+                if previous.project_id != start.project_id or previous.phase != "closed" or previous.result is None:
+                    raise Rejected("followup_context_unavailable")
+                previous_result = previous.result
             delivery = tx.delivery(envelope.channel, envelope.event_id)
             if delivery:
                 if delivery.principal_id != actor.principal_id or delivery.fingerprint != event_identity:
@@ -84,7 +111,8 @@ class Service:
                 self._authorize(tx, actor, task, envelope, write=True)
             else:
                 task = Task(str(uuid4()), actor.principal_id, start.bot_id, start.project_id,
-                            start.brief, start.provider_binding, start.resource_key, start.budget)
+                            start.brief, start.provider_binding, start.resource_key, start.budget,
+                            files=start.files, follows_task_id=start.follows_task_id, previous_result=previous_result)
                 tx.insert_task(task)
                 tx.save_command(SavedCommand(actor.principal_id, envelope.command_key, identity, task.task_id))
                 tx.add_event(Event(task.task_id, "admitted", task.state_revision))
@@ -97,6 +125,114 @@ class Service:
             task = self._task(tx, task_id)
             self._authorize(tx, actor, task, envelope)
             return task
+
+    def guide(self, actor, task_id, expected, text, *, envelope):
+        from radhouse.application.runtime_controls import control
+        return control(self, actor, task_id, expected, envelope, text=text)
+
+    def respond_permission(self, actor, task_id, expected, request_id, digest, choice, *, envelope):
+        from radhouse.application.runtime_controls import control
+        return control(self, actor, task_id, expected, envelope, request_id=request_id, digest=digest, choice=choice)
+
+    def coordination_candidates(self, limit: int) -> tuple[str, ...]:
+        if not 1 <= limit <= 100:
+            raise ValueError("invalid_coordination_limit")
+        held = {"human_pause", "grant_withdrawal", "budget_exhausted"}
+        with self.store.transaction() as tx:
+            tasks = tx.tasks()
+        return tuple(
+            task.task_id for task in tasks
+            if task.phase != "closed"
+            and (task.phase == "stopping" or not set(task.blockers) & held)
+        )[:limit]
+
+    def advance(self, task_id: str, worker_id: str) -> Task:
+        with self.store.transaction() as tx:
+            task = self._task(tx, task_id)
+        if task.phase == "closed":
+            return task
+        if task.phase == "queued":
+            return self.run(task_id, worker_id)
+        return self.recover(task_id)
+
+    def projects(self, actor: AuthContext) -> tuple[ProjectView, ...]:
+        with self.store.transaction() as tx:
+            access = tx.access(actor.principal_id)
+            if access is None or not access.active:
+                raise Rejected("access_denied", 403)
+            result = []
+            for binding in tx.bindings(actor.channel, actor.subject, actor.principal_id):
+                project = tx.project(binding.project_id)
+                if project and project.state == "active" and project.project_id in access.projects:
+                    result.append(ProjectView(project.project_id, project.display_name,
+                                              binding.conversation_id, binding.revision))
+            return tuple(result)
+
+    def review_audience(self, actor: AuthContext, task_id: str, *, envelope: Envelope) -> tuple[str, ...]:
+        with self.store.transaction() as tx:
+            task = self._task(tx, task_id)
+            self._authorize(tx, actor, task, envelope, write=True)
+            return tx.audience(task.bot_id, task.project_id)
+
+    def work_home(self, actor: AuthContext, *, envelope: Envelope) -> WorkHome:
+        with self.store.transaction() as tx:
+            access = tx.access(actor.principal_id)
+            binding = tx.binding(actor.channel, actor.subject, envelope.conversation_id)
+            if binding is None:
+                raise Rejected("binding_denied", 403)
+            self._binding(tx, actor, envelope, binding.project_id)
+            if access is None or not access.active or binding.project_id not in access.projects:
+                raise Rejected("access_denied", 403)
+            project = tx.project(binding.project_id)
+            if project is None or project.state != "active":
+                raise Rejected("project_unavailable", 409)
+            agents = tuple(tx.bots(actor.principal_id))
+            tasks = tuple(
+                task for task in tx.tasks()
+                if task.owner_id == actor.principal_id and task.project_id == binding.project_id
+                and task.bot_id in access.bots
+            )
+            publications = {task.task_id: tx.publication(task.task_id) for task in tasks}
+
+        can_write = access.role in {"admin", "operator"}
+        ready = any(agent.state == "ready" for agent in agents)
+        start = ActionView(
+            can_write and ready,
+            None if can_write and ready else "read_only_role" if not can_write
+            else "agents_unavailable" if agents else "no_assigned_agents",
+        )
+
+        def action(enabled: bool, reason: str) -> ActionView:
+            if not can_write:
+                return ActionView(False, "read_only_role")
+            return ActionView(enabled, None if enabled else reason)
+
+        cards = []
+        for task in tasks:
+            paused = "human_pause" in task.blockers
+            cancellable = task.phase != "closed" and "cancel_requested" not in task.blockers
+            pausable = task.phase in {"active", "recovering"} and not paused and cancellable
+            resumable = paused and task.phase not in {"closed", "stopping"}
+            publication = publications[task.task_id]
+            reviewable = task.outcome == "completed" and task.result is not None and publication is None
+            if not can_write:
+                review = ActionView(False, "read_only_role")
+            elif reviewable and (actor.assurance_until is None or actor.assurance_until <= self._now()):
+                review = ActionView(False, "fresh_assurance_required")
+            else:
+                review = action(reviewable, "already_published" if publication else "result_not_ready")
+            cards.append(TaskCard(
+                task,
+                action(cancellable, "task_closed"),
+                action(pausable, "task_not_pausable"),
+                action(resumable, "task_not_paused"),
+                review,
+                publication,
+            ))
+        return WorkHome(
+            actor.principal_id, access.role, binding.project_id, project.display_name,
+            agents, tuple(cards), start,
+        )
 
     @staticmethod
     def _provider_state(task: Task, description: ProviderDescription) -> tuple[tuple[str, ...], str | None]:
@@ -148,101 +284,249 @@ class Service:
             updated = task.evolve(phase="active", attempt_id=attempt.attempt_id,
                                   generation=attempt.generation, budget_remaining=task.budget_remaining - 1,
                                   blockers=(), observation_sequence=0)
-            tx.save_operation(Operation(task.task_id + ":report", task.task_id, attempt.attempt_id, "prepared"))
+            session_id = task.task_id
+            request_digest = fingerprint({"input": runtime_input(task), "session_id": session_id})
+            tx.save_dispatch(AgentDispatch(
+                attempt.attempt_id, task.task_id, attempt.attempt_id, session_id,
+                task.provider_binding, request_digest, "prepared",
+            ))
             return self._save(tx, task, updated, "claimed")
 
     def run(self, task_id: str, worker_id: str = "worker") -> Task:
         claimed = self.claim(task_id, worker_id)
         if claimed.phase != "active":
             return claimed
+        return self._drive(task_id, worker_id)
+
+    @staticmethod
+    def _runtime_dispatch(dispatch: AgentDispatch) -> RuntimeDispatch:
+        if (
+            dispatch.run_id is None
+            or dispatch.runtime_revision is None
+            or dispatch.submitted_at is None
+            or dispatch.retention_until is None
+        ):
+            raise Rejected("task_state_inconsistent")
+        return RuntimeDispatch(
+            dispatch.run_id, dispatch.session_id, dispatch.provider_binding,
+            dispatch.runtime_revision, dispatch.submitted_at, dispatch.retention_until,
+        )
+
+    def _needs_attention(self, task_id: str, dispatch_key: str) -> Task:
         with self.store.transaction() as tx:
             task = self._task(tx, task_id)
-            attempt = tx.attempt(task.attempt_id)
-            operation = tx.operation(task.task_id + ":report")
-            if task.phase != "active" or task.blockers:
+            if task.phase == "closed":
                 return task
-            if attempt is None or operation is None:
+            dispatch = tx.dispatch(dispatch_key)
+            if dispatch is None:
+                raise Rejected("missing_dispatch")
+            if dispatch.state in {"submitted", "prepared"}:
+                tx.save_dispatch(replace(dispatch, state="unknown"))
+            blockers = tuple(sorted(set(task.blockers) | {"operation_unknown"}))
+            phase = (
+                "stopping"
+                if task.phase == "stopping" or "cancel_requested" in blockers
+                else "recovering"
+            )
+            if (task.phase, task.blockers) == (phase, blockers):
+                return task
+            return self._save(tx, task, task.evolve(
+                blockers=blockers, phase=phase), "needs_attention")
+
+    def _runtime_unavailable(self, task_id: str) -> Task:
+        with self.store.transaction() as tx:
+            task = self._task(tx, task_id)
+            if task.phase == "closed":
+                return task
+            blockers = tuple(sorted(set(task.blockers) | {"runtime_unavailable"}))
+            if blockers == task.blockers and task.phase == "recovering":
+                return task
+            return self._save(tx, task, task.evolve(
+                blockers=blockers, phase="recovering"), "runtime_unavailable")
+
+    @staticmethod
+    def _validate_capabilities(capabilities: RuntimeCapabilities) -> None:
+        if (
+            not capabilities.runtime_revision
+            or not 1 <= capabilities.idempotency_retention_seconds <= 31 * 24 * 60 * 60
+        ):
+            raise RuntimeFailure("runtime_idempotency_unavailable")
+
+    def _drive(self, task_id: str, worker_id: str | None) -> Task:
+        with self.store.transaction() as tx:
+            task = self._task(tx, task_id)
+            if task.phase == "closed":
+                return task
+            if task.attempt_id is None:
                 raise Rejected("task_state_inconsistent")
-            if attempt.worker_id != worker_id or operation.state != "prepared":
+            attempt = tx.attempt(task.attempt_id)
+            dispatch = tx.dispatch(task.attempt_id)
+            if attempt is None or dispatch is None or dispatch.attempt_id != attempt.attempt_id:
+                raise Rejected("task_state_inconsistent")
+            if worker_id is not None and attempt.worker_id != worker_id:
+                return task
+            expected_digest = fingerprint({
+                "input": runtime_input(task), "session_id": dispatch.session_id,
+            })
+            if dispatch.request_digest != expected_digest:
+                blockers = tuple(sorted(set(task.blockers) | {"operation_unknown"}))
+                phase = "stopping" if task.phase == "stopping" else "recovering"
+                return self._save(tx, task, task.evolve(
+                    phase=phase, blockers=blockers), "needs_attention")
+            dispatch_blockers = set(task.blockers) - {
+                "operation_unknown", "runtime_stop", "runtime_unavailable",
+            }
+            if dispatch_blockers and task.phase != "stopping" and dispatch.state != "accepted":
                 return task
             try:
                 require_access(tx.access(task.owner_id), task.bot_id, task.project_id, write=True)
             except Rejected:
-                return self._save(tx, task, task.blocked("grant_withdrawal"), "waiting")
-            tx.save_operation(replace(operation, state="submitted"))
-        try:
-            self.runtime.start_or_attach(task, attempt, attempt.attempt_id)
-            result = self.operations.execute(task, operation.key)
-        except (LostReply, TimeoutError, ConnectionError):
+                blockers = tuple(sorted(set(task.blockers) | {"grant_withdrawal"}))
+                if dispatch.state != "accepted":
+                    if blockers == task.blockers:
+                        return task
+                    return self._save(tx, task, task.evolve(blockers=blockers), "waiting")
+                if task.phase != "stopping" or blockers != task.blockers:
+                    task = self._save(tx, task, task.evolve(
+                        phase="stopping", blockers=blockers), "stop_requested")
+            stop_blockers = {
+                "provider_mismatch", "provider_unavailable", "provider_incompatible",
+                "grant_withdrawal", "human_pause", "cancel_requested",
+            }
+            if (
+                dispatch.state == "accepted"
+                and set(task.blockers) & stop_blockers
+                and task.phase != "stopping"
+            ):
+                task = self._save(tx, task, task.evolve(phase="stopping"), "stop_requested")
+
+        if dispatch.state == "prepared":
+            try:
+                capabilities = self.work.capabilities(task)
+                self._validate_capabilities(capabilities)
+            except RuntimeFailure:
+                return self._runtime_unavailable(task_id)
+            submitted_at = self._now()
+            retention_until = submitted_at + timedelta(
+                seconds=capabilities.idempotency_retention_seconds
+            )
             with self.store.transaction() as tx:
                 current = self._task(tx, task_id)
-                op = tx.operation(operation.key)
-                if op is None:
-                    raise Rejected("missing_operation")
+                latest = tx.dispatch(dispatch.key)
                 if current.phase == "closed":
                     return current
-                if op.state in {"confirmed", "rejected"}:
-                    settled = EffectResult(op.state, op.result)
+                if latest is None:
+                    raise Rejected("missing_dispatch")
+                if latest.state == "prepared":
+                    dispatch = replace(
+                        latest, state="submitted",
+                        runtime_revision=capabilities.runtime_revision,
+                        submitted_at=submitted_at, retention_until=retention_until,
+                    )
+                    tx.save_dispatch(dispatch)
                 else:
-                    settled = None
-                if op.state == "submitted":
-                    tx.save_operation(replace(op, state="unknown"))
-                if settled is None:
-                    blockers = tuple(sorted(set(current.blockers) | {"operation_unknown"}))
-                    phase = "stopping" if "cancel_requested" in blockers else "recovering"
-                    if (current.phase, current.blockers) == (phase, blockers):
-                        return current
-                    return self._save(tx, current, current.evolve(
-                        blockers=blockers, phase=phase), "needs_attention")
-            return self._finish_effect(task_id, settled)
-        return self._finish_effect(task_id, result)
+                    dispatch = latest
 
-    def _finish_effect(self, task_id: str, result: EffectResult) -> Task:
+        if dispatch.state in {"submitted", "unknown"}:
+            if dispatch.retention_until is None or self._now() >= dispatch.retention_until:
+                return self._needs_attention(task_id, dispatch.key)
+            try:
+                accepted = self.work.start_or_attach(task, attempt, dispatch.key)
+            except RuntimeFailure:
+                return self._needs_attention(task_id, dispatch.key)
+            response_mismatch = (
+                accepted.session_id != dispatch.session_id
+                or accepted.provider_binding != dispatch.provider_binding
+                or accepted.runtime_revision != dispatch.runtime_revision
+            )
+            with self.store.transaction() as tx:
+                current = self._task(tx, task_id)
+                latest = tx.dispatch(dispatch.key)
+                if current.phase == "closed":
+                    return current
+                if latest is None:
+                    raise Rejected("missing_dispatch")
+                if latest.state == "accepted" and latest.run_id != accepted.run_id:
+                    blockers = tuple(sorted(set(current.blockers) | {"operation_unknown"}))
+                    return self._save(tx, current, current.evolve(
+                        phase="recovering", blockers=blockers), "needs_attention")
+                if latest.state != "accepted":
+                    dispatch = replace(latest, state="accepted", run_id=accepted.run_id)
+                    tx.save_dispatch(dispatch)
+                else:
+                    dispatch = latest
+            if response_mismatch:
+                return self._needs_attention(task_id, dispatch.key)
+
+        if dispatch.state == "closed":
+            with self.store.transaction() as tx:
+                return self._task(tx, task_id)
+        if dispatch.state != "accepted":
+            return self._needs_attention(task_id, dispatch.key)
+        runtime_dispatch = self._runtime_dispatch(dispatch)
+        with self.store.transaction() as tx:
+            current = self._task(tx, task_id)
+        if current.phase == "stopping":
+            try:
+                if not self.work.stop(current, runtime_dispatch):
+                    return self._needs_attention(task_id, dispatch.key)
+            except RuntimeFailure:
+                return self._needs_attention(task_id, dispatch.key)
+        try:
+            result = self.work.result(current, runtime_dispatch)
+        except RuntimeFailure:
+            return self._needs_attention(task_id, dispatch.key)
+        if result.state == "unknown":
+            return self._needs_attention(task_id, dispatch.key)
+        if result.state == "running":
+            with self.store.transaction() as tx:
+                current = self._task(tx, task_id)
+                if current.phase == "closed" or current.phase == "stopping":
+                    return current
+                blockers = tuple(x for x in current.blockers if x not in {
+                    "operation_unknown", "runtime_stop", "runtime_unavailable",
+                })
+                permission = result.permission_request
+                if permission is not None:
+                    permission = {**permission, "digest": fingerprint(permission),
+                                  "allow_once": permission.get("command") in self.approval_commands.get(current.bot_id, ())}
+                if (current.phase, current.blockers, current.permission_request) == ("active", blockers, permission):
+                    return current
+                return self._save(tx, current, current.evolve(
+                    phase="active", blockers=blockers, permission_request=permission), "runtime_running")
+        return self._finish_work(task_id, dispatch.key, result)
+
+    def _finish_work(self, task_id: str, dispatch_key: str, result: RuntimeResult) -> Task:
+        content = result.content if result.state == "completed" else None
+        if result.state == "completed" and content is None:
+            return self._needs_attention(task_id, dispatch_key)
+        if content is not None and len(content.encode()) > 65536:
+            raise Rejected("result_too_large")
         with self.store.transaction() as tx:
             task = self._task(tx, task_id)
             if task.phase == "closed":
                 return task
-            operation = tx.operation(task.task_id + ":report")
-            if operation is None:
-                raise Rejected("missing_operation")
-            if task.attempt_id is None or operation.attempt_id != task.attempt_id:
+            dispatch = tx.dispatch(dispatch_key)
+            if dispatch is None or dispatch.state != "accepted" or task.attempt_id != dispatch.attempt_id:
                 raise Rejected("task_state_inconsistent")
-            if result.state == "confirmed" and result.result is not None:
-                if len(result.result.encode()) > 65536:
-                    raise Rejected("result_too_large")
-                tx.save_operation(replace(operation, state="confirmed", result=result.result))
-            elif result.state == "rejected":
-                tx.save_operation(replace(operation, state="rejected"))
-            else:
-                if task.phase == "closed":
-                    return task
-                tx.save_operation(replace(operation, state="unknown"))
-                blockers = tuple(sorted(set(task.blockers) | {"operation_unknown"}))
-                phase = "stopping" if "cancel_requested" in blockers else "recovering"
-                if (task.phase, task.blockers) == (phase, blockers):
-                    return task
+            tx.save_dispatch(replace(dispatch, state="closed"))
+            tx.finish_attempt(dispatch.attempt_id)
+            blockers = set(task.blockers) - {
+                "operation_unknown", "runtime_stop", "runtime_unavailable",
+            }
+            if result.state == "cancelled" and "human_pause" in blockers and "cancel_requested" not in blockers:
                 return self._save(tx, task, task.evolve(
-                    phase=phase, blockers=blockers), "needs_attention")
-            attempt = tx.attempt(task.attempt_id)
-            if attempt is None:
-                raise Rejected("task_state_inconsistent")
-        stopped = self.runtime.stop(attempt)
-        with self.store.transaction() as tx:
-            task = self._task(tx, task_id)
-            if task.phase == "closed":
-                return task
-            op = tx.operation(task.task_id + ":report")
-            if op is None or task.attempt_id is None:
-                raise Rejected("task_state_inconsistent")
-            blockers = set(task.blockers) - {"operation_unknown", "runtime_stop"}
-            if not stopped:
-                blockers.add("runtime_stop")
-                return self._save(tx, task, task.evolve(phase="stopping", blockers=tuple(sorted(blockers))), "stopping")
-            tx.finish_attempt(task.attempt_id)
-            cancelled = "cancel_requested" in blockers
-            terminal = "cancelled" if cancelled else "completed" if op.state == "confirmed" else "failed"
-            updated = task.evolve(phase="closed", outcome=terminal, blockers=tuple(sorted(blockers)),
-                                  result=op.result, result_digest=digest(op.result) if op.result is not None else None)
+                    phase="queued", attempt_id=None, blockers=tuple(sorted(blockers))), "paused")
+            terminal = (
+                "cancelled" if "cancel_requested" in blockers
+                else "completed" if result.state == "completed"
+                else "failed"
+            )
+            updated = task.evolve(
+                phase="closed", outcome=terminal, blockers=tuple(sorted(blockers)),
+                result=content, result_digest=digest(content) if content is not None else None,
+                permission_request=None,
+            )
             return self._save(tx, task, updated, terminal)
 
     def recover(self, task_id: str) -> Task:
@@ -250,10 +534,9 @@ class Service:
             task = self._task(tx, task_id)
             if task.phase == "closed":
                 return task
-            operation = tx.operation(task.task_id + ":report")
-            if operation is None or operation.state == "prepared":
-                return task  # No proof authorizes another external dispatch.
-        return self._finish_effect(task_id, self.operations.lookup(operation.key))
+            if task.attempt_id is None:
+                return task
+        return self._drive(task_id, None)
 
     def _hold(self, actor: AuthContext, task_id: str, expected_state_revision: int,
               envelope: Envelope, reason: str) -> Task:
@@ -267,20 +550,39 @@ class Service:
             task = self._save(tx, task, task.evolve(blockers=blockers,
                               phase="stopping" if task.attempt_id else task.phase), "stop_requested")
             attempt = tx.attempt(task.attempt_id) if task.attempt_id else None
-            operation = tx.operation(task.task_id + ":report")
-        stopped = self.runtime.stop(attempt) if attempt else True
+            dispatch = tx.dispatch(task.attempt_id) if task.attempt_id else None
+        if attempt is None:
+            stopped, exact_run = True, False
+        elif dispatch is None:
+            raise Rejected("missing_dispatch")
+        elif dispatch.state == "prepared":
+            stopped, exact_run = True, False
+        elif dispatch.state == "accepted":
+            exact_run = True
+            try:
+                stopped = self.work.stop(task, self._runtime_dispatch(dispatch))
+            except RuntimeFailure:
+                stopped = False
+        elif dispatch.state == "closed":
+            stopped, exact_run = True, True
+        else:
+            stopped, exact_run = False, False
         with self.store.transaction() as tx:
             current = self._task(tx, task_id)
             if current.phase == "closed":
                 return current
-            op = tx.operation(task.task_id + ":report")
-            if not stopped or (op and op.state in {"submitted", "unknown"}):
-                blocker = "runtime_stop" if not stopped else "operation_unknown"
+            latest = tx.dispatch(current.attempt_id) if current.attempt_id else None
+            if not stopped:
+                blocker = "runtime_stop" if exact_run else "operation_unknown"
                 return self._save(tx, current, current.evolve(phase="stopping",
                     blockers=tuple(sorted(set(current.blockers) | {blocker}))), "needs_attention")
+            if exact_run and latest is not None and latest.state == "accepted":
+                return current  # Stop accepted; recovery confirms the terminal run state.
             if reason == "cancel_requested":
                 if attempt:
                     tx.finish_attempt(attempt.attempt_id)
+                if latest is not None:
+                    tx.save_dispatch(replace(latest, state="closed"))
                 return self._save(tx, current, current.evolve(phase="closed", outcome="cancelled"), "cancelled")
             # A prepared attempt retains its resource reservation while paused.
             # Resume uses the same owner, budget reservation and operation key.
