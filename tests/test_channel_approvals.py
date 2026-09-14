@@ -166,7 +166,7 @@ def test_internal_worker_controls_have_no_operator_route():
         "/work-home", "/tasks", "/tasks/{task_id}", "/tasks/{task_id}/cancel", "/tasks/{task_id}/pause",
         "/tasks/{task_id}/resume", "/tasks/{task_id}/review", "/reviews/{review_id}/publish",
         "/tasks/{task_id}/publication", "/tasks/{task_id}/events",
-        "/conversations", "/conversations/{link_id}/messages",
+        "/conversations", "/conversations/{link_id}/messages", "/reviews/resolve",
     }
 
 

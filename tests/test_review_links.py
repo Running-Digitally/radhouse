@@ -18,15 +18,16 @@ pytestmark = pytest.mark.postgres
 
 
 @pytest.fixture
-def review_link(enrollment, service, store):
+def review_link(enrollment, service, store, bridge):
     registry, configured, state, actor, command, attestation, link = enrollment
     registry.enroll(actor, command, link.link_id, link.channel_id, attestation)
     state["published"].clear()
     service.review_links = ReviewLinks(service, "https://radhouse.test", (configured,))
     app = Conversations(service)
-    message = ConversationMessage("owner-first", link.link_id, link.principal_id,
-                                  "Use no tools. Give a short synthetic summary.", "buzz", link.activated_at)
-    app.receive(link, message)
+    event = incoming(bridge[0], bridge[2], "Use no tools. Give a short synthetic summary.")
+    message = ConversationMessage(event["id"], link.link_id, link.principal_id,
+                                  event["content"], "buzz", link.activated_at)
+    app.receive(link, message, event=event)
     selected = app.process(link, message.message_id)
     done = service.run(selected.task_id)
     assert done.outcome == "completed"
@@ -119,6 +120,9 @@ def test_completion_and_publication_are_stable_across_recovery(review_link, serv
         statuses = [m for m in messages if m.state == "publication"]
         assert len(statuses) == 1 and statuses[0].message_id == "publication:" + publication.publication_id
         assert tx.task(done.task_id).state_revision == done.state_revision
+        anchor = tx.conversation_task_anchor(link, done.task_id)
+    event = next(e for e in state["published"].values() if ["radhouse-mirror", "publication:" + publication.publication_id] in e["tags"])
+    assert ["e", anchor, "", "reply"] in event["tags"]
     assert len([e for e in state["published"].values() if ["radhouse-review", done.task_id] in e["tags"]]) == 1
 
 

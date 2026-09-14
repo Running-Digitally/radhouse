@@ -210,6 +210,22 @@ class ConversationQueries:
         ).fetchall()
         return [row["task_id"] for row in rows]
 
+    def conversation_task_anchor(self, link, task_id):
+        row = self._connection.execute(
+            "SELECT message_id FROM conversation_messages WHERE link_id=%s AND task_id=%s "
+            "AND snapshot->>'author'=%s AND route->>'action'='start' AND processed "
+            "ORDER BY sequence LIMIT 1", (link.link_id, task_id, link.principal_id),
+        ).fetchone()
+        return row["message_id"] if row else None
+
+    def conversation_guidance_messages(self, link, task_id):
+        rows = self._connection.execute(
+            "SELECT message_id FROM conversation_messages WHERE link_id=%s AND task_id=%s "
+            "AND snapshot->>'author'=%s AND route->>'action'='guide' AND processed "
+            "ORDER BY sequence DESC LIMIT 64", (link.link_id, task_id, link.principal_id),
+        ).fetchall()
+        return [row["message_id"] for row in rows]
+
     def conversation_changed_tasks(self, link_id, limit=20):
         rows = self._connection.execute(
             "SELECT t.task_id FROM tasks t WHERE EXISTS "

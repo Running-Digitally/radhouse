@@ -3,6 +3,7 @@
 from dataclasses import replace
 
 from radhouse.application.conversations import Conversations
+from radhouse.application.service import fingerprint
 from radhouse.channels.buzz_files import reference_files
 from radhouse.channels.nostr import encoded, sha256
 from radhouse.domain.conversations import ConversationMessage
@@ -145,6 +146,8 @@ class BuzzConversationCycle:
                 # Guidance changes must not repost the completed result. Their
                 # own stable identity also deduplicates reconnect/restart delivery.
                 from radhouse.application.guidance import PROTOCOL, outcome_message_id, outcome_text
+                controls = {"control:" + fingerprint([self.link.principal_id, message_id]): message_id
+                            for message_id in tx.conversation_guidance_messages(self.link, task.task_id)}
                 for receipt in task.guidance:
                     outcome = receipt.get("application_state")
                     if receipt.get("protocol") != PROTOCOL or outcome not in {"applied", "too_late", "not_applied", "unknown"}:
@@ -155,6 +158,7 @@ class BuzzConversationCycle:
                             outcome_id, self.link.link_id, self.link.bot_id,
                             outcome_text(receipt), "radhouse", int(self.service._now().timestamp()),
                             task_id=task.task_id, state="guidance",
+                            reply_to=controls.get(receipt.get("id")),
                             task_state_revision=task.state_revision,
                         ), processed=True)
                 identity = sha256(
@@ -193,6 +197,7 @@ class BuzzConversationCycle:
                         "radhouse",
                         int(self.service._now().timestamp()),
                         task_id=task.task_id,
+                        reply_to=tx.conversation_task_anchor(self.link, task.task_id),
                         state="result" if task.result else "progress",
                         task_state_revision=task.state_revision,
                     ),
@@ -214,6 +219,7 @@ class BuzzConversationCycle:
                     "publication:" + publication.publication_id, self.link.link_id,
                     self.link.bot_id, "Reviewed in Radhouse and published to the approved audience.",
                     "radhouse", int(self.service._now().timestamp()), task_id=task_id,
+                    reply_to=tx.conversation_task_anchor(self.link, task_id),
                     state="publication", task_state_revision=task.state_revision,
                 ), processed=True)
 
