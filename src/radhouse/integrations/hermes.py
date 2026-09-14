@@ -163,10 +163,13 @@ class HermesRunsClient:
         header_replayed = response_headers.get("Idempotency-Replayed") == "true"
         if not isinstance(replayed, bool) or header_replayed != replayed:
             raise HermesGatewayError("runtime_response_mismatch")
+        # The pinned gateway acknowledges a fresh dispatch as "started" before
+        # its durable queued/running status is polled. This is admission only.
+        status = "queued" if not replayed and payload.get("status") == "started" else _response_state(payload)
         return HermesDispatch(
             run_id=_response_identifier(payload, "run_id"),
             session_id=session_id,
-            status=_response_state(payload),
+            status=status,
             replayed=replayed,
         )
 

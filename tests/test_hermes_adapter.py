@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from datetime import datetime, timezone
 
 import httpx
@@ -51,7 +52,7 @@ def test_start_and_identical_replay_use_the_pinned_runs_contract():
         return httpx.Response(
             202,
             headers={"Idempotency-Replayed": "true"} if replayed else {},
-            json={"run_id": "run-01", "status": "queued", "replayed": replayed},
+            json={"run_id": "run-01", "status": "running" if replayed else "started", "replayed": replayed},
         )
 
     with client(handler) as gateway:
@@ -69,6 +70,7 @@ def test_start_and_identical_replay_use_the_pinned_runs_contract():
     assert first.run_id == replay.run_id == "run-01"
     assert first.replayed is False
     assert replay.replayed is True
+    assert first.status == "queued" and replay.status == "running"
     assert len(requests) == 2
     for request in requests:
         assert request.method == "POST"
@@ -81,6 +83,56 @@ def test_start_and_identical_replay_use_the_pinned_runs_contract():
         }
         assert "model" not in request.content.decode()
         assert "provider" not in request.content.decode()
+
+
+@pytest.mark.postgres
+def test_started_ack_is_saved_without_unknown_hold_and_completes_by_get(
+    service_factory, store, alice, envelope, start, clock,
+):
+    requests = []
+    polls = 0
+
+    def handler(request):
+        nonlocal polls
+        requests.append(request)
+        if request.url.path == "/v1/capabilities":
+            return httpx.Response(200, json={"features": {
+                "runs_idempotency": {"supported": True, "durable": True, "retention_seconds": 86400},
+                "runs_disable_tools": {"supported": True},
+            }})
+        if request.method == "POST":
+            assert request.url.path == "/v1/runs"
+            assert json.loads(request.content)["disable_tools"] is True
+            return httpx.Response(202, json={"run_id": "run-started", "status": "started", "replayed": False})
+        assert request.method == "GET" and request.url.path == "/v1/runs/run-started"
+        polls += 1
+        return httpx.Response(200, json={"run_id": "run-started",
+            "status": "running" if polls == 1 else "completed",
+            **({"output": "The synthetic report."} if polls > 1 else {})})
+
+    with client(handler) as gateway:
+        adapter = HermesAgentWorkAdapter(gateway, runtime_revision="hermes-0.21.1", clock=clock)
+        service = service_factory(work=adapter)
+        task = service.admit(alice, envelope(), replace(start, brief="Use no tools. Summarize the fixture."))
+        active = service.run(task.task_id)
+        assert active.phase == "active" and active.blockers == ()
+        with store.transaction() as tx:
+            dispatch = tx.dispatch(active.attempt_id)
+            assert dispatch.state == "accepted" and dispatch.run_id == "run-started"
+            assert tx.attempt(active.attempt_id).generation == 1
+            assert "needs_attention" not in {event.kind for event in tx.events(task.task_id, 0)}
+        completed = service.recover(task.task_id)
+        assert completed.phase == "closed" and completed.outcome == "completed"
+        assert completed.result == "The synthetic report." and completed.blockers == ()
+        assert completed.attempt_id == active.attempt_id
+        assert completed.budget_remaining == start.budget - 1
+        with store.transaction() as tx:
+            assert tx.dispatch(active.attempt_id).state == "closed"
+            assert "needs_attention" not in {event.kind for event in tx.events(task.task_id, 0)}
+    posts = [request for request in requests if request.method == "POST"]
+    assert len(posts) == 1 and posts[0].headers["Idempotency-Key"] == active.attempt_id
+    assert json.loads(posts[0].content)["session_id"] == task.task_id
+    assert polls == 2
 
 
 def test_capability_preflight_requires_durable_bounded_idempotency():
@@ -214,12 +266,23 @@ def test_admission_rejects_a_replay_marker_disagreement():
     assert caught.value.code == "runtime_response_mismatch"
 
 
+@pytest.mark.parametrize(("status", "replayed"), [("invented", False), ("started", True)])
+def test_admission_does_not_normalize_unknown_or_replayed_started_states(status, replayed):
+    response = httpx.Response(202,
+        headers={"Idempotency-Replayed": "true"} if replayed else {},
+        json={"run_id": "run-01", "status": status, "replayed": replayed})
+    with client(lambda _request: response) as gateway, pytest.raises(HermesGatewayError) as caught:
+        gateway.start_or_attach(input_text="safe", session_id="session-01", dispatch_key="dispatch-01")
+    assert caught.value.code == "runtime_malformed_response"
+
+
 @pytest.mark.parametrize(
     "response",
     [
         httpx.Response(200, content=b"not-json"),
         httpx.Response(200, json=[]),
         httpx.Response(200, json={"run_id": "run-01", "status": "invented"}),
+        httpx.Response(200, json={"run_id": "run-01", "status": "started"}),
         httpx.Response(200, json={"run_id": "different", "status": "running"}),
     ],
 )

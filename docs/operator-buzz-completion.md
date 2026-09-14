@@ -21,6 +21,20 @@ Buzz compatibility source: `092c6a7277698bd373ccbc1d008fc1507094ae74`.
 
 ## Delivery slices
 
+### Hermes dispatch acknowledgement compatibility
+
+The first live conversation exposed a D1 adapter mismatch: pinned Hermes returns
+`status: started` in a fresh HTTP 202 acknowledgement, while Radhouse accepts only
+durable run states. This incorrectly creates an unknown-dispatch hold and an
+unnecessary idempotent reattachment. In `integrations/hermes.py`, normalize that
+exact acknowledgement to internal `queued` only in `start_or_attach`; status
+polling and all identity/replay checks remain strict. Qualify the actual wire
+response through the adapter and coordinator: one POST, an accepted durable run,
+no attention hold, then normal completion by GET. Keep negative coverage for
+unknown status values and replay disagreement. No schema, runtime, grant or
+desktop change is needed. Preserve the first result and exercise the correction
+with the one already-planned follow-up after reviewed deployment.
+
 ### Accepted redirect: Researcher is an agent in Buzz
 
 The owner clarified that Radhouse agents must appear and converse as agents in
