@@ -69,6 +69,17 @@ def bridge(service, store, clock):
         body = json.loads(request.content)
         if request.url.path == "/events":
             event = verify_event(body, body["kind"])
+            markers = {t[3]: t[1] for t in event["tags"]
+                       if len(t) >= 4 and t[0] == "e" and t[3] in {"root", "reply"}}
+            if "reply" in markers:
+                parent = next(e for e in [*state["messages"], *state["published"].values()]
+                              if e["id"] == markers["reply"])
+                ancestry = {t[3]: t[1] for t in parent["tags"]
+                            if len(t) >= 4 and t[0] == "e" and t[3] in {"root", "reply"}}
+                expected_root = (ancestry.get("root", ancestry["reply"])
+                                 if "reply" in ancestry else parent["id"])
+                if markers.get("root", markers["reply"]) != expected_root:
+                    return httpx.Response(400, json={"error": "invalid: root tag does not match thread ancestry"})
             state["published"][event["id"]] = event
             if state["lost_ack"]:
                 state["lost_ack"] = False
@@ -207,6 +218,47 @@ def test_transport_lost_ack_and_restart_reuse_task_and_signed_reply(
     assert restarted.run("egress")["count"] == 0
 
 
+@pytest.mark.parametrize("markers", [("reply",), ("root", "reply"), ("root",)])
+def test_official_followup_thread_ancestry_survives_lost_ack_and_reconnect(
+    bridge, service, store, fake_work, markers,
+):
+    cycle, state, owner = bridge
+    original = incoming(cycle, owner)
+    state["messages"] = [original]
+    cycle.ingress()
+    with store.transaction() as tx:
+        first = tx.tasks()[0]
+    completed = service.run(first.task_id)
+    cycle.egress()
+    followup = incoming(cycle, owner, "Adapt that completed result.",
+                        tags=[["e", original["id"], "", marker] for marker in markers], offset=1)
+    state["messages"].append(followup)
+    cycle.ingress()
+    with store.transaction() as tx:
+        second = next(t for t in tx.tasks() if t.task_id != first.task_id)
+        assert second.follows_task_id == first.task_id
+        assert second.previous_result == completed.result
+    state["lost_ack"] = True
+    assert cycle.run("egress")["error_code"] == "buzz_relay_unavailable"
+    published_before = dict(state["published"])
+    restarted = BuzzConversationCycle(service, cycle.relay, cycle.link)
+    restarted.ingress()
+    assert restarted.run("egress")["error_code"] is None
+    assert all(state["published"][key] == event for key, event in published_before.items())
+    service.run(second.task_id)
+    assert restarted.run("egress")["error_code"] is None
+    expected_root = original["id"] if "reply" in markers else followup["id"]
+    replies = [e for e in state["published"].values()
+               if ["radhouse-task", second.task_id] in e["tags"]]
+    assert replies and all(["e", expected_root, "", "root"] in e["tags"]
+                           and ["e", followup["id"], "", "reply"] in e["tags"] for e in replies)
+    with store.transaction() as tx:
+        assert len(tx.tasks()) == 2
+        assert not tx.conversation_outgoing(cycle.link.link_id)
+    assert fake_work.start_count == 2
+    assert restarted.run("egress")["count"] == 0
+
+
 def test_reference_download_is_once_and_exact_bytes_reach_task(bridge, store):
     cycle, state, owner = bridge
     reference = b"Prefer walking and a quiet morning."
@@ -297,6 +349,8 @@ def test_guidance_outcome_waits_for_exact_parent_during_processing_race(bridge, 
     message = ConversationMessage(event["id"], cycle.link.link_id, cycle.link.principal_id,
         event["content"], source, event["created_at"])
     app = Conversations(service)
+    if source == "buzz":
+        state["messages"].append(event)
     app.receive(cycle.link, message, event=event if source == "buzz" else None)
     original = service.guide
 
