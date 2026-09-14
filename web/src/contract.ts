@@ -69,6 +69,7 @@ function task(value: unknown): TaskSummary {
     brief: string(item.brief),
     provider_binding: string(item.provider_binding),
     resource_key: nullableString(item.resource_key),
+    disable_tools: item.disable_tools === true,
     budget_remaining: integer(item.budget_remaining),
     task_revision: integer(item.task_revision),
     state_revision: integer(item.state_revision),

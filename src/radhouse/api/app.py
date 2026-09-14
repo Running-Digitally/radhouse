@@ -31,6 +31,7 @@ def create_app(
     service: "Service", authenticate: Callable[[Request], AuthContext],
     *, web_root: Path | None = None, local_auth: "LocalAuthService | None" = None,
     login_principal: Callable | None = None, session_binding: Callable | None = None,
+    enrollment=None,
 ) -> FastAPI:
     if not callable(authenticate):
         raise TypeError("authenticate must be an explicitly supplied callable")
@@ -49,7 +50,7 @@ def create_app(
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         if request.url.scheme == "https":
             response.headers["Strict-Transport-Security"] = "max-age=31536000"
-        if request.url.path.startswith(("/auth/", "/tasks", "/reviews", "/work-home", "/projects")):
+        if request.url.path.startswith(("/auth/", "/tasks", "/reviews", "/work-home", "/projects", "/conversations", "/agent-enrollment")):
             response.headers["Cache-Control"] = "no-store"
         return response
 
@@ -71,6 +72,11 @@ def create_app(
     Actor = Annotated[AuthContext, Depends(authenticated)]
     Conversation = Annotated[str, Query(min_length=1, max_length=200)]
     BindingRevision = Annotated[int, Query(ge=1)]
+    from radhouse.api.conversations import install_conversation_routes
+    install_conversation_routes(app,service,authenticated)
+    if enrollment is not None:
+        from radhouse.api.buzz_enrollment import install_enrollment_routes
+        install_enrollment_routes(app, enrollment, authenticated)
     errors = {status: {"model": ErrorResponse} for status in (401, 403, 404, 409, 422)}
 
     def session_response(session: "LocalSession", request: Request) -> AuthSessionResponse:

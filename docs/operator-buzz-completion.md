@@ -1,7 +1,8 @@
 # Everyday operator workflow and native Buzz parity
 
-Status: implemented and isolated qualification passed; private deployment and
-native-client acceptance remain open. This
+Status: operator foundation implemented; conversational Buzz redirect approved
+on 2026-09-14 and being implemented. The task panel alone does not complete
+Package 3. This
 packet owns the implementation plan and acceptance gaps for packages 1 and 3.
 It is not a release or live-deployment receipt.
 
@@ -19,6 +20,134 @@ Product source baseline: `b7082be874ce802e8aa13fe4fa77a1657fd76546`.
 Buzz compatibility source: `092c6a7277698bd373ccbc1d008fc1507094ae74`.
 
 ## Delivery slices
+
+### Accepted redirect: Researcher is an agent in Buzz
+
+The owner clarified that Radhouse agents must appear and converse as agents in
+Buzz, then approved this redirect. Acceptance is an actual operator journey:
+open Researcher from Buzz's agent directory, message it in a private DM, see its
+acknowledgment and progress, discuss the result, review it in Buzz, and continue
+the same conversation/task in Radhouse. Retain the native protected-review
+component as a contextual action; the general task form is not the Buzz entrypoint.
+
+This D2 slice uses the existing relay protocols at the pinned Buzz revision:
+kind 0 identity, kind 10100 runtime profile, owner-attested kind 30177 discovery,
+kind 41010 two-person DM, and kind 9 conversation messages with NIP-10 reply tags.
+Source verification established that expanding a DM creates a new channel and
+does not expose the original DM's history. Ordinary mutable rooms are excluded
+from the first private conversation link. Only the owner and Researcher are
+members; no unrelated private chat or bot memory is copied.
+
+Researcher receives its own relay key, held by the trusted controller adapter,
+and signs its own messages. The user's key remains in Buzz. An owner-signed
+profile attestation/discovery record makes Researcher discoverable without
+installing or launching another local agent harness. Radhouse remains the sole
+task, permission and Hermes execution authority. Buzz profile/presence describes
+conversation availability; it does not imply that a held runtime is ready.
+
+Program design and delivery sequence:
+
+1. `channels/buzz_relay.py` owns bounded, pinned-origin NIP-98 queries and signed
+   event delivery. `domain/conversations.py` owns immutable link/message/route
+   values. `storage/conversations.py` and schema migration 3 own linked history,
+   ingress deduplication, frozen routing decisions and signed outgoing receipts.
+2. `application/conversations.py` maps an admitted message to the existing
+   `Service.admit/get/guide` operations. A reply retains its explicit task target;
+   an unthreaded message with one active task steers that task. A separate-work
+   instruction creates a new task; multiple plausible active tasks receive a
+   clarification. Ordinary status questions read state. Completed-task discussion
+   retains the selected result through the existing follow-up contract. No LLM
+   gets to infer permissions, an audience, a provider or a protected approval.
+3. `channels/buzz_conversations.py` reads the exact linked DM, verifies author,
+   signature, relay membership/type and the current Radhouse binding before
+   admission or delivery, then drains durable outgoing events. Integrate bounded
+   cycles into the existing coordinator process; add no separate worker service.
+   A relay outage must not prevent existing Radhouse work from advancing.
+4. Add authenticated conversation read/send routes to the existing API and
+   conversation display/composer to the web work home. Web-origin messages retain
+   the real author and explicit Radhouse provenance when mirrored by Researcher;
+   the adapter never signs as the human. Mirror only work explicitly linked to
+   this conversation. Native Buzz keeps its normal agent profile, DM and composer;
+   amend the maintained patch only for enrollment and contextual protected review.
+5. Exercise real signed relay events with disposable keys and PostgreSQL, then
+   the actual desktop journey. Qualify duplication, echo suppression, reordered
+   events, lost delivery acknowledgment, crash after task admission, exact reply
+   targeting, revocation, DM expansion, runtime hold and protected review denial.
+   Only then prepare the exact private enrollment and migration/rollout diff.
+
+Call path: verified owner DM event -> durable inbox and fixed command identity ->
+current actor/link/grant check -> existing Radhouse task command -> coordinator ->
+Hermes. Task evidence -> audience-scoped conversation message -> persist one
+signed event -> relay acknowledgment. Every committed prefix is recoverable:
+admission can be replayed with the same command key, non-idempotent guidance keeps
+its existing at-most-once receipt, and relay delivery reuses the same event bytes.
+No network call runs inside a database transaction. Retain failed inbox/outbox
+records and show a bounded error; do not convert a failed query into an empty
+history. Bound polling, batches, payloads and history; stop visibly on a saturated
+cursor window rather than dropping messages.
+
+Enrollment uses a preconfigured candidate: exact agent public key and protected
+signing-key file, owner key/principal, bot, project and existing owner binding.
+The signed, MFA-authenticated native action opens the immutable owner/agent DM,
+signs the existing NIP-OA ownership attestation and a public kind-30177 directory
+event, and submits them to the controller. The human key never leaves Buzz.
+The controller checks these signatures and the fresh exact DM membership,
+retains the enrollment and exact signed profile events, and publishes them
+idempotently before activating conversation processing. No request can choose
+a new owner, agent key, bot, project, provider, or network destination.
+The stored attestation is a relay delegation credential: only the adapter reads
+it, it is excluded from history/API responses, and relay calls remain pinned
+to the admitted DM and media origin. Candidate configuration admits no runtime
+work until enrollment completes. Removing the candidate or revoking the owner
+binding stops subsequent ingress and delivery. Existing native protected
+reviews accept the enrolled DM through that same owner binding.
+
+The recovered live assignment exposed a runtime enforcement gap: it received
+the complete reference and explicit no-tools instruction but invoked tools.
+Schema 3 therefore also preserves an immutable per-task `disable_tools` flag.
+An explicit structured flag or the operator brief's phrases "use no tools",
+"do not use tools", "don't use tools" or "no tool calls" narrows the task to
+zero model-invoked tools; attachment/result text never sets this policy. The
+Hermes adapter requires advertised `features.runs_disable_tools.supported`
+before dispatch and sends `disable_tools: true` under the same durable dispatch
+identity. An older runtime stops the task with retained state rather than
+silently ignoring the restriction. Ordinary assignments keep the existing
+configured toolset. This controls model tools, not operating-system access.
+
+The private rollout must retain all schema-2 tasks and the pending walkthrough
+assignment. Migration 3 is additive and owner-run, while runtime remains DML-only;
+older controllers are fenced by the schema version. Disable the optional bridge
+to roll back behavior while retaining new conversation data. No restore over
+newer work, model switch, extra runtime or expanded room grant is included.
+The owner's redirect authorizes implementation and local qualification. The
+concrete agent enrollment/access and live migration are separate rollout steps;
+prepare them fully before any additional required live decision.
+
+The implementation was reviewed twice locally. The protocol/recovery review
+corrected timestamp-tie pagination, the required `channel_add_policy: owner_only`
+profile field, duplicate acknowledgment handling and stable guidance targets.
+The authority/operation review added a shared configured scope for web and Buzz,
+isolated an invalid delegation to its own conversation, retained archive cursors,
+and avoided repeated membership requests for already processed messages.
+These were self-reviews, not independent reviewer approvals.
+
+Qualification on 14 September: 325 product tests passed with zero skips, including
+the browser journey and exact schema-1/schema-2 upgrades. Eight client tests
+passed. The pinned real Buzz relay accepted owner discovery/attestation, the
+private agent DM, authenticated file upload/retrieval, one deduplicated task and
+its signed result. All 106 equal-timestamp messages survived pagination. Repeat
+that isolated check with `python tests/qualification/run_buzz.py /path/to/buzz`
+after building the exact upstream relay with `cargo build --locked -p buzz-relay`.
+Its model and S3 byte store are synthetic; protocol, media authorization and
+membership execute the real relay code. No private service or model is used.
+
+The native patch passes style/type/build checks and 6,488 desktop JavaScript
+tests. The default parallel native suite reproduces its prior shared-counter
+race in `cheap_discovery_never_spawns_login_shell_even_when_cold`; the unchanged
+suite passes serially with 3,177 tests and 19 existing ignored tests. Remaining
+web build and 2,098 mobile tests pass. The maintained patch applies and reverses
+cleanly at the pinned upstream. Private enrollment and the installed native
+walkthrough remain live acceptance work; these local results do not close them.
 
 1. Complete the work-home read/action journey: choose an authorized project and
    assigned ready bot, retain an unsent draft through refresh, submit exactly

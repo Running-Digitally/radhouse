@@ -94,6 +94,30 @@ def test_capability_preflight_requires_durable_bounded_idempotency():
     assert capabilities.idempotency_retention_seconds == 86_400
 
 
+@pytest.mark.parametrize("support", [None, {}, {"supported": False}, {"supported": "true"}, {"supported": True}])
+def test_restricted_assignment_requires_capability_before_any_dispatch(support):
+    requests = []
+    def handler(request):
+        requests.append(request)
+        if request.method == "GET":
+            return httpx.Response(200, json={"features": {
+                "runs_idempotency": {"supported": True, "durable": True, "retention_seconds": 86400},
+                "runs_disable_tools": support}})
+        assert json.loads(request.content)["disable_tools"] is True
+        assert request.headers["idempotency-key"] == "attempt-01"
+        return httpx.Response(202, json={"run_id": "run-01", "status": "queued", "replayed": False})
+    task = Task("task-01", "alice", "bot-01", "project-01", "Use no tools.", "nemo-chat", None, 3, disable_tools=True)
+    with client(handler) as gateway:
+        adapter = HermesAgentWorkAdapter(gateway, runtime_revision="hermes-restricted", clock=lambda: datetime.now(timezone.utc))
+        if support == {"supported": True}:
+            assert adapter.start_or_attach(task, Attempt("attempt-01", task.task_id, 1, "worker"), "attempt-01").run_id == "run-01"
+            assert [request.method for request in requests] == ["GET", "POST"]
+        else:
+            with pytest.raises(HermesGatewayError, match="runtime_tools_restriction_unavailable"):
+                adapter.start_or_attach(task, Attempt("attempt-01", task.task_id, 1, "worker"), "attempt-01")
+            assert [request.method for request in requests] == ["GET"]
+
+
 @pytest.mark.parametrize(
     "idempotency",
     [

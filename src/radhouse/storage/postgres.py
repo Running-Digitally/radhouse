@@ -20,6 +20,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from radhouse.domain.access import Access, Binding, BotProfile, ProjectProfile
+from radhouse.storage.conversations import ConversationQueries
 from radhouse.domain.releases import Publication, Review
 from radhouse.domain.tasks import (
     AgentDispatch, Attempt, Delivery, Event, Operation, Rejected, SavedCommand, Task,
@@ -36,17 +37,18 @@ class ApplicationStorageError(ValueError):
 
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _INITIAL_MIGRATION = Path(__file__).parent / "migrations" / "0001_initial.sql"
-SCHEMA_VERSION = 2
-MIGRATIONS = (_INITIAL_MIGRATION, Path(__file__).parent / "migrations" / "0002_operator_context.sql")
+SCHEMA_VERSION = 3
+MIGRATIONS = (_INITIAL_MIGRATION, Path(__file__).parent / "migrations" / "0002_operator_context.sql",
+              Path(__file__).parent / "migrations" / "0003_conversations.sql")
 
 
 def schema_digest(version: int = SCHEMA_VERSION) -> str:
     try:
         if version == 1:
             return hashlib.sha256(_INITIAL_MIGRATION.read_bytes()).hexdigest()
-        if version != SCHEMA_VERSION:
+        if version not in {2, 3}:
             raise ApplicationStorageError("unsupported_schema_version")
-        return hashlib.sha256(b"radhouse-schema-v2\0" + b"\0".join(path.read_bytes() for path in MIGRATIONS)).hexdigest()
+        return hashlib.sha256(f"radhouse-schema-v{version}\0".encode() + b"\0".join(path.read_bytes() for path in MIGRATIONS[:version])).hexdigest()
     except OSError:
         raise ApplicationStorageError("database_migration_missing") from None
 
@@ -205,7 +207,7 @@ class ApplicationPostgresStore:
                 raise Rejected("storage_conflict") from exc
 
 
-class PostgresUnitOfWork:
+class PostgresUnitOfWork(ConversationQueries):
     def __init__(self, connection):
         self._connection = connection
 
