@@ -382,11 +382,12 @@ reviews and official mobile push must remain accurately classified.
 Selected input is deliberately bounded to four UTF-8 reference files and 64 KiB
 in total. A follow-up creates a new explicitly admitted task and includes a
 snapshot of the selected previous result; active guidance stays on the existing
-run without resetting budget or changing the immutable dispatch input. Hermes
-0.21.1 acknowledges receipt of guidance but does not provide a per-instruction
-application receipt. The UI reports that limitation instead of asserting it was
-applied. Non-idempotent controls commit their receipt before transport and are
-never automatically replayed after a lost reply or controller restart.
+run without resetting budget or changing the immutable dispatch input. Unpatched
+Hermes 0.21.1 acknowledges receipt without per-instruction application evidence.
+The identified protocol above requires the optional durable-receipt capability;
+legacy records remain unconfirmed. Controls commit their receipt before
+transport and are never automatically reposted after a lost reply or controller
+restart. Receipt reconciliation uses GET only.
 
 Runtime permission responses are exact request/run/digest decisions with fresh
 human assurance. Deny is available; allow-once additionally requires an exact
@@ -479,6 +480,29 @@ Linux/Python dependency installation, schema upgrade/backup proof and a real
 operator walkthrough in both directions. The approved patch does not close
 official mobile push, mobile reviews, OIDC, invitation/recovery administration
 or the wider full-V1 release requirements.
+
+### Revised steering qualification — 2026-09-14
+
+The current controller/shared-client source passed the full owned PostgreSQL and
+browser gate: 368 tests, zero failures/errors/skips, fixture cleanup complete.
+The web build and nine client tests passed. The browser regression verifies
+focused empty guidance input, draft preservation, queued/applied distinction and
+reconnect. Controller tests cover completed no-tools contextual follow-ups,
+exact receipt correlation, lost POST replies, newer GET evidence, closed and
+paused original-attempt reconciliation, retention expiry and native outcome/result
+deduplication. The first new browser test exposed a test synchronization race
+after reload; it was corrected to wait for rendered data and the full gate then
+passed. This is local evidence; Package 1 still requires the live multi-step
+Buzz acceptance described above.
+
+An additional focused pass covered 115 cases, including both ordinary and
+explicit-reply contextual follow-ups. The pinned Buzz full CI passed (6,491
+desktop JavaScript, 3,177 Rust and 2,098 mobile tests, with 19 existing Rust
+ignores); the macOS bundle built and passed deep strict signature verification.
+The matching Hermes overlay passed 248 distinct local cases. These include a
+single-call no-tools finish, guidance in a real subsequent tool-loop request,
+provider uncertainty, restart and duplicate prevention. No live steering task
+or deployment is included in this qualification.
 
 ### File chooser refresh correction — 2026-09-14
 
