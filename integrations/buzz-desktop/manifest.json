@@ -3,18 +3,19 @@
   "upstream_commit": "092c6a7277698bd373ccbc1d008fc1507094ae74",
   "desktop_version": "0.5.23",
   "patch": "0001-radhouse-task-panel.patch",
-  "patch_sha256": "c01b6c9fac759bb1a0bfbc148da8680c0d61a3998bbec9fc102ecfb21a4302b9",
-  "radhouse_source_baseline": "b7082be874ce802e8aa13fe4fa77a1657fd76546",
+  "patch_sha256": "0f96009f0300a86209b7d4ea291a8a6090d7ec8bd90ecdbad1eedfdf58a1ab30",
+  "radhouse_source_baseline": "efcc616791edba75b75c68070c034472964eeb5c",
   "shared_source_sha256": {
-    "web/src/api.ts": "22196b9fbc4cc231e51957cc1822548bae7f556a4795945c01d7c765af530263",
-    "web/src/app.ts": "767cafeef4871088c7a2ab34f9a69efd67367ea631f38680f1582676f6b1f7af",
+    "web/src/api.ts": "4c5adbb414f90555a3929e99dbcf48c50294316426dece2a89977eb3de1aefc9",
+    "web/src/app.ts": "535722d6e23abc96759fccd943b7f8c37fda0977b773371ba21a22a7f136c584",
     "web/src/commands.ts": "a482ebf884fe6587994236287bccd86dcd132def8155ea3765a6c9a170c2eaf2",
-    "web/src/contract.ts": "9cbe8d41898f51c379eae0413f92bb762f7aa039924c652fec40b799fc241c8b",
-    "web/src/types.ts": "df8f5a7050cee3958d586a552373a648cb70e46e72daecde10f2bfe8ff3cdec8",
+    "web/src/contract.ts": "984d778360be19d2636621b44ed933f1ff544f5e827604949fcb4cec3d4fd076",
+    "web/src/types.ts": "939e04f8fafc8798ebf78c0862c716ca02af728b96bd358a5b41409b0620c9d8",
     "web/src/view-model.ts": "70d944afc125701e9776bea42615ad5a9eab25ebebc9b72148ed13c310f79cc9",
-    "web/styles.css": "9d196dfd8563d33bb2cb9e8739fe4b4ea099ddd22c1151bda440b1f0fc6a7056"
+    "web/styles.css": "9f9626dca1639afca64773ea0b087a4b75b2b569d820aed9c2b53520da18fa62",
+    "web/src/conversations.ts": "105d920a64e568d5728204c70b07f3aaf8994cf5c21f18627a7b6443ff8895f5"
   },
-  "qualification": "isolated; live relay and native client acceptance pending",
+  "qualification": "Actual disposable relay and shared browser qualified; private enrollment and installed native acceptance pending.",
   "mobile_changes": false,
-  "local_patch_commit": "bc8a0d56d484334c147ec83a2dbc8f609e83ff34"
+  "local_patch_commit": "ea1f95e86db31f274b68706178b83e22ad530bc8"
 }

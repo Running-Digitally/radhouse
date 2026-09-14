@@ -22,6 +22,7 @@ export interface TaskSummary {
   brief: string;
   provider_binding: string;
   resource_key: string | null;
+  disable_tools: boolean;
   budget_remaining: number;
   task_revision: number;
   state_revision: number;

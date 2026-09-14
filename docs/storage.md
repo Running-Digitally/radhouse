@@ -23,8 +23,8 @@ The initial schema now lives in the packaged `0001_initial.sql` migration and is
 also executed by the disposable fixture. `initialize_database()` accepts an
 explicit owner DSN, expected database, deployment ID, and existing runtime role.
 It takes a deployment-scoped advisory lock, initializes only an empty database,
-and otherwise requires exact supported metadata. Version 2 accepts the exact
-version-1 checksum, applies the ordered marker migration in the same transaction,
+and otherwise requires exact supported metadata. Version 3 accepts the exact
+version-1 or version-2 checksum, applies the ordered migrations in one transaction,
 and preserves existing task and publication rows. It refuses to run as the runtime
 identity or grant an overprivileged, inheriting, role-member, or object-owning
 runtime identity.
@@ -60,3 +60,10 @@ approved. The runtime application role must not own schema objects or receive
 create, role, database, or migration authority. A matching metadata row proves
 target identity and compatibility; it does not grant migration permission or
 prove backup coverage.
+
+Version 3 adds conversation links, owner attestations, an inbox with frozen task
+routing, and a signed-event outbox. Existing task/publication rows survive the
+upgrade. The controller's private database backup now also contains an agent's
+delegation credential; retain its existing restricted access. After admitting
+conversation work, use a forward fix or disable its configured candidate while
+preserving schema-3 state. A schema-2 binary cannot serve a schema-3 database.
