@@ -75,6 +75,7 @@ def control(service, actor, task_id, expected, envelope, *, text=None, request_i
                    "choice": choice, "run_id": dispatch.run_id, "state": "submitted"}
         if kind == "guidance":
             receipt.update(protocol=PROTOCOL, attempt_id=task.attempt_id, application_state=None, application_reason=None,
+                           source_channel=envelope.channel, source_event_id=envelope.event_id,
                            application_final=False, receipt_revision=0,
                            checkpoint_id=None, api_request_id=None, receipt_source=None)
         operation = Operation(key, task_id, task.attempt_id, "submitted",

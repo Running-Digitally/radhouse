@@ -153,12 +153,26 @@ class BuzzConversationCycle:
                     if receipt.get("protocol") != PROTOCOL or outcome not in {"applied", "too_late", "not_applied", "unknown"}:
                         continue
                     outcome_id = outcome_message_id(task.task_id, receipt)
+                    # New controls retain their source event before the runtime
+                    # POST. Resolve its frozen route even if processing has not
+                    # yet marked the incoming message complete. The bounded
+                    # lookup above is only for older retained receipts.
+                    parent = controls.get(receipt.get("id"))
+                    if receipt.get("source_channel") == "buzz" and receipt.get("source_event_id"):
+                        source = tx.conversation_message(receipt["source_event_id"])
+                        if source is not None:
+                            message, route = source["message"], source["route"]
+                            if (message.link_id != self.link.link_id or message.author != self.link.principal_id
+                                    or route is None or route.action != "guide" or route.task_id != task.task_id
+                                    or "control:" + fingerprint([message.author, message.message_id]) != receipt["id"]):
+                                raise Rejected("conversation_guidance_denied", 403)
+                            parent = message.message_id
                     if tx.conversation_message(outcome_id) is None:
                         tx.save_conversation_message(ConversationMessage(
                             outcome_id, self.link.link_id, self.link.bot_id,
                             outcome_text(receipt), "radhouse", int(self.service._now().timestamp()),
                             task_id=task.task_id, state="guidance",
-                            reply_to=controls.get(receipt.get("id")),
+                            reply_to=parent,
                             task_state_revision=task.state_revision,
                         ), processed=True)
                 identity = sha256(
@@ -261,6 +275,11 @@ class BuzzConversationCycle:
                         if parent
                         else None
                     )
+                    if parent is not None and parent_event is None:
+                        # A web message gets its signed mirror only after its
+                        # command finishes. Never freeze an unthreaded child in
+                        # this window; a later cycle uses the exact parent event.
+                        continue
                     if parent_event:
                         root = next(
                             (

@@ -220,8 +220,8 @@ class ConversationQueries:
 
     def conversation_guidance_messages(self, link, task_id):
         rows = self._connection.execute(
-            "SELECT message_id FROM conversation_messages WHERE link_id=%s AND task_id=%s "
-            "AND snapshot->>'author'=%s AND route->>'action'='guide' AND processed "
+            "SELECT message_id FROM conversation_messages WHERE link_id=%s AND route->>'task_id'=%s "
+            "AND snapshot->>'author'=%s AND route->>'action'='guide' "
             "ORDER BY sequence DESC LIMIT 64", (link.link_id, task_id, link.principal_id),
         ).fetchall()
         return [row["message_id"] for row in rows]
