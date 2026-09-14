@@ -196,6 +196,15 @@ test pass or nominal runtime completion is insufficient. Official desktop
 identity/conversation visibility and owner-confirmed mobile foreground access
 are already established. The custom desktop fork remains superseded.
 
+Package 1 has two internal milestones. **1A** proves one durable assignment from
+an official Buzz message, acknowledgement, meaningful progress and a useful
+result. Then prove a contextual follow-up after completion, and verify the
+short-lived task-specific link to authenticated/MFA web review separately.
+**1B** proves exactly correlated live guidance during genuine successive research
+turns. Keep the overall package open until both pass; assess 1A independently
+and complete it before admitting the 1B proof. A nonempty fragment or nominal
+runtime success does not demonstrate useful work.
+
 Prove the following in order, with separate bounded checks:
 
 1. Correct reply ancestry and empty-success reporting. Retain the failed
@@ -222,8 +231,10 @@ Prove the following in order, with separate bounded checks:
    property. Publication stays in the web interface and its status returns to
    Buzz. Retain exact task/run/control/result/publication identities.
 
-Before another live research run, make the exact question, admitted sources and
-tools, expected natural checkpoints and maximum provider-call budget reviewable.
+Before the 1B research run, make the exact assignment text, source paths and
+permitted tools, natural checkpoint sequence, exact guidance message and when
+to send it, expected useful result, ordinary model-turn limit, maximum physical
+provider requests and stop conditions reviewable.
 Count all provider requests, including thinking continuation, truncated tool-call
 recovery and finalizer requests. The current two-turn setting is not itself a
 hard wire-call cap: truncated-argument retries occur within a turn. Use an exact
