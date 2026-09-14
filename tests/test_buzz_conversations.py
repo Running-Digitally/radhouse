@@ -277,3 +277,48 @@ def test_archive_scan_recovers_event_older_than_poll_overlap(bridge, store):
     assert cycle.run("ingress")["error_code"] is None
     with store.transaction() as tx:
         assert len(tx.tasks()) == 1
+
+
+@pytest.mark.parametrize("source", ["buzz", "radhouse"])
+def test_guidance_outcome_waits_for_exact_parent_during_processing_race(bridge, service, store, fake_work, monkeypatch, source):
+    from radhouse.application.conversations import Conversations
+    from radhouse.domain.conversations import ConversationMessage
+    cycle, state, owner = bridge
+    state["messages"] = [incoming(cycle, owner)]
+    cycle.ingress()
+    with store.transaction() as tx:
+        task_id = tx.tasks()[0].task_id
+    fake_work.result = lambda *_: RuntimeResult("running", guidance_receipts=())
+    service.run(task_id)
+    cycle.egress()
+    posted = []
+    fake_work.steer = lambda task, run, text, control_id: posted.append(control_id) or receipt(run, control_id, text, "too_late")
+    event = incoming(cycle, owner, "Focus on costs.", offset=1)
+    message = ConversationMessage(event["id"], cycle.link.link_id, cycle.link.principal_id,
+        event["content"], source, event["created_at"])
+    app = Conversations(service)
+    app.receive(cycle.link, message, event=event if source == "buzz" else None)
+    original = service.guide
+
+    def race(*args, **kwargs):
+        result = original(*args, **kwargs)
+        cycle.egress()  # Source route exists, but source processing is unfinished.
+        with store.transaction() as tx:
+            pending = tx.conversation_message(message.message_id)
+            assert not pending["processed"] and pending["message"].task_id is None
+            outcomes = [r["message"] for r in tx.conversation_history(cycle.link.link_id) if r["message"].state == "guidance"]
+            assert len(outcomes) == 1 and outcomes[0].reply_to == message.message_id
+            if source == "radhouse": assert tx.conversation_event(outcomes[0].message_id) is None
+        return result
+
+    monkeypatch.setattr(service, "guide", race)
+    app.process(cycle.link, message.message_id)
+    for _ in range(2): assert cycle.run("egress")["error_code"] is None
+    with store.transaction() as tx:
+        outcomes = [r["message"] for r in tx.conversation_history(cycle.link.link_id) if r["message"].message_id.startswith("guidance:")]
+        assert len(outcomes) == 1
+        child = tx.conversation_event(outcomes[0].message_id)
+        parent = event if source == "buzz" else tx.conversation_event(message.message_id)
+        assert ["e", parent["id"], "", "reply"] in child["tags"]
+        assert tx.conversation_outgoing(cycle.link.link_id) == []
+    assert len(posted) == 1 and fake_work.start_count == 1

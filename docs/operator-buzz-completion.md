@@ -78,7 +78,10 @@ Retain `hermes-guidance-v1`: exact run/control/input-SHA256 correlation;
 monotonic receipts; independent delivery and application outcomes; at-most-once
 POST; GET-only reconciliation through terminal tasks, pause/resume and retained
 expiry; durable recovery of accepted, applied, too-late, not-applied and unknown
-outcomes. In the UI, accepted means queued. Applied means a model response
+outcomes. New guidance retains its authenticated source channel/event before
+the runtime POST. Standard Buzz replies bind outcomes to that exact input; if
+a web mirror is still pending, child delivery waits for its signed parent.
+In the UI, accepted means queued. Applied means a model response
 completed for a request containing the guidance, not guaranteed obedience.
 
 The optional capability remains `runs_steering_receipts` version 1, durable,
@@ -91,9 +94,9 @@ exact permission/MFA controls remain unchanged.
 The retained Hermes overlay is based on `c67fb3378943dc6454b5680f3fc17919facd8fad`
 and locally committed at `27e563d0af4a7fac6bf654db67444b026ecf0d71`. It passed 249
 distinct local cases; the frozen VM260 rollout has four helper regression cases.
-Only an unprivileged VM260 identity check ran before this redirect. Linux
-qualification, source deployment, journal migration and live inference remain
-pending.
+The approved isolated Linux qualification also passed all 249 cases without
+changing live runtime state. Source deployment, journal migration and live
+inference remain pending.
 
 ## Authenticated web-review locator
 
