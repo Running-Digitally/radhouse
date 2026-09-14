@@ -335,3 +335,48 @@ refresh cycle, checks that the input survives, and verifies refresh resumes whil
 the selected filename remains. It fails on the previous implementation and passes
 with this correction. Both web and maintained desktop consume the correction;
 contracts, authorization and task dispatch behavior are unchanged.
+
+### Live enrollment discovery correction (D1)
+
+The first installed enrollment succeeded and its native profile resolved, but
+Agents rendered only local managed records/personas. The DM label also kept a
+pre-profile cache entry until refresh. This violates the accepted native-agent
+journey. Correct the existing Agents grid to include relay-confirmed agents
+owned by the current identity and absent from successful local inventory. Reuse
+the exact-key profile surface, shared provenance marker and existing relay
+query; never synthesize a local runtime or offer local lifecycle controls.
+After confirmed enrollment, refresh the relay/profile/channel query caches before
+opening the DM. No controller, schema, relay policy, identity or task change.
+
+Affected call paths: AgentsView → UnifiedAgentsSection → external identity card;
+RadhousePanel enrollment → existing React Query invalidation → goChannel.
+Validation: owner-only selection/deduplication/archive cases; browser Agents →
+exact profile → Message, including absent local Start/Stop controls; established
+Buzz gates; installed native directory and both authorized walkthroughs.
+Availability retains Buzz's exact relay presence semantics. A stored profile's
+`online` field is not a liveness proof and must not synthesize a green dot.
+
+Review cycle 1 checked the directory's ownership/local-inventory boundary and
+found the existing Agents grid omitted all relay-only identities. The corrective
+card reads the established relay query, filters exact ownership/local duplicates
+and archived keys, and routes only to the existing profile. Review cycle 2
+checked async enrollment/cache behavior: pending profile reads are cancelled,
+per-key missing entries evicted before aggregate refresh, and unmounted surfaces
+cannot navigate a different community. Three selection tests, TypeScript, and
+three browser tests pass, including Agents → exact profile → Message. The browser
+fixture uses installed Chrome; the initial default Playwright executable was
+absent. Its initial missing-profile fixture was corrected to include the signed
+profile needed for the Message action. These are local self-reviews.
+
+The pinned relay handles kind-20001 presence only on authenticated WebSockets;
+this controller uses its admitted bounded HTTP polling transport. Native presence
+can therefore read Offline while conversation processing is healthy. Keep this
+limitation visible; do not fake an Online badge from the saved kind-10100 profile.
+A persistent WebSocket presence lifecycle is separate follow-up work.
+
+The complete `RUST_TEST_THREADS=1 just ci` gate passed after this correction,
+including 3,177 native Rust tests (19 existing ignored), 6,491 desktop JavaScript
+tests and 2,098 mobile tests, plus workspace Rust, formatting, lint and builds.
+The maintained patch was applied and reversed on the exact clean upstream.
+`git diff --check` passes for ordinary files; its one patch-file warning is a
+required blank unified-diff context line, retained with the verified patch hash.

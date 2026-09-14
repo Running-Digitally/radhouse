@@ -3,7 +3,7 @@
   "upstream_commit": "092c6a7277698bd373ccbc1d008fc1507094ae74",
   "desktop_version": "0.5.23",
   "patch": "0001-radhouse-task-panel.patch",
-  "patch_sha256": "0f96009f0300a86209b7d4ea291a8a6090d7ec8bd90ecdbad1eedfdf58a1ab30",
+  "patch_sha256": "1ca296e69f76db48ff41c2686d714f48dc444841ddb2844689959e3dcdf5ae04",
   "radhouse_source_baseline": "efcc616791edba75b75c68070c034472964eeb5c",
   "shared_source_sha256": {
     "web/src/api.ts": "4c5adbb414f90555a3929e99dbcf48c50294316426dece2a89977eb3de1aefc9",
@@ -15,7 +15,7 @@
     "web/styles.css": "9f9626dca1639afca64773ea0b087a4b75b2b569d820aed9c2b53520da18fa62",
     "web/src/conversations.ts": "105d920a64e568d5728204c70b07f3aaf8994cf5c21f18627a7b6443ff8895f5"
   },
-  "qualification": "Actual disposable relay and shared browser qualified; private enrollment and installed native acceptance pending.",
+  "qualification": "Full Buzz just ci passed with RUST_TEST_THREADS=1; 3 selection and 3 browser discovery tests pass; owner enrollment/profile/DM verified live. Corrected installed directory and conversation acceptance pending.",
   "mobile_changes": false,
-  "local_patch_commit": "ea1f95e86db31f274b68706178b83e22ad530bc8"
+  "local_patch_commit": "0b8a842476ec1c77af2c2ed7969cc46f0d82a841"
 }
