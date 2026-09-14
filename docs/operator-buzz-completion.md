@@ -268,3 +268,20 @@ changes do not rewrite the retained failed walkthrough, regenerate signed
 outbox rows, or authorize another proof task. Any delivery repair must first
 prove the rejected event IDs absent at the relay and preserve their provenance;
 an unknown delivery remains immutable. Live acceptance remains open.
+
+### Retained rejected deliveries
+
+The ancestry fix cannot rewrite three already signed, rejected replies. A
+bounded D1 recovery extends the existing transport → egress → outbox selector:
+only the relay's HTTP 400 `/events` response with the exact JSON error
+`invalid: root tag does not match thread ancestry` is a permanent delivery
+rejection. Retain its event, signature, message and delivery IDs unchanged,
+with `delivered=false` and `buzz_thread_ancestry_rejected`. Egress records that
+outcome and continues; subsequent cycles omit only that known permanent error.
+All authentication, uncertain-delivery, missing-parent and other failures keep
+their existing stop/retry behavior. Parse the error within existing response
+size/time bounds. No schema, new queue, re-signing or fabricated acknowledgement.
+
+Tests must demonstrate exact error classification, preserved signed bytes and
+failure evidence, later valid delivery, and no retry after reconnect. Task/run
+identity and work dispatch remain independent of this delivery-only correction.
