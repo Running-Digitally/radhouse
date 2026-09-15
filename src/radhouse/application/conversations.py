@@ -190,6 +190,8 @@ class Conversations:
             reply = "I have your assignment. I’ll keep its progress and result in this conversation."
             if task.disable_tools:
                 reply += " Tools are disabled for this task."
+            elif task.allowed_tools:
+                reply += " This task is restricted to: " + ", ".join(task.allowed_tools) + "."
         elif route.action == "guide":
             try:
                 task = self.service.guide(

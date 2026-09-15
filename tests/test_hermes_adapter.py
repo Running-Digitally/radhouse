@@ -137,6 +137,70 @@ def test_start_and_identical_replay_use_the_pinned_runs_contract():
         assert "provider" not in request.content.decode()
 
 
+def test_exact_allowed_tools_are_capability_checked_and_sent_once():
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        if request.method == "GET":
+            return httpx.Response(200, json={"features": {
+                "runs_idempotency": {"supported": True, "durable": True, "retention_seconds": 86400},
+                "runs_allowed_tools": {"supported": True, "durable": True, "version": 1,
+                    "mode": "exact_subset_of_profile", "max_names": 32},
+            }})
+        assert json.loads(request.content) == {
+            "input": "Use only search_files and read_file.",
+            "session_id": "task-01",
+            "allowed_tools": ["search_files", "read_file"],
+        }
+        return httpx.Response(202, json={"run_id": "run-01", "status": "started", "replayed": False})
+
+    task = Task("task-01", "alice", "bot-01", "project-01",
+                "Use only search_files and read_file.", "nemo-chat", None, 3,
+                allowed_tools=("search_files", "read_file"))
+    with client(handler) as gateway:
+        adapter = HermesAgentWorkAdapter(
+            gateway, runtime_revision="hermes-exact-tools", clock=lambda: datetime.now(timezone.utc)
+        )
+        dispatch = adapter.start_or_attach(
+            task, Attempt("attempt-01", task.task_id, 1, "worker"), "attempt-01"
+        )
+    assert dispatch.run_id == "run-01"
+    assert [request.method for request in requests] == ["GET", "POST"]
+
+
+def test_exact_allowed_tools_fail_closed_when_runtime_capability_is_missing():
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json={"features": {
+            "runs_idempotency": {"supported": True, "durable": True, "retention_seconds": 86400},
+        }})
+
+    task = Task("task-01", "alice", "bot-01", "project-01",
+                "Use only read_file.", "nemo-chat", None, 3, allowed_tools=("read_file",))
+    with client(handler) as gateway:
+        adapter = HermesAgentWorkAdapter(
+            gateway, runtime_revision="hermes-exact-tools", clock=lambda: datetime.now(timezone.utc)
+        )
+        with pytest.raises(HermesGatewayError, match="runtime_exact_tools_restriction_unavailable"):
+            adapter.start_or_attach(task, Attempt("attempt-01", task.task_id, 1, "worker"), "attempt-01")
+    assert [request.method for request in requests] == ["GET"]
+
+
+def test_exact_tool_scope_rejects_malformed_direct_callers_before_http():
+    def handler(_request):
+        raise AssertionError("malformed tool scope must not reach Hermes")
+
+    with client(handler) as gateway:
+        with pytest.raises(ValueError, match="invalid_hermes_tool_restriction"):
+            gateway.start_or_attach(
+                input_text="A bounded task.", session_id="task-01",
+                dispatch_key="attempt-01", allowed_tools=(["read_file"],),
+            )
+
+
 @pytest.mark.postgres
 def test_started_ack_is_saved_without_unknown_hold_and_completes_by_get(
     service_factory, store, alice, envelope, start, clock,

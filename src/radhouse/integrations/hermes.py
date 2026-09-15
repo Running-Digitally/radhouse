@@ -63,6 +63,7 @@ class HermesRun:
 class HermesCapabilities:
     idempotency_retention_seconds: int
     disable_tools: bool = False
+    allowed_tools: bool = False
     guidance_receipts: bool = False
 
 
@@ -145,6 +146,7 @@ class HermesRunsClient:
         ):
             raise HermesGatewayError("runtime_idempotency_unavailable")
         restriction = features.get("runs_disable_tools")
+        allowed = features.get("runs_allowed_tools")
         steering = features.get("runs_steering_receipts")
         identified_steering = (isinstance(steering, dict)
             and steering.get("supported") is True and steering.get("durable") is True
@@ -156,20 +158,33 @@ class HermesRunsClient:
             and steering.get("applied_evidence") == "completed_provider_response")
         return HermesCapabilities(idempotency_retention_seconds=retention,
             disable_tools=isinstance(restriction, dict) and restriction.get("supported") is True,
+            allowed_tools=(isinstance(allowed, dict) and allowed.get("supported") is True
+                and type(allowed.get("version")) is int and allowed.get("version") == 1
+                and allowed.get("durable") is True
+                and allowed.get("mode") == "exact_subset_of_profile" and allowed.get("max_names") == 32),
             guidance_receipts=identified_steering)
 
     def start_or_attach(
-        self, *, input_text: str, session_id: str, dispatch_key: str, disable_tools: bool = False
+        self, *, input_text: str, session_id: str, dispatch_key: str, disable_tools: bool = False,
+        allowed_tools: tuple[str, ...] = (),
     ) -> HermesDispatch:
         if not input_text or len(input_text.encode("utf-8")) > MAX_INPUT_BYTES:
             raise ValueError("invalid_hermes_input")
+        if (type(allowed_tools) is not tuple or len(allowed_tools) > 32
+                or any(type(value) is not str for value in allowed_tools)
+                or len(set(allowed_tools)) != len(allowed_tools)
+                or any(re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value) is None for value in allowed_tools)
+                or disable_tools and allowed_tools):
+            raise ValueError("invalid_hermes_tool_restriction")
         session_id = _validated_identifier(session_id, "session")
         dispatch_key = _validated_identifier(dispatch_key, "dispatch")
         payload, response_headers = self._request(
             "POST",
             "v1/runs",
             expected_status=202,
-            body={"input": input_text, "session_id": session_id, **({"disable_tools": True} if disable_tools else {})},
+            body={"input": input_text, "session_id": session_id,
+                  **({"disable_tools": True} if disable_tools else {}),
+                  **({"allowed_tools": list(allowed_tools)} if allowed_tools else {})},
             headers={"Idempotency-Key": dispatch_key},
         )
         replayed = payload.get("replayed")
@@ -377,6 +392,8 @@ class HermesAgentWorkAdapter:
         capabilities = self.client.capabilities()
         if _task.disable_tools and not capabilities.disable_tools:
             raise HermesGatewayError("runtime_tools_restriction_unavailable")
+        if _task.allowed_tools and not capabilities.allowed_tools:
+            raise HermesGatewayError("runtime_exact_tools_restriction_unavailable")
         return RuntimeCapabilities(
             runtime_revision=self.runtime_revision,
             idempotency_retention_seconds=capabilities.idempotency_retention_seconds,
@@ -393,6 +410,7 @@ class HermesAgentWorkAdapter:
             session_id=task.task_id,
             dispatch_key=dispatch_key,
             **({"disable_tools": True} if task.disable_tools else {}),
+            **({"allowed_tools": task.allowed_tools} if task.allowed_tools else {}),
         )
         return RuntimeDispatch(
             run_id=accepted.run_id,

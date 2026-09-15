@@ -70,6 +70,14 @@ work finishes normally; a later message becomes contextual follow-up work.
 The controller retains exact guidance/run correlation and reconciles outcomes
 through GET, including after task completion, without resending the instruction.
 
+Tool-using assignments may also require the version-1 durable
+`features.runs_allowed_tools` capability with `mode=exact_subset_of_profile`.
+Radhouse binds a nonempty, duplicate-free list to the durable dispatch request;
+Hermes may only narrow its configured profile and must preserve the list across
+replay and restart. Prompt wording is not the enforcement boundary. Runs without
+an exact restriction retain their existing profile, while tools-disabled runs
+continue to advertise no tools.
+
 Persist Radhouse task, attempt, dispatch, and operation identities independently
 of Hermes session retention. Reattach with the original attempt key after reconnect. A
 missing runtime event or expired runtime deduplication record does not authorize
