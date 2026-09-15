@@ -156,6 +156,31 @@ def test_preflight_requires_lockfile_node_floor_and_source_build_compiler(tmp_pa
     with pytest.raises(DeploymentError, match="missing_command:cc"):
         DeploymentManager(runner=no_compiler).preflight(source, NEW)
 
+    no_pkg_config = FakeRunner(missing=frozenset({"pkg-config"}))
+    with pytest.raises(DeploymentError, match="missing_command:pkg-config"):
+        DeploymentManager(runner=no_pkg_config).preflight(source, NEW)
+
+
+def test_layout_assigns_pinned_postgres_bind_mount_identity(tmp_path: Path, monkeypatch):
+    runner = FakeRunner()
+    deployment = manager(tmp_path, runner, monkeypatch)
+    ownership = []
+    monkeypatch.setattr(
+        "deploy.production.radhouse_vm.shutil.chown",
+        lambda path, **values: ownership.append((Path(path), values)),
+    )
+
+    deployment._ensure_layout()
+
+    assert (
+        deployment.paths.state / "postgres/data",
+        {"user": 999, "group": 999},
+    ) in ownership
+    assert (
+        deployment.paths.state / "postgres/init",
+        {"user": 999, "group": 999},
+    ) in ownership
+
 
 def test_install_creates_immutable_release_pointer_and_leaves_services_stopped(
     tmp_path: Path, monkeypatch,
