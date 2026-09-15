@@ -130,6 +130,7 @@ def _snapshot(row, kind):
         from radhouse.domain.tasks import InputFile
         value["files"] = tuple(InputFile(**item) for item in value.get("files", []))
         value["guidance"] = tuple(value.get("guidance", []))
+        value["allowed_tools"] = tuple(value.get("allowed_tools", []))
     if kind in (Review, Publication):
         value["audience"] = tuple(value["audience"])
     if kind is Review:

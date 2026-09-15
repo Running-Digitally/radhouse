@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from collections.abc import Callable, Sequence
 import hashlib
 import json
+import re
 from uuid import uuid4
 
 from radhouse.channels.mapping import verify_envelope
@@ -22,8 +23,23 @@ from radhouse.domain.tasks import (AgentDispatch, Attempt, Delivery, Event,
     RuntimeFailure, RuntimeResult, SavedCommand, StartTask, Task, Operation, runtime_input)
 
 
+_READ_ONLY_TOOL_DIRECTIVE = re.compile(
+    r"\buse only\s+((?:read_file|search_files)(?:\s*(?:,|and)\s*(?:read_file|search_files))*)\b",
+    re.I,
+)
+
+
 def fingerprint(value: object) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def runtime_request_fingerprint(task: Task, session_id: str) -> str:
+    body: dict[str, object] = {"input": runtime_input(task), "session_id": session_id}
+    if task.disable_tools:
+        body["disable_tools"] = True
+    if task.allowed_tools:
+        body["allowed_tools"] = task.allowed_tools
+    return fingerprint(body)
 
 
 class Service:
@@ -75,10 +91,22 @@ class Service:
     def admit(self, actor: AuthContext, envelope: Envelope, start: StartTask) -> Task:
         # An explicit no-tools assignment narrows runtime authority. Only the
         # operator's brief is considered; reference material cannot set policy.
-        import re
         if re.search(r"\b(?:use no tools|do not use (?:any )?tools|don't use (?:any )?tools|no tool calls)\b", start.brief, re.I):
             start = replace(start, disable_tools=True)
-        if type(start.disable_tools) is not bool:
+        directive = _READ_ONLY_TOOL_DIRECTIVE.search(start.brief)
+        if directive:
+            named = tuple(dict.fromkeys(re.findall(r"(?:read_file|search_files)", directive.group(1), re.I)))
+            named = tuple(value.lower() for value in named)
+            if start.allowed_tools and start.allowed_tools != named:
+                raise Rejected("invalid_task", 422)
+            start = replace(start, allowed_tools=named)
+        if (type(start.disable_tools) is not bool
+                or type(start.allowed_tools) is not tuple
+                or any(type(value) is not str for value in start.allowed_tools)
+                or len(start.allowed_tools) > 32
+                or len(set(start.allowed_tools)) != len(start.allowed_tools)
+                or any(re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value) is None for value in start.allowed_tools)
+                or start.disable_tools and start.allowed_tools):
             raise Rejected("invalid_task", 422)
         if not start.brief.strip() or len(start.brief) > 4096 or not 1 <= start.budget <= 100:
             raise Rejected("invalid_task", 422)
@@ -89,6 +117,8 @@ class Service:
         if not start.disable_tools:
             # Preserve schema-2 command fingerprints for ordinary retries.
             body.pop("disable_tools")
+        if not start.allowed_tools:
+            body.pop("allowed_tools")
         identity = fingerprint(body)
         event_identity = fingerprint({"kind": "start", "key": envelope.command_key, "body": body})
         with self.store.transaction() as tx:
@@ -127,7 +157,7 @@ class Service:
                 task = Task(str(uuid4()), actor.principal_id, start.bot_id, start.project_id,
                             start.brief, start.provider_binding, start.resource_key, start.budget,
                             files=start.files, follows_task_id=start.follows_task_id, previous_result=previous_result,
-                            disable_tools=start.disable_tools)
+                            disable_tools=start.disable_tools, allowed_tools=start.allowed_tools)
                 tx.insert_task(task)
                 tx.save_command(SavedCommand(actor.principal_id, envelope.command_key, identity, task.task_id))
                 tx.add_event(Event(task.task_id, "admitted", task.state_revision))
@@ -305,7 +335,7 @@ class Service:
                                   generation=attempt.generation, budget_remaining=task.budget_remaining - 1,
                                   blockers=(), observation_sequence=0)
             session_id = task.task_id
-            request_digest = fingerprint({"input": runtime_input(task), "session_id": session_id})
+            request_digest = runtime_request_fingerprint(task, session_id)
             tx.save_dispatch(AgentDispatch(
                 attempt.attempt_id, task.task_id, attempt.attempt_id, session_id,
                 task.provider_binding, request_digest, "prepared",
@@ -385,9 +415,7 @@ class Service:
                 raise Rejected("task_state_inconsistent")
             if worker_id is not None and attempt.worker_id != worker_id:
                 return task
-            expected_digest = fingerprint({
-                "input": runtime_input(task), "session_id": dispatch.session_id,
-            })
+            expected_digest = runtime_request_fingerprint(task, dispatch.session_id)
             if dispatch.request_digest != expected_digest:
                 blockers = tuple(sorted(set(task.blockers) | {"operation_unknown"}))
                 phase = "stopping" if task.phase == "stopping" else "recovering"

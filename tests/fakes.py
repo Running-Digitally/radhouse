@@ -281,7 +281,10 @@ class SimulatedChannelDriver:
         self.client, self.channel = client, channel
 
     def admit(self, envelope: Envelope, start):
-        return self.client.post("/tasks", json={"envelope": asdict(envelope), "start": asdict(start)})
+        body = asdict(start)
+        if not body["allowed_tools"]:
+            body.pop("allowed_tools")
+        return self.client.post("/tasks", json={"envelope": asdict(envelope), "start": body})
 
     def get(self, task_id: str, envelope: Envelope):
         return self.client.get(f"/tasks/{task_id}", params={"conversation_id": envelope.conversation_id, "binding_revision": envelope.binding_revision})

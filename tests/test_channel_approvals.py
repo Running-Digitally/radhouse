@@ -26,6 +26,13 @@ def _start():
     return StartTask("bot-alpha", "personal-alice", "A synthetic report", "provider-synthetic")
 
 
+def _wire_start(start=None):
+    body = asdict(start or _start())
+    if not body["allowed_tools"]:
+        body.pop("allowed_tools")
+    return body
+
+
 class BoundaryService:
     """Call recorder for HTTP boundary tests, never a substitute task store."""
     def __init__(self, error=None):
@@ -60,7 +67,7 @@ def test_factory_requires_explicit_callable_authentication(adapter):
 def test_invalid_authentication_result_fails_closed():
     service = BoundaryService()
     with TestClient(create_app(service, lambda request: {"principal_id": "alice"})) as client:
-        response = client.post("/tasks", json={"envelope": asdict(_envelope()), "start": asdict(_start())})
+        response = client.post("/tasks", json={"envelope": asdict(_envelope()), "start": _wire_start()})
     assert response.status_code == 401
     assert response.json() == {"code": "authentication_required"}
     assert not service.calls
@@ -76,7 +83,7 @@ def test_invalid_authentication_result_fails_closed():
 ])
 def test_raw_payload_cannot_assert_actor_role_or_assurance(level, key, value):
     service = BoundaryService()
-    body = {"envelope": asdict(_envelope()), "start": asdict(_start())}
+    body = {"envelope": asdict(_envelope()), "start": _wire_start()}
     (body if level == "root" else body[level])[key] = value
     with TestClient(create_app(service, lambda request: _identity())) as client:
         response = client.post("/tasks", json=body)
@@ -95,12 +102,23 @@ def test_raw_payload_cannot_assert_actor_role_or_assurance(level, key, value):
 ])
 def test_request_values_are_strict_and_bounded(part, key, value):
     service = BoundaryService()
-    body = {"envelope": asdict(_envelope()), "start": asdict(_start())}
+    body = {"envelope": asdict(_envelope()), "start": _wire_start()}
     body[part][key] = value
     with TestClient(create_app(service, lambda request: _identity())) as client:
         response = client.post("/tasks", json=body)
     assert response.status_code == 422
     assert not service.calls
+
+
+def test_exact_tool_scope_must_be_omitted_or_nonempty():
+    service = BoundaryService()
+    omitted = {"envelope": asdict(_envelope()), "start": _wire_start()}
+    explicit_empty = {"envelope": omitted["envelope"],
+                      "start": {**omitted["start"], "allowed_tools": []}}
+    with TestClient(create_app(service, lambda request: _identity())) as client:
+        assert client.post("/tasks", json=omitted).status_code == 200
+        assert client.post("/tasks", json=explicit_empty).status_code == 422
+    assert len(service.calls) == 1
 
 
 def test_api_passes_only_injected_identity_and_typed_command():
@@ -113,7 +131,7 @@ def test_api_passes_only_injected_identity_and_typed_command():
         return actor
 
     with TestClient(create_app(service, authenticate)) as client:
-        response = client.post("/tasks", json={"envelope": asdict(envelope), "start": asdict(start)})
+        response = client.post("/tasks", json={"envelope": asdict(envelope), "start": _wire_start(start)})
     assert response.status_code == 200
     assert response.json()["owner_id"] == "alice"
     assert seen_requests == ["/tasks"]
@@ -153,7 +171,7 @@ def test_work_home_receives_only_authenticated_actor_and_read_context():
 def test_errors_expose_only_bounded_public_code():
     service = BoundaryService(Rejected("binding_denied", 403))
     with TestClient(create_app(service, lambda request: _identity())) as client:
-        response = client.post("/tasks", json={"envelope": asdict(_envelope()), "start": asdict(_start())})
+        response = client.post("/tasks", json={"envelope": asdict(_envelope()), "start": _wire_start()})
     assert response.status_code == 403
     assert response.json() == {"code": "binding_denied"}
 
@@ -306,7 +324,7 @@ def test_denied_channel_admission_has_no_task_or_dispatch(
     # Keep the exact injected subject; the fixture driver normally changes it
     # when crossing channels, which would repair this deliberately bad binding.
     with TestClient(create_app(service, lambda request: actor)) as client:
-        response = client.post("/tasks", json={"envelope": asdict(source), "start": asdict(command)})
+        response = client.post("/tasks", json={"envelope": asdict(source), "start": _wire_start(command)})
     assert response.status_code in {403, 409}
     assert response.json() == {"code": code}
     with store.transaction() as tx:
