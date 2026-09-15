@@ -16,7 +16,10 @@ from radhouse.domain.tasks import Rejected
 def agent_profile_events(relay, bot, attestation):
     """Build the standard Buzz profile for the configured Radhouse bot role."""
     role = bot.role_name.strip() or "Agent"
-    capability = "-".join(role.lower().split())[:64] or "agent"
+    normalized_role = "-".join(role.lower().split())[:64] or "agent"
+    # Preserve the established Researcher wire value while allowing another
+    # configured role to advertise its own standard capability.
+    capability = {"researcher": "research"}.get(normalized_role, normalized_role)
     return [
         relay.event(
             0,
