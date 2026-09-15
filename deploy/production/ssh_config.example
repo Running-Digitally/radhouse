@@ -12,3 +12,20 @@ Host radhouse-hermes
     LocalForward 127.0.0.1:18642 127.0.0.1:8642
     LocalForward 127.0.0.1:18001 127.0.0.1:8643
     RequestTTY no
+
+# Add one host block per additional bot and run the matching template unit,
+# for example: systemctl enable --now radhouse-hermes-tunnel@builder.service
+Host radhouse-hermes-builder
+    HostName builder-vm.example
+    User radhousebot
+    IdentityFile /etc/radhouse/tunnel/builder_ed25519
+    IdentitiesOnly yes
+    UserKnownHostsFile /etc/radhouse/tunnel/known_hosts
+    StrictHostKeyChecking yes
+    BatchMode yes
+    ExitOnForwardFailure yes
+    ServerAliveInterval 15
+    ServerAliveCountMax 3
+    LocalForward 127.0.0.1:18643 127.0.0.1:8642
+    LocalForward 127.0.0.1:18002 127.0.0.1:8643
+    RequestTTY no

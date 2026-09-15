@@ -29,6 +29,7 @@ CONTROL_UNITS = (
     "radhouse-coordinator.timer",
     "radhouse-hermes-tunnel.service",
 )
+OPTIONAL_UNITS = ("radhouse-hermes-tunnel@.service",)
 WRITER_UNITS = (
     "radhouse-coordinator.timer",
     "radhouse-coordinator.service",
@@ -93,6 +94,7 @@ class DeploymentManager:
             "deploy/production/radhouse-coordinator.service",
             "deploy/production/radhouse-coordinator.timer",
             "deploy/production/radhouse-hermes-tunnel.service",
+            "deploy/production/radhouse-hermes-tunnel@.service",
         )
         if any(not (source / name).is_file() for name in required_files):
             raise DeploymentError("incomplete_source_tree")
@@ -363,6 +365,12 @@ class DeploymentManager:
             target = self.paths.systemd / unit
             shutil.copy2(source, target)
             target.chmod(0o644)
+        for unit in OPTIONAL_UNITS:
+            source = release / "deploy/production" / unit
+            if source.is_file():
+                target = self.paths.systemd / unit
+                shutil.copy2(source, target)
+                target.chmod(0o644)
 
     def _switch_current(self, release: Path) -> None:
         temporary = self.paths.application / ".current.new"

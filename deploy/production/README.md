@@ -107,6 +107,16 @@ TOTP secret, and revokes that person's earlier sessions. Passwords, TOTP secrets
 database credentials, and the local-auth encryption key are accepted only by
 protected file reference and are never emitted in the command receipt.
 
+For an additional configured bot, use `radhouse bot-grant --apply`. It adds the
+bot profile and grant to an existing active person's existing project without
+reading or rotating password, TOTP, binding, or session state. A mismatched
+existing bot profile is a refusal.
+
+The installed `radhouse-hermes-tunnel@.service` supports one restricted SSH
+transport per additional bot. Add a matching `Host radhouse-hermes-NAME` block
+to the protected SSH configuration, then enable the `NAME` instance. Each bot
+retains a distinct key, loopback port and remote Hermes home.
+
 ## Upgrade and rollback
 
 Before an upgrade, create a consistent database backup with the installation's

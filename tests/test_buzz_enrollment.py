@@ -7,13 +7,33 @@ from fastapi.testclient import TestClient
 import pytest
 
 from radhouse.api.app import create_app
-from radhouse.channels.buzz_enrollment import BuzzEnrollment, ConfiguredBuzzConversation
+from radhouse.channels.buzz_enrollment import (
+    BuzzEnrollment,
+    ConfiguredBuzzConversation,
+    agent_profile_events,
+)
 from radhouse.channels.nostr import sha256
 from radhouse.domain.tasks import Rejected
 from tests.test_buzz_conversations import bridge
 from tests.test_buzz_relay import signed
 
 pytestmark = pytest.mark.postgres
+
+
+def test_standard_buzz_profile_uses_the_configured_agent_role():
+    class Relay:
+        @staticmethod
+        def event(kind, content, tags=None):
+            return {"kind": kind, "content": content, "tags": tags or []}
+
+    events = agent_profile_events(
+        Relay(), SimpleNamespace(display_name="Builder", role_name="Builder"), ["attestation"]
+    )
+
+    profile = json.loads(events[0]["content"])
+    capability = json.loads(events[1]["content"])
+    assert profile["about"].startswith("Your Radhouse Builder.")
+    assert capability["capabilities"] == ["builder"]
 
 
 @pytest.fixture
