@@ -34,11 +34,11 @@ class FakeRunner:
         self.commands.append(command)
         if command == ("python3.14", "--version"):
             return "Python 3.14.4"
-        if command[:3] == ("git", "rev-parse", "HEAD"):
+        if command[0] == "git" and "rev-parse" in command:
             return self.head
-        if command[:2] == ("git", "status"):
+        if command[0] == "git" and "status" in command:
             return ""
-        if command[:3] == ("git", "ls-files", "-z"):
+        if command[0] == "git" and "ls-files" in command:
             return "\0".join(self.tracked) + "\0"
         if command[:4] == ("uv", "sync", "--frozen", "--no-dev"):
             executable = Path(cwd) / ".venv/bin"
@@ -131,6 +131,10 @@ def test_preflight_requires_exact_clean_revision_and_pinned_python(tmp_path: Pat
     deployment = DeploymentManager(runner=runner)
 
     assert deployment.preflight(source, NEW)["result"] == "ready"
+    assert any(
+        command[:3] == ("git", "-c", f"safe.directory={source.resolve()}")
+        for command in runner.commands
+    )
     with pytest.raises(DeploymentError, match="release_identity_mismatch"):
         deployment.preflight(source, OLD)
 
