@@ -103,15 +103,10 @@ class DeploymentManager:
                 raise DeploymentError(f"missing_command:{command}")
         if self.runner.run(("python3.14", "--version"), capture=True) != "Python 3.14.4":
             raise DeploymentError("unsupported_python_version")
-        head = self.runner.run(
-            ("git", "rev-parse", "HEAD"), cwd=source, capture=True,
-        )
+        head = self._git(source, "rev-parse", "HEAD")
         if head != release_id:
             raise DeploymentError("release_identity_mismatch")
-        if self.runner.run(
-            ("git", "status", "--porcelain", "--untracked-files=no"),
-            cwd=source, capture=True,
-        ):
+        if self._git(source, "status", "--porcelain", "--untracked-files=no"):
             raise DeploymentError("source_tree_dirty")
         return {"result": "ready", "release_id": release_id, "source": str(source)}
 
@@ -257,7 +252,7 @@ class DeploymentManager:
         # manifest is complete; renaming a built venv would break its shebangs.
         destination.mkdir(mode=0o750)
         try:
-            listing = self.runner.run(("git", "ls-files", "-z"), cwd=source, capture=True)
+            listing = self._git(source, "ls-files", "-z")
             tracked = [name for name in listing.split("\0") if name]
             if not tracked:
                 raise DeploymentError("empty_source_tree")
@@ -301,6 +296,15 @@ class DeploymentManager:
                 shutil.rmtree(destination)
             raise
         return destination
+
+    def _git(self, source: Path, *arguments: str) -> str:
+        # The installer normally runs through sudo against the invoking
+        # operator's checkout. Scope Git's ownership exception to this one
+        # already validated source path instead of changing global Git config.
+        return self.runner.run(
+            ("git", "-c", f"safe.directory={source}", *arguments),
+            cwd=source, capture=True,
+        )
 
     def _ensure_system_users(self) -> None:
         for user in ("radhouse", "radhouse-tunnel"):
