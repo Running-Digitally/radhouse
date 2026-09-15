@@ -185,6 +185,68 @@ def provision_local_user(
         raise LocalAuthError("local_user_provision_failed") from None
 
 
+def provision_bot_grant(
+    dsn: str,
+    *,
+    expected_database: str,
+    deployment_id: str,
+    principal_id: str,
+    project_id: str,
+    bot_id: str,
+    bot_display_name: str,
+    bot_role_name: str,
+    provider_binding: str,
+) -> None:
+    """Add one configured bot to an existing person's project without rotating login secrets."""
+    if not all(
+        re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", item)
+        for item in (principal_id, project_id, bot_id, provider_binding)
+    ):
+        raise LocalAuthError("invalid_identifier")
+    if not 1 <= len(bot_display_name.strip()) <= 100 or not 1 <= len(bot_role_name.strip()) <= 100:
+        raise LocalAuthError("invalid_bot_profile")
+    params = _application_connection_parameters(dsn, expected_database)
+    params["application_name"] = "radhouse-bot-grant-provision"
+    try:
+        with psycopg.connect(**params, row_factory=dict_row) as connection:
+            _verified_connection(connection, deployment_id, expected_database)
+            access = connection.execute(
+                "SELECT a.active,p.state FROM public.actors a "
+                "JOIN public.project_members m USING(principal_id) "
+                "JOIN public.projects p USING(project_id) "
+                "WHERE a.principal_id=%s AND p.project_id=%s",
+                (principal_id, project_id),
+            ).fetchone()
+            if access is None or not access["active"] or access["state"] != "active":
+                raise LocalAuthError("existing_project_access_required")
+            connection.execute(
+                "INSERT INTO public.bots"
+                "(bot_id,display_name,role_name,provider_binding,state) "
+                "VALUES (%s,%s,%s,%s,'ready') ON CONFLICT (bot_id) DO NOTHING",
+                (bot_id, bot_display_name.strip(), bot_role_name.strip(), provider_binding),
+            )
+            bot = connection.execute(
+                "SELECT display_name,role_name,provider_binding,state FROM public.bots "
+                "WHERE bot_id=%s", (bot_id,),
+            ).fetchone()
+            expected = {
+                "display_name": bot_display_name.strip(),
+                "role_name": bot_role_name.strip(),
+                "provider_binding": provider_binding,
+                "state": "ready",
+            }
+            if bot is None or dict(bot) != expected:
+                raise LocalAuthError("bot_profile_mismatch")
+            connection.execute(
+                "INSERT INTO public.bot_grants(principal_id,bot_id) VALUES (%s,%s) "
+                "ON CONFLICT DO NOTHING", (principal_id, bot_id),
+            )
+    except LocalAuthError:
+        raise
+    except (psycopg.Error, ApplicationStorageError):
+        raise LocalAuthError("bot_grant_unavailable") from None
+
+
 class LocalAuthService:
     def __init__(
         self,
