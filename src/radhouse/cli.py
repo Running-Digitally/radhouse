@@ -9,7 +9,12 @@ import sys
 import uvicorn
 
 from radhouse.api.app import create_app
-from radhouse.auth.local import LocalAuthError, LocalAuthService, provision_local_user
+from radhouse.auth.local import (
+    LocalAuthError,
+    LocalAuthService,
+    provision_bot_grant,
+    provision_local_user,
+)
 from radhouse.composition import compose_controller
 from radhouse.config import ConfigurationError, load_config
 from radhouse.secrets import SecretFileError, read_secret_file
@@ -49,6 +54,17 @@ def parser() -> argparse.ArgumentParser:
     user.add_argument("--bot-display-name", required=True)
     user.add_argument("--bot-role-name", required=True)
     user.add_argument("--apply", action="store_true")
+    grant = commands.add_parser(
+        "bot-grant", help="add one configured bot to an existing person's project",
+    )
+    grant.add_argument("--config", required=True)
+    grant.add_argument("--overlay")
+    grant.add_argument("--principal-id", required=True)
+    grant.add_argument("--project-id", required=True)
+    grant.add_argument("--bot-id", required=True)
+    grant.add_argument("--bot-display-name", required=True)
+    grant.add_argument("--bot-role-name", required=True)
+    grant.add_argument("--apply", action="store_true")
     binding = commands.add_parser("buzz-bind", help="bind one approved public key to an existing person/project")
     binding.add_argument("--config", required=True)
     binding.add_argument("--overlay")
@@ -170,6 +186,28 @@ def main(arguments: list[str] | None = None) -> int:
                 output = {
                     "result": "provisioned", "principal_id": args.principal_id,
                     "username": args.username.lower(), "role": args.role,
+                    "project_id": args.project_id, "bot_id": args.bot_id,
+                }
+        elif args.command == "bot-grant":
+            if not args.apply:
+                output = {**_summary(config), "result": "apply_required"}
+            else:
+                bot = next((item for item in config.bots if item.bot_id == args.bot_id), None)
+                if bot is None:
+                    raise LocalAuthError("bot_not_configured")
+                provision_bot_grant(
+                    read_secret_file(config.database.dsn.path),
+                    expected_database=config.database.name,
+                    deployment_id=config.database.deployment_id,
+                    principal_id=args.principal_id,
+                    project_id=args.project_id,
+                    bot_id=args.bot_id,
+                    bot_display_name=args.bot_display_name,
+                    bot_role_name=args.bot_role_name,
+                    provider_binding=bot.provider_binding,
+                )
+                output = {
+                    "result": "granted", "principal_id": args.principal_id,
                     "project_id": args.project_id, "bot_id": args.bot_id,
                 }
         elif not args.apply:

@@ -146,6 +146,8 @@ composition root's real authentication adapter and current Radhouse authorizatio
   for durable Hermes execution, the TypeScript work home, and real Buzz parity.
 - [Reference deployment foundation](docs/deployment/reference-foundation.md):
   reusable Proxmox or supplied-VM roles, readiness states, and handoff evidence.
+- [Builder private preview](docs/builder-private-preview.md): the fixed private
+  preview loop for trying and refining small applications from Buzz.
 - [Configuration and private overlays](docs/configuration.md): strict public YAML,
   private replacement values, secret-file references, and endpoint boundaries.
 - [PostgreSQL storage boundary](docs/storage.md): separate fixture/application

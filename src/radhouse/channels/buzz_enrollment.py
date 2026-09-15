@@ -13,6 +13,41 @@ from radhouse.domain.conversations import ConversationLink
 from radhouse.domain.tasks import Rejected
 
 
+def agent_profile_events(relay, bot, attestation):
+    """Build the standard Buzz profile for the configured Radhouse bot role."""
+    role = bot.role_name.strip() or "Agent"
+    capability = "-".join(role.lower().split())[:64] or "agent"
+    return [
+        relay.event(
+            0,
+            json.dumps(
+                {
+                    "name": bot.display_name,
+                    "display_name": bot.display_name,
+                    "about": (
+                        f"Your Radhouse {role}. Assign work here and keep its "
+                        "progress, references and results together."
+                    ),
+                }
+            ),
+            [attestation],
+        ),
+        relay.event(
+            10100,
+            json.dumps(
+                {
+                    "name": bot.display_name,
+                    "agent_type": "agent",
+                    "channel_add_policy": "owner_only",
+                    "capabilities": [capability],
+                    "channels": [],
+                    "status": "online",
+                }
+            ),
+        ),
+    ]
+
+
 def verify_owner_attestation(value, owner, agent):
     if (
         not isinstance(value, list)
@@ -172,32 +207,7 @@ class BuzzEnrollment:
                 saved = {
                     "ready": False,
                     "auth_tag": attestation,
-                    "events": [
-                        relay.event(
-                            0,
-                            json.dumps(
-                                {
-                                    "name": bot.display_name,
-                                    "display_name": bot.display_name,
-                                    "about": "Your Radhouse Researcher. Assign work here and keep its progress, references and results together.",
-                                }
-                            ),
-                            [attestation],
-                        ),
-                        relay.event(
-                            10100,
-                            json.dumps(
-                                {
-                                    "name": bot.display_name,
-                                    "agent_type": "agent",
-                                    "channel_add_policy": "owner_only",
-                                    "capabilities": ["research"],
-                                    "channels": [],
-                                    "status": "online",
-                                }
-                            ),
-                        ),
-                    ],
+                    "events": agent_profile_events(relay, bot, attestation),
                 }
                 tx.save_conversation_enrollment(link_id, saved)
         relay.owner_attestation = saved["auth_tag"]
