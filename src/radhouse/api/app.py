@@ -49,7 +49,13 @@ def create_app(
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         if request.url.scheme == "https":
             response.headers["Strict-Transport-Security"] = "max-age=31536000"
-        if request.url.path.startswith(("/auth/", "/tasks", "/reviews", "/work-home", "/projects", "/conversations", "/agent-enrollment")):
+        if (
+            request.url.path == "/app"
+            or request.url.path.startswith((
+                "/app/", "/auth/", "/tasks", "/reviews", "/work-home",
+                "/projects", "/conversations", "/agent-enrollment",
+            ))
+        ):
             response.headers["Cache-Control"] = "no-store"
         return response
 
