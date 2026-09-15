@@ -10,7 +10,7 @@ import pyotp
 import pytest
 
 from radhouse.api.app import create_app
-from radhouse.auth.local import LocalAuthService, provision_local_user
+from radhouse.auth.local import LocalAuthService, provision_bot_grant, provision_local_user
 from radhouse.domain.tasks import Rejected
 
 
@@ -19,6 +19,68 @@ pytestmark = pytest.mark.postgres
 
 class UnusedService:
     pass
+
+
+def test_second_bot_grant_preserves_existing_login_credentials(store):
+    run_id = os.environ["RADHOUSE_VS0_RUN_ID"]
+    dsn = os.environ["RADHOUSE_VS0_DSN"]
+    principal = f"builder-owner-{uuid4().hex[:8]}"
+    project = f"builder-project-{uuid4().hex[:8]}"
+    password = "correct horse battery staple"
+    totp_secret = pyotp.random_base32()
+    key = Fernet.generate_key().decode("ascii")
+    provision_local_user(
+        dsn,
+        expected_database=f"radhouse_vs0_{run_id}",
+        deployment_id=f"fixture-{run_id}",
+        encryption_key=key,
+        principal_id=principal,
+        username=principal,
+        role="admin",
+        password=password,
+        totp_secret=totp_secret,
+        project_id=project,
+        project_name="Builder experiments",
+        bot_id="bot-alpha",
+        bot_display_name="Researcher",
+        bot_role_name="Researcher",
+        provider_binding="fake-local",
+    )
+    with psycopg.connect(dsn, row_factory=dict_row) as connection:
+        before = connection.execute(
+            "SELECT password_hash,totp_secret_ciphertext FROM local_credentials "
+            "WHERE principal_id=%s", (principal,),
+        ).fetchone()
+
+    provision_bot_grant(
+        dsn,
+        expected_database=f"radhouse_vs0_{run_id}",
+        deployment_id=f"fixture-{run_id}",
+        principal_id=principal,
+        project_id=project,
+        bot_id="builder-01",
+        bot_display_name="Builder",
+        bot_role_name="Builder",
+        provider_binding="fake-local",
+    )
+
+    with psycopg.connect(dsn, row_factory=dict_row) as connection:
+        after = connection.execute(
+            "SELECT password_hash,totp_secret_ciphertext FROM local_credentials "
+            "WHERE principal_id=%s", (principal,),
+        ).fetchone()
+        bot = connection.execute(
+            "SELECT display_name,role_name,provider_binding,state FROM bots WHERE bot_id='builder-01'"
+        ).fetchone()
+        grant = connection.execute(
+            "SELECT 1 FROM bot_grants WHERE principal_id=%s AND bot_id='builder-01'", (principal,),
+        ).fetchone()
+    assert before == after
+    assert dict(bot) == {
+        "display_name": "Builder", "role_name": "Builder",
+        "provider_binding": "fake-local", "state": "ready",
+    }
+    assert grant is not None
 
 
 def test_local_login_requires_password_totp_origin_and_session_csrf(store):

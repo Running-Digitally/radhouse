@@ -9,6 +9,7 @@ import pytest
 
 from deploy.production.radhouse_vm import (
     CONTROL_UNITS,
+    OPTIONAL_UNITS,
     DeploymentError,
     DeploymentManager,
     Paths,
@@ -83,6 +84,7 @@ def source_tree(tmp_path: Path, runner: FakeRunner) -> Path:
         "deploy/production/radhouse-coordinator.service": "[Service]\n",
         "deploy/production/radhouse-coordinator.timer": "[Timer]\n",
         "deploy/production/radhouse-hermes-tunnel.service": "[Service]\n",
+        "deploy/production/radhouse-hermes-tunnel@.service": "[Service]\n",
     }
     for name, contents in files.items():
         path = source / name
@@ -202,6 +204,7 @@ def test_install_creates_immutable_release_pointer_and_leaves_services_stopped(
     assert manifest["storage_schema_version"] == 4
     assert (deployment.paths.configuration / "config.yaml.example").is_file()
     assert all((deployment.paths.systemd / unit).is_file() for unit in CONTROL_UNITS)
+    assert all((deployment.paths.systemd / unit).is_file() for unit in OPTIONAL_UNITS)
     assert ("systemctl", "daemon-reload") in runner.commands
     assert not any(command[:2] == ("systemctl", "start") for command in runner.commands)
 

@@ -29,6 +29,17 @@ def test_migrate_without_apply_does_not_read_owner_secret(tmp_path: Path, capsys
     assert json.loads(capsys.readouterr().out)["result"] == "apply_required"
 
 
+def test_bot_grant_without_apply_does_not_read_database_secret(tmp_path: Path, capsys):
+    config = write(tmp_path / "config.yaml", BASE)
+    assert main([
+        "bot-grant", "--config", str(config),
+        "--principal-id", "alice", "--project-id", "project-one",
+        "--bot-id", "researcher-001", "--bot-display-name", "Researcher",
+        "--bot-role-name", "Researcher",
+    ]) == 0
+    assert json.loads(capsys.readouterr().out)["result"] == "apply_required"
+
+
 def test_preflight_reads_protected_secrets_without_contacting_services(
     tmp_path: Path, capsys,
 ):
