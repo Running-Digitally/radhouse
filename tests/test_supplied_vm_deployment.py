@@ -20,13 +20,18 @@ NEW = "2" * 40
 
 
 class FakeRunner:
-    def __init__(self, *, head: str = NEW, fail_first_start: bool = False):
+    def __init__(self, *, head: str = NEW, fail_first_start: bool = False,
+                 node_version: str = "v22.23.2", missing: frozenset[str] = frozenset()):
         self.head = head
         self.fail_first_start = fail_first_start
+        self.node_version = node_version
+        self.missing = missing
         self.commands: list[tuple[str, ...]] = []
         self.tracked: tuple[str, ...] = ()
 
     def which(self, command: str) -> str | None:
+        if command in self.missing:
+            return None
         return f"/usr/bin/{command}"
 
     def run(self, command, *, cwd=None, capture=False):
@@ -34,6 +39,8 @@ class FakeRunner:
         self.commands.append(command)
         if command == ("python3.14", "--version"):
             return "Python 3.14.4"
+        if command == ("node", "--version"):
+            return self.node_version
         if command[0] == "git" and "rev-parse" in command:
             return self.head
         if command[0] == "git" and "status" in command:
@@ -137,6 +144,17 @@ def test_preflight_requires_exact_clean_revision_and_pinned_python(tmp_path: Pat
     )
     with pytest.raises(DeploymentError, match="release_identity_mismatch"):
         deployment.preflight(source, OLD)
+
+
+def test_preflight_requires_lockfile_node_floor_and_source_build_compiler(tmp_path: Path):
+    old_node = FakeRunner(node_version="v20.18.3")
+    source = source_tree(tmp_path, old_node)
+    with pytest.raises(DeploymentError, match="unsupported_node_version"):
+        DeploymentManager(runner=old_node).preflight(source, NEW)
+
+    no_compiler = FakeRunner(missing=frozenset({"cc"}))
+    with pytest.raises(DeploymentError, match="missing_command:cc"):
+        DeploymentManager(runner=no_compiler).preflight(source, NEW)
 
 
 def test_install_creates_immutable_release_pointer_and_leaves_services_stopped(
