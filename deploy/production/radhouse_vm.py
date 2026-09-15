@@ -97,7 +97,7 @@ class DeploymentManager:
         if any(not (source / name).is_file() for name in required_files):
             raise DeploymentError("incomplete_source_tree")
         for command in (
-            "cc", "docker", "git", "node", "npm", "uv", "python3.14",
+            "cc", "docker", "git", "node", "npm", "pkg-config", "uv", "python3.14",
             "systemctl", "useradd",
         ):
             if self.runner.which(command) is None:
@@ -337,6 +337,14 @@ class DeploymentManager:
             self.paths.configuration / "tls",
         ):
             shutil.chown(path, user="root", group="radhouse")
+        # The digest-pinned PostgreSQL image runs database and initialization
+        # work as its postgres account (UID/GID 999). Bind mounts created as
+        # root:root 0700 fail before the database can initialize.
+        for path in (
+            self.paths.state / "postgres/data",
+            self.paths.state / "postgres/init",
+        ):
+            shutil.chown(path, user=999, group=999)
         shutil.chown(
             self.paths.configuration / "tunnel",
             user="root", group="radhouse-tunnel",
