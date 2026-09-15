@@ -195,11 +195,23 @@ class BuzzEnrollment:
             content = json.loads(event["content"])
         except ValueError:
             content = None
+        directory_keys = {"name", "parallelism", "respond_to"}
+        if isinstance(content, dict) and "persona_id" in content:
+            directory_keys.add("persona_id")
+            try:
+                UUID(content["persona_id"])
+            except (TypeError, ValueError, AttributeError):
+                content = None
         if (
             event["pubkey"] != candidate.owner_pubkey
             or event["tags"] != [["d", candidate.agent_pubkey]]
-            or content
-            != {"name": bot.display_name, "parallelism": 1, "respond_to": "owner-only"}
+            or not isinstance(content, dict)
+            or set(content) != directory_keys
+            or content.get("name") != bot.display_name
+            or content.get("respond_to") != "owner-only"
+            or not isinstance(content.get("parallelism"), int)
+            or isinstance(content.get("parallelism"), bool)
+            or not 1 <= content["parallelism"] <= 10
         ):
             raise Rejected("buzz_agent_directory_denied", 403)
         with self.service.store.transaction() as tx:
