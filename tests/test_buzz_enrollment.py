@@ -35,6 +35,11 @@ def test_standard_buzz_profile_uses_the_configured_agent_role():
     assert profile["about"].startswith("Your Radhouse Builder.")
     assert capability["capabilities"] == ["builder"]
 
+    researcher = agent_profile_events(
+        Relay(), SimpleNamespace(display_name="Researcher", role_name="Researcher"), ["attestation"]
+    )
+    assert json.loads(researcher[1]["content"])["capabilities"] == ["research"]
+
 
 @pytest.fixture
 def enrollment(bridge, service, store, alice, envelope):
