@@ -97,10 +97,15 @@ class DeploymentManager:
         if any(not (source / name).is_file() for name in required_files):
             raise DeploymentError("incomplete_source_tree")
         for command in (
-            "docker", "git", "npm", "uv", "python3.14", "systemctl", "useradd",
+            "cc", "docker", "git", "node", "npm", "uv", "python3.14",
+            "systemctl", "useradd",
         ):
             if self.runner.which(command) is None:
                 raise DeploymentError(f"missing_command:{command}")
+        node = self.runner.run(("node", "--version"), capture=True)
+        match = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", node)
+        if match is None or tuple(map(int, match.groups())) < (20, 19, 0):
+            raise DeploymentError("unsupported_node_version")
         if self.runner.run(("python3.14", "--version"), capture=True) != "Python 3.14.4":
             raise DeploymentError("unsupported_python_version")
         head = self._git(source, "rev-parse", "HEAD")
