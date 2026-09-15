@@ -22,11 +22,11 @@ sources.
 
 ## Install the controller
 
-The VM needs Git, Node.js 20.19.0 or newer with npm, uv, a C compiler, systemd,
-`useradd`, Docker Engine with Compose, and CPython 3.14.4 available as
-`python3.14`. The compiler is required because the frozen Python dependency set
-contains a source-built native extension. Start from an exact reviewed commit
-in a clean checkout:
+The VM needs Git, Node.js 20.19.0 or newer with npm, uv, a C compiler,
+`pkg-config`, systemd, `useradd`, Docker Engine with Compose, and CPython 3.14.4
+available as `python3.14`. The compiler and `pkg-config` are required because the
+frozen Python dependency set contains a source-built native extension. Start
+from an exact reviewed commit in a clean checkout:
 
 ```sh
 release_id="$(git rev-parse HEAD)"
