@@ -24,7 +24,10 @@ preflight. Private live acceptance has completed Package 1A, Package 1B and
 Package 3 for this official-client scope: useful work, contextual follow-up,
 authenticated review links, applied multi-step guidance, publication status,
 deduplication, reconnect and restart recovery. OIDC composition, administrator
-invitation/recovery UX and an installable fleet release remain incomplete. See the
+invitation/recovery UX and a qualified fleet release remain incomplete. The
+controller now has a reproducible supplied-Linux-VM install, upgrade, status and
+schema-compatible rollback path; a fresh live installation still needs release
+qualification. See the
 [implementation and acceptance packet](docs/operator-buzz-completion.md).
 This is not a claim that all of Radhouse V1 is released.
 
