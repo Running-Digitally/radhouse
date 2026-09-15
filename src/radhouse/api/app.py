@@ -17,6 +17,7 @@ from radhouse.api.schemas import (
     PublishRequest, ReviewRequest, ReviewResponse, StateRequest, TaskResponse,
     WorkHomeResponse, LoginRequest, AuthSessionResponse, ProjectResponse, ReauthenticateRequest,
     GuidanceRequest, PermissionRequest, ReviewLocatorRequest,
+    TaskTitleRequest, TaskTitleResponse,
 )
 from radhouse.domain.access import AuthContext
 from radhouse.channels.commands import Envelope
@@ -176,6 +177,13 @@ def create_app(
     @app.post("/tasks/{task_id}/guidance", response_model=TaskResponse, responses=errors)
     def guide(task_id: str, body: GuidanceRequest, actor: Actor):
         return service.guide(actor, task_id, body.expected_state_revision, body.text, envelope=body.envelope.command())
+
+    @app.post("/tasks/{task_id}/title", response_model=TaskTitleResponse, responses=errors)
+    def rename_task(task_id: str, body: TaskTitleRequest, actor: Actor):
+        return service.rename_task(
+            actor, task_id, body.expected_title_revision, body.title,
+            envelope=body.envelope.command(),
+        )
 
     @app.post("/tasks/{task_id}/permission", response_model=TaskResponse, responses=errors)
     def permission(task_id: str, body: PermissionRequest, actor: Actor):

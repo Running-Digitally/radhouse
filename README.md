@@ -20,10 +20,11 @@ status returns to Buzz. Unmodified official clients are the default; the former
 custom desktop integration is [superseded](integrations/buzz-desktop/README.md).
 
 Official desktop and owner-confirmed mobile conversations pass the client
-preflight. The revised server/web integration is under local qualification;
-live multi-step guidance, secure review-link and publication acceptance remain
-open. OIDC composition, administrator invitation/recovery UX and an installable
-fleet release remain incomplete. See the
+preflight. Private live acceptance has completed Package 1A, Package 1B and
+Package 3 for this official-client scope: useful work, contextual follow-up,
+authenticated review links, applied multi-step guidance, publication status,
+deduplication, reconnect and restart recovery. OIDC composition, administrator
+invitation/recovery UX and an installable fleet release remain incomplete. See the
 [implementation and acceptance packet](docs/operator-buzz-completion.md).
 This is not a claim that all of Radhouse V1 is released.
 

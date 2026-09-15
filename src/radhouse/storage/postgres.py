@@ -24,6 +24,7 @@ from radhouse.storage.conversations import ConversationQueries
 from radhouse.domain.releases import Publication, Review
 from radhouse.domain.tasks import (
     AgentDispatch, Attempt, Delivery, Event, Operation, Rejected, SavedCommand, Task,
+    TaskTitle, initial_task_title,
 )
 
 
@@ -37,16 +38,17 @@ class ApplicationStorageError(ValueError):
 
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _INITIAL_MIGRATION = Path(__file__).parent / "migrations" / "0001_initial.sql"
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 MIGRATIONS = (_INITIAL_MIGRATION, Path(__file__).parent / "migrations" / "0002_operator_context.sql",
-              Path(__file__).parent / "migrations" / "0003_conversations.sql")
+              Path(__file__).parent / "migrations" / "0003_conversations.sql",
+              Path(__file__).parent / "migrations" / "0004_task_titles.sql")
 
 
 def schema_digest(version: int = SCHEMA_VERSION) -> str:
     try:
         if version == 1:
             return hashlib.sha256(_INITIAL_MIGRATION.read_bytes()).hexdigest()
-        if version not in {2, 3}:
+        if version not in {2, 3, 4}:
             raise ApplicationStorageError("unsupported_schema_version")
         return hashlib.sha256(f"radhouse-schema-v{version}\0".encode() + b"\0".join(path.read_bytes() for path in MIGRATIONS[:version])).hexdigest()
     except OSError:
@@ -241,6 +243,13 @@ class PostgresUnitOfWork(ConversationQueries):
             "SELECT snapshot FROM public.tasks WHERE task_id=%s", (task_id,),
         ).fetchone(), Task)
 
+    def task_title(self, task_id: str) -> TaskTitle | None:
+        row = self._connection.execute(
+            "SELECT task_id,display_title AS title,title_source AS source,title_revision AS revision "
+            "FROM public.tasks WHERE task_id=%s", (task_id,),
+        ).fetchone()
+        return TaskTitle(**row) if row else None
+
     def bindings(self, channel: str, subject: str, principal_id: str) -> list[Binding]:
         return [Binding(**row) for row in self._connection.execute(
             "SELECT channel,subject,conversation_id,principal_id,project_id,revision,active "
@@ -279,14 +288,28 @@ class PostgresUnitOfWork(ConversationQueries):
         return ProjectProfile(**row) if row else None
 
     def insert_task(self, task: Task) -> None:
+        title = initial_task_title(task.brief)
         self._connection.execute(
             "INSERT INTO public.tasks (task_id, owner_id, bot_id, project_id, task_revision, "
-            "state_revision, phase, outcome, budget_remaining, attempt_id, snapshot) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            "state_revision, phase, outcome, budget_remaining, attempt_id, snapshot, "
+            "display_title, title_source, title_revision) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'brief',1)",
             (task.task_id, task.owner_id, task.bot_id, task.project_id, task.task_revision,
-             task.state_revision, task.phase, task.outcome, task.budget_remaining, task.attempt_id, _json(task)),
+             task.state_revision, task.phase, task.outcome, task.budget_remaining, task.attempt_id,
+             _json(task), title),
         )
         self._record_revision(task)
+
+    def save_task_title(self, title: TaskTitle, expected_revision: int) -> None:
+        if title.revision != expected_revision + 1:
+            raise Rejected("task_title_revision_conflict")
+        cursor = self._connection.execute(
+            "UPDATE public.tasks SET display_title=%s,title_source=%s,title_revision=%s "
+            "WHERE task_id=%s AND title_revision=%s",
+            (title.title, title.source, title.revision, title.task_id, expected_revision),
+        )
+        if cursor.rowcount != 1:
+            raise Rejected("task_title_revision_conflict")
 
     def save_task(self, task: Task, expected_state_revision: int) -> None:
         if task.state_revision != expected_state_revision + 1:

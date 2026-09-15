@@ -1,9 +1,10 @@
 # Official Buzz conversations and Radhouse web review
 
-Status: owner-selected architecture, 14 September 2026. Packages 1 and 3 remain
-open under the acceptance below. The earlier custom desktop pilot is historical
-proof; it is superseded as the default product path. Preserve its branches,
-source, application rollback and evidence until official-client acceptance passes.
+Status: official-client acceptance completed, 15 September 2026. Packages 1A,
+1B and 3 passed for the bounded single-Researcher pilot described below. The
+earlier custom desktop pilot is historical proof and remains superseded as the
+default product path. Full V1 fleet, installation and wider-role qualification
+remain separate release work.
 
 ## Product decision and verified baseline
 
@@ -190,7 +191,14 @@ or uncertain observation accurately.
 
 ## Package 1 and 3 live acceptance
 
-The next milestone is a useful Researcher assignment reliably completed from an
+The bounded private proof completed these criteria with one useful ordinary
+assignment and follow-up, one separately authenticated review-link check, and
+one genuinely multi-step research assignment whose correlated guidance changed
+a later model response. Duplicate prevention, reconnect, controller restart and
+one durable publication-status event passed as separate checks. Deployment-
+specific identities and receipts remain in the private operational evidence.
+
+The milestone requires a useful Researcher assignment reliably completed from an
 unmodified official Buzz client. Keep packages open until demonstrated; a local
 test pass or nominal runtime completion is insufficient. Official desktop
 identity/conversation visibility and owner-confirmed mobile foreground access
@@ -286,7 +294,8 @@ Hermes owns its separate correction to unfinished/empty run status. These
 changes do not rewrite the retained failed walkthrough, regenerate signed
 outbox rows, or authorize another proof task. Any delivery repair must first
 prove the rejected event IDs absent at the relay and preserve their provenance;
-an unknown delivery remains immutable. Live acceptance remains open.
+an unknown delivery remains immutable. Live acceptance remained open until the
+subsequent bounded proof summarized above passed.
 
 ### Retained rejected deliveries
 

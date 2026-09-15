@@ -2,9 +2,12 @@
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Literal
+import re
 
 Phase = Literal["queued", "active", "recovering", "stopping", "closed"]
 Outcome = Literal["completed", "cancelled", "failed"]
+TitleSource = Literal["brief", "agent", "owner"]
+TITLE_LIMIT = 100
 
 
 class Rejected(Exception):
@@ -13,6 +16,50 @@ class Rejected(Exception):
     def __init__(self, code: str, status: int = 409):
         super().__init__(code)
         self.code, self.status = code, status
+
+
+@dataclass(frozen=True)
+class TaskTitle:
+    task_id: str
+    title: str
+    source: TitleSource
+    revision: int
+
+
+def normalize_task_title(value: str) -> str:
+    """Return one compact plain-text title without changing task identity."""
+    if type(value) is not str:
+        raise Rejected("invalid_task_title", 422)
+    title = re.sub(r"\s+", " ", value).strip()
+    title = re.sub(r"^new task:\s*", "", title, flags=re.I)
+    if not title:
+        raise Rejected("invalid_task_title", 422)
+    if len(title) > TITLE_LIMIT:
+        shortened = title[:TITLE_LIMIT + 1].rsplit(" ", 1)[0]
+        title = shortened if len(shortened) >= TITLE_LIMIT // 2 else title[:TITLE_LIMIT]
+        title = title.rstrip(" ,.;:-") + "…"
+        if len(title) > TITLE_LIMIT:
+            title = title[:TITLE_LIMIT - 1].rstrip() + "…"
+    return title
+
+
+def initial_task_title(brief: str) -> str:
+    first = next((line.strip() for line in brief.splitlines() if line.strip()), brief)
+    sentence = re.split(r"(?<=[.!?])\s+", first, maxsplit=1)[0]
+    return normalize_task_title(sentence)
+
+
+def agent_task_title(result: str) -> str | None:
+    """Use a heading the agent already produced; never request a title-only turn."""
+    for line in result.splitlines():
+        match = re.fullmatch(r"\s{0,3}#{1,6}\s+(.+?)\s*#*\s*", line)
+        if match:
+            value = re.sub(r"[`*_~]", "", match.group(1))
+            try:
+                return normalize_task_title(value)
+            except Rejected:
+                return None
+    return None
 
 
 @dataclass(frozen=True)

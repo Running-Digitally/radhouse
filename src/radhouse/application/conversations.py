@@ -236,7 +236,11 @@ class Conversations:
             )
             if task and task.result and self.service.review_links is not None:
                 with self.store.transaction() as tx:
-                    reply += "\n\nReview in Radhouse (sign-in required):\n" + self.service.review_links.issue(tx, link, task)
+                    publication = tx.publication(task.task_id)
+                    if publication is not None:
+                        reply += "\n\nReview status · Approved and published to the approved audience."
+                    else:
+                        reply += "\n\nReview required · Sign in to Radhouse:\n" + self.service.review_links.issue(tx, link, task)
         else:
             reply = "Which task do you mean? Reply to its message so I can keep your instruction with the right work."
         completed = replace(
