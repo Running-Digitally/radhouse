@@ -75,7 +75,12 @@ def enrollment(bridge, service, store, alice, envelope):
             30177,
             [["d", cycle.link.agent_pubkey]],
             json.dumps(
-                {"name": bot.display_name, "parallelism": 1, "respond_to": "owner-only"}
+                {
+                    "name": bot.display_name,
+                    "persona_id": "9ab045df-eacf-4645-86b5-6d47bdac621a",
+                    "parallelism": 10,
+                    "respond_to": "owner-only",
+                }
             ),
             cycle.link.activated_at,
         )
