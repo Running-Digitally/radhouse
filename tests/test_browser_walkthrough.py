@@ -36,6 +36,7 @@ def test_web_review_and_followup_walkthrough(local_client, service, fake_work, c
 
 <script>window.radhouseUnsafe = true</script>
 [Unsafe link](javascript:alert(1))
+![External image](https://example.invalid/private-result.png)
 """
     clock.now = datetime.now(timezone.utc)
     sock = socket.socket()
