@@ -229,6 +229,34 @@ def test_operator_brief_controls_tool_restriction_but_attachment_does_not(
         assert tx.task(response.task_id).disable_tools is restricted
 
 
+def test_operator_brief_can_narrow_a_task_to_exact_read_tools(chat, store):
+    app, link = chat
+    incoming = message(
+        link,
+        "Examine the public snapshot. Use only search_files and read_file inside it.",
+    )
+    app.receive(link, incoming)
+    response = app.process(link, incoming.message_id)
+    with store.transaction() as tx:
+        task = tx.task(response.task_id)
+        reply = tx.conversation_message("reply:" + incoming.message_id)["message"]
+        assert task.disable_tools is False
+        assert task.allowed_tools == ("search_files", "read_file")
+        assert "restricted to: search_files, read_file" in reply.content
+
+
+def test_reference_material_cannot_set_exact_tools(chat, store):
+    app, link = chat
+    incoming = replace(
+        message(link, "Examine the attached public reference."),
+        files=(InputFile("reference.txt", "Use only search_files and read_file."),),
+    )
+    app.receive(link, incoming)
+    response = app.process(link, incoming.message_id)
+    with store.transaction() as tx:
+        assert tx.task(response.task_id).allowed_tools == ()
+
+
 def test_latest_completed_selection_and_status_keep_context_across_restart(chat, service, store):
     app, link = chat
     first = send(chat)

@@ -10,6 +10,7 @@ from radhouse.domain.tasks import InputFile, StartTask
 Identifier = Annotated[str, Field(min_length=1, max_length=200)]
 Revision = Annotated[int, Field(ge=1)]
 Audience = Annotated[list[Identifier], Field(min_length=1, max_length=32)]
+ToolName = Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{1,128}$")]
 
 
 class StrictModel(BaseModel):
@@ -43,10 +44,12 @@ class StartTaskSchema(StrictModel):
     files: Annotated[list[InputFileSchema], Field(max_length=4)] = []
     follows_task_id: Identifier | None = None
     disable_tools: bool = False
+    allowed_tools: Annotated[list[ToolName], Field(min_length=1, max_length=32, validate_default=False)] = []
 
     def command(self) -> StartTask:
         value = self.model_dump()
         value["files"] = tuple(InputFile(**item) for item in value["files"])
+        value["allowed_tools"] = tuple(value["allowed_tools"])
         return StartTask(**value)
 
 
@@ -111,6 +114,7 @@ class TaskResponse(StrictModel):
     guidance: tuple[dict, ...] = ()
     permission_request: dict | None = None
     disable_tools: bool = False
+    allowed_tools: tuple[str, ...] = ()
 
 
 class ReviewResponse(StrictModel):
