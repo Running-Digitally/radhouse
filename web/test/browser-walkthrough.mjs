@@ -31,6 +31,19 @@ try {
   await web.getByRole("button", { name: "Review result", exact: true }).waitFor({ timeout: 20000 });
   const taskId = await web.locator("[data-task-id]").getAttribute("data-task-id");
   assert.ok(taskId);
+  const task = web.locator(`[data-task-id="${taskId}"]`);
+  await task.getByRole("heading", { name: "Useful financial report", exact: true }).waitFor();
+  assert.equal(await task.locator("script").count(), 0);
+  await task.getByRole("button", { name: "View result", exact: true }).click();
+  await task.locator(".result-viewer__preview h1", { hasText: "Useful financial report" }).waitFor();
+  assert.equal(await task.locator('.result-viewer__preview script').count(), 0);
+  assert.equal(await task.locator('.result-viewer__preview a[href^="javascript:"]').count(), 0);
+  await task.getByRole("tab", { name: "Source", exact: true }).click();
+  await task.locator('.result-viewer__source').getByText("<script>window.radhouseUnsafe = true</script>", { exact: false }).waitFor();
+  await task.getByRole("button", { name: "Edit title", exact: true }).click();
+  await task.getByLabel("Task title", { exact: true }).fill("September planning figures");
+  await task.getByRole("button", { name: "Save title", exact: true }).click();
+  await task.getByRole("heading", { name: "September planning figures", exact: true }).waitFor();
 
   // Protected review stays in a second ordinary web tab.
   const review = await context.newPage();

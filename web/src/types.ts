@@ -44,6 +44,12 @@ export interface TaskSummary {
 
 export interface TaskCard {
   task: TaskSummary;
+  title: {
+    task_id: string;
+    title: string;
+    source: "brief" | "agent" | "owner";
+    revision: number;
+  };
   cancel: ActionState;
   pause: ActionState;
   resume: ActionState;

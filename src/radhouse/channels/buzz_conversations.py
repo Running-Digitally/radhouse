@@ -201,7 +201,7 @@ class BuzzConversationCycle:
                     preview = task.result[:1200]
                     text = preview + ("\n\n[Preview — full result in Radhouse]" if len(task.result) > 1200 else "")
                     if self.service.review_links is not None:
-                        text += "\n\nReview in Radhouse (sign-in required):\n" + self.service.review_links.issue(tx, self.link, task)
+                        text += "\n\nReview required · Sign in to Radhouse:\n" + self.service.review_links.issue(tx, self.link, task)
                 tx.save_conversation_message(
                     ConversationMessage(
                         message_id,
@@ -231,7 +231,7 @@ class BuzzConversationCycle:
                 publication = tx.publication(task_id)
                 tx.save_conversation_message(ConversationMessage(
                     "publication:" + publication.publication_id, self.link.link_id,
-                    self.link.bot_id, "Reviewed in Radhouse and published to the approved audience.",
+                    self.link.bot_id, "Review status · Approved and published to the approved audience.",
                     "radhouse", int(self.service._now().timestamp()), task_id=task_id,
                     reply_to=tx.conversation_task_anchor(self.link, task_id),
                     state="publication", task_state_revision=task.state_revision,
@@ -263,6 +263,10 @@ class BuzzConversationCycle:
                 ]
                 if message.task_id:
                     tags.append(["radhouse-task", message.task_id])
+                    correlated = tx.task(message.task_id)
+                    if (message.state in {"result", "publication"}
+                            and correlated is not None and correlated.result_digest):
+                        tags.append(["radhouse-result", correlated.result_digest])
                 if message.state == "result":
                     tags.append(["radhouse-review", message.task_id])
                 if message.reply_to:
