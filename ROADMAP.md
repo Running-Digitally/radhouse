@@ -1,8 +1,10 @@
 # Version 1.0 roadmap
 
-**Current stage: requirements and architecture.** No milestone below is marked
-complete by the existence of this repository. There is no installable release
-or qualified security boundary yet.
+**Current stage: pre-release implementation and qualification.** No milestone
+below is marked complete by repository contents alone, and there is no tagged or
+fully qualified V1 release yet. The supplied-Linux-VM controller now has a
+repeatable release lifecycle; fresh-install, integration and recovery evidence
+still determine whether that deployment path is release-ready.
 
 Version 1.0 must deliver a usable fleet that people can assign work to,
 observe, and continue using across assignments, including useful GitHub-based
@@ -199,11 +201,12 @@ restore evidence instead of assuming every new bot inherits existing backup jobs
   account-linking behavior. Local accounts remain supported.
 - Runtime checkpoint capabilities, inference conformance, and behavior when an
   operator changes the model behind a service-following alias.
-- Exact dependency versions, configuration schema, packaging recipes, and
-  installation/upgrade contracts for each supported deployment profile. The
+- Packaging and installation/upgrade contracts for the remaining deployment
+  profiles. Exact application dependencies, configuration schema and the
+  supplied-Linux-VM controller lifecycle are implemented; the
   [Python controller, TypeScript interface, PostgreSQL store/queue and Compose
   direction](docs/architecture-review.md#chunk-5a-implementation-stack--accepted-direction)
-  are accepted; program contracts and implementation remain under review.
+  still require full release qualification.
 - Telemetry schemas/backend, retention defaults, export boundaries, metric
   definitions, and resource budgets for a small installation.
 - Hybrid backup engine, exact schedules and rotation mechanics,
