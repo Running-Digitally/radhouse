@@ -38,7 +38,9 @@ try {
   await task.locator(".result-viewer__preview h1", { hasText: "Useful financial report" }).waitFor();
   assert.equal(await task.locator('.result-viewer__preview script').count(), 0);
   assert.equal(await task.locator('.result-viewer__preview a[href^="javascript:"]').count(), 0);
-  await task.getByRole("tab", { name: "Source", exact: true }).click();
+  assert.equal(await task.locator('.result-viewer__preview img').count(), 0);
+  await task.getByRole("tab", { name: "Preview", exact: true }).press("ArrowRight");
+  assert.equal(await task.getByRole("tab", { name: "Source", exact: true }).getAttribute("aria-selected"), "true");
   await task.locator('.result-viewer__source').getByText("<script>window.radhouseUnsafe = true</script>", { exact: false }).waitFor();
   await task.getByRole("button", { name: "Edit title", exact: true }).click();
   await task.getByLabel("Task title", { exact: true }).fill("September planning figures");
