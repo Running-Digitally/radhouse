@@ -29,6 +29,12 @@ def test_queued_provider_outage_explains_saved_work_and_automatic_recheck():
     assert recovered.task_id == waiting.task_id and recovered.attempt_id is None
 
 
+def test_progress_uses_the_assigned_agent_name():
+    assert Conversations.describe(replace(task(), phase="active"), "Builder") == (
+        "Builder is working on your assignment."
+    )
+
+
 @pytest.mark.parametrize("description,expected", [
     (ProviderDescription("other", "model"), "provider_mismatch"),
     (ProviderDescription("local", "model", compatible=False), "provider_incompatible"),

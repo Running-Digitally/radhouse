@@ -230,7 +230,7 @@ class Conversations:
                 else None
             )
             reply = (
-                self.describe(task)
+                self.describe(task, bot.display_name)
                 if task
                 else "There is no active task in this conversation. Reply to a task message to ask about that work."
             )
@@ -265,13 +265,13 @@ class Conversations:
         return completed
 
     @staticmethod
-    def describe(task):
+    def describe(task, agent_name="Researcher"):
         if task is None:
             return "There is no selected task."
         if "runtime_unavailable" in task.blockers:
-            return "Researcher’s runtime is unavailable. Your assignment is saved; recovery will use this same task."
+            return f"{agent_name}’s runtime is unavailable. Your assignment is saved; recovery will use this same task."
         if task.phase == "queued" and task.blockers == ("provider_unavailable",):
-            return "Researcher is waiting for the model provider. Your assignment is saved; Radhouse will check availability again automatically."
+            return f"{agent_name} is waiting for the model provider. Your assignment is saved; Radhouse will check availability again automatically."
         if task.blockers:
             return "This task needs attention. Your work is saved; open its details for the current hold or decision."
         if task.phase == "closed":
@@ -282,7 +282,7 @@ class Conversations:
             }.get(task.outcome, "This task has finished.")
         return {
             "queued": "Your assignment is queued.",
-            "active": "Researcher is working on your assignment.",
+            "active": f"{agent_name} is working on your assignment.",
             "recovering": "I’m recovering the existing task; I haven’t submitted another assignment.",
             "stopping": "The task is stopping.",
         }[task.phase]
