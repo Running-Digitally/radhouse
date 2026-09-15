@@ -264,6 +264,8 @@ class Conversations:
             return "There is no selected task."
         if "runtime_unavailable" in task.blockers:
             return "Researcher’s runtime is unavailable. Your assignment is saved; recovery will use this same task."
+        if task.phase == "queued" and task.blockers == ("provider_unavailable",):
+            return "Researcher is waiting for the model provider. Your assignment is saved; Radhouse will check availability again automatically."
         if task.blockers:
             return "This task needs attention. Your work is saved; open its details for the current hold or decision."
         if task.phase == "closed":
