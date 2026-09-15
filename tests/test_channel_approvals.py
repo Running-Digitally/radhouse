@@ -180,6 +180,7 @@ def test_internal_worker_controls_have_no_operator_route():
     routes = create_app(BoundaryService(), lambda request: _identity()).openapi()["paths"]
     assert set(routes) == {
         "/tasks/{task_id}/guidance", "/tasks/{task_id}/permission",
+        "/tasks/{task_id}/title",
         "/projects", "/tasks/{task_id}/review-audience", "/tasks/{task_id}/result",
         "/work-home", "/tasks", "/tasks/{task_id}", "/tasks/{task_id}/cancel", "/tasks/{task_id}/pause",
         "/tasks/{task_id}/resume", "/tasks/{task_id}/review", "/reviews/{review_id}/publish",

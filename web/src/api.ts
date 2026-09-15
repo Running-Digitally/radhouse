@@ -208,6 +208,12 @@ export class RadhouseApi {
     return this.command(`/tasks/${encodeURIComponent(task.task_id)}/guidance`, { expected_state_revision: task.state_revision, text });
   }
 
+  async renameTask(taskId: string, title: string, expectedTitleRevision: number): Promise<void> {
+    await this.command(`/tasks/${encodeURIComponent(taskId)}/title`, {
+      expected_title_revision: expectedTitleRevision, title,
+    });
+  }
+
   async permission(task: TaskSummary, choice: "once" | "deny"): Promise<TaskSummary> {
     const permission = task.permission_request;
     if (!permission) throw new ApiError("permission_changed", 409);

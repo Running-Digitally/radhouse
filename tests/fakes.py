@@ -143,7 +143,7 @@ class FakeAgentWork(_FakeLedger):
 
     def __init__(
         self, path: str | Path, mode: str = "completed", *,
-        crash_after_commit: bool = False, clock=None,
+        crash_after_commit: bool = False, clock=None, result_content: str | None = None,
     ):
         super().__init__(path)
         if mode not in {"completed", "lost_reply_after_commit", "unknown", "running", "failed"}:
@@ -151,6 +151,7 @@ class FakeAgentWork(_FakeLedger):
         self.mode = mode
         self.crash_after_commit = crash_after_commit
         self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self.result_content = result_content or "Synthetic report: the bounded offline task completed."
 
     def capabilities(self, _task: Task) -> RuntimeCapabilities:
         return RuntimeCapabilities("fake-runtime-v1", 86_400, guidance_receipts=True)
@@ -187,7 +188,7 @@ class FakeAgentWork(_FakeLedger):
                 "failed": "failed",
             }[self.mode]
             result = (
-                "Synthetic report: the bounded offline task completed."
+                self.result_content
                 if state == "completed" else None
             )
             db.execute(
@@ -230,7 +231,7 @@ class FakeAgentWork(_FakeLedger):
         return cursor.rowcount == 1
 
     def settle(self, dispatch_key: str, state: str = "completed") -> None:
-        result = "Synthetic report: the bounded offline task completed." if state == "completed" else None
+        result = self.result_content if state == "completed" else None
         with self.connect() as db:
             db.execute(
                 "UPDATE agent_runs SET state=?,result=? WHERE dispatch_key=?",

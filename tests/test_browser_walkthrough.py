@@ -20,11 +20,23 @@ from tests.test_local_reauthentication import local_client
 pytestmark = pytest.mark.postgres
 
 
-def test_web_review_and_followup_walkthrough(local_client, service, clock, tmp_path):
+def test_web_review_and_followup_walkthrough(local_client, service, fake_work, clock, tmp_path):
     root = Path(__file__).resolve().parents[1]
     playwright = os.environ.get("RADHOUSE_PLAYWRIGHT_MODULE", str(root / "web/node_modules/@playwright/test/index.mjs"))
     assert Path(playwright).is_file(), "Run npm ci in web/ and install Playwright Chromium before verification"
     _, auth, totp, password = local_client
+    fake_work.result_content = """# Useful financial report
+
+**Revenue** exceeds costs.
+
+| Measure | Value |
+| --- | ---: |
+| Revenue | 42 |
+| Costs | 12 |
+
+<script>window.radhouseUnsafe = true</script>
+[Unsafe link](javascript:alert(1))
+"""
     clock.now = datetime.now(timezone.utc)
     sock = socket.socket()
     sock.bind(("127.0.0.1", 0))

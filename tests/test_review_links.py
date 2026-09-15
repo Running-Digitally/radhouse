@@ -107,6 +107,8 @@ def test_completion_and_publication_are_stable_across_recovery(review_link, serv
     assert configured.run("egress")["error_code"] is None
     completion = [e for e in state["published"].values() if ["radhouse-review", done.task_id] in e["tags"]]
     assert len(completion) == 1 and "https://radhouse.test/app/#review=" in completion[0]["content"]
+    assert "Review required" in completion[0]["content"]
+    assert ["radhouse-result", done.result_digest] in completion[0]["tags"]
     url = completion[0]["content"].split("https://radhouse.test/app/#review=")[1]
     assert service.review_links.resolve(alice, url)["task_id"] == done.task_id
     reviewed = service.prepare_review(alice, done.task_id, done.state_revision, ("alice",), 120, envelope=envelope())
@@ -124,7 +126,17 @@ def test_completion_and_publication_are_stable_across_recovery(review_link, serv
         anchor = tx.conversation_task_anchor(link, done.task_id)
     event = next(e for e in state["published"].values() if ["radhouse-mirror", "publication:" + publication.publication_id] in e["tags"])
     assert ["e", anchor, "", "reply"] in event["tags"]
+    assert "Approved and published" in event["content"]
+    assert ["radhouse-result", done.result_digest] in event["tags"]
     assert len([e for e in state["published"].values() if ["radhouse-review", done.task_id] in e["tags"]]) == 1
+    app = Conversations(service)
+    status = ConversationMessage("status-published", link.link_id, link.principal_id,
+                                 "status", "buzz", int(clock().timestamp()))
+    app.receive(link, status)
+    app.process(link, status.message_id)
+    with store.transaction() as tx:
+        content = tx.conversation_message("reply:status-published")["message"].content
+    assert "Approved and published" in content and "#review=" not in content
 
 
 def test_expired_completion_is_not_rewritten_and_status_gets_fresh_link(review_link, service, store, alice, clock, fake_work):
@@ -142,6 +154,7 @@ def test_expired_completion_is_not_rewritten_and_status_gets_fresh_link(review_l
     with store.transaction() as tx:
         content = tx.conversation_message("reply:status-new")["message"].content
         assert len(tx.tasks()) == 1
+    assert "Review required" in content
     from datetime import timedelta
     target = service.review_links.resolve(replace(alice, assurance_until=clock()+timedelta(minutes=10)), content.split("#review=")[1])
     assert target["task_id"] == done.task_id

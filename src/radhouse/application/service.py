@@ -20,7 +20,8 @@ from radhouse.domain.conversations import ConversationLink
 from radhouse.domain.releases import Publication, Review, digest, validate_review
 from radhouse.domain.tasks import (AgentDispatch, Attempt, Delivery, Event,
     Observation, ProviderDescription, Rejected, RuntimeCapabilities, RuntimeDispatch,
-    RuntimeFailure, RuntimeResult, SavedCommand, StartTask, Task, Operation, runtime_input)
+    RuntimeFailure, RuntimeResult, SavedCommand, StartTask, Task, TaskTitle, Operation,
+    agent_task_title, normalize_task_title, runtime_input)
 
 
 _READ_ONLY_TOOL_DIRECTIVE = re.compile(
@@ -171,6 +172,33 @@ class Service:
             self._authorize(tx, actor, task, envelope)
             return task
 
+    def rename_task(self, actor: AuthContext, task_id: str, expected_revision: int,
+                    title: str, *, envelope: Envelope) -> TaskTitle:
+        normalized = normalize_task_title(title)
+        identity = fingerprint({
+            "kind": "rename_task", "task_id": task_id,
+            "expected_title_revision": expected_revision, "title": normalized,
+        })
+        with self.store.transaction() as tx:
+            task = self._task(tx, task_id)
+            self._authorize(tx, actor, task, envelope, write=True)
+            current = tx.task_title(task_id)
+            if current is None:
+                raise Rejected("task_state_inconsistent")
+            old = tx.command(actor.principal_id, envelope.command_key)
+            if old:
+                if old.fingerprint != identity or old.task_id != task_id:
+                    raise Rejected("command_conflict")
+                return current
+            if current.revision != expected_revision:
+                raise Rejected("task_title_revision_conflict")
+            updated = TaskTitle(task_id, normalized, "owner", current.revision + 1)
+            tx.save_task_title(updated, current.revision)
+            tx.save_command(SavedCommand(
+                actor.principal_id, envelope.command_key, identity, task_id,
+            ))
+            return updated
+
     def guide(self, actor, task_id, expected, text, *, envelope):
         from radhouse.application.runtime_controls import control
         return control(self, actor, task_id, expected, envelope, text=text)
@@ -243,6 +271,7 @@ class Service:
                 and task.bot_id in access.bots
             )
             publications = {task.task_id: tx.publication(task.task_id) for task in tasks}
+            titles = {task.task_id: tx.task_title(task.task_id) for task in tasks}
 
         can_write = access.role in {"admin", "operator"}
         ready = any(agent.state == "ready" for agent in agents)
@@ -259,6 +288,9 @@ class Service:
 
         cards = []
         for task in tasks:
+            title = titles[task.task_id]
+            if title is None:
+                raise Rejected("task_state_inconsistent")
             paused = "human_pause" in task.blockers
             cancellable = task.phase != "closed" and "cancel_requested" not in task.blockers
             pausable = task.phase in {"active", "recovering"} and not paused and cancellable
@@ -272,7 +304,7 @@ class Service:
             else:
                 review = action(reviewable, "already_published" if publication else "result_not_ready")
             cards.append(TaskCard(
-                task,
+                task, title,
                 action(cancellable, "task_closed"),
                 action(pausable, "task_not_pausable"),
                 action(resumable, "task_not_paused"),
@@ -578,7 +610,16 @@ class Service:
                 result=content, result_digest=digest(content) if content is not None else None,
                 permission_request=None,
             )
-            return self._save(tx, task, updated, terminal)
+            saved = self._save(tx, task, updated, terminal)
+            if content is not None:
+                current_title = tx.task_title(task_id)
+                proposed_title = agent_task_title(content)
+                if (current_title is not None and current_title.source != "owner"
+                        and proposed_title is not None and proposed_title != current_title.title):
+                    tx.save_task_title(TaskTitle(
+                        task_id, proposed_title, "agent", current_title.revision + 1,
+                    ), current_title.revision)
+            return saved
 
     def recover(self, task_id: str) -> Task:
         with self.store.transaction() as tx:

@@ -4,11 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && esbuild src/main.ts --bundle --format=esm --platform=browser --target=es2023 --outfile=dist/main.js",
     "test": "npm run build && node --test test/*.test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.60.0",
+    "@types/markdown-it": "14.2.0",
+    "esbuild": "0.28.2",
     "typescript": "7.0.2"
+  },
+  "dependencies": {
+    "dompurify": "3.4.15",
+    "markdown-it": "15.0.2"
   }
 }

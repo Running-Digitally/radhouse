@@ -106,8 +106,15 @@ function permission(value: unknown): TaskSummary["permission_request"] {
 function taskCard(value: unknown): TaskCard {
   const item = record(value);
   const published = item.publication == null ? null : record(item.publication);
+  const title = record(item.title);
   return {
     task: task(item.task),
+    title: {
+      task_id: string(title.task_id),
+      title: string(title.title),
+      source: oneOf(title.source, ["brief", "agent", "owner"] as const),
+      revision: integer(title.revision),
+    },
     cancel: action(item.cancel),
     pause: action(item.pause),
     resume: action(item.resume),
