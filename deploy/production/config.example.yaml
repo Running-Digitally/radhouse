@@ -9,7 +9,7 @@ coordinator:
   interval_seconds: 5
   max_tasks_per_cycle: 4
 web:
-  root: /opt/radhouse/app/web
+  root: /opt/radhouse/current/web
 authentication:
   type: local
   encryption_key:
