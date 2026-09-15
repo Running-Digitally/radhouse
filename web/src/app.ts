@@ -4,6 +4,7 @@ import { actionReason, blockerMessages, guidanceStatus, phaseLabel } from "./vie
 import type { Project, Review, TaskCard, TaskEvents, WorkHome } from "./types.js";
 import { conversationPanel } from "./conversations.js";
 import type { ConversationDraft, ConversationHistory, ConversationLink } from "./conversations.js";
+import { resultViewer } from "./markdown.js";
 
 export function mountWorkHome(page: HTMLElement, client = operatorClient()): () => void {
 let reviewToken = new URLSearchParams(window.location.hash.slice(1)).get("review");
@@ -27,6 +28,8 @@ const expanded = new Set<string>();
 const timelines = new Map<string, TaskEvents>();
 const conversationDrafts = new Map<string, ConversationDraft>();
 const guidanceDrafts = new Map<string, string>();
+const titleDrafts = new Map<string, string>();
+const openResults = new Set<string>();
 let conversationLinks: ConversationLink[] = [];
 let conversationHistory: ConversationHistory | null = null;
 let selectedConversation = "";
@@ -63,6 +66,8 @@ function errorMessage(error: unknown): string {
       runtime_guidance_receipts_unavailable: "This runtime cannot confirm live guidance yet. Include the update in a follow-up.",
       task_not_accepting_control: "This task cannot accept guidance now. Include the update in a follow-up.",
       control_outcome_unknown: "An earlier instruction is still unconfirmed. Check its outcome before sending another.",
+      task_title_revision_conflict: "The task title changed. Review the current title before editing again.",
+      invalid_task_title: "Use a short, non-empty task title.",
     };
     return labels[error.code] ?? "Radhouse could not complete the action. Refresh to check its current state.";
   }
@@ -98,7 +103,7 @@ async function action(button: HTMLButtonElement, run: () => Promise<void>): Prom
   catch (error) {
     if (epoch !== sessionEpoch) return;
     if (error instanceof ApiError && error.status === 401) loginScreen(errorMessage(error));
-    else if (error instanceof ApiError && ["access_denied", "binding_denied", "stale_state"].includes(error.code)) {
+    else if (error instanceof ApiError && ["access_denied", "binding_denied", "stale_state", "task_title_revision_conflict"].includes(error.code)) {
       await load(errorMessage(error));
     } else page.prepend(notice(errorMessage(error), true));
   } finally {
@@ -129,6 +134,7 @@ function loginScreen(message?: string): void {
   projects = [];
   // Private display state never crosses an account change.
   drafts.clear(); reviews.clear(); expanded.clear(); timelines.clear(); conversationDrafts.clear(); guidanceDrafts.clear();
+  titleDrafts.clear(); openResults.clear();
   conversationLinks = []; conversationHistory = null; selectedConversation = "";
   reviewTarget = null;
   page.replaceChildren();
@@ -182,7 +188,7 @@ function reviewPanel(card: TaskCard, review: Review): HTMLElement {
     element("p", "muted", `Share with: ${review.audience.map((id) => id === signedIn?.principal_id ? "Only me" : id).join(", ")}`),
     element("p", "muted", `Review expires ${new Date(review.expires_at).toLocaleTimeString()}`),
     element("p", "digest", `Artifact SHA-256: ${review.digest}`),
-    element("pre", "result", card.task.result ?? ""));
+    resultViewer(card.task.result ?? ""));
   panel.append(button("Approve and publish", async () => {
     if (!api || card.task.result === null) return;
     if (new Date(review.expires_at).getTime() <= Date.now()) {
@@ -253,26 +259,52 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
   const task = card.task;
   const article = element("article", "task-card"); article.dataset.taskId = task.task_id;
   const heading = element("div", "task-card__heading");
-  heading.append(element("h3", "task-card__title", task.brief),
+  const titleGroup = element("div", "task-card__title-group");
+  titleGroup.append(element("h3", "task-card__title", card.title.title));
+  if (home.role !== "viewer") {
+    titleGroup.append(button("Edit title", async () => {
+      titleDrafts.set(task.task_id, card.title.title);
+      await load();
+      page.querySelector<HTMLInputElement>(`input[name="title-${task.task_id}"]`)?.focus();
+    }));
+  }
+  heading.append(titleGroup,
     element("span", `phase phase--${task.phase}`, task.outcome === "cancelled" ? "Cancelled"
       : task.outcome === "failed" ? "Needs a new assignment" : phaseLabel(task.phase)));
   const agent = home.agents.find((item) => item.bot_id === task.bot_id);
   article.append(heading, element("p", "task-card__context", `${agent?.display_name ?? task.bot_id} · ${home.project_name} · Private task`));
+  const titleDraft = titleDrafts.get(task.task_id);
+  if (titleDraft !== undefined) {
+    const form = element("form", "title-form");
+    const label = element("label", "field");
+    const input = element("input", "field__control");
+    input.name = `title-${task.task_id}`; input.maxLength = 100; input.required = true; input.value = titleDraft;
+    input.addEventListener("input", () => titleDrafts.set(task.task_id, input.value));
+    label.append(element("span", "field__label", "Task title"), input);
+    const save = element("button", "button button--primary", "Save title"); save.type = "submit";
+    const cancel = button("Cancel", async () => { titleDrafts.delete(task.task_id); await load(); });
+    form.append(label, save, cancel);
+    form.addEventListener("submit", (event) => {
+      event.preventDefault(); const current = api; if (!current || !input.value.trim()) return;
+      void action(save, async () => {
+        await current.renameTask(task.task_id, input.value.trim(), card.title.revision);
+        titleDrafts.delete(task.task_id); await load("Task title updated.");
+      });
+    });
+    article.append(form);
+  }
+  const assignment = element("details", "task-card__assignment");
+  assignment.append(element("summary", undefined, "Assignment"), element("p", "message-content", task.brief));
+  article.append(assignment);
   if (task.disable_tools) article.append(element("p", "task-card__context", "Tools disabled for this assignment"));
   const blockers = blockerMessages(card);
   if (blockers.length) {
     const list = element("ul", "blockers"); blockers.forEach((text) => { list.append(element("li", "blockers__item", text)); }); article.append(list);
   }
   if (task.result !== null) {
-    article.append(element("pre", "result", task.result));
-    const download = button("Download result", async () => {
-      if (!api) return;
-      const content = await api.resultText(task.task_id);
-      const url = URL.createObjectURL(new Blob([content], { type: "text/plain" }));
-      const link = element("a"); link.href = url; link.download = "radhouse-result.txt";
-      link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    });
-    article.append(download);
+    const summary = task.result.replace(/[#*_`>\[\]]/g, "").replace(/\s+/g, " ").trim();
+    article.append(element("p", "result-summary", summary.length > 220 ? `${summary.slice(0, 219).trim()}…` : summary));
+    if (openResults.has(task.task_id)) article.append(resultViewer(task.result));
   }
   if (card.publication) article.append(notice(`Published to ${card.publication.audience.join(", ")}.`));
   if (task.files.length) article.append(element("p", "muted", `Reference files: ${task.files.map((file) => file.name).join(", ")}`));
@@ -315,6 +347,19 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
     }
   }
   const controls = element("div", "task-card__actions");
+  if (task.result !== null) {
+    controls.append(button(openResults.has(task.task_id) ? "Hide result" : "View result", async () => {
+      if (openResults.has(task.task_id)) openResults.delete(task.task_id); else openResults.add(task.task_id);
+      await load();
+    }));
+    if (openResults.has(task.task_id)) controls.append(button("Download result", async () => {
+      if (!api) return;
+      const content = await api.resultText(task.task_id);
+      const url = URL.createObjectURL(new Blob([content], { type: "text/plain" }));
+      const link = element("a"); link.href = url; link.download = "radhouse-result.txt";
+      link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }));
+  }
   controls.append(button(expanded.has(task.task_id) ? "Hide progress" : "Show progress", async () => {
     if (expanded.has(task.task_id)) expanded.delete(task.task_id); else expanded.add(task.task_id);
     await load();
@@ -425,30 +470,52 @@ function render(home: WorkHome, message?: string): void {
   page.replaceChildren();
   const header = element("header", "page-header"); const identity = element("div");
   identity.append(element("p", "eyebrow", "Radhouse · A home for your agents"), element("h1", "page-title", reviewTarget ? "Review your work" : "Your work home"));
-  const context = element("label", "field project-picker"); const picker = element("select", "field__control"); picker.name = "project";
-  for (const project of projects) { const option = element("option", undefined, project.display_name); option.value = project.project_id; picker.append(option); }
-  picker.value = home.project_id;
-  picker.addEventListener("change", () => {
-    clearReviewTarget(); selectedProject = picker.value; sessionEpoch++; reviews.clear(); timelines.clear(); expanded.clear();
-    selectedConversation = ""; conversationHistory = null; void load();
-  });
-  context.append(element("span", "field__label", "Project"), picker); identity.append(context); header.append(identity);
+  if (projects.length === 1) {
+    const context = element("div", "project-context");
+    context.append(element("span", "field__label", "Current project"), element("strong", undefined, home.project_name));
+    identity.append(context);
+  } else {
+    const context = element("label", "field project-picker"); const picker = element("select", "field__control"); picker.name = "project";
+    for (const project of projects) { const option = element("option", undefined, project.display_name); option.value = project.project_id; picker.append(option); }
+    picker.value = home.project_id;
+    picker.addEventListener("change", () => {
+      clearReviewTarget(); selectedProject = picker.value; sessionEpoch++; reviews.clear(); timelines.clear(); expanded.clear();
+      selectedConversation = ""; conversationHistory = null; void load();
+    });
+    context.append(element("span", "field__label", "Project"), picker); identity.append(context);
+  }
+  header.append(identity);
   header.append(button(`Sign out ${signedIn?.username ?? ""}`, async () => { await api?.logout(); loginScreen(); }));
   page.append(header);
   if (message) page.append(notice(message));
   if (reviewTarget) page.append(button("Show all work", async () => { clearReviewTarget(); await load(); }));
   const conversation = conversationLinks.find(link => link.link_id === selectedConversation);
+  if (!reviewTarget) {
+    const navigation = element("nav", "work-home-nav"); navigation.setAttribute("aria-label", "Work home sections");
+    const destinations: [string, string][] = conversation ? [["Conversation", "conversation-section"]] : [["Start work", "start-section"]];
+    destinations.push(["Agents", "agents-section"], ["Work", "work-section"]);
+    for (const [label, id] of destinations) navigation.append(button(label, async () => {
+      page.querySelector(`#${id}`)?.scrollIntoView({ block: "start" });
+    }));
+    page.append(navigation);
+  }
   if (!reviewTarget && conversation && conversationHistory && api && signedIn) {
     const draft = conversationDrafts.get(conversation.link_id) ?? { content: "", reply: null, files: [] };
     conversationDrafts.set(conversation.link_id, draft);
-    page.append(conversationPanel(api, conversation, conversationHistory, draft, signedIn.principal_id,
+    const conversationSection = conversationPanel(api, conversation, conversationHistory, draft, signedIn.principal_id,
       async () => load(), taskId => {
         const card = Array.from(page.querySelectorAll<HTMLElement>("[data-task-id]")).find(node => node.dataset.taskId === taskId);
         card?.scrollIntoView({ block: "start", behavior: "smooth" });
         card?.querySelector<HTMLButtonElement>("button")?.focus();
-      }, action, open => { filePickerOpen = open; if (open) loadGeneration++; }));
-  } else if (!reviewTarget) page.append(startPanel(home));
-  const roster = element("section", "section"); roster.append(element("h2", "section-title", "Your agents"));
+      }, action, open => { filePickerOpen = open; if (open) loadGeneration++; });
+    conversationSection.id = "conversation-section";
+    page.append(conversationSection);
+  } else if (!reviewTarget) {
+    const start = startPanel(home); start.id = "start-section"; page.append(start);
+  }
+  const roster = element("section", "section"); roster.id = "agents-section";
+  roster.append(element("h2", "section-title", "Your agents"),
+    element("p", "section-description", "See who can work with you and open an agent conversation."));
   const grid = element("div", "agent-grid");
   for (const agent of home.agents) {
     const card = element("article", "agent-card"); card.append(element("h3", "agent-card__name", agent.display_name),
@@ -458,7 +525,9 @@ function render(home: WorkHome, message?: string): void {
     grid.append(card);
   }
   roster.append(grid); if (!reviewTarget) page.append(roster);
-  const work = element("section", "section"); work.append(element("h2", "section-title", "Your work"));
+  const work = element("section", "section"); work.id = "work-section";
+  work.append(element("h2", "section-title", "Your work"),
+    element("p", "section-description", "Track assignments, open results, review evidence and start contextual follow-ups."));
   if (home.tasks.length === 0) work.append(element("p", "empty", "Start with one clear assignment. Its progress and result will appear here."));
   const list = element("div", "task-list");
   for (const card of home.tasks) if (!reviewTarget || card.task.task_id === reviewTarget.task_id) list.append(taskCard(card, home));
@@ -466,7 +535,7 @@ function render(home: WorkHome, message?: string): void {
   const allowed = new Set(home.tasks.map((card) => card.task.task_id));
   for (const id of reviews.keys()) if (!allowed.has(id)) reviews.delete(id);
   for (const id of timelines.keys()) if (!allowed.has(id)) timelines.delete(id);
-  if (focusName === "brief" || focusName === "agent" || focusName === "project" || focusName.startsWith("conversation-") || focusName.startsWith("guide-")) {
+  if (focusName === "brief" || focusName === "agent" || focusName === "project" || focusName.startsWith("conversation-") || focusName.startsWith("guide-") || focusName.startsWith("title-")) {
     const next = Array.from(page.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>("[name]")).find(node => node.name === focusName);
     next?.focus(); if (next instanceof HTMLTextAreaElement && selection) next.setSelectionRange(selection[0] ?? 0, selection[1] ?? 0);
   }
@@ -528,5 +597,5 @@ const interval = window.setInterval(() => {
         input.value || input === (page.getRootNode() as Document | ShadowRoot).activeElement)) void load();
 }, 10_000);
 
-return () => { disposed = true; window.removeEventListener("hashchange", onReviewLink); loadGeneration++; sessionEpoch++; window.clearInterval(interval); drafts.clear(); reviews.clear(); timelines.clear(); conversationDrafts.clear(); guidanceDrafts.clear(); page.replaceChildren(); };
+return () => { disposed = true; window.removeEventListener("hashchange", onReviewLink); loadGeneration++; sessionEpoch++; window.clearInterval(interval); drafts.clear(); reviews.clear(); timelines.clear(); conversationDrafts.clear(); guidanceDrafts.clear(); titleDrafts.clear(); openResults.clear(); page.replaceChildren(); };
 }

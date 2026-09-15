@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 
 from radhouse.domain.access import BotProfile
-from radhouse.domain.tasks import Task
+from radhouse.domain.tasks import Task, TaskTitle
 from radhouse.domain.releases import Publication
 
 
@@ -23,6 +23,7 @@ class ProjectView:
 @dataclass(frozen=True)
 class TaskCard:
     task: Task
+    title: TaskTitle
     cancel: ActionView
     pause: ActionView
     resume: ActionView

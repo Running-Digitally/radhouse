@@ -71,6 +71,19 @@ class GuidanceRequest(StateRequest):
     text: Annotated[str, Field(min_length=1, max_length=4096)]
 
 
+class TaskTitleRequest(StrictModel):
+    envelope: EnvelopeSchema
+    expected_title_revision: Revision
+    title: Annotated[str, Field(min_length=1, max_length=100)]
+
+
+class TaskTitleResponse(StrictModel):
+    task_id: str
+    title: str
+    source: Literal["brief", "agent", "owner"]
+    revision: int
+
+
 class PermissionRequest(StateRequest):
     request_id: Identifier
     digest: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
@@ -170,6 +183,7 @@ class AgentResponse(StrictModel):
 
 class TaskCardResponse(StrictModel):
     task: TaskResponse
+    title: TaskTitleResponse
     cancel: ActionResponse
     pause: ActionResponse
     resume: ActionResponse
