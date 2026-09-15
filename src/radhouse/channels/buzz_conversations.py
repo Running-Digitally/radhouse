@@ -134,6 +134,12 @@ class BuzzConversationCycle:
     def _task_messages(self):
         with self.store.transaction() as tx:
             self.conversations.authorize(tx, self.link)
+            bot = next(
+                (item for item in tx.bots(self.link.principal_id) if item.bot_id == self.link.bot_id),
+                None,
+            )
+            if bot is None:
+                raise Rejected("bot_unavailable", 409)
             for task_id in tx.conversation_changed_tasks(self.link.link_id):
                 task = tx.task(task_id)
                 if (
@@ -196,7 +202,7 @@ class BuzzConversationCycle:
                         processed=True,
                     )
                     continue
-                text = self.conversations.describe(task)
+                text = self.conversations.describe(task, bot.display_name)
                 if task.result:
                     preview = task.result[:1200]
                     text = preview + ("\n\n[Preview — full result in Radhouse]" if len(task.result) > 1200 else "")
