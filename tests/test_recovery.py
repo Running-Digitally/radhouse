@@ -7,10 +7,43 @@ import sys
 
 import pytest
 
-from radhouse.domain.tasks import Observation, Rejected
+from radhouse.application.service import fingerprint
+from radhouse.domain.tasks import Observation, Rejected, runtime_input
 from tests.fakes import FakeAgentWork
 
 pytestmark = pytest.mark.postgres
+
+
+def test_legacy_unrestricted_prepared_dispatch_keeps_its_existing_digest(
+    service, store, alice, envelope, start,
+):
+    task = service.admit(alice, envelope(), start)
+    active = service.claim(task.task_id, "worker")
+    with store.transaction() as tx:
+        dispatch = tx.dispatch(active.attempt_id)
+    assert dispatch.request_digest == fingerprint({
+        "input": runtime_input(active), "session_id": active.task_id,
+    })
+
+
+@pytest.mark.parametrize(("restriction", "lost_restriction"), [
+    ({"allowed_tools": ("search_files", "read_file")}, {"allowed_tools": ()}),
+    ({"disable_tools": True}, {"disable_tools": False}),
+])
+def test_prepared_dispatch_fails_closed_if_its_tool_restriction_changes(
+    service, store, fake_work, alice, envelope, start, restriction, lost_restriction,
+):
+    task = service.admit(alice, envelope(), replace(start, **restriction))
+    active = service.claim(task.task_id, "worker")
+    with store.transaction() as tx:
+        current = tx.task(active.task_id)
+        tx.save_task(current.evolve(**lost_restriction), current.state_revision)
+
+    recovered = service.recover(active.task_id)
+
+    assert recovered.phase == "recovering"
+    assert "operation_unknown" in recovered.blockers
+    assert fake_work.start_count == 0
 
 
 def test_lost_reply_recovers_same_runtime_run_without_repeat(

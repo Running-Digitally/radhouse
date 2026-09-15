@@ -235,6 +235,14 @@ Before the 1B research run, make the exact assignment text, source paths and
 permitted tools, natural checkpoint sequence, exact guidance message and when
 to send it, expected useful result, ordinary model-turn limit, maximum physical
 provider requests and stop conditions reviewable.
+The permitted tool names are an execution boundary, not prompt advice. When an
+owner brief says `Use only search_files and read_file`, Radhouse records that
+exact ordered set with the task and requires Hermes' durable
+`runs_allowed_tools` exact-subset capability before dispatch. Hermes advertises
+and accepts only those configured tools for that run; an unavailable capability,
+unknown name or conflicting replay fails closed. Reference content cannot set or
+widen this restriction. Source-path compliance remains separately verified from
+the durable tool transcript.
 Count all provider requests, including thinking continuation, truncated tool-call
 recovery and finalizer requests. The current two-turn setting is not itself a
 hard wire-call cap: truncated-argument retries occur within a turn. Use an exact

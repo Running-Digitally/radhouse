@@ -32,6 +32,7 @@ class StartTask:
     files: tuple[InputFile, ...] = ()
     follows_task_id: str | None = None
     disable_tools: bool = False
+    allowed_tools: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -61,6 +62,7 @@ class Task:
     guidance: tuple[dict, ...] = ()
     permission_request: dict | None = None
     disable_tools: bool = False
+    allowed_tools: tuple[str, ...] = ()
 
     def evolve(self, **changes) -> "Task":
         return replace(self, state_revision=self.state_revision + 1, **changes)
