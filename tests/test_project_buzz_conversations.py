@@ -70,7 +70,7 @@ def test_standard_mentions_and_replies_select_one_project_agent(project_chat, st
         researcher,
         owner,
         "@Beacon turn the recommendation into a prototype.",
-        tags=[["mention", builder.link.agent_pubkey]],
+        tags=[["mention", builder.link.agent_pubkey, "agent-address"]],
         offset=1,
     )
     ambiguous = event(
@@ -120,7 +120,7 @@ def test_standard_mentions_and_replies_select_one_project_agent(project_chat, st
         owner,
         "@Beacon build the smallest useful version from that result.",
         tags=[
-            ["mention", builder.link.agent_pubkey],
+            ["mention", builder.link.agent_pubkey, "agent-address"],
             ["e", ordinary["id"], "", "reply"],
         ],
         offset=4,
