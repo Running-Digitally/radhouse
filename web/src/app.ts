@@ -43,6 +43,16 @@ function element<K extends keyof HTMLElementTagNameMap>(tag: K, className?: stri
   if (text !== undefined) node.textContent = text;
   return node;
 }
+function brand(): HTMLElement {
+  const lockup = element("div", "brand");
+  const mark = element("img", "brand__mark");
+  mark.src = "./assets/radhouse-mark.svg";
+  mark.alt = "";
+  const copy = element("span", "brand__copy");
+  copy.append(element("span", "brand__name", "Radhouse"), element("span", "brand__tagline", "A home for your agents"));
+  lockup.append(mark, copy);
+  return lockup;
+}
 function notice(message: string, error = false): HTMLElement {
   const node = element("div", `notice${error ? " notice--error" : ""}`, message);
   node.setAttribute("role", error ? "alert" : "status");
@@ -142,8 +152,8 @@ function loginScreen(message?: string): void {
   reviewTarget = null;
   page.replaceChildren();
   const card = element("section", "login-card");
-  card.append(element("p", "eyebrow", "Radhouse · A home for your agents"),
-    element("h1", "page-title", "Welcome home"), element("p", "muted", "Sign in with your Radhouse account."));
+  card.append(brand(), element("h1", "page-title", "Welcome home"),
+    element("p", "muted", "Sign in with your Radhouse account."));
   if (message) card.append(notice(message, true));
   const form = element("form", "login-form");
   const username = field("Username", "username"); username.input.autocomplete = "username";
@@ -537,7 +547,7 @@ function render(home: WorkHome, message?: string): void {
   const selection = focused instanceof HTMLTextAreaElement ? [focused.selectionStart, focused.selectionEnd] : null;
   page.replaceChildren();
   const header = element("header", "page-header"); const identity = element("div");
-  identity.append(element("p", "eyebrow", "Radhouse · A home for your agents"), element("h1", "page-title", reviewTarget ? "Review your work" : "Your work home"));
+  identity.append(brand(), element("h1", "page-title", reviewTarget ? "Review your work" : "Your work home"));
   if (projects.length === 1) {
     const context = element("div", "project-context");
     context.append(element("span", "field__label", "Current project"), element("strong", undefined, home.project_name));
