@@ -75,12 +75,16 @@ def test_second_bot_grant_preserves_existing_login_credentials(store):
         grant = connection.execute(
             "SELECT 1 FROM bot_grants WHERE principal_id=%s AND bot_id='builder-01'", (principal,),
         ).fetchone()
+        assignment = connection.execute(
+            "SELECT 1 FROM project_bots WHERE project_id=%s AND bot_id='builder-01'", (project,),
+        ).fetchone()
     assert before == after
     assert dict(bot) == {
         "display_name": "Builder", "role_name": "Builder",
         "provider_binding": "fake-local", "state": "ready",
     }
     assert grant is not None
+    assert assignment is not None
 
 
 def test_local_login_requires_password_totp_origin_and_session_csrf(store):

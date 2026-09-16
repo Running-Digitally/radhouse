@@ -18,6 +18,7 @@ class ProjectView:
     display_name: str
     conversation_id: str
     binding_revision: int
+    bot_ids: tuple[str, ...]
 
 
 @dataclass(frozen=True)

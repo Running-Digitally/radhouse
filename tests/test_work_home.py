@@ -52,6 +52,8 @@ def test_viewer_home_is_read_only_and_does_not_disclose_another_owners_tasks(
     assert home.role == "viewer"
     assert not home.start.enabled and home.start.reason == "read_only_role"
     assert [agent.bot_id for agent in home.agents] == ["bot-alpha"]
+    assert next(project for project in service.projects(viewer)
+                if project.project_id == "project-shared").bot_ids == ("bot-alpha",)
     assert home.tasks == ()
 
 
@@ -68,6 +70,24 @@ def test_home_reflects_current_bot_grant_without_cached_ui_authority(
     after = service.work_home(alice, envelope=envelope())
 
     assert [agent.bot_id for agent in after.agents] == ["bot-beta"]
+
+
+def test_home_reflects_project_agent_assignment_without_cross_project_leak(
+    service, store, alice, envelope,
+):
+    with store.transaction() as tx:
+        tx._connection.execute(
+            "DELETE FROM public.project_bots "
+            "WHERE project_id='project-shared' AND bot_id='bot-beta'"
+        )
+
+    shared = service.work_home(
+        alice, envelope=envelope(project_id="project-shared"),
+    )
+    personal = service.work_home(alice, envelope=envelope())
+
+    assert [agent.bot_id for agent in shared.agents] == ["bot-alpha"]
+    assert {agent.bot_id for agent in personal.agents} == {"bot-alpha", "bot-beta"}
 
 
 def test_completed_task_exposes_review_only_with_fresh_assurance(

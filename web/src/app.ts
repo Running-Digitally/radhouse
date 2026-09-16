@@ -18,6 +18,9 @@ let api: RadhouseApi | null = null;
 let signedIn: AuthSession | null = null;
 let projects: Project[] = [];
 let selectedProject = "";
+let projectNameDraft = "";
+const projectBotDraft = new Set<string>();
+const agentDirectory = new Map<string, WorkHome["agents"][number]>();
 let loadGeneration = 0;
 let sessionEpoch = 0;
 let actionsInFlight = 0;
@@ -50,7 +53,7 @@ function errorMessage(error: unknown): string {
     const labels: Record<string, string> = {
       review_link_denied: "This review link is expired or no longer available to your account. Open your work home, or ask Researcher for status to get a fresh link.",
       stale_state: "The task changed. Review the latest state before trying again.",
-      fresh_assurance_required: "Confirm your sign-in before reviewing this result.",
+      fresh_assurance_required: "Confirm your sign-in before this protected action.",
       binding_denied: "Your access to this conversation changed.",
       access_denied: "Your access to this project or agent changed.",
       private_task: "This task is private to another person.",
@@ -134,7 +137,7 @@ function loginScreen(message?: string): void {
   projects = [];
   // Private display state never crosses an account change.
   drafts.clear(); reviews.clear(); expanded.clear(); timelines.clear(); conversationDrafts.clear(); guidanceDrafts.clear();
-  titleDrafts.clear(); openResults.clear();
+  titleDrafts.clear(); openResults.clear(); projectNameDraft = ""; projectBotDraft.clear(); agentDirectory.clear();
   conversationLinks = []; conversationHistory = null; selectedConversation = "";
   reviewTarget = null;
   page.replaceChildren();
@@ -164,7 +167,7 @@ function loginScreen(message?: string): void {
 function assurancePanel(): HTMLElement {
   const panel = element("section", "review-panel");
   panel.append(element("h3", "section-title", "Confirm it’s you"),
-    element("p", "muted", "Your task stays here while you confirm your password and a fresh authenticator code."));
+    element("p", "muted", "Your work stays here while you confirm your password and a fresh authenticator code."));
   const form = element("form", "login-form");
   const password = field("Password", "password", "password");
   const code = field("Authenticator code", "totp");
@@ -176,7 +179,7 @@ function assurancePanel(): HTMLElement {
       if (!api) return;
       signedIn = await api.reauthenticate(password.input.value, code.input.value);
       password.input.value = ""; code.input.value = "";
-      await load("Sign-in confirmed. You can now review the result.");
+      await load("Sign-in confirmed. You can continue with the protected action.");
     });
   });
   panel.append(form);
@@ -308,7 +311,12 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
   }
   if (card.publication) article.append(notice(`Published to ${card.publication.audience.join(", ")}.`));
   if (task.files.length) article.append(element("p", "muted", `Reference files: ${task.files.map((file) => file.name).join(", ")}`));
-  if (task.follows_task_id) article.append(element("p", "muted", "Includes the result of your previous assignment."));
+  if (task.follows_task_id) {
+    const parent = home.tasks.find((item) => item.task.task_id === task.follows_task_id)?.task;
+    article.append(element("p", "muted", parent && parent.bot_id !== task.bot_id
+      ? "Delegated from another agent’s completed assignment; its exact result was included as context."
+      : "Includes the result of your previous assignment."));
+  }
   for (const receipt of task.guidance) {
     const status = guidanceStatus(receipt);
     article.append(notice(`${receipt.text ?? `Permission response: ${receipt.choice}`} — ${status}`));
@@ -388,6 +396,14 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
       page.querySelector<HTMLTextAreaElement>('textarea[name="brief"]')?.focus();
       page.querySelector(".start-panel")?.scrollIntoView({ block: "start" });
     }));
+    const delegate = home.agents.find((agent) => agent.state === "ready" && agent.bot_id !== task.bot_id);
+    if (task.phase === "closed" && task.result !== null && delegate) controls.append(button(`Delegate to ${delegate.display_name}`, async () => {
+      clearReviewTarget();
+      drafts.set(home.project_id, { bot: delegate.bot_id, brief: "", files: [], followsTaskId: task.task_id });
+      await load(`The exact completed result will be provided to ${delegate.display_name}. Describe the bounded subtask.`);
+      page.querySelector<HTMLTextAreaElement>('textarea[name="brief"]')?.focus();
+      page.querySelector(".start-panel")?.scrollIntoView({ block: "start" });
+    }));
   } else article.append(element("p", "muted", "Read-only access"));
   article.append(controls);
   const review = reviews.get(task.task_id);
@@ -463,6 +479,58 @@ function startPanel(home: WorkHome): HTMLElement {
   });
   panel.append(form); return panel;
 }
+function projectsPanel(home: WorkHome): HTMLElement {
+  const section = element("section", "section"); section.id = "projects-section";
+  section.append(element("h2", "section-title", "Projects"),
+    element("p", "section-description", "Keep related work together and choose exactly which agents may work in each project."));
+  const list = element("div", "project-list");
+  for (const project of projects) {
+    const item = element("article", `project-card${project.project_id === home.project_id ? " project-card--current" : ""}`);
+    const names = project.bot_ids.map((id) => agentDirectory.get(id)?.display_name ?? id);
+    item.append(element("h3", "agent-card__name", project.display_name),
+      element("p", "muted", names.length ? `Agents: ${names.join(", ")}` : "No agents assigned"));
+    if (project.project_id === home.project_id) item.append(element("span", "phase phase--active", "Current"));
+    else item.append(button("Open project", async () => {
+      selectedProject = project.project_id; sessionEpoch++; selectedConversation = ""; conversationHistory = null;
+      await load();
+    }));
+    list.append(item);
+  }
+  section.append(list);
+  if (home.role === "viewer") return section;
+  if (!signedIn || new Date(signedIn.assurance_until).getTime() <= Date.now()) {
+    section.append(assurancePanel()); return section;
+  }
+  const form = element("form", "project-form");
+  const name = field("New private project", "project-name"); name.input.maxLength = 100;
+  name.input.placeholder = "Project name"; name.input.value = projectNameDraft;
+  name.input.addEventListener("input", () => { projectNameDraft = name.input.value; });
+  form.append(name.wrapper);
+  const choices = element("fieldset", "project-agent-choices");
+  choices.append(element("legend", "field__label", "Agents in this project"));
+  for (const agent of agentDirectory.values()) {
+    const label = element("label", "project-agent-choice"); const input = element("input");
+    input.type = "checkbox"; input.value = agent.bot_id; input.checked = projectBotDraft.has(agent.bot_id);
+    input.addEventListener("change", () => input.checked ? projectBotDraft.add(agent.bot_id) : projectBotDraft.delete(agent.bot_id));
+    label.append(input, document.createTextNode(`${agent.display_name} · ${agent.role_name}`)); choices.append(label);
+  }
+  form.append(choices);
+  const submit = element("button", "button button--primary", "Create project"); submit.type = "submit";
+  form.append(submit);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault(); const current = api; const selected = [...projectBotDraft];
+    if (!current || !name.input.value.trim() || selected.length === 0) {
+      form.prepend(notice("Name the project and choose at least one agent.", true)); return;
+    }
+    void action(submit, async () => {
+      const created = await current.createProject(name.input.value.trim(), selected);
+      projectNameDraft = ""; projectBotDraft.clear(); selectedProject = created.project_id;
+      sessionEpoch++; selectedConversation = ""; conversationHistory = null;
+      await load("Private project created with the selected agents.");
+    });
+  });
+  section.append(form); return section;
+}
 function render(home: WorkHome, message?: string): void {
   const focused = (page.getRootNode() as Document | ShadowRoot).activeElement;
   const focusName = focused instanceof HTMLInputElement || focused instanceof HTMLTextAreaElement || focused instanceof HTMLSelectElement ? focused.name : "";
@@ -493,12 +561,13 @@ function render(home: WorkHome, message?: string): void {
   if (!reviewTarget) {
     const navigation = element("nav", "work-home-nav"); navigation.setAttribute("aria-label", "Work home sections");
     const destinations: [string, string][] = conversation ? [["Conversation", "conversation-section"]] : [["Start work", "start-section"]];
-    destinations.push(["Agents", "agents-section"], ["Work", "work-section"]);
+    destinations.push(["Projects", "projects-section"], ["Agents", "agents-section"], ["Work", "work-section"]);
     for (const [label, id] of destinations) navigation.append(button(label, async () => {
       page.querySelector(`#${id}`)?.scrollIntoView({ block: "start" });
     }));
     page.append(navigation);
   }
+  if (!reviewTarget) page.append(projectsPanel(home));
   if (!reviewTarget && conversation && conversationHistory && api && signedIn) {
     const draft = conversationDrafts.get(conversation.link_id) ?? { content: "", reply: null, files: [] };
     conversationDrafts.set(conversation.link_id, draft);
@@ -535,7 +604,7 @@ function render(home: WorkHome, message?: string): void {
   const allowed = new Set(home.tasks.map((card) => card.task.task_id));
   for (const id of reviews.keys()) if (!allowed.has(id)) reviews.delete(id);
   for (const id of timelines.keys()) if (!allowed.has(id)) timelines.delete(id);
-  if (focusName === "brief" || focusName === "agent" || focusName === "project" || focusName.startsWith("conversation-") || focusName.startsWith("guide-") || focusName.startsWith("title-")) {
+  if (focusName === "brief" || focusName === "agent" || focusName === "project" || focusName === "project-name" || focusName.startsWith("conversation-") || focusName.startsWith("guide-") || focusName.startsWith("title-")) {
     const next = Array.from(page.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>("[name]")).find(node => node.name === focusName);
     next?.focus(); if (next instanceof HTMLTextAreaElement && selection) next.setSelectionRange(selection[0] ?? 0, selection[1] ?? 0);
   }
@@ -571,6 +640,7 @@ async function load(message?: string): Promise<void> {
     const link = links.find(item => item.link_id === selectedConversation) ?? links[0];
     const history = link ? await scoped.conversationHistory(link.link_id, conversationDrafts.get(link.link_id)?.before) : null;
     if (generation !== loadGeneration) return;
+    for (const agent of home.agents) agentDirectory.set(agent.bot_id, agent);
     conversationLinks = links; selectedConversation = link?.link_id ?? ""; conversationHistory = history;
     if (reviewTarget && !home.tasks.some(card => card.task.task_id === reviewTarget?.task_id)) throw new ApiError("review_link_denied", 403);
     api = scoped; selectedProject = project.project_id; projects = available; render(home, message);
@@ -597,5 +667,5 @@ const interval = window.setInterval(() => {
         input.value || input === (page.getRootNode() as Document | ShadowRoot).activeElement)) void load();
 }, 10_000);
 
-return () => { disposed = true; window.removeEventListener("hashchange", onReviewLink); loadGeneration++; sessionEpoch++; window.clearInterval(interval); drafts.clear(); reviews.clear(); timelines.clear(); conversationDrafts.clear(); guidanceDrafts.clear(); titleDrafts.clear(); openResults.clear(); page.replaceChildren(); };
+return () => { disposed = true; window.removeEventListener("hashchange", onReviewLink); loadGeneration++; sessionEpoch++; window.clearInterval(interval); drafts.clear(); reviews.clear(); timelines.clear(); conversationDrafts.clear(); guidanceDrafts.clear(); titleDrafts.clear(); openResults.clear(); projectBotDraft.clear(); agentDirectory.clear(); page.replaceChildren(); };
 }
