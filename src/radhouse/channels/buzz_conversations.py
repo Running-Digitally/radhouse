@@ -42,11 +42,11 @@ class BuzzConversationCycle:
         mentioned = {
             tag[1]
             for tag in event["tags"]
-            if tag[0] == "mention"
+            if len(tag) in {2, 3}
+            and tag[0] == "mention"
             and (
                 len(tag) == 2
-                or len(tag) == 3
-                and tag[2] == "agent-address"
+                or tag[2] == "agent-address"
             )
         }
         if mentioned and (len(mentioned) != 1 or not mentioned <= members):
