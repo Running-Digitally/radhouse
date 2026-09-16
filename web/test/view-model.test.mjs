@@ -71,7 +71,7 @@ test("software delivery handoffs expose every ready project agent in natural ord
   const choices = deliveryHandoffs(builder, agents);
 
   assert.deepEqual(choices.map(choice => choice.target.bot_id), ["reviewer", "deployer", "researcher"]);
-  assert.deepEqual(choices.map(choice => choice.label), ["Send to review", "Prepare deployment", "Delegate to Researcher"]);
+  assert.deepEqual(choices.map(choice => choice.label), ["Send to Reviewer for review", "Prepare deployment with Deployer", "Delegate to Researcher"]);
   assert.match(choices[0].brief, /blocking defects/);
   assert.match(choices[1].brief, /protected human deployment decision/);
 });
@@ -84,6 +84,6 @@ test("review findings return to Builder before release preparation", () => {
     { bot_id: "builder", display_name: "Builder", role_name: "Builder", provider_binding: "local", state: "ready" },
   ]);
 
-  assert.deepEqual(choices.map(choice => choice.label), ["Return findings to Builder", "Prepare deployment"]);
+  assert.deepEqual(choices.map(choice => choice.label), ["Return findings to Builder", "Prepare deployment with Deployer"]);
   assert.match(choices[0].brief, /Address the blocking review findings/);
 });

@@ -30,7 +30,7 @@ function handoff(source: AgentSummary, target: AgentSummary): DeliveryHandoff {
   if (targetRole === "reviewer") {
     return {
       target,
-      label: "Send to review",
+      label: `Send to ${target.display_name} for review`,
       brief: "Review the exact completed work above. Separate blocking defects from suggestions and state whether it is ready to proceed.",
     };
   }
@@ -44,7 +44,7 @@ function handoff(source: AgentSummary, target: AgentSummary): DeliveryHandoff {
   if (targetRole === "deployer") {
     return {
       target,
-      label: "Prepare deployment",
+      label: `Prepare deployment with ${target.display_name}`,
       brief: "Check the reviewed result above against the configured release target. Report readiness and wait for the protected human deployment decision before invoking any deployment operation.",
     };
   }
