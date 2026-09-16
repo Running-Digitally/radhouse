@@ -154,7 +154,7 @@ sudo python3 /opt/radhouse/current/deploy/production/radhouse_vm.py rollback \
   --release-id REPLACE_WITH_FULL_40_CHARACTER_COMMIT
 ```
 
-The current application storage schema is 4. The official Buzz integration is
+The current application storage schema is 5. The official Buzz integration is
 server-side and works with unmodified clients. The retained custom desktop branch
 is superseded and is not part of this deployment path. Configure per-bot
 `approval_commands` only for commands already granted to that bot; the empty
