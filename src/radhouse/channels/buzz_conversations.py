@@ -36,6 +36,33 @@ class BuzzConversationCycle:
         with self.store.transaction() as tx:
             self.conversations.authorize(tx, self.link, write=True)
 
+    def _event_disposition(self, event):
+        """Select exactly one agent link in a shared project DM."""
+        members = set(self.link.member_pubkeys or (self.link.agent_pubkey,))
+        mentioned = {
+            tag[1]
+            for tag in event["tags"]
+            if len(tag) == 2 and tag[0] == "mention"
+        }
+        if mentioned and (len(mentioned) != 1 or not mentioned <= members):
+            return "ambiguous" if self.link.default_agent else "skip"
+        if len(mentioned) == 1:
+            return "accept" if self.link.agent_pubkey in mentioned else "skip"
+
+        parent_id = reply_target(event)
+        if parent_id:
+            with self.store.transaction() as tx:
+                parent = tx.conversation_reply_in_channel(
+                    self.link.channel_id, parent_id
+                )
+            if parent is not None:
+                return (
+                    "accept"
+                    if parent["message"].link_id == self.link.link_id
+                    else "skip"
+                )
+        return "accept" if self.link.default_agent else "skip"
+
     def ingress(self):
         self._authorized()
         with self.store.transaction() as tx:
@@ -58,6 +85,17 @@ class BuzzConversationCycle:
             with self.store.transaction() as tx:
                 existing = tx.conversation_message(event["id"])
             if existing and existing["processed"]:
+                continue
+            try:
+                disposition = self._event_disposition(event)
+            except Rejected as error:
+                if error.status == 422 and self.link.default_agent:
+                    self._reject_message(event, error.code)
+                continue
+            if disposition == "skip":
+                continue
+            if disposition == "ambiguous":
+                self._reject_message(event, "conversation_agent_ambiguous")
                 continue
             self._authorized()
             if existing:
@@ -122,7 +160,11 @@ class BuzzConversationCycle:
                     "reply:" + event["id"],
                     self.link.link_id,
                     self.link.bot_id,
-                    "I could not use that message. Send a short assignment with up to four UTF-8 text references (64 KB total), uploaded to this Buzz community. No task was started.",
+                    (
+                        "Mention exactly one project agent so I can route this assignment. No task was started."
+                        if code == "conversation_agent_ambiguous"
+                        else "I could not use that message. Send a short assignment with up to four UTF-8 text references (64 KB total), uploaded to this Buzz community. No task was started."
+                    ),
                     "radhouse",
                     int(self.service._now().timestamp()),
                     reply_to=event["id"],

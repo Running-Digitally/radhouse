@@ -38,18 +38,19 @@ class ApplicationStorageError(ValueError):
 
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _INITIAL_MIGRATION = Path(__file__).parent / "migrations" / "0001_initial.sql"
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 MIGRATIONS = (_INITIAL_MIGRATION, Path(__file__).parent / "migrations" / "0002_operator_context.sql",
               Path(__file__).parent / "migrations" / "0003_conversations.sql",
               Path(__file__).parent / "migrations" / "0004_task_titles.sql",
-              Path(__file__).parent / "migrations" / "0005_project_agents.sql")
+              Path(__file__).parent / "migrations" / "0005_project_agents.sql",
+              Path(__file__).parent / "migrations" / "0006_project_conversations.sql")
 
 
 def schema_digest(version: int = SCHEMA_VERSION) -> str:
     try:
         if version == 1:
             return hashlib.sha256(_INITIAL_MIGRATION.read_bytes()).hexdigest()
-        if version not in {2, 3, 4, 5}:
+        if version not in {2, 3, 4, 5, 6}:
             raise ApplicationStorageError("unsupported_schema_version")
         return hashlib.sha256(f"radhouse-schema-v{version}\0".encode() + b"\0".join(path.read_bytes() for path in MIGRATIONS[:version])).hexdigest()
     except OSError:
