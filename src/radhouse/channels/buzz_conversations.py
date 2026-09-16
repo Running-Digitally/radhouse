@@ -42,7 +42,12 @@ class BuzzConversationCycle:
         mentioned = {
             tag[1]
             for tag in event["tags"]
-            if len(tag) == 2 and tag[0] == "mention"
+            if len(tag) in {2, 3}
+            and tag[0] == "mention"
+            and (
+                len(tag) == 2
+                or tag[2] == "agent-address"
+            )
         }
         if mentioned and (len(mentioned) != 1 or not mentioned <= members):
             return "ambiguous" if self.link.default_agent else "skip"
