@@ -101,6 +101,23 @@ def test_exact_private_dm_and_fresh_signed_requests(relay):
     ]
 
 
+def test_exact_private_group_dm_membership(relay):
+    client, link, state, _, authority = relay
+    teammate = PrivateKey().public_key_xonly.format().hex()
+    group = replace(
+        link,
+        member_pubkeys=tuple(sorted((link.agent_pubkey, teammate))),
+    )
+    state["response"] = snapshots(
+        group, authority, [group.owner_pubkey, group.agent_pubkey, teammate]
+    )
+    client.verify_dm(group)
+
+    state["response"] = snapshots(group, authority)
+    with pytest.raises(Rejected, match="conversation_membership_denied"):
+        client.verify_dm(group)
+
+
 @pytest.mark.parametrize(
     "change",
     ["extra", "missing", "public", "room", "wrong_relay", "wrong_channel", "inactive"],

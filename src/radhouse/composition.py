@@ -126,12 +126,29 @@ def compose_controller(
             from radhouse.channels.buzz_relay import BuzzRelay
             from radhouse.channels.buzz_enrollment import ConfiguredBuzzConversation
             for agent in config.buzz.agents:
+                channel_agents = tuple(
+                    candidate for candidate in config.buzz.agents
+                    if agent.channel_id is not None
+                    and candidate.channel_id == agent.channel_id
+                )
                 relay=BuzzRelay(config.buzz.relay_origin,config.buzz.relay_pubkey,
                     read_secret_file(agent.signing_key.path),clock=lambda:clock().timestamp())
                 clients.append(relay)
                 if relay.pubkey!=agent.agent_pubkey:
                     raise ValueError("buzz_agent_key_mismatch")
-                conversation_cycles.append(ConfiguredBuzzConversation(service,relay,agent))
+                conversation_cycles.append(ConfiguredBuzzConversation(
+                    service,
+                    relay,
+                    agent,
+                    member_pubkeys=(
+                        tuple(sorted(item.agent_pubkey for item in channel_agents))
+                        if len(channel_agents) > 1
+                        else ()
+                    ),
+                    default_agent=(
+                        True if len(channel_agents) <= 1 else agent.default_in_channel
+                    ),
+                ))
         from radhouse.channels.buzz_enrollment import BuzzEnrollment
         # The same configured scope fences web sends/history and relay cycles.
         # Removing a candidate must not leave its old web composer operational.

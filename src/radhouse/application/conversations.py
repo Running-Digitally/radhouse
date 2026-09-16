@@ -81,11 +81,28 @@ class Conversations:
         target = None
         if message.reply_to:
             reply = tx.conversation_reply(link.link_id, message.reply_to)
+            if reply is None and len(link.member_pubkeys) > 1:
+                reply = tx.conversation_reply_in_channel(
+                    link.channel_id, message.reply_to
+                )
             if reply is None:
+                return MessageRoute("clarify")
+            parent_link = tx.conversation_link(reply["message"].link_id)
+            if (
+                parent_link is None
+                or parent_link.channel_id != link.channel_id
+                or parent_link.principal_id != link.principal_id
+                or parent_link.project_id != link.project_id
+                or parent_link.conversation_id != link.conversation_id
+            ):
                 return MessageRoute("clarify")
             target = (
                 tx.task(reply["message"].task_id) if reply["message"].task_id else None
             )
+            if target is not None and target.bot_id != link.bot_id:
+                if target.phase == "closed" and target.result:
+                    return MessageRoute("start", follows_task_id=target.task_id)
+                return MessageRoute("clarify")
         tasks = [
             tx.task(task_id) for task_id in tx.conversation_task_messages(link.link_id)
         ]
