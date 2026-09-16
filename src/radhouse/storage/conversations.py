@@ -15,24 +15,40 @@ from radhouse.domain.tasks import InputFile
 
 
 class ConversationQueries:
+    @staticmethod
+    def _conversation_link(snapshot):
+        values = dict(snapshot)
+        values["member_pubkeys"] = tuple(values.get("member_pubkeys", ()))
+        return ConversationLink(**values)
+
     def conversation_link(self, link_id):
         row = self._connection.execute(
             "SELECT snapshot FROM conversation_links WHERE link_id=%s", (link_id,)
         ).fetchone()
-        return ConversationLink(**row["snapshot"]) if row else None
+        return self._conversation_link(row["snapshot"]) if row else None
 
     def conversation_links(self, principal_id=None):
         rows = self._connection.execute(
             "SELECT snapshot FROM conversation_links WHERE (%s::text IS NULL OR principal_id=%s) ORDER BY link_id LIMIT 100",
             (principal_id, principal_id),
         ).fetchall()
-        return [ConversationLink(**row["snapshot"]) for row in rows]
+        return [self._conversation_link(row["snapshot"]) for row in rows]
 
     def conversation_link_for_channel(self, channel_id):
-        row = self._connection.execute(
-            "SELECT snapshot FROM conversation_links WHERE channel_id=%s", (channel_id,)
-        ).fetchone()
-        return ConversationLink(**row["snapshot"]) if row else None
+        rows = self._connection.execute(
+            "SELECT snapshot FROM conversation_links WHERE channel_id=%s ORDER BY link_id LIMIT 2",
+            (channel_id,),
+        ).fetchall()
+        if len(rows) > 1:
+            raise Rejected("conversation_link_ambiguous", 409)
+        return self._conversation_link(rows[0]["snapshot"]) if rows else None
+
+    def conversation_links_for_channel(self, channel_id):
+        rows = self._connection.execute(
+            "SELECT snapshot FROM conversation_links WHERE channel_id=%s ORDER BY link_id LIMIT 20",
+            (channel_id,),
+        ).fetchall()
+        return [self._conversation_link(row["snapshot"]) for row in rows]
 
     def conversation_enrollment(self, link_id):
         row = self._connection.execute(
@@ -94,6 +110,17 @@ class ConversationQueries:
             "SELECT m.* FROM conversation_messages m LEFT JOIN conversation_outbox o ON o.message_id=m.message_id "
             "WHERE m.link_id=%s AND (m.message_id=%s OR o.event->>'id'=%s) LIMIT 1",
             (link_id, event_id, event_id),
+        ).fetchone()
+        return self._conversation_row(row) if row else None
+
+    def conversation_reply_in_channel(self, channel_id, event_id):
+        row = self._connection.execute(
+            "SELECT m.* FROM conversation_messages m "
+            "JOIN conversation_links l ON l.link_id=m.link_id "
+            "LEFT JOIN conversation_outbox o ON o.message_id=m.message_id "
+            "WHERE l.channel_id=%s AND (m.message_id=%s OR o.event->>'id'=%s) "
+            "ORDER BY m.sequence LIMIT 1",
+            (channel_id, event_id, event_id),
         ).fetchone()
         return self._conversation_row(row) if row else None
 

@@ -1,8 +1,9 @@
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
-from radhouse.config import ConfigurationError, load_config
+from radhouse.config import BuzzConfig, ConfigurationError, load_config
 
 
 BASE = """\
@@ -148,6 +149,85 @@ def test_configuration_size_is_bounded_before_yaml_parsing(tmp_path: Path):
     path = write(tmp_path / "config.yaml", "x" * (1024 * 1024 + 1))
     with pytest.raises(ConfigurationError, match="configuration_too_large"):
         load_config(path)
+
+
+def buzz_agent(name, key, *, default=False, project="project-one"):
+    return {
+        "link_id": name,
+        "channel_id": "project-channel",
+        "conversation_id": "project-one:alice:buzz",
+        "principal_id": "alice",
+        "owner_pubkey": "a" * 64,
+        "agent_pubkey": key * 64,
+        "bot_id": name,
+        "project_id": project,
+        "activated_at": 1,
+        "default_in_channel": default,
+        "signing_key": {"path": f"/run/secrets/{name}"},
+    }
+
+
+def test_shared_project_channel_requires_one_authority_and_default_agent():
+    value = {
+        "relay_origin": "https://buzz.example",
+        "relay_pubkey": "f" * 64,
+        "conversations": [
+            {
+                "channel_id": "project-channel",
+                "conversation_id": "project-one:alice:buzz",
+            }
+        ],
+        "agents": [
+            buzz_agent("researcher", "b", default=True),
+            buzz_agent("builder", "c"),
+        ],
+    }
+    config = BuzzConfig.model_validate(value)
+    assert config.agents[0].default_in_channel is True
+
+    for agents in (
+        [buzz_agent("researcher", "b"), buzz_agent("builder", "c")],
+        [
+            buzz_agent("researcher", "b", default=True),
+            buzz_agent("builder", "c", default=True),
+        ],
+        [
+            buzz_agent("researcher", "b", default=True),
+            buzz_agent("builder", "c", project="project-two"),
+        ],
+    ):
+        with pytest.raises(ValidationError):
+            BuzzConfig.model_validate({**value, "agents": agents})
+
+
+def test_one_agent_identity_may_join_personal_and_project_channels():
+    personal = buzz_agent("researcher-personal", "b")
+    personal["channel_id"] = "personal-channel"
+    personal["conversation_id"] = "personal-alice:alice:buzz"
+    project = buzz_agent("researcher-project", "b", default=True)
+    value = {
+        "relay_origin": "https://buzz.example",
+        "relay_pubkey": "f" * 64,
+        "conversations": [
+            {
+                "channel_id": "personal-channel",
+                "conversation_id": "personal-alice:alice:buzz",
+            },
+            {
+                "channel_id": "project-channel",
+                "conversation_id": "project-one:alice:buzz",
+            },
+        ],
+        "agents": [personal, project],
+    }
+
+    assert len(BuzzConfig.model_validate(value).agents) == 2
+    with pytest.raises(
+        ValidationError, match="duplicate Buzz agent identity in channel"
+    ):
+        BuzzConfig.model_validate(
+            {**value, "agents": [project, {**project, "link_id": "duplicate"}]}
+        )
 
 
 def test_duplicate_bot_identity_or_hermes_home_is_rejected(tmp_path: Path):

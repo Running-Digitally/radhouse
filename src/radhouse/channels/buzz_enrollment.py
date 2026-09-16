@@ -158,16 +158,20 @@ class BuzzEnrollment:
         )
         relay.owner_attestation = attestation
         link = ConversationLink(
-            candidate.link_id,
-            channel_id,
-            candidate.conversation_id,
-            candidate.principal_id,
-            candidate.owner_pubkey,
-            candidate.agent_pubkey,
-            candidate.bot_id,
-            candidate.project_id,
-            candidate.activated_at or int(self.service._now().timestamp()),
-            candidate.binding_revision,
+            link_id=candidate.link_id,
+            channel_id=channel_id,
+            conversation_id=candidate.conversation_id,
+            principal_id=candidate.principal_id,
+            owner_pubkey=candidate.owner_pubkey,
+            agent_pubkey=candidate.agent_pubkey,
+            bot_id=candidate.bot_id,
+            project_id=candidate.project_id,
+            activated_at=candidate.activated_at
+            or int(self.service._now().timestamp()),
+            binding_revision=candidate.binding_revision,
+            active=candidate.active,
+            member_pubkeys=configured.member_pubkeys,
+            default_agent=configured.default_agent,
         )
         if previous:
             if (
@@ -241,8 +245,21 @@ class BuzzEnrollment:
 
 
 class ConfiguredBuzzConversation:
-    def __init__(self, service, relay, candidate):
+    def __init__(
+        self,
+        service,
+        relay,
+        candidate,
+        *,
+        member_pubkeys=None,
+        default_agent=True,
+    ):
         self.service, self.relay, self.candidate = service, relay, candidate
+        # Keep the original compact snapshot for ordinary two-person DMs.
+        # Explicit membership is needed only when several agents share a
+        # project conversation.
+        self.member_pubkeys = tuple(sorted(member_pubkeys or ()))
+        self.default_agent = default_agent
 
     def matches(self, link):
         values = asdict(link)
@@ -262,6 +279,10 @@ class ConfiguredBuzzConversation:
                 "binding_revision",
                 "active",
             )
+        ) and (
+            tuple(sorted(link.member_pubkeys or (link.agent_pubkey,)))
+            == tuple(sorted(self.member_pubkeys or (link.agent_pubkey,)))
+            and link.default_agent == self.default_agent
         )
 
     def run(self, phase):
