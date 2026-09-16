@@ -69,6 +69,25 @@ production gate remains separate.
 - After protected web publication, post one correlated publication-status event
   into the same private conversation. Restart or replay must not duplicate it.
 
+### Project conversations
+
+One private Buzz group DM may represent one Radhouse project. Its relay-signed
+membership must be exactly the owner and the agents explicitly assigned to that
+project. Each agent keeps its own standard Buzz identity, signing key, durable
+link and outbox; the channel is shared. One configured default agent receives an
+unaddressed top-level message. An official-client `@mention` contributes a
+standard non-notifying `mention` tag and selects exactly one project agent.
+Mentioning several project agents is rejected without creating work.
+
+A reply without a new agent mention stays with the agent that owns the parent
+message. Mentioning another assigned agent while replying to a completed result
+creates a bounded child task for that agent with the exact prior result as
+context. It does not copy project files, expand grants or let an agent join an
+unassigned project. Task, source-event, parent-task and signing identities remain
+durable across duplicate delivery and restart. Project creation and agent
+allocation remain authenticated Radhouse administration; the official Buzz
+conversation is the natural work surface after its exact membership is enrolled.
+
 ## Durable guidance contract retained
 
 Hermes queues identified guidance after a completed tool batch and includes it
@@ -169,6 +188,13 @@ No source change is proposed to official Buzz at this point. If exact official
 mobile/client evidence demonstrates a generic missing feature, identify the
 specific call path and propose the smallest upstream contribution. Never make
 the private desktop patch the default workaround.
+
+The project-conversation extension is a small additional D2 slice. Storage
+allows one channel to retain one signed link per agent. Configuration requires
+one project authority and one default agent for every shared channel. Ingress
+routes only from signed membership, standard explicit mention tags and durable
+reply ancestry. Existing two-person Researcher and Builder DMs retain their
+current behavior.
 
 ## Tests and review gates
 

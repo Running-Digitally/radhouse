@@ -72,3 +72,14 @@ Version 4 adds a bounded display title and independent title revision to each
 task. Existing tasks receive a title from their frozen assignment. Title edits
 do not change task state, result digests, reviews or publications. Preserve
 schema-4 state after admitting title edits; older binaries cannot serve it.
+
+Version 5 adds explicit project-agent assignments. Existing installations
+retain their effective member/grant intersection; new projects name their
+eligible agents. This table limits task admission and delegation without
+granting a project access to unrelated agents.
+
+Version 6 allows one private Buzz project channel to retain one signed
+conversation link per assigned agent. The previous channel-wide uniqueness is
+replaced by channel-plus-agent uniqueness. Each agent still owns a separate
+outbox and task correlation; relay membership, project assignment and grants
+remain independently enforced.

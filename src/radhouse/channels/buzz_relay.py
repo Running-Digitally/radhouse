@@ -147,7 +147,7 @@ class BuzzRelay:
         return event["id"]
 
     def verify_dm(self, link: ConversationLink):
-        """Require relay-signed immutable DM metadata and exact two-person membership."""
+        """Require relay-signed immutable DM metadata and exact private membership."""
         if not link.active or link.agent_pubkey != self.pubkey:
             raise Rejected("conversation_link_denied", 403)
         values = self.query(
@@ -177,9 +177,12 @@ class BuzzRelay:
         if ["private"] not in metadata or ["t", "dm"] not in metadata:
             raise Rejected("conversation_requires_private_dm", 403)
         tags = [t for t in snapshots[39002]["tags"] if t[0] == "p"]
+        agents = set(link.member_pubkeys or (link.agent_pubkey,))
+        expected = {link.owner_pubkey, *agents}
         if (
-            len(tags) != 2
-            or {t[1] for t in tags if len(t) == 4} != {link.owner_pubkey, self.pubkey}
+            self.pubkey not in agents
+            or len(tags) != len(expected)
+            or {t[1] for t in tags if len(t) == 4} != expected
             or any(
                 len(t) != 4 or t[3] not in {"member", "owner", "admin", "bot"}
                 for t in tags

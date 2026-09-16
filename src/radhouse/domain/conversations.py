@@ -20,6 +20,11 @@ class ConversationLink:
     activated_at: int
     binding_revision: int = 1
     active: bool = True
+    # A project group DM has one link per agent. Every link freezes the same
+    # exact agent membership, while one link receives unaddressed messages.
+    # Empty membership preserves old two-person DM snapshots.
+    member_pubkeys: tuple[str, ...] = ()
+    default_agent: bool = True
 
 
 @dataclass(frozen=True)
