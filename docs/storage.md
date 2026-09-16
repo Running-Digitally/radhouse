@@ -24,7 +24,7 @@ also executed by the disposable fixture. `initialize_database()` accepts an
 explicit owner DSN, expected database, deployment ID, and existing runtime role.
 It takes a deployment-scoped advisory lock, initializes only an empty database,
 and otherwise requires exact supported metadata. Version 4 accepts the exact
-version-1, version-2 or version-3 checksum, applies the ordered migrations in one transaction,
+version-1 through version-4 checksum, applies the ordered migrations in one transaction,
 and preserves existing task and publication rows. It refuses to run as the runtime
 identity or grant an overprivileged, inheriting, role-member, or object-owning
 runtime identity.

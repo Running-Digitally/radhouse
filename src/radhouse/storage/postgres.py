@@ -38,17 +38,18 @@ class ApplicationStorageError(ValueError):
 
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _INITIAL_MIGRATION = Path(__file__).parent / "migrations" / "0001_initial.sql"
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 MIGRATIONS = (_INITIAL_MIGRATION, Path(__file__).parent / "migrations" / "0002_operator_context.sql",
               Path(__file__).parent / "migrations" / "0003_conversations.sql",
-              Path(__file__).parent / "migrations" / "0004_task_titles.sql")
+              Path(__file__).parent / "migrations" / "0004_task_titles.sql",
+              Path(__file__).parent / "migrations" / "0005_project_agents.sql")
 
 
 def schema_digest(version: int = SCHEMA_VERSION) -> str:
     try:
         if version == 1:
             return hashlib.sha256(_INITIAL_MIGRATION.read_bytes()).hexdigest()
-        if version not in {2, 3, 4}:
+        if version not in {2, 3, 4, 5}:
             raise ApplicationStorageError("unsupported_schema_version")
         return hashlib.sha256(f"radhouse-schema-v{version}\0".encode() + b"\0".join(path.read_bytes() for path in MIGRATIONS[:version])).hexdigest()
     except OSError:
@@ -227,8 +228,17 @@ class PostgresUnitOfWork(ConversationQueries):
         projects = self._connection.execute(
             "SELECT project_id FROM public.project_members WHERE principal_id=%s", (principal_id,),
         ).fetchall()
+        project_bots = self._connection.execute(
+            "SELECT pb.project_id,pb.bot_id FROM public.project_bots pb "
+            "JOIN public.project_members pm ON pm.project_id=pb.project_id "
+            "JOIN public.bot_grants bg ON bg.bot_id=pb.bot_id "
+            "WHERE pm.principal_id=%s AND bg.principal_id=%s",
+            (principal_id, principal_id),
+        ).fetchall()
         return Access(**actor, bots=frozenset(row["bot_id"] for row in bots),
-                      projects=frozenset(row["project_id"] for row in projects))
+                      projects=frozenset(row["project_id"] for row in projects),
+                      project_bots=frozenset((row["project_id"], row["bot_id"])
+                                             for row in project_bots))
 
     def binding(self, channel: str, subject: str, conversation_id: str) -> Binding | None:
         row = self._connection.execute(
@@ -263,6 +273,7 @@ class PostgresUnitOfWork(ConversationQueries):
             "SELECT a.principal_id FROM public.actors a "
             "JOIN public.bot_grants b USING(principal_id) "
             "JOIN public.project_members p USING(principal_id) "
+            "JOIN public.project_bots pb ON pb.project_id=p.project_id AND pb.bot_id=b.bot_id "
             "WHERE a.active AND b.bot_id=%s AND p.project_id=%s "
             "ORDER BY a.principal_id LIMIT 100", (bot_id, project_id),
         ).fetchall())
@@ -272,13 +283,21 @@ class PostgresUnitOfWork(ConversationQueries):
             "SELECT snapshot FROM public.tasks ORDER BY task_id"
         ).fetchall()]
 
-    def bots(self, principal_id: str) -> list[BotProfile]:
+    def bots(self, principal_id: str, project_id: str | None = None) -> list[BotProfile]:
         return [BotProfile(**row) for row in self._connection.execute(
             "SELECT b.bot_id,b.display_name,b.role_name,b.provider_binding,b.state "
             "FROM public.bots b JOIN public.bot_grants g ON g.bot_id=b.bot_id "
-            "WHERE g.principal_id=%s ORDER BY b.display_name,b.bot_id",
-            (principal_id,),
+            "LEFT JOIN public.project_bots pb ON pb.bot_id=b.bot_id AND pb.project_id=%s "
+            "WHERE g.principal_id=%s AND (%s::text IS NULL OR pb.project_id IS NOT NULL) "
+            "ORDER BY b.display_name,b.bot_id",
+            (project_id, principal_id, project_id),
         ).fetchall()]
+
+    def project_bot_ids(self, project_id: str) -> tuple[str, ...]:
+        return tuple(row["bot_id"] for row in self._connection.execute(
+            "SELECT bot_id FROM public.project_bots WHERE project_id=%s ORDER BY bot_id",
+            (project_id,),
+        ).fetchall())
 
     def project(self, project_id: str) -> ProjectProfile | None:
         row = self._connection.execute(
@@ -286,6 +305,30 @@ class PostgresUnitOfWork(ConversationQueries):
             "WHERE project_id=%s", (project_id,),
         ).fetchone()
         return ProjectProfile(**row) if row else None
+
+    def create_project(self, project: ProjectProfile, principal_id: str,
+                       bot_ids: tuple[str, ...], binding: Binding) -> None:
+        self._connection.execute(
+            "INSERT INTO public.projects(project_id,owner_id,display_name,state) "
+            "VALUES (%s,%s,%s,%s)",
+            (project.project_id, project.owner_id, project.display_name, project.state),
+        )
+        self._connection.execute(
+            "INSERT INTO public.project_members(principal_id,project_id) VALUES (%s,%s)",
+            (principal_id, project.project_id),
+        )
+        for bot_id in bot_ids:
+            self._connection.execute(
+                "INSERT INTO public.project_bots(project_id,bot_id) VALUES (%s,%s)",
+                (project.project_id, bot_id),
+            )
+        self._connection.execute(
+            "INSERT INTO public.channel_bindings"
+            "(channel,subject,conversation_id,principal_id,project_id,revision,active) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            (binding.channel, binding.subject, binding.conversation_id,
+             binding.principal_id, binding.project_id, binding.revision, binding.active),
+        )
 
     def insert_task(self, task: Task) -> None:
         title = initial_task_title(task.brief)

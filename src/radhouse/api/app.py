@@ -17,7 +17,7 @@ from radhouse.api.schemas import (
     PublishRequest, ReviewRequest, ReviewResponse, StateRequest, TaskResponse,
     WorkHomeResponse, LoginRequest, AuthSessionResponse, ProjectResponse, ReauthenticateRequest,
     GuidanceRequest, PermissionRequest, ReviewLocatorRequest,
-    TaskTitleRequest, TaskTitleResponse,
+    TaskTitleRequest, TaskTitleResponse, CreateProjectRequest,
 )
 from radhouse.domain.access import AuthContext
 from radhouse.channels.commands import Envelope
@@ -147,6 +147,12 @@ def create_app(
     def projects(actor: Actor, request: Request):
         values = service.projects(actor)
         return values
+
+    @app.post("/projects", response_model=ProjectResponse, responses=errors)
+    def create_project(body: CreateProjectRequest, actor: Actor):
+        return service.create_project(
+            actor, body.envelope.command(), body.display_name, tuple(body.bot_ids),
+        )
 
     @app.post("/reviews/resolve", responses=errors)
     def resolve_review(body: ReviewLocatorRequest, actor: Actor):

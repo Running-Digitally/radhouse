@@ -7,6 +7,10 @@
     {"project_id": "personal-alice", "owner_id": "alice", "display_name": "Alice's work", "state": "active"},
     {"project_id": "project-shared", "owner_id": "alice", "display_name": "Shared research", "state": "active"}
   ],
+  "project_agents": {
+    "personal-alice": ["bot-alpha", "bot-beta"],
+    "project-shared": ["bot-alpha", "bot-beta"]
+  },
   "principals": [
     {"id": "alice", "role": "operator", "bots": ["bot-alpha", "bot-beta"], "projects": ["personal-alice", "project-shared"]},
     {"id": "bob", "role": "operator", "bots": ["bot-beta"], "projects": ["project-shared"]},

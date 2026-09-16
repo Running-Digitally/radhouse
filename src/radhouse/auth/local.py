@@ -152,6 +152,10 @@ def provision_local_user(
                 "INSERT INTO public.project_members(principal_id,project_id) VALUES (%s,%s) "
                 "ON CONFLICT DO NOTHING", (principal_id, project_id),
             )
+            connection.execute(
+                "INSERT INTO public.project_bots(project_id,bot_id) VALUES (%s,%s) "
+                "ON CONFLICT DO NOTHING", (project_id, bot_id),
+            )
             conversation_id = f"{project_id}:{principal_id}:radhouse"
             existing = connection.execute(
                 "SELECT principal_id,project_id FROM public.channel_bindings "
@@ -240,6 +244,10 @@ def provision_bot_grant(
             connection.execute(
                 "INSERT INTO public.bot_grants(principal_id,bot_id) VALUES (%s,%s) "
                 "ON CONFLICT DO NOTHING", (principal_id, bot_id),
+            )
+            connection.execute(
+                "INSERT INTO public.project_bots(project_id,bot_id) VALUES (%s,%s) "
+                "ON CONFLICT DO NOTHING", (project_id, bot_id),
             )
     except LocalAuthError:
         raise

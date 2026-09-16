@@ -45,6 +45,12 @@ textarea.field__control { resize: vertical; min-height: 48px; }
 .agent-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
 .agent-card, .task-card { border: 1px solid var(--line); border-radius: 16px; background: var(--paper); box-shadow: 0 7px 20px rgb(55 49 34 / 6%); }
 .agent-card { padding: 18px; }
+.project-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin: 14px 0; }
+.project-card { border: 1px solid var(--line); border-radius: 16px; background: var(--paper); padding: 18px; }
+.project-card--current { border-color: var(--green); }
+.project-form { display: grid; gap: 12px; max-width: 42rem; margin-top: 20px; }
+.project-agent-choices { border: 0; padding: 0; margin: 0; }
+.project-agent-choice { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
 .agent-card__name, .agent-card__role { margin: 0; }
 .agent-card__role { margin-top: 5px; color: var(--green); }
 .agent-card .muted { margin-bottom: 0; font-size: .86rem; }

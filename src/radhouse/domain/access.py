@@ -18,6 +18,7 @@ class Access:
     role: str
     bots: frozenset[str]
     projects: frozenset[str]
+    project_bots: frozenset[tuple[str, str]] = frozenset()
     active: bool = True
 
 
@@ -50,7 +51,9 @@ class ProjectProfile:
 
 
 def require_access(access: Access | None, bot_id: str, project_id: str, *, write: bool) -> None:
-    if access is None or not access.active or bot_id not in access.bots or project_id not in access.projects:
+    if (access is None or not access.active or bot_id not in access.bots
+            or project_id not in access.projects
+            or (project_id, bot_id) not in access.project_bots):
         raise Rejected("access_denied", 403)
     if write and access.role not in {"admin", "operator"}:
         raise Rejected("write_denied", 403)

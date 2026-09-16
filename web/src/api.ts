@@ -58,10 +58,18 @@ export class RadhouseApi {
     if (!Array.isArray(value) || value.length > 100 || value.some((item) =>
       typeof item !== "object" || item === null || typeof item.project_id !== "string"
       || typeof item.display_name !== "string" || typeof item.conversation_id !== "string"
-      || !Number.isSafeInteger(item.binding_revision) || item.binding_revision < 1)) {
+      || !Number.isSafeInteger(item.binding_revision) || item.binding_revision < 1
+      || !Array.isArray(item.bot_ids) || item.bot_ids.some((id: unknown) => typeof id !== "string"))) {
       throw new ApiError("invalid_server_response", 502);
     }
     return value as Project[];
+  }
+
+  async createProject(displayName: string, botIds: string[]): Promise<Project> {
+    return this.command<Project>("/projects", {
+      display_name: displayName,
+      bot_ids: botIds,
+    });
   }
 
   async reauthenticate(password: string, totpCode: string): Promise<AuthSession> {

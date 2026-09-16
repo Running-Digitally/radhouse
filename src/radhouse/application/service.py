@@ -15,7 +15,9 @@ from radhouse.channels.mapping import verify_envelope
 from radhouse.channels.commands import Envelope
 from radhouse.application.ports import AgentWorkPort, ProviderPort, Store, UnitOfWork
 from radhouse.application.views import ActionView, ProjectView, TaskCard, WorkHome
-from radhouse.domain.access import AuthContext, require_access, require_assurance
+from radhouse.domain.access import (
+    AuthContext, Binding, ProjectProfile, require_access, require_assurance,
+)
 from radhouse.domain.conversations import ConversationLink
 from radhouse.domain.releases import Publication, Review, digest, validate_review
 from radhouse.domain.tasks import (AgentDispatch, Attempt, Delivery, Event,
@@ -125,7 +127,7 @@ class Service:
         with self.store.transaction() as tx:
             require_access(tx.access(actor.principal_id), start.bot_id, start.project_id, write=True)
             bot = next(
-                (candidate for candidate in tx.bots(actor.principal_id)
+                (candidate for candidate in tx.bots(actor.principal_id, start.project_id)
                  if candidate.bot_id == start.bot_id),
                 None,
             )
@@ -243,8 +245,56 @@ class Service:
                 project = tx.project(binding.project_id)
                 if project and project.state == "active" and project.project_id in access.projects:
                     result.append(ProjectView(project.project_id, project.display_name,
-                                              binding.conversation_id, binding.revision))
+                                              binding.conversation_id, binding.revision,
+                                              tuple(bot.bot_id for bot in tx.bots(
+                                                  actor.principal_id, project.project_id,
+                                              ))))
             return tuple(result)
+
+    def create_project(self, actor: AuthContext, envelope: Envelope,
+                       display_name: str, bot_ids: tuple[str, ...]) -> ProjectView:
+        name = re.sub(r"\s+", " ", display_name).strip()
+        selected = tuple(dict.fromkeys(bot_ids))
+        if (not 1 <= len(name) <= 100
+                or any(ord(character) < 32 or ord(character) == 127 for character in name)
+                or not 1 <= len(selected) <= 16):
+            raise Rejected("invalid_project", 422)
+        if (len(selected) != len(bot_ids)
+                or any(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", item) is None
+                       for item in selected)):
+            raise Rejected("invalid_project", 422)
+        project_id = "project-" + hashlib.sha256(
+            f"{actor.principal_id}\0{envelope.command_key}".encode()
+        ).hexdigest()[:24]
+        conversation_id = f"{project_id}:{actor.principal_id}:{actor.channel}"
+        with self.store.transaction() as tx:
+            source = tx.binding(actor.channel, actor.subject, envelope.conversation_id)
+            if source is None:
+                raise Rejected("binding_denied", 403)
+            self._binding(tx, actor, envelope, source.project_id)
+            access = tx.access(actor.principal_id)
+            if access is None or not access.active or access.role not in {"admin", "operator"}:
+                raise Rejected("write_denied", 403)
+            require_assurance(actor, self._now())
+            granted = {bot.bot_id for bot in tx.bots(actor.principal_id)}
+            if any(bot_id not in granted for bot_id in selected):
+                raise Rejected("access_denied", 403)
+            existing = tx.project(project_id)
+            if existing is not None:
+                if (existing.owner_id != actor.principal_id or existing.display_name != name
+                        or tx.project_bot_ids(project_id) != tuple(sorted(selected))):
+                    raise Rejected("command_conflict")
+                binding = tx.binding(actor.channel, actor.subject, conversation_id)
+                if binding is None or not binding.active:
+                    raise Rejected("project_state_inconsistent")
+                return ProjectView(project_id, name, conversation_id, binding.revision,
+                                   tx.project_bot_ids(project_id))
+            project = ProjectProfile(project_id, actor.principal_id, name)
+            binding = Binding(actor.channel, actor.subject, conversation_id,
+                              actor.principal_id, project_id, 1)
+            tx.create_project(project, actor.principal_id, selected, binding)
+            return ProjectView(project_id, name, conversation_id, 1,
+                               tuple(sorted(selected)))
 
     def review_audience(self, actor: AuthContext, task_id: str, *, envelope: Envelope) -> tuple[str, ...]:
         with self.store.transaction() as tx:
@@ -264,7 +314,7 @@ class Service:
             project = tx.project(binding.project_id)
             if project is None or project.state != "active":
                 raise Rejected("project_unavailable", 409)
-            agents = tuple(tx.bots(actor.principal_id))
+            agents = tuple(tx.bots(actor.principal_id, binding.project_id))
             tasks = tuple(
                 task for task in tx.tasks()
                 if task.owner_id == actor.principal_id and task.project_id == binding.project_id
