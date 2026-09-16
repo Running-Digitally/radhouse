@@ -87,7 +87,7 @@ def test_standard_mentions_and_replies_select_one_project_agent(project_chat, st
         researcher,
         owner,
         "@Unknown take this.",
-        tags=[["mention", "f" * 64]],
+        tags=[[], ["mention", "f" * 64]],
         offset=3,
     )
 
