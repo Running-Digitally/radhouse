@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <meta name="theme-color" content="#315d4b">
+    <title>Radhouse — A home for your agents. On your infrastructure.</title>
+    <meta name="description" content="Radhouse is a self-hosted platform for persistent AI agents: isolated workspaces, retained context, and permissions you control. Early development.">
+    <link rel="canonical" href="https://radhouse.runningdigitally.com/">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://radhouse.runningdigitally.com/">
+    <meta property="og:site_name" content="Radhouse">
+    <meta property="og:title" content="Radhouse — A home for your agents. On your infrastructure.">
+    <meta property="og:description" content="A self-hosted platform for persistent AI agents: isolated workspaces, retained context, and permissions you control. Early development.">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Radhouse — A home for your agents. On your infrastructure.">
+    <meta name="twitter:description" content="A self-hosted platform for persistent AI agents: isolated workspaces, retained context, and permissions you control. Early development.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <a class="brand" href="/" aria-label="Radhouse home">
+          <img class="brand__logo" src="/radhouse-logo.svg" alt="Radhouse — a home for your agents">
+        </a>
+      </header>
+
+      <section aria-labelledby="page-title">
+        <p class="status-pill">Early development</p>
+        <h1 id="page-title" class="page-title">A home for your agents.<br>On your infrastructure.</h1>
+        <p class="lede">
+          Radhouse is a self-hosted platform being built for persistent AI agents:
+          agents that retain their workspaces, work on useful assignments, and
+          collaborate within permissions you control.
+        </p>
+      </section>
+
+      <section aria-labelledby="status-title">
+        <h2 id="status-title" class="section-title">Where it actually is</h2>
+        <p>
+          Durable Hermes execution and the everyday operator workflow are
+          implemented. Researcher has an owner-attested standard Buzz identity
+          and private conversation. OIDC composition, administrator
+          invitation/recovery UX, and a qualified fleet release remain
+          incomplete.
+        </p>
+        <p class="muted">
+          This page is not a claim that Radhouse V1 is released. The project is
+          in pre-release implementation and qualification.
+        </p>
+      </section>
+
+      <section aria-labelledby="what-title">
+        <h2 id="what-title" class="section-title">What it is</h2>
+        <p>
+          Running an agent in a dedicated VM is a useful beginning. Managing
+          several agents introduces more questions: who can use them, what they
+          can access, how they share work, which tasks need attention, and how
+          to keep their environments useful between assignments.
+        </p>
+        <p>
+          Radhouse aims to make that everyday experience obvious while giving
+          the person running the infrastructure explicit, inspectable controls.
+          The name combines <strong>RAD</strong> — Running Agents Digitally —
+          with a welcoming home for your agents. Say RAD-house.
+        </p>
+      </section>
+
+      <section aria-labelledby="who-title">
+        <h2 id="who-title" class="section-title">Who it's for</h2>
+        <p>
+          Tinkerers, self-hosting enthusiasts, homelab operators, and people
+          who care about security. The people using assigned agents should not
+          need infrastructure expertise — administrators manage infrastructure
+          and access; operators work with assigned agents day to day.
+        </p>
+      </section>
+
+      <section aria-labelledby="direction-title">
+        <h2 id="direction-title" class="section-title">Flexible by design. Opinionated by default.</h2>
+        <ul class="direction-list">
+          <li><strong>Persistent agents:</strong> a Linux VM for each agent, with retained files, tools, and workspace; Hermes as the first supported agent runtime.</li>
+          <li><strong>Two deployment paths:</strong> guided Proxmox provisioning and installation into suitably isolated Linux VMs supplied by the operator.</li>
+          <li><strong>An approachable control plane:</strong> administrator, operator, and viewer roles, with a simple operator work home for assigned agents and current work.</li>
+          <li><strong>Private and shared work:</strong> private agents by default, explicit sharing, disclosed supervision, and human-reviewed publication.</li>
+          <li><strong>Understandable boundaries:</strong> visible work context, audience, and bot access at the point of use.</li>
+          <li><strong>Security and maintenance oversight:</strong> scoped security findings, update checks, and automatic weekly OS updates with advance notice and work preservation.</li>
+        </ul>
+        <p class="direction-note">
+          These are release requirements. Runtime compatibility, isolation,
+          recovery, network profiles, and shared-service integrations still
+          need qualification.
+        </p>
+      </section>
+
+      <section aria-labelledby="read-more-title">
+        <h2 id="read-more-title" class="section-title">Read more</h2>
+        <ul class="read-more-list">
+          <li><a href="https://github.com/Running-Digitally/radhouse">GitHub repository</a></li>
+          <li><a href="https://github.com/Running-Digitally/radhouse/blob/main/README.md">README — full project overview</a></li>
+          <li><a href="https://github.com/Running-Digitally/radhouse/blob/main/ROADMAP.md">ROADMAP.md — version 1.0 direction</a></li>
+          <li><a href="https://github.com/Running-Digitally/radhouse/blob/main/PRINCIPLES.md">PRINCIPLES.md — product and security principles</a></li>
+          <li><a href="https://github.com/Running-Digitally/radhouse/blob/main/LICENSE">License — Apache-2.0</a></li>
+        </ul>
+      </section>
+
+      <footer class="site-footer">
+        <p>
+          Radhouse is a project by
+          <a href="https://runningdigitally.com/">Running Digitally</a>.
+        </p>
+        <p>
+          Feedback and design proposals are welcome through the repository's
+          issues and pull requests.
+        </p>
+      </footer>
+    </main>
+  </body>
+</html>

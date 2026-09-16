@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="web/assets/radhouse-logo.svg" alt="Radhouse — A home for your agents" width="500">
+</p>
+
 # Radhouse
 
 **A home for your agents. On your infrastructure.**
