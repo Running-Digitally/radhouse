@@ -5,6 +5,7 @@ import type { Project, Review, TaskCard, TaskEvents, WorkHome } from "./types.js
 import { conversationPanel } from "./conversations.js";
 import type { ConversationDraft, ConversationHistory, ConversationLink } from "./conversations.js";
 import { resultViewer } from "./markdown.js";
+import { deliveryHandoffs } from "./delivery.js";
 
 export function mountWorkHome(page: HTMLElement, client = operatorClient()): () => void {
 let reviewToken = new URLSearchParams(window.location.hash.slice(1)).get("review");
@@ -406,14 +407,23 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
       page.querySelector<HTMLTextAreaElement>('textarea[name="brief"]')?.focus();
       page.querySelector(".start-panel")?.scrollIntoView({ block: "start" });
     }));
-    const delegate = home.agents.find((agent) => agent.state === "ready" && agent.bot_id !== task.bot_id);
-    if (task.phase === "closed" && task.result !== null && delegate) controls.append(button(`Delegate to ${delegate.display_name}`, async () => {
-      clearReviewTarget();
-      drafts.set(home.project_id, { bot: delegate.bot_id, brief: "", files: [], followsTaskId: task.task_id });
-      await load(`The exact completed result will be provided to ${delegate.display_name}. Describe the bounded subtask.`);
-      page.querySelector<HTMLTextAreaElement>('textarea[name="brief"]')?.focus();
-      page.querySelector(".start-panel")?.scrollIntoView({ block: "start" });
-    }));
+    const source = home.agents.find((agent) => agent.bot_id === task.bot_id);
+    if (task.phase === "closed" && task.result !== null && source) {
+      for (const handoff of deliveryHandoffs(source, home.agents)) {
+        controls.append(button(handoff.label, async () => {
+          clearReviewTarget();
+          drafts.set(home.project_id, {
+            bot: handoff.target.bot_id,
+            brief: handoff.brief,
+            files: [],
+            followsTaskId: task.task_id,
+          });
+          await load(`The exact completed result will be provided to ${handoff.target.display_name}. Review the suggested assignment, then start it.`);
+          page.querySelector<HTMLTextAreaElement>('textarea[name="brief"]')?.focus();
+          page.querySelector(".start-panel")?.scrollIntoView({ block: "start" });
+        }));
+      }
+    }
   } else article.append(element("p", "muted", "Read-only access"));
   article.append(controls);
   const review = reviews.get(task.task_id);

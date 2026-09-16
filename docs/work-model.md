@@ -202,6 +202,7 @@ They should not create a large set of running VMs as a side effect of selection.
 | Analyst | Interpret supplied datasets, examine assumptions, and produce reproducible findings. | Data access and external services require their own grants. |
 | Engineer | Implement and test a bounded repository change and prepare a pull request. | Scoped repository operations; merge and deployment remain human decisions. |
 | Reviewer | Examine a specified artifact against stated criteria and explain defects or uncertainty. | Reviews only supplied/granted material; no automatic merge, broader supervision, or private-history access. |
+| Deployer | Check an immutable reviewed revision against one configured release target and invoke its named operation after the protected human decision. | No merge authority, general host shell, improvised target, or ambient infrastructure credential. |
 | Chief of Staff | Clarify a person's requests, summarize permitted project progress, identify dependencies, and propose next actions. | Optional coordinator; no infrastructure, grant, cancellation, or priority-change authority. |
 
 Offer a customizable generalist baseline as well. One bot can perform several
