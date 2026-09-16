@@ -20,6 +20,56 @@ def test_projects_excludes_inactive_and_revoked_memberships(service, store, alic
     assert service.projects(alice) == ()
 
 
+def test_owner_creates_private_project_with_only_selected_agents(service, alice, envelope, start):
+    command = envelope(command_key="create-private-project")
+
+    created = service.create_project(
+        alice, command, "  Build experiments  ", ("bot-alpha",),
+    )
+
+    assert created.display_name == "Build experiments"
+    assert created.bot_ids == ("bot-alpha",)
+    assert service.create_project(
+        alice, command, "Build experiments", ("bot-alpha",),
+    ) == created
+    with pytest.raises(Rejected, match="command_conflict"):
+        service.create_project(
+            alice, command, "Different project", ("bot-alpha",),
+        )
+    project_envelope = envelope(
+        project_id=created.project_id, command_key="project-task",
+    )
+    home = service.work_home(alice, envelope=project_envelope)
+    assert [agent.bot_id for agent in home.agents] == ["bot-alpha"]
+    with pytest.raises(Rejected, match="access_denied"):
+        service.admit(
+            alice, project_envelope,
+            replace(start, project_id=created.project_id, bot_id="bot-beta"),
+        )
+
+
+def test_completed_result_can_be_delegated_to_another_project_agent(
+    service, alice, envelope, start,
+):
+    channel = envelope(project_id="project-shared", command_key="parent")
+    parent = service.run(service.admit(
+        alice, channel, replace(start, project_id="project-shared"),
+    ).task_id)
+    child = service.admit(
+        alice,
+        envelope(project_id="project-shared", command_key="delegated-child"),
+        replace(
+            start, project_id="project-shared", bot_id="bot-beta",
+            brief="Build the bounded prototype from the research result.",
+            follows_task_id=parent.task_id,
+        ),
+    )
+
+    assert child.bot_id == "bot-beta"
+    assert child.follows_task_id == parent.task_id
+    assert child.previous_result == parent.result
+
+
 def test_home_removes_private_task_after_bot_grant_revoked(service, store, alice, envelope, start):
     task = service.admit(alice, envelope(), start)
     service.run(task.task_id)

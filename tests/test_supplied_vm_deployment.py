@@ -56,7 +56,7 @@ class FakeRunner:
             (executable / "python").write_text("", encoding="utf-8")
             return ""
         if command and command[0].endswith("/.venv/bin/python"):
-            return "4"
+            return "5"
         if command[:2] == ("npm", "--prefix") and command[-1] == "build":
             output = Path(cwd) / "web/dist"
             output.mkdir(parents=True)
@@ -201,7 +201,7 @@ def test_install_creates_immutable_release_pointer_and_leaves_services_stopped(
     assert deployment.paths.current.resolve().name == NEW
     manifest = json.loads((deployment.paths.current / "radhouse-release.json").read_text())
     assert manifest["release_id"] == NEW
-    assert manifest["storage_schema_version"] == 4
+    assert manifest["storage_schema_version"] == 5
     assert (deployment.paths.configuration / "config.yaml.example").is_file()
     assert all((deployment.paths.systemd / unit).is_file() for unit in CONTROL_UNITS)
     assert all((deployment.paths.systemd / unit).is_file() for unit in OPTIONAL_UNITS)
@@ -231,7 +231,7 @@ def test_failed_same_schema_upgrade_restores_previous_release(tmp_path: Path, mo
     runner = FakeRunner(fail_first_start=True)
     source = source_tree(tmp_path, runner)
     deployment = manager(tmp_path, runner, monkeypatch)
-    select(deployment, existing_release(deployment, OLD, 4))
+    select(deployment, existing_release(deployment, OLD, 5))
     backup = tmp_path / "backup.dump"
     backup.write_bytes(b"verified database export")
     digest = hashlib.sha256(backup.read_bytes()).hexdigest()

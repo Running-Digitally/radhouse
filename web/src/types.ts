@@ -72,6 +72,7 @@ export interface Project {
   display_name: string;
   conversation_id: string;
   binding_revision: number;
+  bot_ids: string[];
 }
 
 export interface TaskEvent {

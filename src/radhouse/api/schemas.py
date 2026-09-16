@@ -206,6 +206,13 @@ class ProjectResponse(StrictModel):
     display_name: str
     conversation_id: str
     binding_revision: int
+    bot_ids: tuple[str, ...]
+
+
+class CreateProjectRequest(StrictModel):
+    envelope: EnvelopeSchema
+    display_name: Annotated[str, Field(min_length=1, max_length=100)]
+    bot_ids: Annotated[list[Identifier], Field(min_length=1, max_length=16)]
 
 
 class ReauthenticateRequest(StrictModel):
