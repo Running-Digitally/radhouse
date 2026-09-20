@@ -160,6 +160,15 @@ def test_official_group_dm_text_address_starts_fresh_agent_task(project_chat, st
     )
     assert researcher._event_disposition(first) == "skip"
     assert builder._event_disposition(first) == "accept"
+    ambiguous = event(
+        researcher,
+        owner,
+        "@Atlas ask @Beacon to build this.",
+        tags=recipient_tags,
+        offset=12,
+    )
+    assert researcher._event_disposition(ambiguous) == "ambiguous"
+    assert builder._event_disposition(ambiguous) == "skip"
 
     app = Conversations(builder.service)
     message = ConversationMessage(

@@ -46,8 +46,8 @@ class BuzzConversationCycle:
             link.agent_pubkey
             for link in links
             if (bot := bots.get(link.bot_id)) is not None
-            and re.match(
-                rf"^\s*@{re.escape(bot.display_name)}(?=$|[\s,:])",
+            and re.search(
+                rf"(?<![\w@])@{re.escape(bot.display_name)}(?=$|[\s,:.!?])",
                 event["content"],
                 re.I,
             )
