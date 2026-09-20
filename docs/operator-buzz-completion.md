@@ -75,9 +75,13 @@ One private Buzz group DM may represent one Radhouse project. Its relay-signed
 membership must be exactly the owner and the agents explicitly assigned to that
 project. Each agent keeps its own standard Buzz identity, signing key, durable
 link and outbox; the channel is shared. One configured default agent receives an
-unaddressed top-level message. An official-client `@mention` contributes a
-standard non-notifying `mention` tag and selects exactly one project agent.
-Mentioning several project agents is rejected without creating work.
+unaddressed top-level message. An official-client leading `@Agent` address
+selects exactly one project agent. Radhouse accepts either a standard
+non-notifying `mention` tag or the exact signed leading display name because
+current official group-DM events include every recipient as a `p` tag.
+Mentioning several project agents is rejected without creating work. An
+explicitly addressed top-level message starts a fresh assignment for that agent;
+it does not silently inherit the agent's previously completed task.
 
 A reply without a new agent mention stays with the agent that owns the parent
 message. Mentioning another assigned agent while replying to a completed result

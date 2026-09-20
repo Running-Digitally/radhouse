@@ -144,3 +144,52 @@ def test_standard_mentions_and_replies_select_one_project_agent(project_chat, st
     assert child.bot_id == "bot-beta"
     assert child.follows_task_id == task.task_id
     assert child.previous_result == completed.result
+
+
+def test_official_group_dm_text_address_starts_fresh_agent_task(project_chat, store):
+    researcher, builder, owner = project_chat
+    # Official Buzz includes every DM member as a `p` tag. The visible @Agent
+    # address remains in signed content rather than a separate mention tag.
+    recipient_tags = [["p", pubkey] for pubkey in builder.link.member_pubkeys]
+    first = event(
+        builder,
+        owner,
+        "@Beacon build the first version.",
+        tags=recipient_tags,
+        offset=10,
+    )
+    assert researcher._event_disposition(first) == "skip"
+    assert builder._event_disposition(first) == "accept"
+
+    app = Conversations(builder.service)
+    message = ConversationMessage(
+        first["id"], builder.link.link_id, builder.link.principal_id,
+        first["content"], "buzz", first["created_at"], addressed=True,
+    )
+    app.receive(builder.link, message, event=first)
+    accepted = app.process(builder.link, message.message_id)
+    with store.transaction() as tx:
+        original = tx.task(accepted.task_id)
+    assert original.bot_id == builder.link.bot_id
+    assert original.brief == "build the first version."
+    builder.service.run(original.task_id)
+
+    second = event(
+        builder,
+        owner,
+        "@Beacon make an independent second version.",
+        tags=recipient_tags,
+        offset=11,
+    )
+    message = ConversationMessage(
+        second["id"], builder.link.link_id, builder.link.principal_id,
+        second["content"], "buzz", second["created_at"], addressed=True,
+    )
+    app.receive(builder.link, message, event=second)
+    accepted = app.process(builder.link, message.message_id)
+    with store.transaction() as tx:
+        fresh = tx.task(accepted.task_id)
+    assert fresh.bot_id == builder.link.bot_id
+    assert fresh.follows_task_id is None
+    assert fresh.previous_result is None
+    assert fresh.brief == "make an independent second version."

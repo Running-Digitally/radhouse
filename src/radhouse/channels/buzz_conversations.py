@@ -1,6 +1,7 @@
 """One bounded conversation cycle alongside the existing task coordinator."""
 
 from dataclasses import replace
+import re
 
 from radhouse.application.conversations import Conversations
 from radhouse.application.service import fingerprint
@@ -36,20 +37,42 @@ class BuzzConversationCycle:
         with self.store.transaction() as tx:
             self.conversations.authorize(tx, self.link, write=True)
 
-    def _event_disposition(self, event):
-        """Select exactly one agent link in a shared project DM."""
-        members = set(self.link.member_pubkeys or (self.link.agent_pubkey,))
+    def _content_mentions(self, event):
+        """Resolve the official client's visible leading @Agent address."""
+        with self.store.transaction() as tx:
+            links = tx.conversation_links_for_channel(self.link.channel_id)
+            bots = {bot.bot_id: bot for bot in tx.bots(self.link.principal_id)}
+        matches = {
+            link.agent_pubkey
+            for link in links
+            if (bot := bots.get(link.bot_id)) is not None
+            and re.match(
+                rf"^\s*@{re.escape(bot.display_name)}(?=$|[\s,:])",
+                event["content"],
+                re.I,
+            )
+        }
+        has_address = re.match(r"^\s*@[^\s,:]+", event["content"]) is not None
+        return matches, has_address
+
+    def _agent_mentions(self, event):
+        """Prefer signed mention tags; fall back to official-client text."""
         mentioned = {
             tag[1]
             for tag in event["tags"]
             if len(tag) in {2, 3}
             and tag[0] == "mention"
-            and (
-                len(tag) == 2
-                or tag[2] == "agent-address"
-            )
+            and (len(tag) == 2 or tag[2] == "agent-address")
         }
-        if mentioned and (len(mentioned) != 1 or not mentioned <= members):
+        if mentioned:
+            return mentioned, True
+        return self._content_mentions(event)
+
+    def _event_disposition(self, event):
+        """Select exactly one agent link in a shared project DM."""
+        members = set(self.link.member_pubkeys or (self.link.agent_pubkey,))
+        mentioned, has_address = self._agent_mentions(event)
+        if has_address and (len(mentioned) != 1 or not mentioned <= members):
             return "ambiguous" if self.link.default_agent else "skip"
         if len(mentioned) == 1:
             return "accept" if self.link.agent_pubkey in mentioned else "skip"
@@ -125,6 +148,7 @@ class BuzzConversationCycle:
                 event["created_at"],
                 reply_to=parent,
                 files=files,
+                addressed=bool(self._agent_mentions(event)[0]),
             )
             self.conversations.receive(self.link, message, event=event)
             self.conversations.process(self.link, message.message_id)
