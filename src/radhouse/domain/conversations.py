@@ -40,6 +40,9 @@ class ConversationMessage:
     state: str = "received"
     files: tuple[InputFile, ...] = ()
     task_state_revision: int | None = None
+    # True only when ingress selected this agent from an explicit owner address.
+    # Old retained snapshots omit the field and remain unaddressed.
+    addressed: bool = False
 
 
 @dataclass(frozen=True)

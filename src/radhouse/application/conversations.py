@@ -17,6 +17,16 @@ _STATUS = re.compile(
 _NEW = re.compile(r"^(?:separately[, :]+|new task[: ,]+)", re.I)
 
 
+def _without_agent_prefix(content, display_name):
+    return re.sub(
+        rf"^\s*@{re.escape(display_name)}(?=$|[\s,:])[: ,]*",
+        "",
+        content,
+        count=1,
+        flags=re.I,
+    )
+
+
 class Conversations:
     def __init__(self, service):
         self.service = service
@@ -72,10 +82,26 @@ class Conversations:
             }
 
     def _route(self, tx, link, message):
+        content = message.content
+        if message.addressed:
+            bot = next(
+                (item for item in tx.bots(link.principal_id) if item.bot_id == link.bot_id),
+                None,
+            )
+            if bot is None:
+                raise Rejected("bot_unavailable", 409)
+            content = _without_agent_prefix(content, bot.display_name)
+        explicit_start = (
+            message.addressed
+            and not message.reply_to
+            and not _STATUS.fullmatch(content.strip())
+        )
+        if explicit_start:
+            return MessageRoute("start")
         if (
             tx.conversation_pending(link.link_id, limit=1)
             and not message.reply_to
-            and not _NEW.match(message.content)
+            and not _NEW.match(content)
         ):
             return MessageRoute("clarify")
         target = None
@@ -109,12 +135,12 @@ class Conversations:
         tasks = [t for t in tasks if t is not None]
         active = [t for t in tasks if t.phase != "closed"]
         if target is None and not message.reply_to:
-            if len(active) > 1 and not _NEW.match(message.content):
+            if len(active) > 1 and not _NEW.match(content):
                 return MessageRoute("clarify")
             target = active[0] if active else tx.task(tx.conversation_focus(link))
-        if _STATUS.fullmatch(message.content.strip()):
+        if _STATUS.fullmatch(content.strip()):
             return MessageRoute("status", target.task_id if target else None)
-        if _NEW.match(message.content):
+        if _NEW.match(content):
             return MessageRoute("start")
         if message.files and target is not None and target.phase != "closed":
             return MessageRoute("clarify")
@@ -192,13 +218,16 @@ class Conversations:
         task = None
         response_id = "reply:" + message_id
         if route.action == "start":
+            brief = message.content
+            if message.addressed:
+                brief = _without_agent_prefix(brief, bot.display_name)
             task = self.service.admit(
                 actor,
                 envelope,
                 StartTask(
                     link.bot_id,
                     link.project_id,
-                    _NEW.sub("", message.content, count=1),
+                    _NEW.sub("", brief, count=1),
                     bot.provider_binding,
                     files=message.files,
                     follows_task_id=route.follows_task_id,
