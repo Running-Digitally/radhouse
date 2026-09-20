@@ -46,6 +46,9 @@ try {
   await task.getByLabel("Task title", { exact: true }).fill("September planning figures");
   await task.getByRole("button", { name: "Save title", exact: true }).click();
   await task.getByRole("heading", { name: "September planning figures", exact: true }).waitFor();
+  await task.getByRole("button", { name: "Send to Beacon for review", exact: true }).click();
+  await web.getByText("Beacon received the exact completed result and has started the next assignment.", { exact: true }).waitFor();
+  await web.locator("[data-task-id]").nth(1).waitFor();
 
   // Protected review stays in a second ordinary web tab.
   const review = await context.newPage();
@@ -58,13 +61,13 @@ try {
   await review.getByText("Published to alice.", { exact: true }).waitFor();
   await web.reload();
   await web.getByText("Published to alice.", { exact: true }).waitFor();
-  await web.getByRole("button", { name: "Start a follow-up", exact: true }).click();
+  await task.getByRole("button", { name: "Start a follow-up", exact: true }).click();
   await web.getByText("The previous result is included as reference material.", { exact: true }).waitFor();
   await web.getByLabel("Assignment", { exact: true }).fill("Explain the previous report in three sentences");
   await web.getByRole("button", { name: "Send assignment" }).click();
-  await web.locator("[data-task-id]").nth(1).waitFor();
+  await web.locator("[data-task-id]").nth(2).waitFor();
   await web.screenshot({ path: process.env.RADHOUSE_SCREENSHOT, fullPage: true });
-  console.log("Browser walkthrough passed: selected input → task → web review → publication → web reconnect → follow-up.");
+  console.log("Browser walkthrough passed: selected input → task → one-click handoff → web review → publication → web reconnect → follow-up.");
 } finally {
   await browser.close();
 }
