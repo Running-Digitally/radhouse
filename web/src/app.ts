@@ -421,6 +421,7 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
             followsTaskId: task.task_id,
           });
           if (epoch !== sessionEpoch) return;
+          clearReviewTarget();
           await load(`${handoff.target.display_name} received the exact completed result and has started the next assignment.`);
         }));
       }
