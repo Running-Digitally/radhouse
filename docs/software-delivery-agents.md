@@ -14,9 +14,10 @@ A software project can include three distinct working roles:
    and, after the protected human decision, invokes only that target's named
    deployment operation.
 
-The operator remains in control of each handoff. Radhouse suggests the natural
-next step, but it does not automatically repeat work, merge a pull request or
-deploy a release.
+The operator remains in control of each handoff. A role-aware handoff button
+starts the ordinary correlated child task immediately, without an intermediate
+copy-and-submit form. Radhouse does not infer a handoff from free-form agent
+output, merge a pull request or deploy a release automatically.
 
 ## Reused contracts
 
@@ -27,7 +28,7 @@ history, files, bot memory and credentials do not cross the handoff.
 
 Official Buzz project conversations remain the primary conversational surface.
 An explicit agent mention selects the next agent. The web work home exposes the
-same choices with role-aware labels and an editable starter brief:
+same choices as one-click, role-aware handoffs with fixed bounded briefs:
 
 | From | To | Suggested action |
 | --- | --- | --- |
@@ -62,7 +63,8 @@ The first slice is deliberately small:
 
 - show every eligible project agent as a handoff target instead of selecting the
   first unrelated agent;
-- offer role-aware review, revision and deployment-readiness briefs;
+- start role-aware review, revision and deployment-readiness child tasks in one
+  click using fixed briefs;
 - preserve the exact parent/child task correlation and current access checks;
 - add distinct Reviewer and Deployer profiles to the private deployment; and
 - prove one Builder result reviewed once, one bounded revision after a blocking
