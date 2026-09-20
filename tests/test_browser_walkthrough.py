@@ -38,6 +38,10 @@ def test_web_review_and_followup_walkthrough(local_client, service, fake_work, c
 [Unsafe link](javascript:alert(1))
 ![External image](https://example.invalid/private-result.png)
 """
+    with service.store.transaction() as tx:
+        tx._connection.execute(
+            "UPDATE bots SET role_name='Reviewer' WHERE bot_id='bot-beta'"
+        )
     clock.now = datetime.now(timezone.utc)
     sock = socket.socket()
     sock.bind(("127.0.0.1", 0))
@@ -65,9 +69,14 @@ def test_web_review_and_followup_walkthrough(local_client, service, fake_work, c
         assert result.returncode == 0, result.stdout + result.stderr
         with service.store.transaction() as tx:
             tasks = tx.tasks()
-            assert len(tasks) == 2
-            followup = next(task for task in tasks if task.follows_task_id)
+            assert len(tasks) == 3
             original = next(task for task in tasks if not task.follows_task_id)
+            review = next(task for task in tasks if task.bot_id == "bot-beta")
+            followup = next(
+                task for task in tasks
+                if task.bot_id == "bot-alpha" and task.follows_task_id
+            )
+            assert review.follows_task_id == original.task_id
             assert followup.follows_task_id == original.task_id
             assert tx.publication(original.task_id).channel == "radhouse"
     finally:

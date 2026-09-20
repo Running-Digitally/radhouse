@@ -411,16 +411,17 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
     if (task.phase === "closed" && task.result !== null && source) {
       for (const handoff of deliveryHandoffs(source, home.agents)) {
         controls.append(button(handoff.label, async () => {
-          clearReviewTarget();
-          drafts.set(home.project_id, {
-            bot: handoff.target.bot_id,
+          if (!api) return;
+          const currentApi = api; const epoch = sessionEpoch;
+          await currentApi.start({
+            botId: handoff.target.bot_id,
+            projectId: home.project_id,
             brief: handoff.brief,
-            files: [],
+            providerBinding: handoff.target.provider_binding,
             followsTaskId: task.task_id,
           });
-          await load(`The exact completed result will be provided to ${handoff.target.display_name}. Review the suggested assignment, then start it.`);
-          page.querySelector<HTMLTextAreaElement>('textarea[name="brief"]')?.focus();
-          page.querySelector(".start-panel")?.scrollIntoView({ block: "start" });
+          if (epoch !== sessionEpoch) return;
+          await load(`${handoff.target.display_name} received the exact completed result and has started the next assignment.`);
         }));
       }
     }
