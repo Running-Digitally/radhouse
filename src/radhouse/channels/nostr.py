@@ -13,6 +13,19 @@ def sha256(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
 
+def _valid_tag(tag) -> bool:
+    if not isinstance(tag, list) or not tag:
+        return False
+    # Official Buzz clients include eight metadata fields in image ``imeta``
+    # tags. Keep the wider shape specific to that standard tag rather than
+    # weakening the bound for every event tag.
+    limit = 16 if tag[0] == "imeta" else 8
+    return (
+        len(tag) <= limit
+        and all(isinstance(item, str) and len(item) <= 8192 for item in tag)
+    )
+
+
 def encoded(value) -> bytes:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode()
 
@@ -23,8 +36,7 @@ def verify_event(event: dict, kind: int) -> dict:
                 or event["kind"] != kind or type(event["created_at"]) is not int
                 or not isinstance(event["content"], str) or len(event["content"]) > 65536
                 or not isinstance(event["tags"], list) or len(event["tags"]) > 4096
-                or any(not isinstance(tag, list) or not tag or len(tag) > 8
-                       or any(not isinstance(item, str) or len(item) > 8192 for item in tag) for tag in event["tags"])):
+                or any(not _valid_tag(tag) for tag in event["tags"])):
             raise ValueError()
         for name, length in (("id", 64), ("pubkey", 64), ("sig", 128)):
             if not isinstance(event[name], str) or re.fullmatch("[a-f0-9]{" + str(length) + "}", event[name]) is None:

@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from radhouse.channels.buzz_relay import BuzzRelay
-from radhouse.channels.nostr import encoded, nip98, sha256
+from radhouse.channels.nostr import encoded, nip98, sha256, verify_event
 from radhouse.domain.conversations import ConversationLink
 from radhouse.domain.tasks import Rejected
 
@@ -83,6 +83,29 @@ def snapshots(link, authority, members=None, *, private=True, kind="dm"):
             [["d", link.channel_id]] + [["p", pk, "", "member"] for pk in members],
         ),
     ]
+
+
+def test_official_client_image_metadata_keeps_a_strict_bound():
+    owner = PrivateKey()
+    image = [
+        "imeta",
+        "url https://relay.test/media/" + "a" * 64 + ".png",
+        "m image/png",
+        "x " + "a" * 64,
+        "size 1024",
+        "dim 1200x900",
+        "blurhash placeholder",
+        "thumb https://relay.test/media/thumb.png",
+        "filename preview.png",
+    ]
+    event = signed(owner, 9, [["h", "dm-1"], image])
+    assert verify_event(event, 9) == event
+
+    oversized = signed(
+        owner, 9, [["imeta", *[f"field{index} value" for index in range(16)]]]
+    )
+    with pytest.raises(Rejected, match="buzz_signature_denied"):
+        verify_event(oversized, 9)
 
 
 def test_exact_private_dm_and_fresh_signed_requests(relay):
