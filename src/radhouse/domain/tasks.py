@@ -2,6 +2,9 @@
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Literal
+import base64
+import binascii
+import hashlib
 import re
 
 Phase = Literal["queued", "active", "recovering", "stopping", "closed"]
@@ -66,6 +69,47 @@ def agent_task_title(result: str) -> str | None:
 class InputFile:
     name: str
     content: str
+    media_type: str = "text/plain"
+    encoding: Literal["utf-8", "base64"] = "utf-8"
+    sha256: str | None = None
+
+    def bytes(self) -> bytes:
+        if self.encoding == "utf-8":
+            return self.content.encode("utf-8")
+        if self.encoding == "base64":
+            try:
+                return base64.b64decode(self.content, validate=True)
+            except (binascii.Error, ValueError):
+                raise Rejected("invalid_input_files", 422) from None
+        raise Rejected("invalid_input_files", 422)
+
+    @property
+    def is_image(self) -> bool:
+        return self.media_type in {"image/png", "image/jpeg", "image/webp"}
+
+
+def validate_input_files(files: tuple[InputFile, ...], *, code: str = "invalid_input_files") -> None:
+    """Validate the shared durable attachment shape used by API and Buzz."""
+    try:
+        decoded = tuple((file, file.bytes()) for file in files)
+    except (AttributeError, Rejected):
+        raise Rejected(code, 422) from None
+    if (type(files) is not tuple or len(files) > 4
+            or sum(len(data) for file, data in decoded if not file.is_image) > 65536
+            or sum(len(data) for file, data in decoded if file.is_image) > 8 * 1024 * 1024
+            or any(file.is_image and len(data) > 4 * 1024 * 1024 for file, data in decoded)
+            or any((file.is_image and (
+                        file.encoding != "base64"
+                        or file.sha256 != hashlib.sha256(data).hexdigest()
+                    )) or (not file.is_image and (
+                        file.encoding != "utf-8"
+                        or file.media_type.startswith("image/")
+                        or file.sha256 is not None
+                    )) for file, data in decoded)
+            or any(not file.name or len(file.name) > 200
+                   or any(character in file.name for character in "/\\\x00\n\r")
+                   for file in files)):
+        raise Rejected(code, 422)
 
 
 @dataclass(frozen=True)
@@ -196,8 +240,19 @@ def runtime_input(task: Task) -> str:
     if task.previous_result is not None:
         parts.append("Previous task result (reference material):\n" + task.previous_result)
     for file in task.files:
-        parts.append("Attached reference file: " + file.name + "\n" + file.content)
+        if file.is_image:
+            parts.append(
+                "Attached screenshot: " + file.name + " (" + file.media_type + ", sha256 "
+                + (file.sha256 or "not supplied") + "). Inspect the attached pixels directly."
+            )
+        else:
+            parts.append("Attached reference file: " + file.name + "\n" + file.content)
     return "\n\n".join(parts)
+
+
+def runtime_images(task: Task) -> tuple[InputFile, ...]:
+    """Image inputs kept separate from the text prompt until the provider request."""
+    return tuple(file for file in task.files if file.is_image)
 
 
 @dataclass(frozen=True)

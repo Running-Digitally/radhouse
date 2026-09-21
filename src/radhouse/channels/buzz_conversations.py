@@ -192,7 +192,7 @@ class BuzzConversationCycle:
                     (
                         "Mention exactly one project agent so I can route this assignment. No task was started."
                         if code == "conversation_agent_ambiguous"
-                        else "I could not use that message. Send a short assignment with up to four UTF-8 text references (64 KB total), uploaded to this Buzz community. No task was started."
+                        else "I could not use that message. Send a short assignment with up to four references from this Buzz community: text up to 64 KB total, or PNG/JPEG/WebP screenshots up to 4 MB each and 8 MB total. No task was started."
                     ),
                     "radhouse",
                     int(self.service._now().timestamp()),

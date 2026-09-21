@@ -54,10 +54,11 @@ def bridge(service, store, clock):
             digest = request.url.path.split("/")[-1].split(".")[0]
             assert auth["pubkey"] == pk(agent) and ["x", digest] in auth["tags"]
             state["reads"] += 1
+            extension = request.url.path.rsplit(".", 1)[-1] if "." in request.url.path else ""
             return httpx.Response(
                 200,
                 content=state["files"][digest],
-                headers={"content-type": "text/plain"},
+                headers={"content-type": "image/png" if extension == "png" else "text/plain"},
             )
         auth, _ = nip98(
             request.headers["Authorization"],
@@ -335,7 +336,9 @@ def test_reference_download_is_once_and_exact_bytes_reach_task(bridge, store):
 
 def test_official_client_screenshot_does_not_discard_written_brief(bridge, store):
     cycle, state, owner = bridge
-    digest = "a" * 64
+    screenshot = b"synthetic-png-bytes"
+    digest = sha256(screenshot)
+    state["files"][digest] = screenshot
     state["messages"] = [
         incoming(
             cycle,
@@ -362,8 +365,9 @@ def test_official_client_screenshot_does_not_discard_written_brief(bridge, store
         assert len(tasks) == 1
         assert tasks[0].brief == "Audit the group-management experience and improve it."
         assert len(tasks[0].files) == 1
-        assert "cannot inspect its pixels" in tasks[0].files[0].content
-    assert state["reads"] == 0
+        assert tasks[0].files[0].media_type == "image/png"
+        assert tasks[0].files[0].bytes() == screenshot
+    assert state["reads"] == 1
 
 
 @pytest.mark.parametrize(

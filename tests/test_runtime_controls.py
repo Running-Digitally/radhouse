@@ -221,3 +221,13 @@ def test_files_and_followup_context_are_selected_snapshots(service, alice, bob, 
 def test_files_exceeding_total_byte_limit_are_refused(service, alice, envelope, start):
     with pytest.raises(Rejected, match="invalid_input_files"):
         service.admit(alice, envelope(), replace(start, files=(InputFile("data.txt", "é" * 40000),)))
+
+
+def test_image_digest_is_required_to_match_the_decoded_pixels(service, alice, envelope, start):
+    import base64
+    image = InputFile(
+        "screen.png", base64.b64encode(b"pixels").decode(),
+        "image/png", "base64", "0" * 64,
+    )
+    with pytest.raises(Rejected, match="invalid_input_files"):
+        service.admit(alice, envelope(), replace(start, files=(image,)))
