@@ -6,7 +6,7 @@ import re
 from radhouse.channels.commands import Envelope
 from radhouse.domain.access import AuthContext, require_access
 from radhouse.domain.conversations import ConversationMessage, MessageRoute
-from radhouse.domain.tasks import Rejected, StartTask
+from radhouse.domain.tasks import Rejected, StartTask, validate_input_files
 from radhouse.application.service import fingerprint
 
 
@@ -161,17 +161,9 @@ class Conversations:
             or message.source not in {"buzz", "radhouse"}
             or not message.content.strip()
             or len(message.content) > 4096
-            or len(message.files) > 4
-            or sum(len(f.content.encode()) for f in message.files) > 65536
-            or any(
-                not f.name
-                or len(f.name) > 200
-                or any(ord(c) < 32 or c in "/\\" for c in f.name)
-                or "\x00" in f.content
-                for f in message.files
-            )
         ):
             raise Rejected("invalid_conversation_message", 422)
+        validate_input_files(message.files, code="invalid_conversation_message")
         with self.store.transaction() as tx:
             self.authorize(tx, link, write=True)
             old = tx.conversation_message(message.message_id)

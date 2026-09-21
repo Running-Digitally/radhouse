@@ -27,7 +27,8 @@ def reference_files(relay, event):
     if len(tags) > 4 or any(tag[0] == "url" for tag in event["tags"]):
         raise Rejected("conversation_attachment_invalid", 422)
     files = []
-    remaining = 65536
+    remaining_text = 65536
+    remaining_images = 8 * 1024 * 1024
     for tag in tags:
         fields = {}
         for item in tag[1:]:
@@ -57,20 +58,6 @@ def reference_files(relay, event):
         if not name or len(name) > 200 or any(ord(c) < 32 or c in "/\\" for c in name):
             name = "reference-" + digest[:8] + ".txt"
         declared_mime = fields.get("m", "").partition(";")[0].lower()
-        if declared_mime in _IMAGE_MIME_TYPES:
-            # Hermes task inputs are text-only. Do not let a normal official-
-            # client screenshot discard an otherwise useful written brief, and
-            # do not imply that the agent inspected pixels it never received.
-            files.append(
-                InputFile(
-                    "image-" + digest[:8] + "-notice.txt",
-                    "The Buzz message included an image named “"
-                    + name
-                    + "”. This agent cannot inspect its pixels. Use the written "
-                    "brief and accessible sources, and do not claim the image was reviewed.",
-                )
-            )
-            continue
         auth = relay.event(
             24242,
             "Read attached reference",
@@ -95,18 +82,30 @@ def reference_files(relay, event):
                 mime = (
                     response.headers.get("content-type", "").partition(";")[0].lower()
                 )
-                if mime not in _TEXT_MIME_TYPES:
-                    raise Rejected("conversation_attachment_requires_text", 422)
+                if declared_mime in _IMAGE_MIME_TYPES:
+                    if mime != declared_mime:
+                        raise Rejected("conversation_attachment_invalid", 422)
+                    limit = min(4 * 1024 * 1024, remaining_images)
+                else:
+                    if mime not in _TEXT_MIME_TYPES:
+                        raise Rejected("conversation_attachment_requires_text", 422)
+                    limit = remaining_text
                 data = bytearray()
                 for chunk in response.iter_bytes():
                     if (
                         time.monotonic() > deadline
-                        or len(data) + len(chunk) > remaining
+                        or len(data) + len(chunk) > limit
                     ):
                         raise Rejected("conversation_attachment_too_large", 422)
                     data.extend(chunk)
             if sha256(data) != digest:
                 raise Rejected("conversation_attachment_digest_mismatch", 422)
+            if declared_mime in _IMAGE_MIME_TYPES:
+                remaining_images -= len(data)
+                files.append(InputFile(
+                    name, base64.b64encode(data).decode("ascii"), declared_mime, "base64", digest
+                ))
+                continue
             content = data.decode("utf-8")
             if "\x00" in content:
                 raise Rejected("conversation_attachment_requires_text", 422)
@@ -114,6 +113,6 @@ def reference_files(relay, event):
             raise Rejected("conversation_attachment_requires_text", 422) from None
         except httpx.HTTPError:
             raise Rejected("conversation_attachment_unavailable", 503) from None
-        remaining -= len(data)
+        remaining_text -= len(data)
         files.append(InputFile(name, content))
     return tuple(files)

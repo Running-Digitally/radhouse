@@ -1,4 +1,5 @@
 import json
+import base64
 from dataclasses import replace
 from hashlib import sha256
 from datetime import datetime, timezone
@@ -10,7 +11,7 @@ from radhouse.integrations.hermes import (
     HermesAgentWorkAdapter, HermesCapabilities, HermesDispatch, HermesGatewayError,
     HermesRun, HermesRunsClient, MAX_RESPONSE_BYTES, RoutingAgentWork,
 )
-from radhouse.domain.tasks import Attempt, Task
+from radhouse.domain.tasks import Attempt, InputFile, Task
 
 
 def client(handler):
@@ -167,6 +168,37 @@ def test_exact_allowed_tools_are_capability_checked_and_sent_once():
         )
     assert dispatch.run_id == "run-01"
     assert [request.method for request in requests] == ["GET", "POST"]
+
+
+def test_verified_screenshot_is_sent_as_one_native_multimodal_user_message():
+    requests = []
+    image_bytes = b"synthetic-png-bytes"
+    digest = sha256(image_bytes).hexdigest()
+    image = InputFile(
+        "current-preview.png", base64.b64encode(image_bytes).decode(),
+        "image/png", "base64", digest,
+    )
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(
+            202, json={"run_id": "run-vision", "status": "started", "replayed": False}
+        )
+
+    with client(handler) as gateway:
+        dispatch = gateway.start_or_attach(
+            input_text="Improve the group-management experience.", images=(image,),
+            session_id="task-vision", dispatch_key="attempt-vision",
+        )
+
+    assert dispatch.run_id == "run-vision"
+    body = json.loads(requests[0].content)
+    assert body["input"] == [{"role": "user", "content": [
+        {"type": "text", "text": "Improve the group-management experience."},
+        {"type": "image_url", "image_url": {
+            "url": "data:image/png;base64," + image.content, "detail": "auto"
+        }},
+    ]}]
 
 
 def test_exact_allowed_tools_fail_closed_when_runtime_capability_is_missing():
