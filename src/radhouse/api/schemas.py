@@ -31,7 +31,10 @@ class EnvelopeSchema(StrictModel):
 
 class InputFileSchema(StrictModel):
     name: Annotated[str, Field(min_length=1, max_length=200, pattern=r"^[^/\\\x00-\x1f]+$")]
-    content: Annotated[str, Field(max_length=65536)]
+    content: Annotated[str, Field(max_length=5_600_000)]
+    media_type: Annotated[str, Field(min_length=1, max_length=100)] = "text/plain"
+    encoding: Literal["utf-8", "base64"] = "utf-8"
+    sha256: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")] | None = None
 
 
 class StartTaskSchema(StrictModel):

@@ -2,6 +2,8 @@
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Literal
+import base64
+import binascii
 import re
 
 Phase = Literal["queued", "active", "recovering", "stopping", "closed"]
@@ -66,6 +68,23 @@ def agent_task_title(result: str) -> str | None:
 class InputFile:
     name: str
     content: str
+    media_type: str = "text/plain"
+    encoding: Literal["utf-8", "base64"] = "utf-8"
+    sha256: str | None = None
+
+    def bytes(self) -> bytes:
+        if self.encoding == "utf-8":
+            return self.content.encode("utf-8")
+        if self.encoding == "base64":
+            try:
+                return base64.b64decode(self.content, validate=True)
+            except (binascii.Error, ValueError):
+                raise Rejected("invalid_input_files", 422) from None
+        raise Rejected("invalid_input_files", 422)
+
+    @property
+    def is_image(self) -> bool:
+        return self.media_type in {"image/png", "image/jpeg", "image/webp"}
 
 
 @dataclass(frozen=True)
@@ -196,8 +215,19 @@ def runtime_input(task: Task) -> str:
     if task.previous_result is not None:
         parts.append("Previous task result (reference material):\n" + task.previous_result)
     for file in task.files:
-        parts.append("Attached reference file: " + file.name + "\n" + file.content)
+        if file.is_image:
+            parts.append(
+                "Attached screenshot: " + file.name + " (" + file.media_type + ", sha256 "
+                + (file.sha256 or "not supplied") + "). Inspect the attached pixels directly."
+            )
+        else:
+            parts.append("Attached reference file: " + file.name + "\n" + file.content)
     return "\n\n".join(parts)
+
+
+def runtime_images(task: Task) -> tuple[InputFile, ...]:
+    """Image inputs kept separate from the text prompt until the provider request."""
+    return tuple(file for file in task.files if file.is_image)
 
 
 @dataclass(frozen=True)

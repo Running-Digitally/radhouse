@@ -23,7 +23,7 @@ from radhouse.domain.releases import Publication, Review, digest, validate_revie
 from radhouse.domain.tasks import (AgentDispatch, Attempt, Delivery, Event,
     Observation, ProviderDescription, Rejected, RuntimeCapabilities, RuntimeDispatch,
     RuntimeFailure, RuntimeResult, SavedCommand, StartTask, Task, TaskTitle, Operation,
-    agent_task_title, normalize_task_title, runtime_input)
+    agent_task_title, normalize_task_title, runtime_images, runtime_input)
 
 
 _READ_ONLY_TOOL_DIRECTIVE = re.compile(
@@ -38,6 +38,12 @@ def fingerprint(value: object) -> str:
 
 def runtime_request_fingerprint(task: Task, session_id: str) -> str:
     body: dict[str, object] = {"input": runtime_input(task), "session_id": session_id}
+    if images := runtime_images(task):
+        body["images"] = [
+            {"name": image.name, "media_type": image.media_type,
+             "sha256": image.sha256, "content": image.content}
+            for image in images
+        ]
     if task.disable_tools:
         body["disable_tools"] = True
     if task.allowed_tools:
@@ -113,7 +119,17 @@ class Service:
             raise Rejected("invalid_task", 422)
         if not start.brief.strip() or len(start.brief) > 4096 or not 1 <= start.budget <= 100:
             raise Rejected("invalid_task", 422)
-        if (len(start.files) > 4 or sum(len(f.content.encode()) for f in start.files) > 65536
+        try:
+            decoded_files = tuple((file, file.bytes()) for file in start.files)
+        except Rejected:
+            raise
+        if (len(start.files) > 4
+                or sum(len(data) for file, data in decoded_files if not file.is_image) > 65536
+                or sum(len(data) for file, data in decoded_files if file.is_image) > 8 * 1024 * 1024
+                or any(file.is_image and len(data) > 4 * 1024 * 1024 for file, data in decoded_files)
+                or any((f.is_image and (f.encoding != "base64" or f.sha256 != hashlib.sha256(data).hexdigest()))
+                       or (not f.is_image and (f.encoding != "utf-8" or f.media_type.startswith("image/") or f.sha256 is not None))
+                       for f, data in decoded_files)
                 or any(not f.name or len(f.name) > 200 or any(c in f.name for c in "/\\\x00\n\r") for f in start.files)):
             raise Rejected("invalid_input_files", 422)
         body = asdict(start)
