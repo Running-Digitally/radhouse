@@ -108,6 +108,33 @@ def test_official_client_image_metadata_keeps_a_strict_bound():
         verify_event(oversized, 9)
 
 
+def test_official_client_link_preview_metadata_keeps_a_strict_bound():
+    owner = PrivateKey()
+    preview = [
+        "link-preview",
+        "url https://builder-preview.runningdigitally.com",
+        "title Two Person Expenses",
+        "description Private Builder preview",
+        "m text/html",
+        "image https://relay.test/media/preview.png",
+        "image_mime image/png",
+        "image_width 1200",
+        "image_height 630",
+        "site builder-preview.runningdigitally.com",
+        "favicon https://builder-preview.runningdigitally.com/favicon.ico",
+    ]
+    event = signed(owner, 9, [["h", "dm-1"], preview])
+    assert verify_event(event, 9) == event
+
+    oversized = signed(
+        owner,
+        9,
+        [["link-preview", *[f"field{index} value" for index in range(16)]]],
+    )
+    with pytest.raises(Rejected, match="buzz_signature_denied"):
+        verify_event(oversized, 9)
+
+
 def test_exact_private_dm_and_fresh_signed_requests(relay):
     client, link, state, _, authority = relay
     state["response"] = snapshots(link, authority)
