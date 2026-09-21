@@ -23,7 +23,7 @@ from radhouse.domain.releases import Publication, Review, digest, validate_revie
 from radhouse.domain.tasks import (AgentDispatch, Attempt, Delivery, Event,
     Observation, ProviderDescription, Rejected, RuntimeCapabilities, RuntimeDispatch,
     RuntimeFailure, RuntimeResult, SavedCommand, StartTask, Task, TaskTitle, Operation,
-    agent_task_title, normalize_task_title, runtime_images, runtime_input)
+    agent_task_title, normalize_task_title, runtime_images, runtime_input, validate_input_files)
 
 
 _READ_ONLY_TOOL_DIRECTIVE = re.compile(
@@ -119,19 +119,7 @@ class Service:
             raise Rejected("invalid_task", 422)
         if not start.brief.strip() or len(start.brief) > 4096 or not 1 <= start.budget <= 100:
             raise Rejected("invalid_task", 422)
-        try:
-            decoded_files = tuple((file, file.bytes()) for file in start.files)
-        except Rejected:
-            raise
-        if (len(start.files) > 4
-                or sum(len(data) for file, data in decoded_files if not file.is_image) > 65536
-                or sum(len(data) for file, data in decoded_files if file.is_image) > 8 * 1024 * 1024
-                or any(file.is_image and len(data) > 4 * 1024 * 1024 for file, data in decoded_files)
-                or any((f.is_image and (f.encoding != "base64" or f.sha256 != hashlib.sha256(data).hexdigest()))
-                       or (not f.is_image and (f.encoding != "utf-8" or f.media_type.startswith("image/") or f.sha256 is not None))
-                       for f, data in decoded_files)
-                or any(not f.name or len(f.name) > 200 or any(c in f.name for c in "/\\\x00\n\r") for f in start.files)):
-            raise Rejected("invalid_input_files", 422)
+        validate_input_files(start.files)
         body = asdict(start)
         if not start.disable_tools:
             # Preserve schema-2 command fingerprints for ordinary retries.
