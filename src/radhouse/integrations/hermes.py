@@ -18,7 +18,8 @@ import httpx
 
 from radhouse.application.ports import AgentWorkPort
 from radhouse.domain.tasks import (
-    Attempt, RuntimeCapabilities, RuntimeDispatch, RuntimeFailure, RuntimeGuidanceReceipt, RuntimeResult, Task, runtime_input,
+    Attempt, InputFile, Rejected, RuntimeCapabilities, RuntimeDispatch, RuntimeFailure, RuntimeGuidanceReceipt, RuntimeResult, Task,
+    runtime_images, runtime_input,
 )
 
 
@@ -166,7 +167,7 @@ class HermesRunsClient:
 
     def start_or_attach(
         self, *, input_text: str, session_id: str, dispatch_key: str, disable_tools: bool = False,
-        allowed_tools: tuple[str, ...] = (),
+        allowed_tools: tuple[str, ...] = (), images: tuple[InputFile, ...] = (),
     ) -> HermesDispatch:
         if not input_text or len(input_text.encode("utf-8")) > MAX_INPUT_BYTES:
             raise ValueError("invalid_hermes_input")
@@ -176,13 +177,33 @@ class HermesRunsClient:
                 or any(re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value) is None for value in allowed_tools)
                 or disable_tools and allowed_tools):
             raise ValueError("invalid_hermes_tool_restriction")
+        if (type(images) is not tuple or len(images) > 4
+                or any(not isinstance(image, InputFile) or not image.is_image or image.encoding != "base64"
+                       for image in images)):
+            raise ValueError("invalid_hermes_images")
+        try:
+            image_bytes = tuple(image.bytes() for image in images)
+        except Rejected:
+            raise ValueError("invalid_hermes_images") from None
+        if (sum(map(len, image_bytes)) > 8 * 1024 * 1024
+                or any(len(data) > 4 * 1024 * 1024 for data in image_bytes)
+                or any(image.sha256 != hashlib.sha256(data).hexdigest()
+                       for image, data in zip(images, image_bytes))):
+            raise ValueError("invalid_hermes_images")
         session_id = _validated_identifier(session_id, "session")
         dispatch_key = _validated_identifier(dispatch_key, "dispatch")
         payload, response_headers = self._request(
             "POST",
             "v1/runs",
             expected_status=202,
-            body={"input": input_text, "session_id": session_id,
+            body={"input": (
+                    [{"role": "user", "content": [
+                        {"type": "text", "text": input_text},
+                        *[{"type": "image_url", "image_url": {
+                            "url": f"data:{image.media_type};base64,{image.content}", "detail": "auto"
+                        }} for image in images],
+                    ]}] if images else input_text
+                ), "session_id": session_id,
                   **({"disable_tools": True} if disable_tools else {}),
                   **({"allowed_tools": list(allowed_tools)} if allowed_tools else {})},
             headers={"Idempotency-Key": dispatch_key},
@@ -277,7 +298,7 @@ class HermesRunsClient:
         path: str,
         *,
         expected_status: int,
-        body: dict[str, str] | None = None,
+        body: dict[str, object] | None = None,
         headers: dict[str, str] | None = None,
     ) -> tuple[dict, httpx.Headers]:
         deadline = time.monotonic() + self._request_deadline
@@ -409,6 +430,7 @@ class HermesAgentWorkAdapter:
             input_text=runtime_input(task),
             session_id=task.task_id,
             dispatch_key=dispatch_key,
+            **({"images": runtime_images(task)} if runtime_images(task) else {}),
             **({"disable_tools": True} if task.disable_tools else {}),
             **({"allowed_tools": task.allowed_tools} if task.allowed_tools else {}),
         )
