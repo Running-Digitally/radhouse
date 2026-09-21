@@ -333,6 +333,39 @@ def test_reference_download_is_once_and_exact_bytes_reach_task(bridge, store):
     assert state["reads"] == 1
 
 
+def test_official_client_screenshot_does_not_discard_written_brief(bridge, store):
+    cycle, state, owner = bridge
+    digest = "a" * 64
+    state["messages"] = [
+        incoming(
+            cycle,
+            owner,
+            "Audit the group-management experience and improve it.",
+            tags=[
+                [
+                    "imeta",
+                    f"url https://relay.test/media/{digest}.png",
+                    "m image/png",
+                    f"x {digest}",
+                    "size 1024",
+                    "dim 1200x900",
+                    "blurhash placeholder",
+                    "thumb https://relay.test/media/thumb.png",
+                    "filename current-preview.png",
+                ]
+            ],
+        )
+    ]
+    assert cycle.run("ingress")["error_code"] is None
+    with store.transaction() as tx:
+        tasks = tx.tasks()
+        assert len(tasks) == 1
+        assert tasks[0].brief == "Audit the group-management experience and improve it."
+        assert len(tasks[0].files) == 1
+        assert "cannot inspect its pixels" in tasks[0].files[0].content
+    assert state["reads"] == 0
+
+
 @pytest.mark.parametrize(
     "url",
     [

@@ -12,6 +12,16 @@ from radhouse.channels.nostr import encoded, sha256
 from radhouse.domain.tasks import InputFile, Rejected
 
 
+_TEXT_MIME_TYPES = {
+    "text/plain",
+    "text/markdown",
+    "text/csv",
+    "application/json",
+    "application/octet-stream",
+}
+_IMAGE_MIME_TYPES = {"image/png", "image/jpeg", "image/webp"}
+
+
 def reference_files(relay, event):
     tags = [tag for tag in event["tags"] if tag[0] == "imeta"]
     if len(tags) > 4 or any(tag[0] == "url" for tag in event["tags"]):
@@ -46,6 +56,21 @@ def reference_files(relay, event):
         )
         if not name or len(name) > 200 or any(ord(c) < 32 or c in "/\\" for c in name):
             name = "reference-" + digest[:8] + ".txt"
+        declared_mime = fields.get("m", "").partition(";")[0].lower()
+        if declared_mime in _IMAGE_MIME_TYPES:
+            # Hermes task inputs are text-only. Do not let a normal official-
+            # client screenshot discard an otherwise useful written brief, and
+            # do not imply that the agent inspected pixels it never received.
+            files.append(
+                InputFile(
+                    "image-" + digest[:8] + "-notice.txt",
+                    "The Buzz message included an image named “"
+                    + name
+                    + "”. This agent cannot inspect its pixels. Use the written "
+                    "brief and accessible sources, and do not claim the image was reviewed.",
+                )
+            )
+            continue
         auth = relay.event(
             24242,
             "Read attached reference",
@@ -70,13 +95,7 @@ def reference_files(relay, event):
                 mime = (
                     response.headers.get("content-type", "").partition(";")[0].lower()
                 )
-                if mime not in {
-                    "text/plain",
-                    "text/markdown",
-                    "text/csv",
-                    "application/json",
-                    "application/octet-stream",
-                }:
+                if mime not in _TEXT_MIME_TYPES:
                     raise Rejected("conversation_attachment_requires_text", 422)
                 data = bytearray()
                 for chunk in response.iter_bytes():
