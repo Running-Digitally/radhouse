@@ -16,10 +16,10 @@ def sha256(value: bytes) -> str:
 def _valid_tag(tag) -> bool:
     if not isinstance(tag, list) or not tag:
         return False
-    # Official Buzz clients include eight metadata fields in image ``imeta``
-    # tags. Keep the wider shape specific to that standard tag rather than
-    # weakening the bound for every event tag.
-    limit = 16 if tag[0] == "imeta" else 8
+    # Official Buzz clients emit richer metadata for images and URL previews.
+    # Keep the wider shape specific to those tags rather than weakening the
+    # bound for every event tag.
+    limit = 16 if tag[0] in {"imeta", "link-preview"} else 8
     return (
         len(tag) <= limit
         and all(isinstance(item, str) and len(item) <= 8192 for item in tag)
