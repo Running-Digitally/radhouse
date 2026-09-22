@@ -245,6 +245,8 @@ class ProjectBuzzConversationCycle:
                 files=source_message.files,
             ),
         )
+        if plan.title:
+            self.service.record_agent_title(task.task_id, plan.title)
         anchor_id = "planned:" + key
         with self.store.transaction() as tx:
             if tx.conversation_message(anchor_id) is None:

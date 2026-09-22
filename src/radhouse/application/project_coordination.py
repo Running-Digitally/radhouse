@@ -6,7 +6,7 @@ import re
 from urllib.parse import urlsplit
 
 from radhouse.domain.projects import ProjectCoordination
-from radhouse.domain.tasks import Rejected
+from radhouse.domain.tasks import Rejected, normalize_task_title
 
 
 _UPDATE = re.compile(r"(?m)^RADHOUSE_PROJECT_UPDATE:\s*(\{[^\r\n]+\})\s*$")
@@ -20,6 +20,7 @@ class CoordinationPlan:
     route: str
     summary: str
     clarification: str | None = None
+    title: str | None = None
 
 
 def coordination_prompt(
@@ -44,7 +45,8 @@ def coordination_prompt(
         "Return exactly one line and no prose: RADHOUSE_COORDINATION_PLAN: "
         '{"route":"research|build|research_then_build|clarify",'
         '"summary":"plain-language reason under 500 characters",'
-        '"clarification":null-or-one-question}'
+        '"clarification":null-or-one-question,'
+        '"title":"short plain-language title for the requested work, without secrets"}'
     )
     if not request.strip() or len(prompt) > 4096:
         raise Rejected("coordination_plan_too_large", 422)
@@ -62,7 +64,9 @@ def parse_coordination_plan(
         value = json.loads(match.group(1))
     except (ValueError, TypeError):
         raise Rejected("coordination_plan_invalid", 422) from None
-    if not isinstance(value, dict) or set(value) != {"route", "summary", "clarification"}:
+    if (not isinstance(value, dict)
+            or not {"route", "summary", "clarification"} <= set(value)
+            or set(value) - {"route", "summary", "clarification", "title"}):
         raise Rejected("coordination_plan_invalid", 422)
     route, summary, clarification = (
         value["route"], value["summary"], value["clarification"]
@@ -81,7 +85,19 @@ def parse_coordination_plan(
         or route != "clarify" and clarification is not None
     ):
         raise Rejected("coordination_plan_invalid", 422)
-    return CoordinationPlan(route, summary.strip(), clarification.strip() if clarification else None)
+    # An older planner run may complete after an upgrade. An invalid optional
+    # title cannot block a valid route; the brief remains the fallback.
+    title = value.get("title")
+    if isinstance(title, str) and title.strip() and len(title) <= 100 and "\n" not in title:
+        try:
+            title = normalize_task_title(title)
+        except Rejected:
+            title = None
+    else:
+        title = None
+    return CoordinationPlan(
+        route, summary.strip(), clarification.strip() if clarification else None, title,
+    )
 
 
 def _https(value):
