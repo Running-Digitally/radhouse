@@ -298,6 +298,93 @@ def test_new_work_with_later_review_and_deploy_steps_routes_to_builder(
         )["message"].content
 
 
+def test_owner_radhouse_request_hands_current_preview_to_reviewer_once(
+    service, store, clock, fake_work,
+):
+    now = int(clock().timestamp())
+    channel = "3d84100d-9a9c-45c0-b91f-5be6074519a3"
+    owner = "a" * 64
+    members = ("b" * 64, "c" * 64, "d" * 64)
+    def link(name, pubkey, bot_id, *, coordinator=False):
+        return ConversationLink(
+            name, channel, "personal-alice:alice:buzz", "alice",
+            owner, pubkey, bot_id, "personal-alice", now,
+            member_pubkeys=members, default_agent=coordinator,
+            coordinator=coordinator, channel_kind="stream",
+        )
+    lead = link("review-handoff-coordinator", members[0], "bot-gamma", coordinator=True)
+    reviewer = link("review-handoff-reviewer", members[1], "bot-alpha")
+    builder = link("review-handoff-builder", members[2], "bot-beta")
+    with store.transaction() as tx:
+        tx._connection.execute(
+            "UPDATE channel_bindings SET subject=%s WHERE subject='alice@buzz'",
+            (owner,),
+        )
+        tx._connection.execute(
+            "UPDATE bots SET display_name='Reviewer',role_name='Reviewer' WHERE bot_id='bot-alpha'"
+        )
+        tx._connection.execute(
+            "UPDATE bots SET display_name='Builder',role_name='Builder' WHERE bot_id='bot-beta'"
+        )
+        tx._connection.execute(
+            "INSERT INTO bots(bot_id,display_name,role_name,provider_binding,state) "
+            "VALUES ('bot-gamma','Radhouse','Coordinator','fake-local','ready')"
+        )
+        tx._connection.execute(
+            "INSERT INTO project_bots(project_id,bot_id) VALUES ('personal-alice','bot-gamma')"
+        )
+        tx._connection.execute(
+            "INSERT INTO bot_grants(principal_id,bot_id) VALUES ('alice','bot-gamma')"
+        )
+        for item in (lead, reviewer, builder):
+            tx.save_conversation_link(item)
+    assignment = {
+        "id": "1" * 64, "pubkey": owner, "created_at": now, "kind": 9,
+        "tags": [["h", channel]], "content": "Build the Expenses preview.", "sig": "2" * 128,
+    }
+    relay = Relay([assignment])
+    cycle = ProjectBuzzConversationCycle(
+        service, SimpleNamespace(link=lead, relay=relay),
+        tuple(SimpleNamespace(link=item, relay=Relay()) for item in (reviewer, builder)),
+    )
+    assert cycle.ingress() == 1
+    revision = "3" * 40
+    fake_work.result_content = (
+        "Preview ready.\nRADHOUSE_PROJECT_UPDATE: "
+        '{"repository":"Satish-s-RADHouse/Expenses","pull_request":"https://github.com/Satish-s-RADHouse/Expenses/pull/3",'
+        f'"source_revision":"{revision}","preview_revision":"{revision}",'
+        f'"preview_digest":"{"4" * 64}","preview_url":"https://builder-preview.runningdigitally.com/"}}'
+    )
+    Coordinator(service, "worker-one").run_once()
+    cycle.ingress()
+    with store.transaction() as tx:
+        state = tx.project_coordination("personal-alice")
+        assert state.phase == "preview_feedback"
+        builder_task_id = state.latest_task_id
+    request = {
+        **assignment, "id": "5" * 64, "created_at": now + 1,
+        "content": "@Radhouse Can you send the work to Reviewer",
+        "tags": [
+            ["h", channel],
+            ["mention", lead.agent_pubkey, "agent-address"],
+            ["mention", reviewer.agent_pubkey, "agent-address"],
+        ],
+    }
+    relay.events.append(request)
+    cycle.ingress()
+    cycle.ingress()
+    with store.transaction() as tx:
+        state = tx.project_coordination("personal-alice")
+        tasks = tx.tasks()
+        assert len(tasks) == 2
+        assert state.phase == "review"
+        assert state.active_task_id != builder_task_id
+        review_task = next(task for task in tasks if task.task_id == state.active_task_id)
+        assert review_task.bot_id == "bot-alpha"
+        assert review_task.follows_task_id == builder_task_id
+        assert tx.conversation_message(request["id"])["processed"] is True
+
+
 def test_project_pause_resume_and_stop_control_only_the_active_task(
     service, store, clock,
 ):

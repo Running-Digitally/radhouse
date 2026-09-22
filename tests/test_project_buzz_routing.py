@@ -3,6 +3,8 @@ from contextlib import nullcontext
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import pytest
+
 from radhouse.channels.project_buzz import ProjectBuzzConversationCycle
 from radhouse.domain.projects import ProjectCoordination
 
@@ -20,6 +22,60 @@ def test_review_request_routes_without_preview_acceptance():
 
     assert selected is reviewer
     assert response is None
+
+
+@pytest.mark.parametrize("extra_mention", ["c" * 64, "e" * 64])
+def test_owner_can_ask_radhouse_to_send_current_work_to_reviewer(extra_mention):
+    cycle = object.__new__(ProjectBuzzConversationCycle)
+    cycle.link = SimpleNamespace(agent_pubkey="b" * 64, bot_id="coordinator")
+    reviewer = SimpleNamespace(link=SimpleNamespace(agent_pubkey="c" * 64, bot_id="reviewer"))
+    builder = SimpleNamespace(link=SimpleNamespace(agent_pubkey="d" * 64, bot_id="builder"))
+    cycle.specialists = (builder, reviewer)
+    state = ProjectCoordination("expenses", phase="preview_feedback")
+    bots = {
+        "coordinator": SimpleNamespace(display_name="Radhouse"),
+        "reviewer": SimpleNamespace(display_name="Reviewer"),
+        "builder": SimpleNamespace(display_name="Builder"),
+    }
+    event = {
+        "content": "@Radhouse Can you send the work to Reviewer",
+        "tags": [
+            ["mention", "b" * 64, "agent-address"],
+            ["mention", extra_mention, "agent-address"],
+        ],
+    }
+
+    selected, response, _, _ = cycle._select(
+        event, state, {"reviewer": reviewer, "builder": builder}, bots,
+    )
+
+    assert selected is reviewer
+    assert response is None
+
+
+def test_coordinator_request_with_two_visible_agent_addresses_remains_ambiguous():
+    cycle = object.__new__(ProjectBuzzConversationCycle)
+    cycle.link = SimpleNamespace(agent_pubkey="b" * 64, bot_id="coordinator")
+    reviewer = SimpleNamespace(link=SimpleNamespace(agent_pubkey="c" * 64, bot_id="reviewer"))
+    builder = SimpleNamespace(link=SimpleNamespace(agent_pubkey="d" * 64, bot_id="builder"))
+    cycle.specialists = (builder, reviewer)
+    bots = {
+        "coordinator": SimpleNamespace(display_name="Radhouse"),
+        "reviewer": SimpleNamespace(display_name="Reviewer"),
+        "builder": SimpleNamespace(display_name="Builder"),
+    }
+    event = {
+        "content": "@Radhouse ask @Builder and @Reviewer to handle this",
+        "tags": [["mention", "b" * 64, "agent-address"]],
+    }
+
+    selected, response, _, _ = cycle._select(
+        event, ProjectCoordination("expenses"),
+        {"reviewer": reviewer, "builder": builder}, bots,
+    )
+
+    assert selected is None
+    assert response == "Mention exactly one assigned project agent."
 
 
 def test_coordinator_mention_answers_status_even_while_builder_is_active():
