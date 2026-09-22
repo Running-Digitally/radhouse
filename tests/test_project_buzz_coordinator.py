@@ -375,6 +375,50 @@ def test_owner_radhouse_request_hands_current_preview_to_reviewer_once(
         assert review_task.follows_task_id == builder_task_id
         assert tx.conversation_message(request["id"])["processed"] is True
 
+    # A duplicate review can be cancelled after a valid READY verdict. That
+    # cancelled task must not poison the owner's later deployment handoff.
+    fake_work.result_content = (
+        "READY for the current preview.\nRADHOUSE_PROJECT_UPDATE: "
+        f'{{"reviewed_revision":"{revision}","reviewer_verdict":"READY"}}'
+    )
+    Coordinator(service, "worker-one").run_once()
+    cycle.ingress()
+    with store.transaction() as tx:
+        assert tx.project_coordination("personal-alice").reviewer_verdict == "READY"
+        tx._connection.execute(
+            "UPDATE bots SET display_name='Deployer',role_name='Deployer' WHERE bot_id='bot-beta'"
+        )
+    relay.events.append({
+        **request, "id": "6" * 64, "created_at": now + 2,
+        "content": "@Radhouse send the current work to Reviewer again",
+    })
+    cycle.ingress()
+    relay.events.append({
+        **request, "id": "7" * 64, "created_at": now + 3,
+        "content": "@Radhouse stop this work",
+    })
+    cycle.ingress()
+    cycle.ingress()
+    with store.transaction() as tx:
+        state = tx.project_coordination("personal-alice")
+        assert state.phase == "blocked"
+        assert state.reviewer_verdict == "READY"
+        assert tx.task(state.latest_task_id).outcome == "cancelled"
+
+    relay.events.append({
+        **request, "id": "8" * 64, "created_at": now + 4,
+        "content": "@Radhouse can you now send it for deployment?",
+    })
+    cycle.ingress()
+    with store.transaction() as tx:
+        state = tx.project_coordination("personal-alice")
+        deployed = tx.task(state.active_task_id)
+        assert state.phase == "deployment"
+        assert deployed.bot_id == "bot-beta"
+        assert deployed.follows_task_id is None
+        assert revision in deployed.brief
+        assert "https://github.com/Satish-s-RADHouse/Expenses/pull/3" in deployed.brief
+
 
 def test_project_pause_resume_and_stop_control_only_the_active_task(
     service, store, clock,
