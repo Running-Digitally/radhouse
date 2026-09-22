@@ -5,6 +5,8 @@ import pytest
 from radhouse.application.project_coordination import (
     accept_preview,
     apply_result,
+    coordination_prompt,
+    parse_coordination_plan,
     result_update,
     status_text,
 )
@@ -117,3 +119,65 @@ def test_invalid_machine_report_does_not_replace_the_human_result():
         preview_url="https://preview.example/", preview_revision="abc1234",
     ))
     assert "preview feedback" in text and "abc1234" in text
+
+
+def test_llm_coordination_plan_is_strict_bounded_data():
+    prompt = coordination_prompt(
+        "Compare the options and then improve the importer.",
+        phase="intake",
+        available_roles=("researcher", "builder"),
+        attachments=(("groups.csv", "text/csv"),),
+    )
+    assert "use no tools" not in prompt.lower()
+    assert "groups.csv (text/csv)" in prompt
+    result = (
+        'RADHOUSE_COORDINATION_PLAN: {"route":"research_then_build",'
+        '"summary":"Research the format, then implement the smallest importer change.",'
+        '"clarification":null}'
+    )
+    plan = parse_coordination_plan(
+        result,
+        allowed_routes=frozenset({"research", "build", "research_then_build", "clarify"}),
+    )
+    assert plan.route == "research_then_build"
+    assert plan.clarification is None
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        "Some prose first.\nRADHOUSE_COORDINATION_PLAN: {}",
+        'RADHOUSE_COORDINATION_PLAN: {"route":"deploy","summary":"Do it",'
+        '"clarification":null}',
+        'RADHOUSE_COORDINATION_PLAN: {"route":"clarify","summary":"Unsure",'
+        '"clarification":null}',
+        'RADHOUSE_COORDINATION_PLAN: {"route":"build","summary":"Do it",'
+        '"clarification":"May I deploy?"}',
+        'RADHOUSE_COORDINATION_PLAN: {"route":"build","summary":"Do\\u0000it",'
+        '"clarification":null}',
+    ],
+)
+def test_invalid_or_authority_expanding_llm_coordination_plan_is_rejected(result):
+    with pytest.raises(Rejected, match="coordination_plan_invalid"):
+        parse_coordination_plan(
+            result,
+            allowed_routes=frozenset({"research", "build", "research_then_build", "clarify"}),
+        )
+
+
+def test_pull_status_renders_sanitized_runtime_activity_without_raw_trace():
+    state = ProjectCoordination(
+        "expenses", phase="building", active_bot_id="builder", active_task_id="task-1"
+    )
+    task = type("TaskStatus", (), {"permission_request": None, "blockers": ()})()
+    text = status_text(
+        state,
+        "Builder",
+        task=task,
+        activity={"label": "Using an assigned tool", "occurred_at": 100},
+        now=225,
+    )
+    assert "Builder · Working" in text
+    assert "Current step: Using an assigned tool" in text
+    assert "Last activity: 2 minutes ago" in text
+    assert "Needs you: nothing" in text

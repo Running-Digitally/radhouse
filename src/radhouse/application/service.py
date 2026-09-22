@@ -92,6 +92,33 @@ class Service:
         tx.add_event(Event(new.task_id, kind, new.state_revision))
         return new
 
+    def _record_runtime_activity(self, task_id: str, result: RuntimeResult) -> None:
+        activity = result.activity
+        if activity is None:
+            return
+        identity = fingerprint(
+            [activity.run_id, activity.event, activity.label, activity.occurred_at]
+        )
+        with self.store.transaction() as tx:
+            task = self._task(tx, task_id)
+            latest = tx.latest_event(task_id, "runtime_activity")
+            if latest is not None and latest.data.get("identity") == identity:
+                return
+            tx.add_event(
+                Event(
+                    task_id,
+                    "runtime_activity",
+                    task.state_revision,
+                    {
+                        "identity": identity,
+                        "run_id": activity.run_id,
+                        "event": activity.event,
+                        "label": activity.label,
+                        "occurred_at": activity.occurred_at,
+                    },
+                )
+            )
+
     @staticmethod
     def _expected(task: Task, expected: int) -> None:
         if task.state_revision != expected:
@@ -611,6 +638,7 @@ class Service:
             result = self.work.result(current, runtime_dispatch)
         except RuntimeFailure:
             return self._needs_attention(task_id, dispatch.key)
+        self._record_runtime_activity(task_id, result)
         from radhouse.application.guidance import reconcile
         reconcile(self, task_id, dispatch.run_id, result.guidance_receipts,
                   terminal=result.guidance_terminal or result.state in {"completed", "failed", "cancelled"})

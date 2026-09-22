@@ -8,6 +8,7 @@ from radhouse.domain.tasks import Rejected
 
 ProjectPhase = Literal[
     "intake",
+    "planning",
     "research",
     "building",
     "preview_feedback",
@@ -49,6 +50,8 @@ class ProjectCoordination:
     status_note: str | None = None
     handoff_bot_id: str | None = None
     handoff_brief: str | None = None
+    planning_task_id: str | None = None
+    planning_source_message_id: str | None = None
 
     def evolve(self, **changes) -> "ProjectCoordination":
         return replace(self, revision=self.revision + 1, **changes)
@@ -77,12 +80,17 @@ class ProjectCoordination:
             self.status_note,
             self.handoff_bot_id,
             self.handoff_brief,
+            self.planning_task_id,
+            self.planning_source_message_id,
         )
         if (
             self.revision < 1
             or not self.project_id
             or any(value is not None and len(value) > 4096 for value in values)
             or (self.active_task_id is None) != (self.active_bot_id is None)
+            or (self.planning_task_id is None) != (self.planning_source_message_id is None)
+            or self.planning_task_id is not None
+            and self.planning_task_id != self.active_task_id
             or self.accepted_preview_revision is not None
             and self.accepted_preview_revision != self.preview_revision
             or self.reviewed_revision is not None
