@@ -34,6 +34,18 @@ def test_operator_home_lists_assigned_agents_and_only_owned_project_tasks(
     assert not home.tasks[0].review.enabled
 
 
+def test_project_work_is_newest_first_by_durable_admission_order(
+    service, alice, envelope, start,
+):
+    first = service.admit(alice, envelope(), start)
+    second = service.admit(alice, envelope(), replace(start, brief="A later assignment"))
+
+    home = service.work_home(alice, envelope=envelope())
+
+    assert [card.task.task_id for card in home.tasks] == [second.task_id, first.task_id]
+    assert home.tasks[0].sequence > home.tasks[1].sequence
+
+
 def test_viewer_home_is_read_only_and_does_not_disclose_another_owners_tasks(
     service, alice, viewer, envelope, start,
 ):
@@ -90,13 +102,13 @@ def test_home_reflects_project_agent_assignment_without_cross_project_leak(
     assert {agent.bot_id for agent in personal.agents} == {"bot-alpha", "bot-beta"}
 
 
-def test_completed_task_exposes_review_only_with_fresh_assurance(
+def test_completed_task_exposes_review_without_reauthentication(
     service, alice, envelope, start,
 ):
     task = service.admit(alice, envelope(), start)
     completed = service.run(task.task_id)
 
-    home = service.work_home(alice, envelope=envelope())
+    home = service.work_home(replace(alice, assurance_until=None), envelope=envelope())
 
     card = next(card for card in home.tasks if card.task.task_id == completed.task_id)
     assert not card.cancel.enabled and card.cancel.reason == "task_closed"

@@ -286,6 +286,16 @@ class PostgresUnitOfWork(ConversationQueries):
             "SELECT snapshot FROM public.tasks ORDER BY task_id"
         ).fetchall()]
 
+    def task_admission_order(self, task_ids: tuple[str, ...]) -> dict[str, int]:
+        if not task_ids:
+            return {}
+        rows = self._connection.execute(
+            "SELECT task_id, MIN(cursor) AS admitted_cursor FROM public.events "
+            "WHERE task_id = ANY(%s) AND kind='admitted' GROUP BY task_id",
+            (list(task_ids),),
+        ).fetchall()
+        return {row["task_id"]: row["admitted_cursor"] for row in rows}
+
     def bots(self, principal_id: str, project_id: str | None = None) -> list[BotProfile]:
         return [BotProfile(**row) for row in self._connection.execute(
             "SELECT b.bot_id,b.display_name,b.role_name,b.provider_binding,b.state "

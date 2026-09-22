@@ -187,7 +187,7 @@ def test_paused_task_reconciles_original_run_without_starting_another(service, f
     assert task.task_id not in service.coordination_candidates(100)
 
 
-def test_permission_requires_exact_request_existing_grant_and_fresh_assurance(service, fake_work, alice, envelope, start, clock):
+def test_permission_requires_exact_request_and_existing_grant(service, fake_work, alice, envelope, start, clock):
     permission = {"request_id": "approval-1", "command": "cat /approved/report.txt", "run_id": "run-1"}
     fake_work.result = lambda *_: RuntimeResult("running", permission_request=permission)
     task = service.run(service.admit(alice, envelope(), start).task_id)
@@ -199,10 +199,8 @@ def test_permission_requires_exact_request_existing_grant_and_fresh_assurance(se
     with pytest.raises(Rejected, match="resource_grant_required"):
         respond(alice, "once")
     service.approval_commands = {start.bot_id: (permission["command"],)}
-    with pytest.raises(Rejected, match="fresh_assurance_required"):
-        respond(replace(alice, assurance_until=clock()), "once")
     command = envelope()
-    result = respond(alice, "once", command)
+    result = respond(replace(alice, assurance_until=clock()), "once", command)
     respond(alice, "once", command)
     assert len(called) == 1 and result.guidance[-1]["choice"] == "once"
 

@@ -8,7 +8,7 @@ from coincurve import PublicKeyXOnly
 
 from radhouse.channels.buzz_conversations import BuzzConversationCycle
 from radhouse.channels.nostr import sha256, verify_event
-from radhouse.domain.access import require_access, require_assurance
+from radhouse.domain.access import require_access
 from radhouse.domain.conversations import ConversationLink
 from radhouse.domain.tasks import Rejected
 
@@ -96,8 +96,6 @@ class BuzzEnrollment:
             candidate.project_id,
             write=True,
         )
-        if assure:
-            require_assurance(actor, self.service._now())
         bot = next(
             (
                 bot

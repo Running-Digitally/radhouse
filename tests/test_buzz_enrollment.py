@@ -110,7 +110,7 @@ def test_enrollment_lost_ack_retains_profiles_and_finishes_without_new_identity(
 
 
 @pytest.mark.parametrize(
-    "change", ["owner", "key", "directory", "channel", "assurance", "grant"]
+    "change", ["owner", "key", "directory", "channel", "grant"]
 )
 def test_enrollment_rejects_changed_authority_before_profile_publication(
     enrollment, store, change
@@ -124,8 +124,6 @@ def test_enrollment_rejects_changed_authority_before_profile_publication(
         state["directory"] = []
     if change == "channel":
         link = replace(link, channel_id="not-a-dm")
-    if change == "assurance":
-        actor = replace(actor, assurance_until=None)
     if change == "grant":
         with store.transaction() as tx:
             tx._connection.execute("DELETE FROM bot_grants WHERE principal_id='alice'")

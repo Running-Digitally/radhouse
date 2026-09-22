@@ -69,14 +69,12 @@ def test_web_review_and_followup_walkthrough(local_client, service, fake_work, c
         assert result.returncode == 0, result.stdout + result.stderr
         with service.store.transaction() as tx:
             tasks = tx.tasks()
-            assert len(tasks) == 3
+            assert len(tasks) == 2
             original = next(task for task in tasks if not task.follows_task_id)
-            review = next(task for task in tasks if task.bot_id == "bot-beta")
             followup = next(
                 task for task in tasks
                 if task.bot_id == "bot-alpha" and task.follows_task_id
             )
-            assert review.follows_task_id == original.task_id
             assert followup.follows_task_id == original.task_id
             assert tx.publication(original.task_id).channel == "radhouse"
     finally:

@@ -11,7 +11,6 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from radhouse.application.conversations import Conversations
 from radhouse.channels.commands import Envelope
-from radhouse.domain.access import require_assurance
 from radhouse.domain.tasks import Rejected
 
 TTL = 15 * 60
@@ -73,10 +72,9 @@ class ReviewLinks:
         return self.origin + "/app/#review=" + body + "." + candidate.relay.sign_review_locator(locator)
 
     def resolve(self, actor, token):
-        # Check normal authentication/assurance before parsing any navigation data.
+        # A normal authenticated session is sufficient for this navigation link.
         if actor.channel != "radhouse":
             raise Rejected("review_link_denied", 403)
-        require_assurance(actor, self.service._now())
         try:
             if not isinstance(token, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,3000}\.[a-f0-9]{128}", token):
                 raise ValueError()

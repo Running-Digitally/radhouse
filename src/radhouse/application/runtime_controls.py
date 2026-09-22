@@ -2,7 +2,6 @@
 from dataclasses import replace
 import json
 
-from radhouse.domain.access import require_assurance
 from radhouse.domain.tasks import Delivery, Event, Operation, Rejected, RuntimeFailure, RuntimeGuidanceReceipt
 from radhouse.application.guidance import PROTOCOL, reconcile
 
@@ -239,7 +238,6 @@ def control(service, actor, task_id, expected, envelope, *, text=None, request_i
         if any(item["state"] in {"submitted", "unknown"} for item in task.guidance):
             raise Rejected("control_outcome_unknown")
         if kind == "permission":
-            require_assurance(actor, service._now())
             permission = task.permission_request
             if (permission is None or permission["request_id"] != request_id
                     or permission["digest"] != digest or choice not in {"once", "deny"}):
