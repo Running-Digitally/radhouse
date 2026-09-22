@@ -16,7 +16,7 @@ from radhouse.channels.commands import Envelope
 from radhouse.application.ports import AgentWorkPort, ProviderPort, Store, UnitOfWork
 from radhouse.application.views import ActionView, ProjectView, TaskCard, WorkHome
 from radhouse.domain.access import (
-    AuthContext, Binding, ProjectProfile, require_access, require_assurance,
+    AuthContext, Binding, ProjectProfile, require_access,
 )
 from radhouse.domain.conversations import ConversationLink
 from radhouse.domain.releases import Publication, Review, digest, validate_review
@@ -306,7 +306,6 @@ class Service:
             access = tx.access(actor.principal_id)
             if access is None or not access.active or access.role not in {"admin", "operator"}:
                 raise Rejected("write_denied", 403)
-            require_assurance(actor, self._now())
             granted = {bot.bot_id for bot in tx.bots(actor.principal_id)}
             if any(bot_id not in granted for bot_id in selected):
                 raise Rejected("access_denied", 403)
@@ -354,6 +353,7 @@ class Service:
             )
             publications = {task.task_id: tx.publication(task.task_id) for task in tasks}
             titles = {task.task_id: tx.task_title(task.task_id) for task in tasks}
+            order = tx.task_admission_order(tuple(task.task_id for task in tasks))
 
         can_write = access.role in {"admin", "operator"}
         ready = any(agent.state == "ready" for agent in agents)
@@ -381,12 +381,10 @@ class Service:
             reviewable = task.outcome == "completed" and task.result is not None and publication is None
             if not can_write:
                 review = ActionView(False, "read_only_role")
-            elif reviewable and (actor.assurance_until is None or actor.assurance_until <= self._now()):
-                review = ActionView(False, "fresh_assurance_required")
             else:
                 review = action(reviewable, "already_published" if publication else "result_not_ready")
             cards.append(TaskCard(
-                task, title,
+                task, title, order.get(task.task_id, 0),
                 action(cancellable, "task_closed"),
                 action(pausable, "task_not_pausable"),
                 action(resumable, "task_not_paused"),
@@ -395,7 +393,7 @@ class Service:
             ))
         return WorkHome(
             actor.principal_id, access.role, binding.project_id, project.display_name,
-            agents, tuple(cards), start,
+            agents, tuple(sorted(cards, key=lambda card: card.sequence, reverse=True)), start,
         )
 
     @staticmethod
@@ -846,7 +844,6 @@ class Service:
             task = self._task(tx, task_id)
             self._authorize(tx, actor, task, envelope, write=True)
             self._expected(task, expected_state_revision)
-            require_assurance(actor, self.clock())
             if task.outcome != "completed" or task.result is None:
                 raise Rejected("result_not_ready")
             review = Review(str(uuid4()), task.task_id, actor.principal_id, task.result_digest,
@@ -863,7 +860,6 @@ class Service:
                 raise Rejected("review_not_found", 404)
             task = self._task(tx, review.task_id)
             self._authorize(tx, actor, task, envelope, write=True)
-            require_assurance(actor, self.clock())
             if review.reviewer_id != actor.principal_id:
                 raise Rejected("wrong_reviewer", 403)
             audience = self._audience(tx, task, audience)

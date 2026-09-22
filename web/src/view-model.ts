@@ -32,7 +32,6 @@ const reasonLabels: Record<string, string> = {
   task_not_pausable: "Pause becomes available while the agent is working.",
   task_not_paused: "This task is not paused.",
   result_not_ready: "Review becomes available when the result is ready.",
-  fresh_assurance_required: "Confirm your sign-in again before reviewing this result.",
 };
 
 const blockerLabels: Record<string, string> = {

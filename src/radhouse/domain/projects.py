@@ -94,7 +94,7 @@ class ProjectCoordination:
             or self.accepted_preview_revision is not None
             and self.accepted_preview_revision != self.preview_revision
             or self.reviewed_revision is not None
-            and self.reviewed_revision != self.accepted_preview_revision
+            and self.reviewed_revision != self.preview_revision
             or self.deployed_revision is not None
             and self.deployed_revision != self.merged_revision
         ):

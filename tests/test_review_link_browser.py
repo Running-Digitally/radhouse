@@ -17,7 +17,7 @@ from tests.test_local_reauthentication import local_client
 pytestmark = pytest.mark.postgres
 
 
-def test_review_link_login_reauthentication_publication(review_link, local_client, service, clock):
+def test_review_link_login_remembered_session_publication(review_link, local_client, service, clock):
     _, done, configured, state, link = review_link
     _, auth, totp, password = local_client
     root = Path(__file__).resolve().parents[1]

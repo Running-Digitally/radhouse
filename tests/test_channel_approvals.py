@@ -338,7 +338,7 @@ def test_denied_channel_admission_has_no_task_or_dispatch(
 @pytest.mark.parametrize("case,code", [
     ("content", "review_scope_changed"), ("audience", "review_scope_changed"),
     ("revision", "review_conflict"), ("expiry", "review_expired"),
-    ("assurance", "fresh_assurance_required"), ("mirror", "mirrored_event"),
+    ("mirror", "mirrored_event"),
     ("stale_binding", "binding_denied"), ("changed_task", "review_task_changed"),
 ])
 def test_protected_review_denials_preserve_pending_decision(
@@ -358,8 +358,6 @@ def test_protected_review_denials_preserve_pending_decision(
         revision += 1
     elif case == "expiry":
         clock.advance(seconds=301)
-    elif case == "assurance":
-        actor = replace(actor, assurance_until=clock())
     elif case == "mirror":
         delivery = replace(delivery, mirrored=True)
     elif case == "stale_binding":

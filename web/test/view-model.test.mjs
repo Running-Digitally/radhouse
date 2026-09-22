@@ -3,7 +3,6 @@ import test from "node:test";
 
 import { actionReason, blockerMessages, guidanceStatus, phaseLabel } from "../dist/view-model.js";
 import { parseWorkHome } from "../dist/contract.js";
-import { deliveryHandoffs } from "../dist/delivery.js";
 
 test("phase labels use operator language", () => {
   assert.equal(phaseLabel("active"), "Working");
@@ -24,10 +23,8 @@ test("guidance labels distinguish receipt, completed response, lateness and unce
 });
 
 test("server action reasons become useful explanations", () => {
-  assert.equal(
-    actionReason({ enabled: false, reason: "fresh_assurance_required" }),
-    "Confirm your sign-in again before reviewing this result.",
-  );
+  assert.equal(actionReason({ enabled: false, reason: "result_not_ready" }),
+    "Review becomes available when the result is ready.");
   assert.equal(actionReason({ enabled: true, reason: null }), null);
 });
 
@@ -57,34 +54,4 @@ test("work-home contract accepts the bounded empty view", () => {
     start: { enabled: false, reason: "no_assigned_agents" },
   });
   assert.equal(view.project_id, "personal-alice");
-});
-
-test("software delivery handoffs expose every ready project agent in natural order", () => {
-  const builder = { bot_id: "builder", display_name: "Builder", role_name: "Builder", provider_binding: "local", state: "ready" };
-  const agents = [
-    builder,
-    { bot_id: "researcher", display_name: "Researcher", role_name: "Researcher", provider_binding: "local", state: "ready" },
-    { bot_id: "deployer", display_name: "Deployer", role_name: "Deployer", provider_binding: "local", state: "ready" },
-    { bot_id: "reviewer", display_name: "Reviewer", role_name: "Reviewer", provider_binding: "local", state: "ready" },
-    { bot_id: "offline", display_name: "Offline", role_name: "Reviewer", provider_binding: "local", state: "maintenance" },
-  ];
-
-  const choices = deliveryHandoffs(builder, agents);
-
-  assert.deepEqual(choices.map(choice => choice.target.bot_id), ["reviewer", "deployer", "researcher"]);
-  assert.deepEqual(choices.map(choice => choice.label), ["Send to Reviewer for review", "Prepare deployment with Deployer", "Delegate to Researcher"]);
-  assert.match(choices[0].brief, /blocking defects/);
-  assert.match(choices[1].brief, /protected human deployment decision/);
-});
-
-test("review findings return to Builder before release preparation", () => {
-  const reviewer = { bot_id: "reviewer", display_name: "Reviewer", role_name: "Reviewer", provider_binding: "local", state: "ready" };
-  const choices = deliveryHandoffs(reviewer, [
-    reviewer,
-    { bot_id: "deployer", display_name: "Deployer", role_name: "Deployer", provider_binding: "local", state: "ready" },
-    { bot_id: "builder", display_name: "Builder", role_name: "Builder", provider_binding: "local", state: "ready" },
-  ]);
-
-  assert.deepEqual(choices.map(choice => choice.label), ["Return findings to Builder", "Prepare deployment with Deployer"]);
-  assert.match(choices[0].brief, /Address the blocking review findings/);
 });

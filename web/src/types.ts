@@ -46,6 +46,7 @@ export interface TaskSummary {
 
 export interface TaskCard {
   task: TaskSummary;
+  sequence: number;
   title: {
     task_id: string;
     title: string;

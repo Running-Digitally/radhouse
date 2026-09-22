@@ -449,6 +449,8 @@ class ProjectBuzzConversationCycle:
             and (len(tag) == 2 or tag[2] == "agent-address")
         }
         if signed:
+            if signed == {self.link.agent_pubkey}:
+                return [], False
             admitted = {item.link.agent_pubkey for item in self.specialists}
             if len(signed) != 1 or not signed <= admitted:
                 return [], True
@@ -462,6 +464,12 @@ class ProjectBuzzConversationCycle:
                 event["content"], re.I,
             ):
                 matches.append(item)
+        coordinator = bots.get(self.link.bot_id)
+        if coordinator and re.match(
+            rf"^\s*@{re.escape(coordinator.display_name)}(?=$|[\s,:.!?])",
+            event["content"], re.I,
+        ):
+            return [], False
         return matches, re.match(r"^\s*@[^\s,:]+", event["content"]) is not None
 
     def _select(self, event, state, roles, bots):
@@ -537,12 +545,11 @@ class ProjectBuzzConversationCycle:
             return roles.get("reviewer"), None, False, state
         if _DEPLOY.search(content) and not new_work:
             if (state.reviewer_verdict != "READY"
-                    or state.reviewed_revision != state.accepted_preview_revision):
-                return None, "Deployment is waiting for a READY review of the owner-approved revision.", False, state
+                    or state.reviewed_revision != state.preview_revision
+                    or state.preview_revision != state.source_revision):
+                return None, "Deployment is waiting for a READY review of the current revision.", False, state
             return roles.get("deployer"), None, False, state
         if _REVIEW.search(content) and not new_work:
-            if state.accepted_preview_revision is None:
-                return None, "Review is waiting for your acceptance of the current preview revision.", False, state
             return roles.get("reviewer"), None, False, state
         if state.phase in {"preview_feedback", "correction"}:
             return roles.get("builder"), None, False, state
@@ -716,11 +723,15 @@ class ProjectBuzzConversationCycle:
                             continue
                         self._save_state(state, accepted)
                         state = accepted
-                    if state.accepted_preview_revision is None:
+                    if (not state.preview_revision
+                            or state.preview_revision != state.source_revision
+                            or not state.preview_digest
+                            or not state.preview_url
+                            or not state.pull_request):
                         self._record_owner_event(event, files=files, state="review_waiting")
                         self._note(
                             "reply:" + event["id"],
-                            "Review is waiting for your acceptance of the current preview revision.",
+                            "Review needs a current pull request and matching preview revision from Builder.",
                             reply_to=event["id"],
                         )
                         continue
@@ -734,12 +745,13 @@ class ProjectBuzzConversationCycle:
                                 event["id"], self.link.link_id, self.link.principal_id,
                                 event["content"], "buzz", event["created_at"],
                                 task_id=previous, reply_to=reply_target(event),
-                                state="preview_accepted",
+                                state="preview_accepted" if _ACCEPT.search(event["content"]) else "review_requested",
                             ), event=event, processed=True,
                         )
                     brief = (
-                        f"Review the exact owner-approved preview revision {state.accepted_preview_revision} "
-                        f"at {state.preview_url}. Verify the pull request and preview correspond to that revision. "
+                        f"Review pull request {state.pull_request} at the exact recorded source and preview revision "
+                        f"{state.preview_revision} (preview digest {state.preview_digest}) at {state.preview_url}. "
+                        "Verify the pull request and preview correspond to that revision. "
                         "Run independent code, test, DOM and visual checks. End with READY or CHANGES_NEEDED and "
                         "a RADHOUSE_PROJECT_UPDATE report containing reviewed_revision and reviewer_verdict."
                     )
@@ -748,12 +760,13 @@ class ProjectBuzzConversationCycle:
                 if "deployer" in selected_role and _DEPLOY.search(event["content"]):
                     if (
                         state.reviewer_verdict != "READY"
-                        or state.reviewed_revision != state.accepted_preview_revision
+                        or state.reviewed_revision != state.preview_revision
+                        or state.preview_revision != state.source_revision
                     ):
                         self._record_owner_event(event, files=files, state="deployment_waiting")
                         self._note(
                             "reply:" + event["id"],
-                            "Deployment is waiting for a READY review of the owner-approved revision.",
+                            "Deployment is waiting for a READY review of the current revision.",
                             reply_to=event["id"],
                         )
                         continue

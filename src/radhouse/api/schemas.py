@@ -187,6 +187,7 @@ class AgentResponse(StrictModel):
 class TaskCardResponse(StrictModel):
     task: TaskResponse
     title: TaskTitleResponse
+    sequence: int
     cancel: ActionResponse
     pause: ActionResponse
     resume: ActionResponse
