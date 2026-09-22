@@ -104,9 +104,11 @@ def create_app(
             session = local_auth.login(
                 body.username, body.password, body.totp_code,
                 request.client.host if request.client is not None else "unknown",
+                remember_browser=body.remember_browser,
             )
             response.set_cookie(
-                local_auth.cookie_name, session.token, max_age=12 * 60 * 60,
+                local_auth.cookie_name, session.token,
+                max_age=(30 * 24 * 60 * 60 if body.remember_browser else 12 * 60 * 60),
                 secure=local_auth.secure_cookie, httponly=True, samesite="strict",
                 path="/",
             )

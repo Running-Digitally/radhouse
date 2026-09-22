@@ -6,6 +6,8 @@ import { conversationPanel } from "./conversations.js";
 import type { ConversationDraft, ConversationHistory, ConversationLink } from "./conversations.js";
 import { resultViewer } from "./markdown.js";
 import { deliveryHandoffs } from "./delivery.js";
+import { acceptPastedOrDroppedFiles, loadAttachments } from "./files.js";
+import type { AttachedFile } from "./files.js";
 
 export function mountWorkHome(page: HTMLElement, client = operatorClient()): () => void {
 let reviewToken = new URLSearchParams(window.location.hash.slice(1)).get("review");
@@ -26,7 +28,7 @@ let loadGeneration = 0;
 let sessionEpoch = 0;
 let actionsInFlight = 0;
 let filePickerOpen = false;
-const drafts = new Map<string, { brief: string; bot: string; files: { name: string; content: string }[]; followsTaskId?: string }>();
+const drafts = new Map<string, { brief: string; bot: string; files: AttachedFile[]; followsTaskId?: string }>();
 const reviews = new Map<string, Review>();
 const expanded = new Set<string>();
 const timelines = new Map<string, TaskEvents>();
@@ -76,7 +78,7 @@ function errorMessage(error: unknown): string {
       review_task_changed: "The result changed after review. Prepare a new review.",
       review_expired: "The review expired. Prepare a fresh review of the current result.",
       bot_unavailable: "This agent is unavailable. Your assignment draft is retained.",
-      invalid_input_files: "Choose up to four UTF-8 text files, no more than 64 KB in total.",
+      invalid_input_files: "Choose up to four text, Markdown, CSV, JSON or image files within the displayed limits.",
       runtime_guidance_receipts_unavailable: "This runtime cannot confirm live guidance yet. Include the update in a follow-up.",
       task_not_accepting_control: "This task cannot accept guidance now. Include the update in a follow-up.",
       control_outcome_unknown: "An earlier instruction is still unconfirmed. Check its outcome before sending another.",
@@ -160,13 +162,18 @@ function loginScreen(message?: string): void {
   const username = field("Username", "username"); username.input.autocomplete = "username";
   const password = field("Password", "password", "password");
   const totp = field("Authenticator code", "totp");
+  const remember = document.createElement("input"); remember.type = "checkbox";
+  const rememberLabel = element("label", "checkbox-label");
+  rememberLabel.append(remember, document.createTextNode(" Remember this browser for 30 days"));
   const submit = element("button", "button button--primary", "Sign in"); submit.type = "submit";
-  form.append(username.wrapper, password.wrapper, totp.wrapper, submit);
+  form.append(username.wrapper, password.wrapper, totp.wrapper, rememberLabel, submit);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     void action(submit, async () => {
       const epoch = sessionEpoch;
-      const session = await client.login(username.input.value, password.input.value, totp.input.value);
+      const session = await client.login(
+        username.input.value, password.input.value, totp.input.value, remember.checked,
+      );
       password.input.value = ""; totp.input.value = "";
       if (epoch !== sessionEpoch || disposed) return;
       applySession(session);
@@ -460,9 +467,9 @@ function startPanel(home: WorkHome): HTMLElement {
   submit.disabled = !home.start.enabled;
   form.append(label, briefLabel, submit);
   const fileLabel = element("label", "field"); const files = element("input", "field__control");
-  files.type = "file"; files.multiple = true; files.accept = ".txt,.md,.csv,.json,.log";
+  files.type = "file"; files.multiple = true; files.accept = ".txt,.md,.markdown,.csv,.json,.log,.png,.jpg,.jpeg,.webp";
   fileLabel.classList.add("field--files");
-  fileLabel.append(element("span", "field__label", "Reference files (text, up to 64 KB total)"), files);
+  fileLabel.append(element("span", "field__label", "Reference files · paste, drop or choose text/CSV/images"), files);
   const fileStatus = element("p", "muted file-status", draft.files.map((file) => file.name).join(", "));
   files.addEventListener("click", () => {
     // The native chooser still owns this input while it is open. Invalidate
@@ -474,14 +481,14 @@ function startPanel(home: WorkHome): HTMLElement {
   files.addEventListener("change", () => {
     filePickerOpen = false;
     void action(submit, async () => {
-      const selected = Array.from(files.files ?? []);
-      if (selected.length > 4 || selected.reduce((size, file) => size + file.size, 0) > 65536) {
-        throw new ApiError("invalid_input_files", 422);
-      }
-      const decoder = new TextDecoder("utf-8", { fatal: true });
-      const loaded = await Promise.all(selected.map(async (file) => ({ name: file.name, content: decoder.decode(await file.arrayBuffer()) })));
-      if (loaded.some((file) => file.content.includes("\0"))) throw new ApiError("invalid_input_files", 422);
+      const loaded = await loadAttachments(Array.from(files.files ?? []));
       draft.files = loaded; fileStatus.textContent = loaded.map((file) => file.name).join(", ");
+    });
+  });
+  acceptPastedOrDroppedFiles(brief, async (selected) => {
+    await action(submit, async () => {
+      draft.files = await loadAttachments(selected);
+      fileStatus.textContent = draft.files.map(file => file.name).join(", ");
     });
   });
   form.insertBefore(fileLabel, submit); form.insertBefore(fileStatus, submit);
@@ -511,6 +518,23 @@ function projectsPanel(home: WorkHome): HTMLElement {
     const names = project.bot_ids.map((id) => agentDirectory.get(id)?.display_name ?? id);
     item.append(element("h3", "agent-card__name", project.display_name),
       element("p", "muted", names.length ? `Agents: ${names.join(", ")}` : "No agents assigned"));
+    if (project.coordination) {
+      item.append(
+        element("span", `phase phase--${project.coordination.phase === "blocked" ? "stopping" : project.coordination.phase === "deployed" ? "active" : "recovering"}`,
+          project.coordination.phase.replaceAll("_", " ")),
+      );
+      if (project.coordination.status_note) item.append(element("p", "muted", project.coordination.status_note));
+      if (project.coordination.preview_url) {
+        const preview = element("a", "project-card__link", `Open preview · ${project.coordination.preview_revision?.slice(0, 8) ?? "revision pending"}`);
+        preview.href = project.coordination.preview_url; preview.target = "_blank"; preview.rel = "noopener noreferrer";
+        item.append(preview);
+      }
+      if (project.coordination.deployment_url) {
+        const deployed = element("a", "project-card__link", `Open deployment · ${project.coordination.deployment_status ?? "status pending"}`);
+        deployed.href = project.coordination.deployment_url; deployed.target = "_blank"; deployed.rel = "noopener noreferrer";
+        item.append(deployed);
+      }
+    }
     if (project.project_id === home.project_id) item.append(element("span", "phase phase--active", "Current"));
     else item.append(button("Open project", async () => {
       selectedProject = project.project_id; sessionEpoch++; selectedConversation = ""; conversationHistory = null;

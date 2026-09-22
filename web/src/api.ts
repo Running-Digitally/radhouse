@@ -2,6 +2,7 @@ import type { Project, Review, TaskEvents, TaskSummary, WorkHome } from "./types
 import { parseWorkHome } from "./contract.js";
 import { CommandLedger } from "./commands.js";
 import type { ConversationLink, ConversationHistory, ConversationMessage } from "./conversations.js";
+import type { AttachedFile } from "./files.js";
 
 export interface AuthSession {
   principal_id: string;
@@ -20,8 +21,9 @@ const browserTransport: Transport = (path, init) => fetch(path, { ...init,
 export function operatorClient(transport: Transport = browserTransport) {
   return {
     currentSession: () => authRequest<AuthSession>("/auth/session", {}, transport),
-    login: (username: string, password: string, totpCode: string) => authRequest<AuthSession>("/auth/login", {
-      method: "POST", body: JSON.stringify({ username, password, totp_code: totpCode }),
+    login: (username: string, password: string, totpCode: string, rememberBrowser = false) => authRequest<AuthSession>("/auth/login", {
+      method: "POST", body: JSON.stringify({ username, password, totp_code: totpCode,
+        remember_browser: rememberBrowser }),
       headers: { "Content-Type": "application/json" },
     }, transport),
     fromSession: (session: AuthSession) => new RadhouseApi(session.conversation_id, session.binding_revision,
@@ -59,7 +61,10 @@ export class RadhouseApi {
       typeof item !== "object" || item === null || typeof item.project_id !== "string"
       || typeof item.display_name !== "string" || typeof item.conversation_id !== "string"
       || !Number.isSafeInteger(item.binding_revision) || item.binding_revision < 1
-      || !Array.isArray(item.bot_ids) || item.bot_ids.some((id: unknown) => typeof id !== "string"))) {
+      || !Array.isArray(item.bot_ids) || item.bot_ids.some((id: unknown) => typeof id !== "string")
+      || !(item.coordination === null || (typeof item.coordination === "object"
+        && item.coordination !== null && typeof item.coordination.phase === "string"
+        && Number.isSafeInteger(item.coordination.revision))))) {
       throw new ApiError("invalid_server_response", 502);
     }
     return value as Project[];
@@ -82,10 +87,11 @@ export class RadhouseApi {
     return authRequest<AuthSession>("/auth/session");
   }
 
-  static async login(username: string, password: string, totpCode: string): Promise<AuthSession> {
+  static async login(username: string, password: string, totpCode: string, rememberBrowser = false): Promise<AuthSession> {
     return authRequest<AuthSession>("/auth/login", {
       method: "POST",
-      body: JSON.stringify({ username, password, totp_code: totpCode }),
+      body: JSON.stringify({ username, password, totp_code: totpCode,
+        remember_browser: rememberBrowser }),
       headers: { "Content-Type": "application/json" },
     });
   }
@@ -146,7 +152,7 @@ export class RadhouseApi {
   }
 
   async sendMessage(linkId: string, content: string, replyTo: string | null,
-    files: { name: string; content: string }[]): Promise<ConversationMessage> {
+    files: AttachedFile[]): Promise<ConversationMessage> {
     return this.command(`/conversations/${encodeURIComponent(linkId)}/messages`, {
       content, reply_to: replyTo, files,
     });
@@ -157,7 +163,7 @@ export class RadhouseApi {
     projectId: string;
     brief: string;
     providerBinding: string;
-    files?: { name: string; content: string }[];
+    files?: AttachedFile[];
     followsTaskId?: string;
   }): Promise<TaskSummary> {
     return this.command<TaskSummary>("/tasks", {

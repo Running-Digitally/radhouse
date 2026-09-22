@@ -125,7 +125,12 @@ def compose_controller(
         if config.buzz:
             from radhouse.channels.buzz_relay import BuzzRelay
             from radhouse.channels.buzz_enrollment import ConfiguredBuzzConversation
-            for agent in config.buzz.agents:
+            for agent in sorted(config.buzz.agents, key=lambda item: not item.coordinator):
+                configured_conversation = next(
+                    item for item in config.buzz.conversations
+                    if item.conversation_id == agent.conversation_id
+                    and (agent.channel_id is None or item.channel_id == agent.channel_id)
+                )
                 channel_agents = tuple(
                     candidate for candidate in config.buzz.agents
                     if agent.channel_id is not None
@@ -148,7 +153,15 @@ def compose_controller(
                     default_agent=(
                         True if len(channel_agents) <= 1 else agent.default_in_channel
                     ),
+                    coordinator=agent.coordinator,
+                    channel_kind=configured_conversation.kind,
                 ))
+            for configured in conversation_cycles:
+                if configured.coordinator and configured.candidate.channel_id is not None:
+                    configured.project_members = tuple(
+                        item for item in conversation_cycles
+                        if item.candidate.channel_id == configured.candidate.channel_id
+                    )
         from radhouse.channels.buzz_enrollment import BuzzEnrollment
         # The same configured scope fences web sends/history and relay cycles.
         # Removing a candidate must not leave its old web composer operational.

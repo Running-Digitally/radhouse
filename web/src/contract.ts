@@ -83,7 +83,12 @@ function task(value: unknown): TaskSummary {
     result_digest: nullableString(item.result_digest),
     observation_sequence: integer(item.observation_sequence),
     files: (Array.isArray(item.files) ? item.files : []).map((value) => {
-      const file = record(value); return { name: string(file.name), content: string(file.content) };
+      const file = record(value); return {
+        name: string(file.name), content: string(file.content),
+        media_type: string(file.media_type),
+        encoding: oneOf(file.encoding, ["utf-8", "base64"] as const),
+        sha256: nullableString(file.sha256),
+      };
     }),
     follows_task_id: item.follows_task_id == null ? null : string(item.follows_task_id),
     guidance: (Array.isArray(item.guidance) ? item.guidance : []).map((value) => {

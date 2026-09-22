@@ -204,12 +204,40 @@ class WorkHomeResponse(StrictModel):
     start: ActionResponse
 
 
+class ProjectCoordinationResponse(StrictModel):
+    project_id: str
+    revision: int
+    phase: str
+    active_bot_id: str | None
+    active_task_id: str | None
+    latest_task_id: str | None
+    pending_message_id: str | None
+    repository: str | None
+    branch: str | None
+    pull_request: str | None
+    source_revision: str | None
+    preview_url: str | None
+    preview_revision: str | None
+    preview_digest: str | None
+    accepted_preview_revision: str | None
+    reviewed_revision: str | None
+    reviewer_verdict: str | None
+    merged_revision: str | None
+    deployment_url: str | None
+    deployed_revision: str | None
+    deployment_status: str | None
+    status_note: str | None
+    handoff_bot_id: str | None
+    handoff_brief: str | None
+
+
 class ProjectResponse(StrictModel):
     project_id: str
     display_name: str
     conversation_id: str
     binding_revision: int
     bot_ids: tuple[str, ...]
+    coordination: ProjectCoordinationResponse | None = None
 
 
 class CreateProjectRequest(StrictModel):
@@ -231,6 +259,7 @@ class LoginRequest(StrictModel):
     username: Annotated[str, Field(min_length=3, max_length=64)]
     password: Annotated[str, Field(min_length=1, max_length=1024)]
     totp_code: Annotated[str, Field(pattern=r"^[0-9]{6}$")]
+    remember_browser: bool = False
 
 
 class AuthSessionResponse(StrictModel):
