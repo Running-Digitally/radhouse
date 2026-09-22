@@ -256,6 +256,8 @@ class ProjectBuzzConversationCycle:
                         return None, f"{name} is still working. Wait for that step to finish before starting another agent.", False, state
                     return selected, None, False, state
         content = event["content"].strip()
+        research, build = bool(_RESEARCH.search(content)), bool(_BUILD.search(content))
+        new_work = research or build
         if _STATUS.fullmatch(content):
             latest = self._task(state.latest_task_id) if state.latest_task_id else None
             selected = next((item for item in self.specialists
@@ -274,18 +276,17 @@ class ProjectBuzzConversationCycle:
             except Rejected:
                 return None, "The current preview revision is not recorded yet, so I cannot send it to review.", False, state
             return roles.get("reviewer"), None, False, state
-        if _DEPLOY.search(content):
+        if _DEPLOY.search(content) and not new_work:
             if (state.reviewer_verdict != "READY"
                     or state.reviewed_revision != state.accepted_preview_revision):
                 return None, "Deployment is waiting for a READY review of the owner-approved revision.", False, state
             return roles.get("deployer"), None, False, state
-        if _REVIEW.search(content):
+        if _REVIEW.search(content) and not new_work:
             if state.accepted_preview_revision is None:
                 return None, "Review is waiting for your acceptance of the current preview revision.", False, state
             return roles.get("reviewer"), None, False, state
         if state.phase in {"preview_feedback", "correction"}:
             return roles.get("builder"), None, False, state
-        research, build = bool(_RESEARCH.search(content)), bool(_BUILD.search(content))
         if research and roles.get("researcher"):
             if build and roles.get("builder"):
                 state = state.evolve(
