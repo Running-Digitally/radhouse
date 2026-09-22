@@ -139,7 +139,10 @@ function button(label: string, run: (node: HTMLButtonElement) => Promise<void>, 
 function applySession(session: AuthSession): void {
   signedIn = session;
   api = client.fromSession(session);
-  selectedProject ||= session.project_id;
+  if (!selectedProject) {
+    try { selectedProject = window.localStorage.getItem(`radhouse.project.${session.principal_id}`) || session.project_id; }
+    catch { selectedProject = session.project_id; }
+  }
 }
 function loginScreen(message?: string): void {
   loadGeneration++;
@@ -238,17 +241,37 @@ const eventNames: Record<string, string> = {
   cancelled: "Cancelled", human_pause: "Pause requested", cancel_requested: "Cancellation requested",
   runtime_dispatch_prepared: "Preparing the agent run", runtime_accepted: "Agent run accepted",
 };
+function latestActivity(data: TaskEvents | undefined): { label: string; occurred_at: number | undefined } | null {
+  const activity = [...(data?.events ?? [])].reverse().find((event) => event.kind === "runtime_activity");
+  const label = activity?.data?.label;
+  return typeof label === "string" && label.length > 0 && label.length <= 160
+    ? { label, occurred_at: activity?.data?.occurred_at } : null;
+}
+function activityTime(seconds: number | undefined): string {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds <= 0) return "";
+  return ` · Last update ${new Date(seconds * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+}
 function historyPanel(card: TaskCard): HTMLElement {
   const panel = element("section", "history-panel");
   panel.append(element("h4", "section-title", "Task progress"));
   const renderEvents = (data: TaskEvents): void => {
     const list = element("ol", "timeline");
+    const steps: string[] = [];
     for (const event of data.events) {
-      const label = eventNames[event.kind];
-      if (label) list.append(element("li", undefined, label));
+      const activityLabel = event.data?.label;
+      const label = event.kind === "runtime_activity"
+        ? typeof activityLabel === "string" && activityLabel.length <= 160 ? activityLabel : undefined
+        : eventNames[event.kind];
+      if (label) {
+        const step = label + (event.kind === "runtime_activity" ? activityTime(event.data?.occurred_at) : "");
+        if (steps.at(-1) !== step) steps.push(step);
+      }
     }
+    for (const step of steps.slice(-12)) list.append(element("li", undefined, step));
     if (!list.children.length) list.append(element("li", undefined, "No milestones yet."));
     panel.replaceChildren(element("h4", "section-title", "Task progress"), list);
+    if (card.task.phase === "active" && !latestActivity(data)) panel.append(element("p", "muted",
+      "No finer update has arrived yet. The agent may still be working through its current step."));
   };
   const cached = timelines.get(card.task.task_id);
   if (cached) renderEvents(cached); else panel.append(element("p", "muted", "Loading progress…"));
@@ -270,6 +293,12 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
       : task.outcome === "failed" ? "Needs a new assignment" : phaseLabel(task.phase)));
   const agent = home.agents.find((item) => item.bot_id === task.bot_id);
   article.append(heading, element("p", "task-card__context", `${agent?.display_name ?? task.bot_id} · ${home.project_name} · Private task`));
+  if (task.phase === "active") {
+    const activity = latestActivity(timelines.get(task.task_id));
+    article.append(element("p", "task-card__activity", activity
+      ? `Now: ${activity.label}${activityTime(activity.occurred_at)}`
+      : "Waiting for the agent’s first progress update."));
+  }
   const titleDraft = titleDrafts.get(task.task_id);
   if (titleDraft !== undefined) {
     const form = element("form", "title-form");
@@ -401,7 +430,9 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
     && review.task_revision === task.task_revision && new Date(review.expires_at).getTime() > Date.now()) {
     article.append(reviewPanel(card, review));
   } else if (review) reviews.delete(task.task_id);
-  if (expanded.has(task.task_id)) article.append(historyPanel(card));
+  if (expanded.has(task.task_id)) article.insertBefore(
+    historyPanel(card), article.querySelector(".guidance-form, .task-card__actions"),
+  );
   return article;
 }
 function startPanel(home: WorkHome): HTMLElement {
@@ -560,8 +591,8 @@ function render(home: WorkHome, message?: string): void {
   const conversation = conversationLinks.find(link => link.link_id === selectedConversation);
   if (!reviewTarget) {
     const navigation = element("nav", "work-home-nav"); navigation.setAttribute("aria-label", "Work home sections");
-    const destinations: [string, string][] = conversation ? [["Conversation", "conversation-section"]] : [["Ask for help", "start-section"]];
-    destinations.push(["Work", "work-section"]);
+    const destinations: [string, string][] = [["Work", "work-section"]];
+    destinations.push(conversation ? ["Conversation", "conversation-section"] : ["Ask for help", "start-section"]);
     for (const [label, id] of destinations) navigation.append(button(label, async () => {
       page.querySelector(`#${id}`)?.scrollIntoView({ block: "start" });
     }));
@@ -573,6 +604,7 @@ function render(home: WorkHome, message?: string): void {
     const coordination = projects.find((item) => item.project_id === home.project_id)?.coordination;
     const latest = home.tasks.find((card) => card.task.task_id === coordination?.latest_task_id);
     const pending = home.tasks.filter((card) => card.task.phase === "active" && card.task.permission_request);
+    const working = home.tasks.find((card) => card.task.phase === "active");
     if (pending.length) {
       attention.append(element("p", undefined, pending.length === 1
         ? "An agent needs your decision to continue."
@@ -580,6 +612,9 @@ function render(home: WorkHome, message?: string): void {
       attention.append(button("View request", async () => {
         page.querySelector(`[data-task-id="${pending[0]?.task.task_id}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" });
       }));
+    } else if (coordination?.phase === "preview_feedback" && working) {
+      const name = home.agents.find((agent) => agent.bot_id === working.task.bot_id)?.display_name ?? "An agent";
+      attention.append(element("p", undefined, `${name} is working on an update. The preview may not include it yet; nothing is needed from you right now.`));
     } else if (coordination?.phase === "preview_feedback" && coordination.preview_url) {
       attention.append(element("p", undefined, "A new version is ready to try. Tell Radhouse what you like or what to change."));
       const link = element("a", "button button--primary", "Try the new version");
@@ -664,7 +699,9 @@ function render(home: WorkHome, message?: string): void {
       }
     }
   }
-  page.append(work);
+  const conversationOrStart = page.querySelector(".conversation-section, .start-panel");
+  if (conversationOrStart) page.insertBefore(work, conversationOrStart);
+  else page.append(work);
   const manage = page.querySelector(".manage-details");
   if (manage) page.append(manage);
   const allowed = new Set(home.tasks.map((card) => card.task.task_id));
@@ -701,6 +738,11 @@ async function load(message?: string): Promise<void> {
     const scoped = current.forProject(project);
     const home = await scoped.home();
     if (generation !== loadGeneration) return;
+    const activeEvents = await Promise.allSettled(home.tasks
+      .filter((card) => card.task.phase === "active")
+      .map(async (card) => ({ taskId: card.task.task_id, data: await scoped.events(card.task.task_id) })));
+    if (generation !== loadGeneration) return;
+    for (const result of activeEvents) if (result.status === "fulfilled") timelines.set(result.value.taskId, result.value.data);
     const links = reviewTarget ? [] : await scoped.conversations();
     if (generation !== loadGeneration) return;
     const link = links.find(item => item.link_id === selectedConversation) ?? links[0];
@@ -709,7 +751,12 @@ async function load(message?: string): Promise<void> {
     for (const agent of home.agents) agentDirectory.set(agent.bot_id, agent);
     conversationLinks = links; selectedConversation = link?.link_id ?? ""; conversationHistory = history;
     if (reviewTarget && !home.tasks.some(card => card.task.task_id === reviewTarget?.task_id)) throw new ApiError("review_link_denied", 403);
-    api = scoped; selectedProject = project.project_id; projects = available; render(home, message);
+    api = scoped; selectedProject = project.project_id; projects = available;
+    if (!reviewTarget && signedIn) {
+      try { window.localStorage.setItem(`radhouse.project.${signedIn.principal_id}`, project.project_id); }
+      catch { /* Storage may be unavailable; the current session still works. */ }
+    }
+    render(home, message);
   } catch (error) {
     if (generation !== loadGeneration) return;
     if (error instanceof ApiError && error.status === 401) loginScreen();
