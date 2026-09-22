@@ -7,6 +7,121 @@ from radhouse.domain.tasks import Delivery, Event, Operation, Rejected, RuntimeF
 from radhouse.application.guidance import PROTOCOL, reconcile
 
 
+def _matches_original_permission(operation, task, entry, permission, observed_digest, fingerprint):
+    try:
+        saved = json.loads(operation.result or "{}").get("fingerprint")
+    except (TypeError, ValueError):
+        return False
+    if not isinstance(saved, str):
+        return False
+    base = {
+        "kind": "permission", "task": task.task_id, "text": None,
+        "request_id": permission.get("request_id"), "choice": "deny",
+        "digest": observed_digest,
+    }
+    permission_digest = entry.get("permission_digest")
+    expected_revision = entry.get("expected_revision")
+    if permission_digest is not None or expected_revision is not None:
+        return (
+            permission_digest == observed_digest
+            and type(expected_revision) is int
+            and fingerprint({**base, "expected": expected_revision}) == saved
+        )
+    # Legacy receipts did not retain these two fields. Their immutable operation
+    # fingerprint still proves the original digest and expected revision.
+    return any(
+        fingerprint({**base, "expected": revision}) == saved
+        for revision in range(task.state_revision + 1)
+    )
+
+
+def reconcile_pending_denial(service, task, dispatch, permission):
+    """Retry one lost denial only while the exact request is still pending."""
+    from radhouse.application.service import fingerprint
+
+    if permission is None:
+        return False
+    with service.store.transaction() as tx:
+        current = service._task(tx, task.task_id)
+        expected = current.permission_request
+        candidates = tuple(
+            item for item in current.guidance
+            if item.get("kind") == "permission"
+            and item.get("choice") == "deny"
+            and item.get("state") == "unknown"
+            and item.get("request_id") == permission.get("request_id")
+            and item.get("run_id") == dispatch.run_id
+            and not item.get("reconcile_attempted")
+        )
+        entry = candidates[0] if len(candidates) == 1 else None
+        operation = tx.operation(entry["id"]) if entry is not None else None
+        observed_digest = fingerprint(permission)
+        if (
+            entry is None
+            or operation is None
+            or expected is None
+            or expected.get("request_id") != permission.get("request_id")
+            or expected.get("run_id") != dispatch.run_id
+            or permission.get("run_id") != dispatch.run_id
+            or expected.get("digest") != observed_digest
+            or not _matches_original_permission(
+                operation, current, entry, permission, observed_digest, fingerprint
+            )
+        ):
+            return False
+        entries = tuple(
+            {**item, "reconcile_attempted": True}
+            if item["id"] == entry["id"] else item
+            for item in current.guidance
+        )
+        current = service._save(
+            tx, current,
+            current.evolve(guidance=entries, task_revision=current.task_revision + 1),
+            "permission_reconcile_submitted",
+        )
+
+    state = "unknown"
+    try:
+        accepted = service.work.approve(
+            current, dispatch, permission["request_id"], "deny"
+        )
+        state = "accepted" if accepted else "rejected"
+    except RuntimeFailure:
+        pass
+
+    with service.store.transaction() as tx:
+        latest = service._task(tx, task.task_id)
+        entries = tuple(
+            {**item, "state": state}
+            if item["id"] == entry["id"] else item
+            for item in latest.guidance
+        )
+        operation = tx.operation(entry["id"])
+        if operation is None:
+            raise RuntimeFailure("permission_reconcile_operation_missing")
+        tx.save_operation(replace(
+            operation, state="confirmed" if state == "accepted" else state
+        ))
+        pending = latest.permission_request
+        if (
+            state == "accepted"
+            and pending is not None
+            and pending.get("request_id") == permission["request_id"]
+        ):
+            pending = None
+        updated = service._save(
+            tx, latest,
+            latest.evolve(guidance=entries, permission_request=pending),
+            "permission_reconciled_" + state,
+        )
+        tx.add_event(Event(
+            task.task_id, "control_receipt", updated.state_revision,
+            {"kind": "permission", "state": state, "run_id": dispatch.run_id,
+             "reconciled": True},
+        ))
+    return state == "accepted"
+
+
 def control(service, actor, task_id, expected, envelope, *, text=None, request_id=None, choice=None, digest=None):
     from radhouse.application.service import fingerprint
 
@@ -73,6 +188,8 @@ def control(service, actor, task_id, expected, envelope, *, text=None, request_i
             raise Rejected("runtime_control_unavailable")
         receipt = {"id": key, "kind": kind, "text": text, "request_id": request_id,
                    "choice": choice, "run_id": dispatch.run_id, "state": "submitted"}
+        if kind == "permission":
+            receipt.update(permission_digest=digest, expected_revision=expected)
         if kind == "guidance":
             receipt.update(protocol=PROTOCOL, attempt_id=task.attempt_id, application_state=None, application_reason=None,
                            source_channel=envelope.channel, source_event_id=envelope.event_id,
