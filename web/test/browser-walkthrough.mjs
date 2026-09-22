@@ -53,8 +53,9 @@ try {
   // Protected review stays in a second ordinary web tab.
   const review = await context.newPage();
   await review.goto(`${origin}/app/`);
-  await review.locator(`[data-task-id="${taskId}"]`).waitFor();
-  await review.getByRole("button", { name: "Review result", exact: true }).click();
+  const reviewTask = review.locator(`[data-task-id="${taskId}"]`);
+  await reviewTask.waitFor();
+  await reviewTask.getByRole("button", { name: "Review result", exact: true }).click();
   await review.getByRole("button", { name: "Review selected audience" }).click();
   await review.getByText("Artifact SHA-256:", { exact: false }).waitFor();
   await review.getByRole("button", { name: "Approve and publish", exact: true }).click();

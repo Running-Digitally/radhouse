@@ -168,6 +168,18 @@ def test_exact_private_group_dm_membership(relay):
         client.verify_dm(group)
 
 
+def test_exact_private_stream_membership_uses_the_same_signed_roster(relay):
+    client, link, state, _, authority = relay
+    stream = replace(link, channel_kind="stream")
+    state["response"] = snapshots(stream, authority, kind="stream")
+
+    client.verify_conversation(stream)
+
+    state["response"] = snapshots(stream, authority, kind="dm")
+    with pytest.raises(Rejected, match="conversation_requires_private_channel"):
+        client.verify_conversation(stream)
+
+
 @pytest.mark.parametrize(
     "change",
     ["extra", "missing", "public", "room", "wrong_relay", "wrong_channel", "inactive"],

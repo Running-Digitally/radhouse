@@ -1,6 +1,6 @@
 """Enroll only an operator-configured agent, using its owner's native signature."""
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import json
 from uuid import UUID
 
@@ -122,6 +122,7 @@ class BuzzEnrollment:
                     raise
                 saved = tx.conversation_enrollment(configured.candidate.link_id)
                 link = tx.conversation_link(configured.candidate.link_id)
+                bot = configured.profile(bot)
                 result.append(
                     {
                         "link_id": configured.candidate.link_id,
@@ -148,7 +149,9 @@ class BuzzEnrollment:
         except ValueError:
             raise Rejected("buzz_agent_channel_denied", 422) from None
         with self.service.store.transaction() as tx:
-            bot = self._authorize(tx, actor, envelope, candidate, assure=True)
+            bot = configured.profile(
+                self._authorize(tx, actor, envelope, candidate, assure=True)
+            )
             previous = tx.conversation_link(link_id)
             saved = tx.conversation_enrollment(link_id)
         if candidate.channel_id is not None and channel_id != candidate.channel_id:
@@ -172,6 +175,8 @@ class BuzzEnrollment:
             active=candidate.active,
             member_pubkeys=configured.member_pubkeys,
             default_agent=configured.default_agent,
+            coordinator=configured.coordinator,
+            channel_kind=configured.channel_kind,
         )
         if previous:
             if (
@@ -181,7 +186,7 @@ class BuzzEnrollment:
             ):
                 raise Rejected("buzz_agent_enrollment_conflict", 409)
             link = previous
-        relay.verify_dm(link)
+        relay.verify_conversation(link)
         directory = relay.query(
             [
                 {
@@ -232,7 +237,7 @@ class BuzzEnrollment:
         relay.owner_attestation = saved["auth_tag"]
         for event in saved["events"]:
             relay.publish(event)
-        relay.verify_dm(link)
+        relay.verify_conversation(link)
         with self.service.store.transaction() as tx:
             self._authorize(tx, actor, envelope, candidate, assure=True)
             tx.save_conversation_enrollment(link_id, {**saved, "ready": True})
@@ -253,6 +258,8 @@ class ConfiguredBuzzConversation:
         *,
         member_pubkeys=None,
         default_agent=True,
+        coordinator=False,
+        channel_kind="dm",
     ):
         self.service, self.relay, self.candidate = service, relay, candidate
         # Keep the original compact snapshot for ordinary two-person DMs.
@@ -260,6 +267,17 @@ class ConfiguredBuzzConversation:
         # project conversation.
         self.member_pubkeys = tuple(sorted(member_pubkeys or ()))
         self.default_agent = default_agent
+        self.coordinator = coordinator
+        self.channel_kind = channel_kind
+        self.project_members = ()
+
+    def profile(self, bot):
+        name = self.candidate.display_name if self.coordinator else None
+        return replace(
+            bot,
+            display_name=name or bot.display_name,
+            role_name="Project coordinator" if self.coordinator else bot.role_name,
+        )
 
     def matches(self, link):
         values = asdict(link)
@@ -283,6 +301,8 @@ class ConfiguredBuzzConversation:
             tuple(sorted(link.member_pubkeys or (link.agent_pubkey,)))
             == tuple(sorted(self.member_pubkeys or (link.agent_pubkey,)))
             and link.default_agent == self.default_agent
+            and link.coordinator == self.coordinator
+            and link.channel_kind == self.channel_kind
         )
 
     def run(self, phase):
@@ -315,4 +335,36 @@ class ConfiguredBuzzConversation:
                 tx.conversation_progress(link.link_id, error=error.code)
             return {"link_id": link.link_id, "count": 0, "error_code": error.code}
         self.relay.owner_attestation = enrollment["auth_tag"]
+        if self.coordinator:
+            from types import SimpleNamespace
+            from radhouse.channels.project_buzz import ProjectBuzzConversationCycle
+            members = []
+            for configured in self.project_members:
+                if configured.coordinator:
+                    continue
+                with self.service.store.transaction() as tx:
+                    member_link = tx.conversation_link(configured.candidate.link_id)
+                    member_enrollment = tx.conversation_enrollment(configured.candidate.link_id)
+                if (
+                    member_link is None
+                    or not member_enrollment
+                    or not member_enrollment["ready"]
+                    or not configured.matches(member_link)
+                ):
+                    continue
+                try:
+                    verify_owner_attestation(
+                        member_enrollment["auth_tag"],
+                        member_link.owner_pubkey,
+                        member_link.agent_pubkey,
+                    )
+                except Rejected:
+                    continue
+                configured.relay.owner_attestation = member_enrollment["auth_tag"]
+                members.append(SimpleNamespace(link=member_link, relay=configured.relay))
+            return ProjectBuzzConversationCycle(
+                self.service,
+                SimpleNamespace(link=link, relay=self.relay),
+                tuple(members),
+            ).run(phase)
         return BuzzConversationCycle(self.service, self.relay, link).run(phase)
