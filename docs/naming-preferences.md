@@ -2,7 +2,8 @@
 
 Status: four changeable presets and individual overrides are accepted version
 1.0 requirements. Defaults, examples, and precedence below are proposed design.
-Updated: 2026-09-10. No naming implementation exists yet.
+Updated: 2026-09-22. Task-title suggestions and owner edits exist; the broader
+installation naming presets below remain proposed design.
 
 Give an installation a personality without changing how its boundaries work.
 Offer a live preview in **Setup → Preferences → Naming**, and make the same
@@ -76,7 +77,12 @@ lists without inference. A task summary can use the brief's first line or an
 explicitly selected compatible local inference route; title generation must not
 send private content elsewhere or silently switch providers. Store and display
 generated titles under the task's audience rules. Never summarize secret values
-into notifications. People can edit every suggestion before accepting it.
+into notifications. People can edit task titles directly.
+
+Current task titles use the assignment as an immediate fallback. Project
+coordination uses the title in its existing bounded model response, and a
+completed task can adopt a heading or useful opening written by its agent.
+This adds no title-only model call. An owner's edit overrides later suggestions.
 
 ## Acceptance examples
 
