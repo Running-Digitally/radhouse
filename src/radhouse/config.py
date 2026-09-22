@@ -228,6 +228,7 @@ class BotRuntimeConfig(StrictModel):
 class BuzzConversationConfig(StrictModel):
     channel_id: str
     conversation_id: str
+    kind: Literal["dm", "stream"] = "dm"
 
     _channel = field_validator("channel_id")(_identifier)
     _conversation = field_validator("conversation_id")(_identifier)
@@ -256,6 +257,13 @@ class BuzzConfig(StrictModel):
             {(item.channel_id, item.agent_pubkey) for item in self.agents}
         ) != len(self.agents):
             raise ValueError("duplicate Buzz agent identity in channel")
+        identities = {}
+        for item in self.agents:
+            identities.setdefault(item.agent_pubkey, set()).add(
+                (item.bot_id, item.coordinator)
+            )
+        if any(len(authorities) != 1 for authorities in identities.values()):
+            raise ValueError("Buzz identity requires one execution authority")
         for agent in self.agents:
             if agent.owner_pubkey == agent.agent_pubkey:
                 raise ValueError("Buzz agent cannot use its owner's identity")
@@ -275,7 +283,13 @@ class BuzzConfig(StrictModel):
             }
             if len(scope) != 1:
                 raise ValueError("shared Buzz channel must have one project authority")
-            if sum(item.default_in_channel for item in group) != 1:
+            coordinators = [item for item in group if item.coordinator]
+            if coordinators:
+                if len(coordinators) != 1 or not coordinators[0].default_in_channel:
+                    raise ValueError("project Buzz channel needs one default coordinator")
+                if any(item.default_in_channel for item in group if not item.coordinator):
+                    raise ValueError("project Buzz specialists cannot be default agents")
+            elif sum(item.default_in_channel for item in group) != 1:
                 raise ValueError("shared Buzz channel needs one default agent")
         return self
 
@@ -293,6 +307,8 @@ class BuzzAgentConfig(StrictModel):
     binding_revision: int = Field(default=1,ge=1)
     active: bool = True
     default_in_channel: bool = False
+    coordinator: bool = False
+    display_name: str | None = Field(default=None, min_length=1, max_length=100)
     signing_key: SecretFile
 
     _ids=field_validator("link_id","conversation_id","principal_id","bot_id","project_id")(_identifier)
@@ -306,7 +322,7 @@ class BuzzAgentConfig(StrictModel):
         from radhouse.domain.conversations import ConversationLink
         if self.channel_id is None or self.activated_at is None:
             raise ValueError("Buzz agent has not been enrolled")
-        values = self.model_dump(exclude={"signing_key", "default_in_channel"})
+        values = self.model_dump(exclude={"signing_key", "default_in_channel", "display_name"})
         return ConversationLink(
             **values,
             member_pubkeys=(),

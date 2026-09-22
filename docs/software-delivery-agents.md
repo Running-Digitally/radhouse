@@ -14,10 +14,11 @@ A software project can include three distinct working roles:
    and, after the protected human decision, invokes only that target's named
    deployment operation.
 
-The operator remains in control of each handoff. A role-aware handoff button
-starts the ordinary correlated child task immediately, without an intermediate
-copy-and-submit form. Radhouse does not infer a handoff from free-form agent
-output, merge a pull request or deploy a release automatically.
+The operator remains in control of release decisions. In a project Buzz
+channel, the signed Radhouse coordinator starts ordinary correlated child tasks
+and posts concise handoff notes. The web work home retains role-aware handoff
+buttons as an explicit fallback. Radhouse never treats free-form prose as an
+approval and never deploys without an owner deployment message.
 
 ## Reused contracts
 
@@ -26,9 +27,11 @@ receives the exact completed parent result through `previous_result`. Project
 membership and current bot grants are rechecked at admission. Unrelated task
 history, files, bot memory and credentials do not cross the handoff.
 
-Official Buzz project conversations remain the primary conversational surface.
-An explicit agent mention selects the next agent. The web work home exposes the
-same choices as one-click, role-aware handoffs with fixed bounded briefs:
+Official Buzz project channels remain the primary conversational surface. An
+explicit agent mention overrides automatic routing. Otherwise project phase,
+reply ancestry and current artifact state select the next agent. The web work
+home exposes the same choices as one-click, role-aware handoffs with fixed
+bounded briefs:
 
 | From | To | Suggested action |
 | --- | --- | --- |
@@ -36,7 +39,8 @@ same choices as one-click, role-aware handoffs with fixed bounded briefs:
 | Reviewer | Builder | Address the blocking findings and report the updated revision and validation. |
 | Reviewer or Builder | Deployer | Check release readiness and wait for the protected deployment decision. |
 
-Reviewer and Deployer are separate signed bot identities and runtimes. A role
+Reviewer and Deployer are separate signed bot identities and runtimes. Radhouse
+is a signed controller identity with no separate agent runtime. A role
 name never grants access. Reviewer receives only the repositories and evidence
 selected for review. Deployer holds no general shell, GitHub credential or host
 credential; a private deployment overlay may connect it to a narrowly configured
@@ -79,3 +83,15 @@ external capabilities are not implied by the role-aware handoff UI.
 
 Stop rather than broaden scope when an agent, repository, revision, review,
 target, operation or human decision cannot be verified exactly.
+
+## Release correlation
+
+Builder, Reviewer and Deployer may append the strict
+`RADHOUSE_PROJECT_UPDATE` line documented in the Buzz integration profile.
+Radhouse validates its URLs, revisions, digests, allowed fields and role before
+updating the project snapshot. Preview acceptance requires
+`source_revision == preview_revision`. Reviewer READY requires the reviewed
+revision to equal that accepted revision. A healthy deployment requires the
+deployed revision to equal the reported merge revision and the reviewed source
+to remain the accepted preview. Project cards expose the current phase, preview
+and deployment without making the owner open a task to learn basic status.

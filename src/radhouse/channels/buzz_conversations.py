@@ -33,7 +33,7 @@ class BuzzConversationCycle:
     def _authorized(self):
         # Fresh relay membership and current controller authority on each
         # ingress/delivery boundary; never accept a saved membership snapshot.
-        self.relay.verify_dm(self.link)
+        self.relay.verify_conversation(self.link)
         with self.store.transaction() as tx:
             self.conversations.authorize(tx, self.link, write=True)
 
@@ -70,6 +70,14 @@ class BuzzConversationCycle:
 
     def _event_disposition(self, event):
         """Select exactly one agent link in a shared project DM."""
+        with self.store.transaction() as tx:
+            if not self.link.coordinator and any(
+                item.coordinator
+                for item in tx.conversation_links_for_channel(self.link.channel_id)
+            ):
+                # The project coordinator is the sole ingress owner. Specialist
+                # identities still publish their own progress and results.
+                return "skip"
         members = set(self.link.member_pubkeys or (self.link.agent_pubkey,))
         mentioned, has_address = self._agent_mentions(event)
         if has_address and (len(mentioned) != 1 or not mentioned <= members):
@@ -203,6 +211,10 @@ class BuzzConversationCycle:
             )
 
     def _task_messages(self):
+        if self.link.coordinator:
+            # Specialist links own task progress/results under their signed
+            # identities. The coordinator outbox carries routing and gate notes.
+            return
         with self.store.transaction() as tx:
             self.conversations.authorize(tx, self.link)
             bot = next(
@@ -296,6 +308,8 @@ class BuzzConversationCycle:
                 )
 
     def _publication_messages(self):
+        if self.link.coordinator:
+            return
         # Publication does not change task.state_revision. Discover it separately
         # and persist one message before preparing any signed delivery.
         with self.store.transaction() as tx:

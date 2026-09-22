@@ -252,7 +252,7 @@ class Service:
                                               binding.conversation_id, binding.revision,
                                               tuple(bot.bot_id for bot in tx.bots(
                                                   actor.principal_id, project.project_id,
-                                              ))))
+                                              )), tx.project_coordination(project.project_id)))
             return tuple(result)
 
     def create_project(self, actor: AuthContext, envelope: Envelope,
@@ -292,13 +292,14 @@ class Service:
                 if binding is None or not binding.active:
                     raise Rejected("project_state_inconsistent")
                 return ProjectView(project_id, name, conversation_id, binding.revision,
-                                   tx.project_bot_ids(project_id))
+                                   tx.project_bot_ids(project_id),
+                                   tx.project_coordination(project_id))
             project = ProjectProfile(project_id, actor.principal_id, name)
             binding = Binding(actor.channel, actor.subject, conversation_id,
                               actor.principal_id, project_id, 1)
             tx.create_project(project, actor.principal_id, selected, binding)
             return ProjectView(project_id, name, conversation_id, 1,
-                               tuple(sorted(selected)))
+                               tuple(sorted(selected)), tx.project_coordination(project_id))
 
     def review_audience(self, actor: AuthContext, task_id: str, *, envelope: Envelope) -> tuple[str, ...]:
         with self.store.transaction() as tx:

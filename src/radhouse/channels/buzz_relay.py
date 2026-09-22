@@ -146,8 +146,8 @@ class BuzzRelay:
             raise Rejected("buzz_delivery_unconfirmed", 503)
         return event["id"]
 
-    def verify_dm(self, link: ConversationLink):
-        """Require relay-signed immutable DM metadata and exact private membership."""
+    def verify_conversation(self, link: ConversationLink):
+        """Require signed private metadata and the exact configured roster."""
         if not link.active or link.agent_pubkey != self.pubkey:
             raise Rejected("conversation_link_denied", 403)
         values = self.query(
@@ -174,8 +174,8 @@ class BuzzRelay:
                 raise Rejected("conversation_membership_denied", 403)
             snapshots[kind] = event
         metadata = snapshots[39000]["tags"]
-        if ["private"] not in metadata or ["t", "dm"] not in metadata:
-            raise Rejected("conversation_requires_private_dm", 403)
+        if ["private"] not in metadata or ["t", link.channel_kind] not in metadata:
+            raise Rejected("conversation_requires_private_channel", 403)
         tags = [t for t in snapshots[39002]["tags"] if t[0] == "p"]
         agents = set(link.member_pubkeys or (link.agent_pubkey,))
         expected = {link.owner_pubkey, *agents}
@@ -190,6 +190,10 @@ class BuzzRelay:
         ):
             raise Rejected("conversation_membership_denied", 403)
         return snapshots
+
+    def verify_dm(self, link: ConversationLink):
+        """Compatibility name retained for existing callers and deployments."""
+        return self.verify_conversation(link)
 
     def history_page(self, link: ConversationLink, since: int, before=None):
         query = {

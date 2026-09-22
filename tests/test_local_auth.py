@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import os
 from uuid import uuid4
 
@@ -180,3 +180,50 @@ def test_local_login_requires_password_totp_origin_and_session_csrf(store):
         ).fetchone()
     assert row is not None
     assert totp_secret.encode("ascii") not in bytes(row["totp_secret_ciphertext"])
+
+
+def test_remembered_browser_extends_session_but_not_fresh_assurance(store):
+    run_id = os.environ["RADHOUSE_VS0_RUN_ID"]
+    principal = f"remembered-{uuid4().hex[:10]}"
+    project = f"project-{uuid4().hex[:10]}"
+    password = "synthetic remembered browser password"
+    secret = pyotp.random_base32()
+    key = Fernet.generate_key().decode("ascii")
+    now = datetime(2026, 9, 21, 12, 0, tzinfo=timezone.utc)
+    dsn = os.environ["RADHOUSE_VS0_DSN"]
+    common = dict(
+        expected_database=f"radhouse_vs0_{run_id}",
+        deployment_id=f"fixture-{run_id}",
+        encryption_key=key,
+    )
+    provision_local_user(
+        dsn, **common, principal_id=principal, username=principal, role="admin",
+        password=password, totp_secret=secret, project_id=project,
+        project_name="Remembered work", bot_id="bot-alpha",
+        bot_display_name="Researcher", bot_role_name="Researcher",
+        provider_binding="fake-local", now=now,
+    )
+    auth = LocalAuthService(
+        dsn, **common, expected_origin="https://radhouse.test", clock=lambda: now,
+    )
+    app = create_app(UnusedService(), auth.auth_context, local_auth=auth)
+    with TestClient(app, base_url="https://radhouse.test") as client:
+        response = client.post(
+            "/auth/login", headers={"Origin": "https://radhouse.test"},
+            json={
+                "username": principal, "password": password,
+                "totp_code": pyotp.TOTP(secret).at(now), "remember_browser": True,
+            },
+        )
+        assert response.status_code == 200
+        assert "max-age=2592000" in response.headers["set-cookie"].lower()
+        assert datetime.fromisoformat(response.json()["assurance_until"]) == now + timedelta(minutes=10)
+    with psycopg.connect(dsn, row_factory=dict_row) as connection:
+        session = connection.execute(
+            "SELECT remembered,idle_expires_at,absolute_expires_at,assurance_until "
+            "FROM local_sessions WHERE principal_id=%s", (principal,),
+        ).fetchone()
+    assert session["remembered"] is True
+    assert session["idle_expires_at"] == now + timedelta(days=30)
+    assert session["absolute_expires_at"] == now + timedelta(days=30)
+    assert session["assurance_until"] == now + timedelta(minutes=10)

@@ -1,7 +1,7 @@
 """Database-backed local accounts with password, TOTP and revocable sessions."""
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
@@ -14,11 +14,13 @@ from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatc
 from cryptography.fernet import Fernet, InvalidToken
 import psycopg
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 import pyotp
 from starlette.requests import Request
 
 from radhouse.domain.access import AuthContext
 from radhouse.domain.tasks import Rejected
+from radhouse.domain.projects import ProjectCoordination
 from radhouse.storage.postgres import (
     ApplicationStorageError,
     _application_connection_parameters,
@@ -144,6 +146,13 @@ def provision_local_user(
             ).fetchone()
             if owner is None or owner["owner_id"] != principal_id:
                 raise LocalAuthError("project_owner_mismatch")
+            state = ProjectCoordination(project_id).validate()
+            connection.execute(
+                "INSERT INTO public.project_coordination"
+                "(project_id,revision,phase,active_task_id,snapshot) "
+                "VALUES (%s,%s,%s,NULL,%s) ON CONFLICT (project_id) DO NOTHING",
+                (project_id, state.revision, state.phase, Jsonb(asdict(state))),
+            )
             connection.execute(
                 "INSERT INTO public.bot_grants(principal_id,bot_id) VALUES (%s,%s) "
                 "ON CONFLICT DO NOTHING", (principal_id, bot_id),
@@ -269,6 +278,7 @@ class LocalAuthService:
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
         idle_ttl: timedelta = timedelta(minutes=30),
         absolute_ttl: timedelta = timedelta(hours=12),
+        remembered_ttl: timedelta = timedelta(days=30),
         assurance_ttl: timedelta = timedelta(minutes=10),
     ):
         if not expected_origin.startswith("https://") and expected_origin not in {
@@ -288,6 +298,7 @@ class LocalAuthService:
         self._clock = clock
         self._idle_ttl = idle_ttl
         self._absolute_ttl = absolute_ttl
+        self._remembered_ttl = remembered_ttl
         self._assurance_ttl = assurance_ttl
         self._passwords = PasswordHasher()
         self._dummy_hash = self._passwords.hash(secrets.token_urlsafe(32))
@@ -380,7 +391,16 @@ class LocalAuthService:
         )
         return credential
 
-    def login(self, username: str, password: str, totp_code: str, source: str, *, expected_principal: str | None = None) -> LocalSession:
+    def login(
+        self,
+        username: str,
+        password: str,
+        totp_code: str,
+        source: str,
+        *,
+        expected_principal: str | None = None,
+        remember_browser: bool = False,
+    ) -> LocalSession:
         now = self._clock()
         try:
             with self._connection() as connection:
@@ -394,12 +414,15 @@ class LocalAuthService:
                 token = secrets.token_urlsafe(32)
                 csrf = self._csrf(token)
                 assurance_until = now + self._assurance_ttl
+                session_ttl = self._remembered_ttl if remember_browser else self._absolute_ttl
+                idle_ttl = self._remembered_ttl if remember_browser else self._idle_ttl
                 connection.execute(
                     "INSERT INTO public.local_sessions"
                     "(token_hash,principal_id,csrf_hash,created_at,last_seen_at,idle_expires_at,"
-                    "absolute_expires_at,assurance_until) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                    "absolute_expires_at,assurance_until,remembered) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (_digest(token), credential["principal_id"], _digest(csrf), now, now,
-                     now + self._idle_ttl, now + self._absolute_ttl, assurance_until),
+                     now + idle_ttl, now + session_ttl, assurance_until, remember_browser),
                 )
                 binding = self._binding(connection, credential["principal_id"], credential["username"])
                 return LocalSession(token, csrf, credential["principal_id"], credential["username"],
@@ -488,7 +511,8 @@ class LocalAuthService:
                     supplied = request.headers.get("x-radhouse-csrf", "")
                     if not supplied or not hmac.compare_digest(_digest(supplied), row["csrf_hash"]):
                         raise Rejected("csrf_denied", 403)
-                idle_expires = min(now + self._idle_ttl, row["absolute_expires_at"])
+                idle_ttl = self._remembered_ttl if row["remembered"] else self._idle_ttl
+                idle_expires = min(now + idle_ttl, row["absolute_expires_at"])
                 connection.execute(
                     "UPDATE public.local_sessions SET last_seen_at=%s,idle_expires_at=%s "
                     "WHERE token_hash=%s", (now, idle_expires, row["token_hash"]),
