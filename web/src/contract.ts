@@ -114,6 +114,7 @@ function taskCard(value: unknown): TaskCard {
   const title = record(item.title);
   return {
     task: task(item.task),
+    sequence: integer(item.sequence),
     title: {
       task_id: string(title.task_id),
       title: string(title.title),

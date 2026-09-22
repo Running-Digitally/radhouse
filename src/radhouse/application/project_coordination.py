@@ -177,18 +177,18 @@ def apply_result(
     elif "reviewer" in role:
         verdict = update.get("reviewer_verdict")
         reviewed = update.get("reviewed_revision")
-        if reviewed != state.accepted_preview_revision:
+        if reviewed != state.preview_revision or state.preview_revision != state.source_revision:
             verdict = reviewed = None
         changes.update(
             reviewed_revision=reviewed,
             reviewer_verdict=verdict,
             phase="merge_ready" if verdict == "READY" else "correction",
             status_note=(
-                "Reviewer accepted the owner-approved revision."
+                "Reviewer found the current preview revision ready."
                 if verdict == "READY"
                 else "Reviewer returned changes to Builder."
                 if verdict == "CHANGES_NEEDED"
-                else "Review evidence did not match the accepted preview revision."
+                else "Review evidence did not match the current preview revision."
             ),
         )
     elif "deployer" in role:
@@ -198,7 +198,8 @@ def apply_result(
         if (
             deployed != merged
             or state.reviewer_verdict != "READY"
-            or state.reviewed_revision != state.accepted_preview_revision
+            or state.reviewed_revision != state.preview_revision
+            or state.preview_revision != state.source_revision
         ):
             merged = deployed = status = None
         changes.update(

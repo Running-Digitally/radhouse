@@ -42,6 +42,7 @@ try {
   await task.getByRole("tab", { name: "Preview", exact: true }).press("ArrowRight");
   assert.equal(await task.getByRole("tab", { name: "Source", exact: true }).getAttribute("aria-selected"), "true");
   await task.locator('.result-viewer__source').getByText("<script>window.radhouseUnsafe = true</script>", { exact: false }).waitFor();
+  await task.locator("summary", { hasText: "More options" }).click();
   await task.getByRole("button", { name: "Edit title", exact: true }).click();
   await task.getByLabel("Task title", { exact: true }).fill("September planning figures");
   await task.getByRole("button", { name: "Save title", exact: true }).click();
@@ -62,6 +63,7 @@ try {
   await review.getByText("Published to alice.", { exact: true }).waitFor();
   await web.reload();
   await web.getByText("Published to alice.", { exact: true }).waitFor();
+  await task.locator("summary", { hasText: "More options" }).click();
   await task.getByRole("button", { name: "Start a follow-up", exact: true }).click();
   await web.getByText("The previous result is included as reference material.", { exact: true }).waitFor();
   await web.getByLabel("Assignment", { exact: true }).fill("Explain the previous report in three sentences");

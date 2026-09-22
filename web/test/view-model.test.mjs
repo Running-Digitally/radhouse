@@ -24,10 +24,8 @@ test("guidance labels distinguish receipt, completed response, lateness and unce
 });
 
 test("server action reasons become useful explanations", () => {
-  assert.equal(
-    actionReason({ enabled: false, reason: "fresh_assurance_required" }),
-    "Confirm your sign-in again before reviewing this result.",
-  );
+  assert.equal(actionReason({ enabled: false, reason: "result_not_ready" }),
+    "Review becomes available when the result is ready.");
   assert.equal(actionReason({ enabled: true, reason: null }), null);
 });
 

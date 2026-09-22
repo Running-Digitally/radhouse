@@ -27,6 +27,7 @@ class ProjectView:
 class TaskCard:
     task: Task
     title: TaskTitle
+    sequence: int
     cancel: ActionView
     pause: ActionView
     resume: ActionView
