@@ -10,6 +10,7 @@ export function guidanceStatus(receipt: TaskSummary["guidance"][number]): string
   };
   if (receipt.application_state) return labels[receipt.application_state];
   return receipt.state === "accepted" ? "Received by the agent; application is not yet confirmed."
+    : receipt.state === "superseded" ? "The run advanced to a later decision; this earlier response is closed."
     : ["submitted", "unknown"].includes(receipt.state) ? "Delivery outcome unknown. This instruction will not be sent again automatically."
     : "The agent did not accept this instruction.";
 }
