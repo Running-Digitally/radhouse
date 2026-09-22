@@ -11,6 +11,7 @@ from radhouse.domain.projects import ProjectCoordination
 
 def test_review_request_routes_without_preview_acceptance():
     cycle = object.__new__(ProjectBuzzConversationCycle)
+    cycle.coordinator = SimpleNamespace(candidate=SimpleNamespace(display_name="Radhouse"))
     cycle.link = SimpleNamespace(agent_pubkey="b" * 64, bot_id="coordinator")
     reviewer = SimpleNamespace(link=SimpleNamespace(agent_pubkey="c" * 64, bot_id="reviewer"))
     cycle.specialists = (reviewer,)
@@ -27,6 +28,7 @@ def test_review_request_routes_without_preview_acceptance():
 @pytest.mark.parametrize("extra_mention", ["c" * 64, "e" * 64])
 def test_owner_can_ask_radhouse_to_send_current_work_to_reviewer(extra_mention):
     cycle = object.__new__(ProjectBuzzConversationCycle)
+    cycle.coordinator = SimpleNamespace(candidate=SimpleNamespace(display_name="Radhouse"))
     cycle.link = SimpleNamespace(agent_pubkey="b" * 64, bot_id="coordinator")
     reviewer = SimpleNamespace(link=SimpleNamespace(agent_pubkey="c" * 64, bot_id="reviewer"))
     builder = SimpleNamespace(link=SimpleNamespace(agent_pubkey="d" * 64, bot_id="builder"))
@@ -55,6 +57,7 @@ def test_owner_can_ask_radhouse_to_send_current_work_to_reviewer(extra_mention):
 
 def test_coordinator_request_with_two_visible_agent_addresses_remains_ambiguous():
     cycle = object.__new__(ProjectBuzzConversationCycle)
+    cycle.coordinator = SimpleNamespace(candidate=SimpleNamespace(display_name="Radhouse"))
     cycle.link = SimpleNamespace(agent_pubkey="b" * 64, bot_id="coordinator")
     reviewer = SimpleNamespace(link=SimpleNamespace(agent_pubkey="c" * 64, bot_id="reviewer"))
     builder = SimpleNamespace(link=SimpleNamespace(agent_pubkey="d" * 64, bot_id="builder"))
@@ -80,6 +83,7 @@ def test_coordinator_request_with_two_visible_agent_addresses_remains_ambiguous(
 
 def test_coordinator_mention_answers_status_even_while_builder_is_active():
     cycle = object.__new__(ProjectBuzzConversationCycle)
+    cycle.coordinator = SimpleNamespace(candidate=SimpleNamespace(display_name="Radhouse"))
     cycle.link = SimpleNamespace(agent_pubkey="b" * 64, bot_id="coordinator")
     builder = SimpleNamespace(link=SimpleNamespace(agent_pubkey="c" * 64, bot_id="builder"))
     cycle.specialists = (builder,)
@@ -97,3 +101,45 @@ def test_coordinator_mention_answers_status_even_while_builder_is_active():
     assert selected is builder
     assert "Project status · building" in response
     assert cycle._coordinator_content({"content": "@Radhouse pause this work"}, bots) == "pause this work"
+
+
+@pytest.mark.parametrize("signed_mention", [False, True])
+def test_coordinator_deployment_request_overrides_reviewer_reply_ancestry(signed_mention):
+    cycle = object.__new__(ProjectBuzzConversationCycle)
+    cycle.coordinator = SimpleNamespace(candidate=SimpleNamespace(display_name="Radhouse"))
+    cycle.link = SimpleNamespace(agent_pubkey="b" * 64, bot_id="researcher", channel_id="expenses")
+    reviewer = SimpleNamespace(link=SimpleNamespace(
+        agent_pubkey="c" * 64, bot_id="reviewer", link_id="reviewer-link",
+    ))
+    deployer = SimpleNamespace(link=SimpleNamespace(agent_pubkey="d" * 64, bot_id="deployer"))
+    cycle.specialists = (reviewer, deployer)
+    cycle.store = SimpleNamespace(transaction=lambda: nullcontext(SimpleNamespace(
+        conversation_reply_in_channel=lambda *_: {
+            "message": SimpleNamespace(link_id="reviewer-link"),
+        },
+    )))
+    bots = {
+        "researcher": SimpleNamespace(display_name="Researcher"),
+        "reviewer": SimpleNamespace(display_name="Reviewer"),
+        "deployer": SimpleNamespace(display_name="Deployer"),
+    }
+    revision = "a" * 40
+    state = ProjectCoordination(
+        "expenses", phase="merge_ready", source_revision=revision,
+        preview_revision=revision, reviewed_revision=revision,
+        reviewer_verdict="READY",
+    )
+    tags = [["h", "expenses"], ["e", "f" * 64, "", "reply"]]
+    if signed_mention:
+        tags.append(["mention", "b" * 64, "agent-address"])
+    event = {
+        "content": "@Radhouse can you now send it for deployment?",
+        "tags": tags,
+    }
+
+    selected, response, _, _ = cycle._select(
+        event, state, {"deployer": deployer}, bots,
+    )
+
+    assert selected is deployer
+    assert response is None

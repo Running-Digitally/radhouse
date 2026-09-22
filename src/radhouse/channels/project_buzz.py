@@ -86,7 +86,7 @@ class ProjectBuzzConversationCycle:
     def _planning_candidate(self, event, state, roles, bots):
         if state.active_task_id is not None or roles.get("researcher") is None:
             return False
-        mentioned, addressed = self._mentioned(event, bots)
+        mentioned, addressed, _ = self._mentioned(event, bots)
         if addressed or mentioned or reply_target(event):
             return False
         content = self._coordinator_content(event, bots)
@@ -450,8 +450,7 @@ class ProjectBuzzConversationCycle:
             if len(tag) in {2, 3} and tag[0] == "mention"
             and (len(tag) == 2 or tag[2] == "agent-address")
         }
-        coordinator = bots.get(self.link.bot_id)
-        coordinator_name = coordinator.display_name if coordinator else "Radhouse"
+        coordinator_name = self._coordinator_name()
         coordinator_prefix = re.match(
             rf"^\s*@{re.escape(coordinator_name)}(?=$|[\s,:.!?])",
             event["content"], re.I,
@@ -469,13 +468,13 @@ class ProjectBuzzConversationCycle:
                     content, re.I,
                 )
             ]
-            return matches, bool(matches)
+            return matches, bool(matches), True
         if signed:
             admitted = {item.link.agent_pubkey for item in self.specialists}
             if len(signed) != 1 or not signed <= admitted:
-                return [], True
+                return [], True, False
             matches = [item for item in self.specialists if item.link.agent_pubkey in signed]
-            return matches, True
+            return matches, True, False
         matches = []
         for item in self.specialists:
             bot = bots.get(item.link.bot_id)
@@ -484,21 +483,26 @@ class ProjectBuzzConversationCycle:
                 event["content"], re.I,
             ):
                 matches.append(item)
-        return matches, re.match(r"^\s*@[^\s,:]+", event["content"]) is not None
+        return matches, re.match(r"^\s*@[^\s,:]+", event["content"]) is not None, False
 
     def _coordinator_content(self, event, bots):
         """Read intent after an owner-facing @Radhouse prefix; retain the signed source unchanged."""
         content = event["content"].strip()
-        coordinator = bots.get(self.link.bot_id)
-        coordinator_name = coordinator.display_name if coordinator else "Radhouse"
+        coordinator_name = self._coordinator_name()
         content = re.sub(
             rf"^@{re.escape(coordinator_name)}(?=$|[\s,:.!?])[\s,:.!?]*",
             "", content, count=1, flags=re.I,
         )
         return content.strip()
 
+    def _coordinator_name(self):
+        # The coordinator has its own Buzz identity but may share a specialist's
+        # bot grant. The bot's name is not the coordinator's visible @address.
+        candidate = getattr(self.coordinator, "candidate", None)
+        return getattr(candidate, "display_name", None) or "Radhouse"
+
     def _select(self, event, state, roles, bots):
-        mentioned, addressed = self._mentioned(event, bots)
+        mentioned, addressed, coordinator_addressed = self._mentioned(event, bots)
         if addressed:
             if len(mentioned) != 1:
                 return None, "Mention exactly one assigned project agent.", False, state
@@ -511,7 +515,7 @@ class ProjectBuzzConversationCycle:
                 return None, f"{name} is still working. Wait for that step to finish before starting another agent.", False, state
             return mentioned[0], None, True, state
         parent_id = reply_target(event)
-        if parent_id:
+        if parent_id and not coordinator_addressed:
             with self.store.transaction() as tx:
                 parent = tx.conversation_reply_in_channel(self.link.channel_id, parent_id)
             if parent is not None:
