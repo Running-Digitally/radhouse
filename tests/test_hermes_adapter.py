@@ -96,6 +96,41 @@ def test_approval_status_keeps_only_bounded_action_identity():
     assert run.permission_request == {"run_id": "run-1", "request_id": "request-1", "command": "cat report.txt"}
 
 
+def test_pollable_status_exposes_only_allowlisted_activity_label():
+    with client(lambda _: httpx.Response(200, json={
+        "run_id": "run-1",
+        "status": "running",
+        "last_event": "tool.started",
+        "updated_at": 1_795_000_000.75,
+        "private_preview": "cat /private/secret.txt",
+    })) as gateway:
+        run = gateway.status("run-1")
+    assert run.activity.run_id == "run-1"
+    assert run.activity.event == "tool.started"
+    assert run.activity.label == "Using an assigned tool"
+    assert run.activity.occurred_at == 1_795_000_000
+    assert "secret" not in run.activity.label
+
+
+def test_pollable_status_without_runtime_timestamps_has_stable_unknown_age():
+    with client(lambda _: httpx.Response(200, json={
+        "run_id": "run-1", "status": "running", "last_event": "tool.completed",
+    })) as gateway:
+        first = gateway.status("run-1").activity
+        second = gateway.status("run-1").activity
+    assert first == second
+    assert first.occurred_at == 0
+
+
+@pytest.mark.parametrize("field,value", [("last_event", []), ("updated_at", True), ("updated_at", "now")])
+def test_malformed_runtime_activity_metadata_fails_closed(field, value):
+    with client(lambda _: httpx.Response(200, json={
+        "run_id": "run-1", "status": "running", field: value,
+    })) as gateway:
+        with pytest.raises(HermesGatewayError, match="runtime_malformed_response"):
+            gateway.status("run-1")
+
+
 def test_start_and_identical_replay_use_the_pinned_runs_contract():
     requests = []
 

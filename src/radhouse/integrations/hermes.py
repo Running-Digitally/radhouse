@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 import ipaddress
 import hashlib
 import json
+import math
 import re
 import time
 from typing import Literal
@@ -18,7 +19,7 @@ import httpx
 
 from radhouse.application.ports import AgentWorkPort
 from radhouse.domain.tasks import (
-    Attempt, InputFile, Rejected, RuntimeCapabilities, RuntimeDispatch, RuntimeFailure, RuntimeGuidanceReceipt, RuntimeResult, Task,
+    Attempt, InputFile, Rejected, RuntimeActivity, RuntimeCapabilities, RuntimeDispatch, RuntimeFailure, RuntimeGuidanceReceipt, RuntimeResult, Task,
     runtime_images, runtime_input,
 )
 
@@ -33,6 +34,16 @@ HermesState = Literal[
 _STATES = {
     "queued", "running", "waiting_for_approval", "stopping",
     "completed", "failed", "cancelled", "interrupted",
+}
+_ACTIVITY_LABELS = {
+    "tool.started": "Using an assigned tool",
+    "tool.completed": "Completed a tool step and preparing the next step",
+    "reasoning.available": "Developing the next step",
+    "subagent.start": "Delegating a bounded subtask",
+    "subagent.complete": "Reviewing a delegated result",
+    "run.steered": "Applying your guidance",
+    "approval.responded": "Continuing after your decision",
+    "run.stopping": "Stopping the active work",
 }
 
 
@@ -58,6 +69,7 @@ class HermesRun:
     output: str | None = None
     permission_request: dict | None = None
     guidance_receipts: tuple[RuntimeGuidanceReceipt, ...] | None = None
+    activity: RuntimeActivity | None = None
 
 
 @dataclass(frozen=True)
@@ -248,8 +260,50 @@ class HermesRunsClient:
             receipts = tuple(_guidance_receipt(value, run_id) for value in values)
             if len({receipt.control_id for receipt in receipts}) != len(receipts):
                 raise HermesGatewayError("runtime_malformed_guidance")
-        return HermesRun(run_id=run_id, status=_response_state(payload), output=output,
-                         permission_request=permission, guidance_receipts=receipts)
+        status = _response_state(payload)
+        event = payload.get("last_event")
+        updated_at = payload.get("updated_at")
+        created_at = payload.get("created_at")
+        if event is not None and not isinstance(event, str):
+            raise HermesGatewayError("runtime_malformed_response")
+        if (
+            any(isinstance(value, bool) for value in (updated_at, created_at))
+            or any(
+                value is not None and not isinstance(value, (int, float))
+                for value in (updated_at, created_at)
+            )
+        ):
+            raise HermesGatewayError("runtime_malformed_response")
+        label = _ACTIVITY_LABELS.get(event or "")
+        if label is None:
+            label = {
+                "queued": "Waiting to start",
+                "running": "Working on the assignment",
+                "waiting_for_approval": "Waiting for your permission decision",
+                "stopping": "Stopping the active work",
+                "completed": "Completed the assignment",
+                "failed": "The runtime reported a failure",
+                "cancelled": "The work was cancelled",
+                "interrupted": "The runtime was interrupted",
+            }[status]
+            event = status
+        timestamp = next(
+            (
+                value for value in (updated_at, created_at)
+                if value is not None
+                and math.isfinite(value)
+                and 0 < value < 4_102_444_800
+            ),
+            0,
+        )
+        return HermesRun(
+            run_id=run_id,
+            status=status,
+            output=output,
+            permission_request=permission,
+            guidance_receipts=receipts,
+            activity=RuntimeActivity(run_id, event, label, int(timestamp)),
+        )
 
     def steer(self, run_id: str, text: str, *, control_id: str | None = None) -> bool | RuntimeGuidanceReceipt:
         run_id = _validated_identifier(run_id, "run")
@@ -452,14 +506,30 @@ class HermesAgentWorkAdapter:
             raise HermesGatewayError("runtime_guidance_receipts_unavailable")
         receipts = run.guidance_receipts
         if run.status in {"queued", "running", "waiting_for_approval", "stopping"}:
-            return RuntimeResult("running", permission_request=run.permission_request, guidance_receipts=receipts)
+            return RuntimeResult(
+                "running",
+                permission_request=run.permission_request,
+                guidance_receipts=receipts,
+                activity=run.activity,
+            )
         if run.status == "completed":
-            return RuntimeResult("completed", run.output, guidance_receipts=receipts)
+            return RuntimeResult(
+                "completed", run.output, guidance_receipts=receipts, activity=run.activity
+            )
         if run.status == "cancelled":
-            return RuntimeResult("cancelled", run.output, guidance_receipts=receipts)
+            return RuntimeResult(
+                "cancelled", run.output, guidance_receipts=receipts, activity=run.activity
+            )
         if run.status == "interrupted":
-            return RuntimeResult("unknown", guidance_receipts=receipts, guidance_terminal=True)
-        return RuntimeResult("failed", run.output, guidance_receipts=receipts)
+            return RuntimeResult(
+                "unknown",
+                guidance_receipts=receipts,
+                guidance_terminal=True,
+                activity=run.activity,
+            )
+        return RuntimeResult(
+            "failed", run.output, guidance_receipts=receipts, activity=run.activity
+        )
 
     def stop(self, _task: Task, dispatch: RuntimeDispatch) -> bool:
         return self.client.stop(dispatch.run_id).status in {

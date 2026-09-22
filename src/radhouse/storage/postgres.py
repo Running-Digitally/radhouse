@@ -537,6 +537,14 @@ class PostgresUnitOfWork(ConversationQueries):
             (task_id, after),
         ).fetchall()]
 
+    def latest_event(self, task_id: str, kind: str) -> Event | None:
+        row = self._connection.execute(
+            "SELECT cursor,snapshot FROM public.events WHERE task_id=%s AND kind=%s "
+            "ORDER BY cursor DESC LIMIT 1",
+            (task_id, kind),
+        ).fetchone()
+        return replace(_snapshot(row, Event), cursor=row["cursor"]) if row else None
+
     def review(self, review_id: str) -> Review | None:
         return _snapshot(self._connection.execute(
             "SELECT snapshot FROM public.reviews WHERE review_id=%s", (review_id,),

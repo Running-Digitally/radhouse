@@ -72,6 +72,22 @@ Research followed by implementation produces one visible Researcher-to-Builder
 handoff. Reviewer `CHANGES_NEEDED` produces one correlated Builder correction;
 merge and deployment continue to require an owner message.
 
+Clear single-role requests keep that deterministic path. For an ambiguous or
+multi-step request with no explicit agent, Radhouse may run one tools-disabled
+planning turn through an assigned Researcher runtime. The result is accepted
+only as a strict `research`, `build`, `research_then_build` or `clarify`
+proposal. It cannot approve, merge, deploy, grant access or change
+infrastructure. Invalid output produces one clarification and no retry; the
+original owner request remains the specialist's authoritative brief.
+
+Routine runtime activity is pull-based. A project-channel `status` message
+returns the active agent, a fixed local description of the latest pollable
+Hermes checkpoint, its age, whether the owner is needed, and the current
+PR/preview/deployment references. Activity alone never posts a Buzz message.
+Radhouse stores neither chain-of-thought nor tool arguments, outputs, file
+paths or provider text in this status view. Completion and action-needed
+messages continue through the existing durable signed outbox.
+
 The coordinator snapshot records only correlation and release facts: phase,
 active/latest task, repository/branch/PR, source and preview revisions, preview
 digest/URL, owner-accepted revision, reviewer verdict/revision, merge revision,

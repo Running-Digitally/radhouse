@@ -23,9 +23,11 @@ approval and never deploys without an owner deployment message.
 ## Reused contracts
 
 Every handoff creates an ordinary child task with `follows_task_id`. The child
-receives the exact completed parent result through `previous_result`. Project
-membership and current bot grants are rechecked at admission. Unrelated task
-history, files, bot memory and credentials do not cross the handoff.
+receives the exact completed parent result through `previous_result`. An
+automatic Researcher-to-Builder handoff also carries the files the owner
+selected for that research/build request; other task files do not cross a
+handoff. Project membership and current bot grants are rechecked at admission.
+Unrelated task history, bot memory and credentials do not cross the handoff.
 
 Official Buzz project channels remain the primary conversational surface. An
 explicit agent mention overrides automatic routing. Otherwise project phase,
@@ -38,6 +40,17 @@ bounded briefs:
 | Builder | Reviewer | Review the exact result; identify blocking defects and state readiness. |
 | Reviewer | Builder | Address the blocking findings and report the updated revision and validation. |
 | Reviewer or Builder | Deployer | Check release readiness and wait for the protected deployment decision. |
+
+Radhouse may use one bounded model turn to interpret an ambiguous project goal
+before creating a specialist task. That planner has no tools and emits a strict
+route proposal only. The deterministic controller still owns identity,
+membership, deduplication, task correlation, accepted revisions, review,
+merge and deployment gates. Clear requests do not need the planner.
+
+Project activity stays quiet by default. The owner can ask `status` in Buzz to
+see a sanitized current step and age from the existing Hermes run-status poll,
+plus any action needed and known delivery links. This does not subscribe to or
+consume Hermes's non-replayable event stream and does not create a model call.
 
 Reviewer and Deployer are separate signed bot identities and runtimes. Radhouse
 is a signed controller identity with no separate agent runtime. A role
