@@ -804,6 +804,11 @@ class ProjectBuzzConversationCycle:
                     if previous is None:
                         self._note("reply:" + event["id"], "There is no reviewed task to deploy.", reply_to=event["id"])
                         continue
+                    prior_task = self._task(previous)
+                    # A cancelled duplicate review is not valid follow-up
+                    # context. The exact READY revision still gates deployment.
+                    if prior_task is None or prior_task.phase != "closed" or prior_task.result is None:
+                        previous = None
                     with self.store.transaction() as tx:
                         tx.save_conversation_message(
                             ConversationMessage(
@@ -814,7 +819,9 @@ class ProjectBuzzConversationCycle:
                             ), event=event, processed=True,
                         )
                     brief = (
-                        f"The owner approved merge and private deployment of reviewed revision {state.reviewed_revision}. "
+                        f"The owner approved merge and private deployment of reviewed revision {state.reviewed_revision} "
+                        f"from {state.pull_request}. The recorded Reviewer verdict is READY for the matching "
+                        f"preview at {state.preview_url} (digest {state.preview_digest}). "
                         "Use the project's existing target and authority. Verify merge, deployment, health and rollback; "
                         "end with RADHOUSE_PROJECT_UPDATE containing merged_revision, deployment_url, "
                         "deployed_revision and deployment_status."
