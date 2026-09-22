@@ -115,6 +115,71 @@ def test_unaddressed_project_request_routes_once_to_builder_and_status_is_read_o
         assert "Builder is still working" in reply.content
 
 
+def test_new_work_with_later_review_and_deploy_steps_routes_to_builder(
+    service, store, clock,
+):
+    now = int(clock().timestamp())
+    channel = "2d84100d-9a9c-45c0-b91f-5be6074519a3"
+    owner = "a" * 64
+    coordinator = ConversationLink(
+        "workflow-coordinator", channel, "personal-alice:alice:buzz", "alice",
+        owner, "b" * 64, "bot-alpha", "personal-alice", now,
+        member_pubkeys=("b" * 64, "d" * 64),
+        default_agent=True, coordinator=True, channel_kind="stream",
+    )
+    specialists = (
+        ConversationLink(
+            "workflow-builder", channel, "personal-alice:alice:buzz", "alice",
+            owner, "d" * 64, "bot-beta", "personal-alice", now,
+            member_pubkeys=coordinator.member_pubkeys, default_agent=False,
+            channel_kind="stream",
+        ),
+    )
+    with store.transaction() as tx:
+        tx._connection.execute(
+            "UPDATE channel_bindings SET subject=%s WHERE subject='alice@buzz'",
+            (owner,),
+        )
+        tx._connection.execute(
+            "UPDATE bots SET display_name='Builder',role_name='Builder' "
+            "WHERE bot_id='bot-beta'"
+        )
+        tx.save_conversation_link(coordinator)
+        for link in specialists:
+            tx.save_conversation_link(link)
+    assignment = {
+        "id": "a" * 64,
+        "pubkey": owner,
+        "created_at": now,
+        "kind": 9,
+        "tags": [["h", channel]],
+        "content": (
+            "Import these CSV files as two separate groups. Build this feature, "
+            "then review and deploy it."
+        ),
+        "sig": "b" * 128,
+    }
+    relay = Relay([assignment])
+    cycle = ProjectBuzzConversationCycle(
+        service,
+        SimpleNamespace(link=coordinator, relay=relay),
+        tuple(SimpleNamespace(link=link, relay=Relay()) for link in specialists),
+    )
+
+    assert cycle.ingress() == 1
+    with store.transaction() as tx:
+        tasks = tx.tasks()
+        state = tx.project_coordination("personal-alice")
+        assert len(tasks) == 1
+        assert tasks[0].bot_id == "bot-beta"
+        assert state.phase == "building"
+        reply = tx.conversation_message("reply:" + assignment["id"])
+        assert "Deployment is waiting" not in reply["message"].content
+        assert "Builder" in tx.conversation_message(
+            "coord-route:" + assignment["id"]
+        )["message"].content
+
+
 def test_project_pause_resume_and_stop_control_only_the_active_task(
     service, store, clock,
 ):
