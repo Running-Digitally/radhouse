@@ -1,4 +1,6 @@
-import { ApiError, type RadhouseApi } from "./api.js";
+import type { RadhouseApi } from "./api.js";
+import { acceptPastedOrDroppedFiles, loadAttachments } from "./files.js";
+import type { AttachedFile } from "./files.js";
 
 export interface ConversationLink {
   link_id: string;
@@ -16,7 +18,7 @@ export interface ConversationMessage {
   task_id: string | null;
   created_at: number;
   sequence: number;
-  files: { name: string; content: string }[];
+  files: AttachedFile[];
 }
 export interface ConversationHistory {
   messages: ConversationMessage[];
@@ -26,7 +28,7 @@ export interface ConversationHistory {
 export interface ConversationDraft {
   content: string;
   reply: ConversationMessage | null;
-  files: { name: string; content: string }[];
+  files: AttachedFile[];
   before?: number;
   scroll?: number;
   atBottom?: boolean;
@@ -77,7 +79,15 @@ export function conversationPanel(api: RadhouseApi, link: ConversationLink, hist
       node("p", "message-content", message.content));
     for (const file of message.files) {
       const details = node("details", "message-reference");
-      details.append(node("summary", "", file.name), node("pre", "message-content", file.content));
+      details.append(node("summary", "", file.name));
+      if (file.encoding === "base64" && file.media_type.startsWith("image/")) {
+        const image = node("img", "message-reference__image");
+        image.src = `data:${file.media_type};base64,${file.content}`;
+        image.alt = file.name; image.loading = "lazy";
+        details.append(image);
+      } else {
+        details.append(node("pre", "message-content", file.content));
+      }
       item.append(details);
     }
     const controls = node("div", "message-controls");
@@ -104,22 +114,24 @@ export function conversationPanel(api: RadhouseApi, link: ConversationLink, hist
   composer.placeholder = `Message ${link.display_name}…`; composer.oninput = () => { draft.content = composer.value; };
   label.append(node("span", "field__label", `Message ${link.display_name}`), composer);
   const filesLabel = node("label", "field"); const files = node("input", "field__control");
-  files.type = "file"; files.multiple = true; files.accept = ".txt,.md,.csv,.json,.log";
-  filesLabel.append(node("span", "field__label", "Reference files · text, 64 KB total"), files);
+  files.type = "file"; files.multiple = true; files.accept = ".txt,.md,.markdown,.csv,.json,.log,.png,.jpg,.jpeg,.webp";
+  filesLabel.append(node("span", "field__label", "Reference files · paste, drop or choose text/CSV/images"), files);
   const fileNames = node("p", "muted", draft.files.map(file => file.name).join(", "));
   const submit = node("button", "button button--primary", "Send message"); submit.type = "submit";
   files.onclick = () => filePicker(true); files.addEventListener("cancel", () => filePicker(false));
   files.onchange = () => {
     filePicker(false);
     void run(submit, async () => {
-      const selected = Array.from(files.files ?? []);
-      if (selected.length > 4 || selected.reduce((size, file) => size + file.size, 0) > 65536) throw new ApiError("invalid_input_files", 422);
-      const decoder = new TextDecoder("utf-8", { fatal: true });
-      const loaded = await Promise.all(selected.map(async file => ({ name: file.name, content: decoder.decode(await file.arrayBuffer()) })));
-      if (loaded.some(file => file.content.includes("\0"))) throw new ApiError("invalid_input_files", 422);
+      const loaded = await loadAttachments(Array.from(files.files ?? []));
       draft.files = loaded; fileNames.textContent = loaded.map(file => file.name).join(", ");
     });
   };
+  acceptPastedOrDroppedFiles(composer, async selected => {
+    await run(submit, async () => {
+      draft.files = await loadAttachments(selected);
+      fileNames.textContent = draft.files.map(file => file.name).join(", ");
+    });
+  });
   form.append(replyLabel, clearReply, label, filesLabel, fileNames, submit);
   form.onsubmit = event => {
     event.preventDefault(); if (!draft.content.trim()) return;

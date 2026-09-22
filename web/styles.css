@@ -19,6 +19,8 @@ button, input, select, textarea { font: inherit; }
 .shell { width: min(1080px, calc(100% - 32px)); margin: 0 auto; padding: 48px 0 80px; }
 .login-card { width: min(30rem, calc(100% - 2rem)); margin: 8vh auto; padding: 2rem; border: 1px solid var(--line); border-radius: 1rem; background: var(--paper); box-shadow: var(--shadow); }
 .login-form { display: grid; gap: 1rem; margin-top: 1.5rem; }
+.checkbox-label { align-items: center; color: var(--muted); display: flex; font-size: .9rem; gap: .35rem; }
+.checkbox-label input { accent-color: var(--accent); height: 1rem; width: 1rem; }
 .page-header { display: flex; justify-content: space-between; align-items: end; margin-bottom: 28px; }
 .brand { display: inline-flex; align-items: center; gap: 11px; margin-bottom: 16px; }
 .brand__mark { width: 45px; height: 45px; flex: none; }
@@ -53,6 +55,8 @@ textarea.field__control { resize: vertical; min-height: 48px; }
 .project-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin: 14px 0; }
 .project-card { border: 1px solid var(--line); border-radius: 16px; background: var(--paper); padding: 18px; }
 .project-card--current { border-color: var(--green); }
+.project-card__link { display: block; margin-top: 10px; color: var(--green-ink); font-weight: 700; }
+.message-reference__image { display: block; max-width: min(100%, 720px); max-height: 520px; margin-top: 10px; border-radius: 12px; object-fit: contain; }
 .project-form { display: grid; gap: 12px; max-width: 42rem; margin-top: 20px; }
 .project-agent-choices { border: 0; padding: 0; margin: 0; }
 .project-agent-choice { display: flex; align-items: center; gap: 8px; margin: 10px 0; }

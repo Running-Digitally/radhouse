@@ -40,7 +40,7 @@ def seed_fixture(dsn: str) -> None:
     data = json.loads(FIXTURE.read_text())
     with psycopg.connect(dsn) as connection:
         # Reverse FK order from the fixture schema. No schema/role authority is used.
-        for table in ("conversation_outbox", "conversation_messages", "conversation_links", "local_sessions", "local_login_throttles", "local_credentials", "events", "deliveries", "commands", "publications", "reviews", "agent_dispatches", "operations", "budget_reservations", "claims", "task_revisions", "attempts", "tasks", "channel_bindings", "project_bots", "project_members", "bot_grants", "bots", "projects", "actors"):
+        for table in ("conversation_outbox", "conversation_messages", "conversation_links", "project_coordination", "local_sessions", "local_login_throttles", "local_credentials", "events", "deliveries", "commands", "publications", "reviews", "agent_dispatches", "operations", "budget_reservations", "claims", "task_revisions", "attempts", "tasks", "channel_bindings", "project_bots", "project_members", "bot_grants", "bots", "projects", "actors"):
             connection.execute(sql.SQL("DELETE FROM {}").format(sql.Identifier("public", table)))
         for bot in data["bots"]:
             connection.execute(

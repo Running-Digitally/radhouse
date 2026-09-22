@@ -1,6 +1,7 @@
 """One explicitly linked owner/agent conversation, independent of a chat client."""
 
 from dataclasses import dataclass
+from typing import Literal
 
 from radhouse.domain.tasks import InputFile
 
@@ -25,6 +26,10 @@ class ConversationLink:
     # Empty membership preserves old two-person DM snapshots.
     member_pubkeys: tuple[str, ...] = ()
     default_agent: bool = True
+    # A coordinator link owns project-channel ingress but never executes work.
+    # It delegates each accepted owner message to one specialist link.
+    coordinator: bool = False
+    channel_kind: Literal["dm", "stream"] = "dm"
 
 
 @dataclass(frozen=True)

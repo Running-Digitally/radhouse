@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from radhouse.domain.access import BotProfile
 from radhouse.domain.tasks import Task, TaskTitle
 from radhouse.domain.releases import Publication
+from radhouse.domain.projects import ProjectCoordination
 
 
 @dataclass(frozen=True)
@@ -19,6 +20,7 @@ class ProjectView:
     conversation_id: str
     binding_revision: int
     bot_ids: tuple[str, ...]
+    coordination: ProjectCoordination | None = None
 
 
 @dataclass(frozen=True)

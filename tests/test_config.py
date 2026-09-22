@@ -200,11 +200,44 @@ def test_shared_project_channel_requires_one_authority_and_default_agent():
             BuzzConfig.model_validate({**value, "agents": agents})
 
 
+def test_private_stream_project_channel_has_one_default_radhouse_coordinator():
+    coordinator = buzz_agent("coordinator-authority", "d", default=True)
+    coordinator.update(
+        coordinator=True,
+        display_name="Radhouse",
+        bot_id="researcher",
+    )
+    researcher = buzz_agent("researcher", "b")
+    builder = buzz_agent("builder", "c")
+    value = {
+        "relay_origin": "https://buzz.example",
+        "relay_pubkey": "f" * 64,
+        "conversations": [{
+            "channel_id": "project-channel",
+            "conversation_id": "project-one:alice:buzz",
+            "kind": "stream",
+        }],
+        "agents": [coordinator, researcher, builder],
+    }
+
+    configured = BuzzConfig.model_validate(value)
+    assert configured.conversations[0].kind == "stream"
+    assert configured.agents[0].coordinator is True
+
+    with pytest.raises(ValidationError):
+        BuzzConfig.model_validate({
+            **value,
+            "agents": [coordinator, {**builder, "default_in_channel": True}],
+        })
+
+
 def test_one_agent_identity_may_join_personal_and_project_channels():
     personal = buzz_agent("researcher-personal", "b")
+    personal["bot_id"] = "researcher"
     personal["channel_id"] = "personal-channel"
     personal["conversation_id"] = "personal-alice:alice:buzz"
     project = buzz_agent("researcher-project", "b", default=True)
+    project["bot_id"] = "researcher"
     value = {
         "relay_origin": "https://buzz.example",
         "relay_pubkey": "f" * 64,
@@ -228,6 +261,11 @@ def test_one_agent_identity_may_join_personal_and_project_channels():
         BuzzConfig.model_validate(
             {**value, "agents": [project, {**project, "link_id": "duplicate"}]}
         )
+    with pytest.raises(ValidationError, match="one execution authority"):
+        BuzzConfig.model_validate({
+            **value,
+            "agents": [personal, {**project, "bot_id": "another-runtime"}],
+        })
 
 
 def test_duplicate_bot_identity_or_hermes_home_is_rejected(tmp_path: Path):

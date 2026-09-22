@@ -1,3 +1,5 @@
+import type { AttachedFile } from "./files.js";
+
 export type Role = "admin" | "operator" | "viewer";
 export type Phase = "queued" | "active" | "recovering" | "stopping" | "closed";
 
@@ -35,7 +37,7 @@ export interface TaskSummary {
   result: string | null;
   result_digest: string | null;
     observation_sequence: number;
-    files: { name: string; content: string }[];
+    files: AttachedFile[];
     follows_task_id: string | null;
     guidance: { id: string; kind: string; text: string | null; choice: string | null; state: string;
       application_state: "accepted" | "applied" | "too_late" | "not_applied" | "unknown" | null }[];
@@ -73,6 +75,35 @@ export interface Project {
   conversation_id: string;
   binding_revision: number;
   bot_ids: string[];
+  coordination: ProjectCoordination | null;
+}
+
+export interface ProjectCoordination {
+  project_id: string;
+  revision: number;
+  phase: "intake" | "research" | "building" | "preview_feedback" | "review" |
+    "correction" | "merge_ready" | "deployment" | "deployed" | "blocked";
+  active_bot_id: string | null;
+  active_task_id: string | null;
+  latest_task_id: string | null;
+  pending_message_id: string | null;
+  repository: string | null;
+  branch: string | null;
+  pull_request: string | null;
+  source_revision: string | null;
+  preview_url: string | null;
+  preview_revision: string | null;
+  preview_digest: string | null;
+  accepted_preview_revision: string | null;
+  reviewed_revision: string | null;
+  reviewer_verdict: string | null;
+  merged_revision: string | null;
+  deployment_url: string | null;
+  deployed_revision: string | null;
+  deployment_status: string | null;
+  status_note: string | null;
+  handoff_bot_id: string | null;
+  handoff_brief: string | null;
 }
 
 export interface TaskEvent {
