@@ -155,7 +155,7 @@ function loginScreen(message?: string): void {
   projects = [];
   // Private display state never crosses an account change.
   drafts.clear(); reviews.clear(); expanded.clear(); timelines.clear(); conversationDrafts.clear(); guidanceDrafts.clear();
-  titleDrafts.clear(); openResults.clear(); openMore.clear(); manageOpen = false; olderWorkOpen = false;
+  titleDrafts.clear(); openResults.clear(); openMore.clear(); manageOpen = false; recentActivityOpen = false; olderWorkOpen = false;
   projectNameDraft = ""; projectBotDraft.clear(); agentDirectory.clear();
   conversationLinks = []; conversationHistory = null; selectedConversation = "";
   reviewTarget = null;
@@ -275,7 +275,7 @@ function historyPanel(card: TaskCard): HTMLElement {
     if (!list.children.length) list.append(element("li", undefined, "No milestones yet."));
     panel.replaceChildren(element("h4", "section-title", "Task progress"), list);
     if (card.task.phase === "active") panel.append(element("p", "muted", latestActivity(data)
-      ? "These are the latest confirmed types of activity, not a description of the actual change. The agent has not sent a specific work note yet."
+      ? "These are the latest confirmed types of activity, not a description of the actual change. This task feed has no specific work note yet."
       : "No finer update has arrived yet. The agent may still be working through its current step."));
   };
   const cached = timelines.get(card.task.task_id);
