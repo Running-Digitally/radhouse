@@ -638,6 +638,10 @@ class Service:
             result = self.work.result(current, runtime_dispatch)
         except RuntimeFailure:
             return self._needs_attention(task_id, dispatch.key)
+        from radhouse.application.runtime_controls import reconcile_pending_denial
+        denial_reconciled = reconcile_pending_denial(
+            self, current, runtime_dispatch, result.permission_request
+        )
         self._record_runtime_activity(task_id, result)
         from radhouse.application.guidance import reconcile
         reconcile(self, task_id, dispatch.run_id, result.guidance_receipts,
@@ -652,7 +656,7 @@ class Service:
                 blockers = tuple(x for x in current.blockers if x not in {
                     "operation_unknown", "runtime_stop", "runtime_unavailable",
                 })
-                permission = result.permission_request
+                permission = None if denial_reconciled else result.permission_request
                 if permission is not None:
                     permission = {**permission, "digest": fingerprint(permission),
                                   "allow_once": permission.get("command") in self.approval_commands.get(current.bot_id, ())}

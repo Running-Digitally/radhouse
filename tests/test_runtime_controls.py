@@ -207,6 +207,166 @@ def test_permission_requires_exact_request_existing_grant_and_fresh_assurance(se
     assert len(called) == 1 and result.guidance[-1]["choice"] == "once"
 
 
+def test_lost_denial_retries_once_when_exact_request_remains_pending(
+    service, fake_work, alice, envelope, start,
+):
+    admitted = service.admit(alice, envelope(), start)
+    claimed = service.claim(admitted.task_id, "worker")
+    permission = {
+        "request_id": "approval-1", "command": "cat /unapproved/report.txt",
+        "run_id": "run-" + claimed.attempt_id,
+    }
+    current_permission = [permission]
+    fake_work.result = lambda *_: RuntimeResult(
+        "running", permission_request=current_permission[0]
+    )
+    task = service.run(admitted.task_id)
+    from radhouse.application.service import fingerprint
+    assert task.permission_request == {
+        **permission, "digest": fingerprint(permission), "allow_once": False,
+    }
+    calls = []
+
+    def approve_lost(*args):
+        calls.append(args)
+        raise RuntimeFailure("runtime_timeout")
+
+    fake_work.approve = approve_lost
+    unknown = service.respond_permission(
+        alice, task.task_id, task.state_revision, permission["request_id"],
+        task.permission_request["digest"], "deny", envelope=envelope(),
+    )
+    assert {
+        key: unknown.guidance[-1].get(key)
+        for key in ("kind", "choice", "state", "request_id", "run_id", "permission_digest",
+                    "expected_revision", "reconcile_attempted")
+    } == {
+        "kind": "permission", "choice": "deny", "state": "unknown",
+        "request_id": permission["request_id"], "run_id": permission["run_id"],
+        "permission_digest": task.permission_request["digest"],
+        "expected_revision": task.state_revision,
+        "reconcile_attempted": None,
+    }
+
+    def approve_reconciled(*args):
+        calls.append(args)
+        current_permission[0] = None
+        return True
+
+    fake_work.approve = approve_reconciled
+    reconciled = service.recover(task.task_id)
+    assert len(calls) == 2
+    assert reconciled.guidance[-1]["state"] == "accepted"
+    assert reconciled.guidance[-1]["reconcile_attempted"] is True
+    assert reconciled.permission_request is None
+    service.recover(task.task_id)
+    assert len(calls) == 2
+
+
+def test_lost_approval_is_never_retried(
+    service, fake_work, alice, envelope, start,
+):
+    permission = {"request_id": "approval-1", "command": "cat /approved/report.txt", "run_id": "run-1"}
+    fake_work.result = lambda *_: RuntimeResult("running", permission_request=permission)
+    task = service.run(service.admit(alice, envelope(), start).task_id)
+    service.approval_commands = {start.bot_id: (permission["command"],)}
+    calls = []
+
+    def lose(*args):
+        calls.append(args)
+        raise RuntimeFailure("runtime_timeout")
+
+    fake_work.approve = lose
+    unknown = service.respond_permission(
+        alice, task.task_id, task.state_revision, permission["request_id"],
+        task.permission_request["digest"], "once", envelope=envelope(),
+    )
+    fake_work.approve = lambda *args: pytest.fail("lost approval must never retry")
+    service.recover(task.task_id)
+    assert len(calls) == 1 and unknown.guidance[-1]["state"] == "unknown"
+
+
+def test_lost_denial_is_not_retried_after_the_request_changes(
+    service, fake_work, alice, envelope, start,
+):
+    admitted = service.admit(alice, envelope(), start)
+    claimed = service.claim(admitted.task_id, "worker")
+    permission = {
+        "request_id": "approval-1", "command": "cat /first/report.txt",
+        "run_id": "run-" + claimed.attempt_id,
+    }
+    current_permission = [permission]
+    fake_work.result = lambda *_: RuntimeResult(
+        "running", permission_request=current_permission[0]
+    )
+    task = service.run(admitted.task_id)
+    calls = []
+
+    def lose(*args):
+        calls.append(args)
+        raise RuntimeFailure("runtime_timeout")
+
+    fake_work.approve = lose
+    service.respond_permission(
+        alice, task.task_id, task.state_revision, permission["request_id"],
+        task.permission_request["digest"], "deny", envelope=envelope(),
+    )
+    current_permission[0] = {
+        "request_id": "approval-1", "command": "cat /changed/report.txt", "run_id": permission["run_id"],
+    }
+    fake_work.approve = lambda *args: pytest.fail("changed denial must never retry")
+    recovered = service.recover(task.task_id)
+    recovered = service.recover(task.task_id)
+    assert len(calls) == 1
+    assert recovered.guidance[-1]["state"] == "unknown"
+    assert recovered.permission_request["command"] == "cat /changed/report.txt"
+
+
+def test_legacy_lost_denial_requires_original_operation_fingerprint(
+    service, fake_work, alice, envelope, start,
+):
+    admitted = service.admit(alice, envelope(), start)
+    claimed = service.claim(admitted.task_id, "worker")
+    permission = {
+        "request_id": "approval-1", "command": "cat /legacy/report.txt",
+        "run_id": "run-" + claimed.attempt_id,
+    }
+    current_permission = [permission]
+    fake_work.result = lambda *_: RuntimeResult(
+        "running", permission_request=current_permission[0]
+    )
+    task = service.run(admitted.task_id)
+    calls = []
+
+    def lose(*args):
+        calls.append(args)
+        raise RuntimeFailure("runtime_timeout")
+
+    fake_work.approve = lose
+    service.respond_permission(
+        alice, task.task_id, task.state_revision, permission["request_id"],
+        task.permission_request["digest"], "deny", envelope=envelope(),
+    )
+    with service.store.transaction() as tx:
+        current = tx.task(task.task_id)
+        legacy = tuple(
+            {key: value for key, value in item.items()
+             if key not in {"permission_digest", "expected_revision"}}
+            for item in current.guidance
+        )
+        tx.save_task(current.evolve(guidance=legacy), current.state_revision)
+
+    def approve_reconciled(*args):
+        calls.append(args)
+        current_permission[0] = None
+        return True
+
+    fake_work.approve = approve_reconciled
+    recovered = service.recover(task.task_id)
+    assert len(calls) == 2
+    assert recovered.guidance[-1]["state"] == "accepted"
+
+
 def test_files_and_followup_context_are_selected_snapshots(service, alice, bob, envelope, start):
     first = service.run(service.admit(alice, envelope(), start).task_id)
     second = service.admit(alice, envelope(), replace(start, brief="Summarize this", follows_task_id=first.task_id,
