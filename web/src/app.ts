@@ -5,7 +5,6 @@ import type { Project, Review, TaskCard, TaskEvents, WorkHome } from "./types.js
 import { conversationPanel } from "./conversations.js";
 import type { ConversationDraft, ConversationHistory, ConversationLink } from "./conversations.js";
 import { resultViewer } from "./markdown.js";
-import { deliveryHandoffs } from "./delivery.js";
 import { acceptPastedOrDroppedFiles, loadAttachments } from "./files.js";
 import type { AttachedFile } from "./files.js";
 
@@ -67,7 +66,7 @@ function notice(message: string, error = false): HTMLElement {
 function errorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     const labels: Record<string, string> = {
-      review_link_denied: "This review link is expired or no longer available to your account. Open your work home, or ask Researcher for status to get a fresh link.",
+      review_link_denied: "This link has expired or is no longer available to your account. Ask Radhouse for a new link.",
       stale_state: "The task changed. Review the latest state before trying again.",
       binding_denied: "Your access to this conversation changed.",
       access_denied: "Your access to this project or agent changed.",
@@ -187,7 +186,7 @@ function loginScreen(message?: string): void {
 }
 function reviewPanel(card: TaskCard, review: Review): HTMLElement {
   const panel = element("section", "review-panel");
-  panel.append(element("h4", "review-panel__title", "Review this exact result"),
+  panel.append(element("h4", "review-panel__title", "Review before sharing"),
     element("p", "muted", `Share with: ${review.audience.map((id) => id === signedIn?.principal_id ? "Only me" : id).join(", ")}`),
     element("p", "muted", `Review expires ${new Date(review.expires_at).toLocaleTimeString()}`),
     element("p", "digest", `Artifact SHA-256: ${review.digest}`),
@@ -292,9 +291,8 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
     article.append(form);
   }
   const assignment = element("details", "task-card__assignment");
-  assignment.append(element("summary", undefined, "Assignment"), element("p", "message-content", task.brief));
+  assignment.append(element("summary", undefined, "What you asked"), element("p", "message-content", task.brief));
   article.append(assignment);
-  if (task.disable_tools) article.append(element("p", "task-card__context", "Tools disabled for this assignment"));
   const blockers = blockerMessages(card);
   if (blockers.length) {
     const list = element("ul", "blockers"); blockers.forEach((text) => { list.append(element("li", "blockers__item", text)); }); article.append(list);
@@ -387,33 +385,14 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
       const reason = actionReason(availability); if (reason) control.title = reason;
       secondary.append(control);
     }
-    if (card.review.enabled) controls.append(button("Review result", async () => prepareAudience(article, card), true));
-    if (task.phase === "closed") secondary.append(button("Start a follow-up", async () => {
+    if (card.review.enabled) controls.append(button("Review and share", async () => prepareAudience(article, card), true));
+    if (task.phase === "closed") secondary.append(button("Ask for a change", async () => {
       clearReviewTarget();
       drafts.set(home.project_id, { bot: task.bot_id, brief: "", files: [], ...(task.result === null ? {} : { followsTaskId: task.task_id }) });
       await load(task.result === null ? "Describe the next assignment." : "The previous result will be included. Describe the next assignment.");
       page.querySelector<HTMLTextAreaElement>('textarea[name="brief"]')?.focus();
       page.querySelector(".start-panel")?.scrollIntoView({ block: "start" });
     }));
-    const source = home.agents.find((agent) => agent.bot_id === task.bot_id);
-    if (task.phase === "closed" && task.result !== null && source) {
-      for (const handoff of deliveryHandoffs(source, home.agents)) {
-        secondary.append(button(handoff.label, async () => {
-          if (!api) return;
-          const currentApi = api; const epoch = sessionEpoch;
-          await currentApi.start({
-            botId: handoff.target.bot_id,
-            projectId: home.project_id,
-            brief: handoff.brief,
-            providerBinding: handoff.target.provider_binding,
-            followsTaskId: task.task_id,
-          });
-          if (epoch !== sessionEpoch) return;
-          clearReviewTarget();
-          await load(`${handoff.target.display_name} received the exact completed result and has started the next assignment.`);
-        }));
-      }
-    }
   } else article.append(element("p", "muted", "Read-only access"));
   if (secondary.childElementCount) { more.append(secondary); controls.append(more); }
   article.append(controls);
@@ -493,7 +472,7 @@ function startPanel(home: WorkHome): HTMLElement {
 function projectsPanel(home: WorkHome): HTMLElement {
   const section = element("section", "section"); section.id = "projects-section";
   section.append(element("h2", "section-title", "Projects"),
-    element("p", "section-description", "Keep related work together and choose exactly which agents may work in each project."));
+    element("p", "section-description", "Keep related work together."));
   const list = element("div", "project-list");
   for (const project of projects) {
     const item = element("article", `project-card${project.project_id === home.project_id ? " project-card--current" : ""}`);
@@ -581,7 +560,7 @@ function render(home: WorkHome, message?: string): void {
   const conversation = conversationLinks.find(link => link.link_id === selectedConversation);
   if (!reviewTarget) {
     const navigation = element("nav", "work-home-nav"); navigation.setAttribute("aria-label", "Work home sections");
-    const destinations: [string, string][] = conversation ? [["Conversation", "conversation-section"]] : [["Start work", "start-section"]];
+    const destinations: [string, string][] = conversation ? [["Conversation", "conversation-section"]] : [["Ask for help", "start-section"]];
     destinations.push(["Work", "work-section"]);
     for (const [label, id] of destinations) navigation.append(button(label, async () => {
       page.querySelector(`#${id}`)?.scrollIntoView({ block: "start" });
@@ -595,19 +574,21 @@ function render(home: WorkHome, message?: string): void {
     const latest = home.tasks.find((card) => card.task.task_id === coordination?.latest_task_id);
     const pending = home.tasks.filter((card) => card.task.phase === "active" && card.task.permission_request);
     if (pending.length) {
-      attention.append(element("p", undefined, `${pending.length} agent request${pending.length === 1 ? "" : "s"} need a decision.`));
+      attention.append(element("p", undefined, pending.length === 1
+        ? "An agent needs your decision to continue."
+        : `${pending.length} agents need your decision to continue.`));
       attention.append(button("View request", async () => {
         page.querySelector(`[data-task-id="${pending[0]?.task.task_id}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" });
       }));
     } else if (coordination?.phase === "preview_feedback" && coordination.preview_url) {
-      attention.append(element("p", undefined, "A preview is ready for your feedback. Try it, then tell Radhouse what to change or ask for review in Buzz."));
-      const link = element("a", "button button--primary", "Open preview");
+      attention.append(element("p", undefined, "A new version is ready to try. Tell Radhouse what you like or what to change."));
+      const link = element("a", "button button--primary", "Try the new version");
       link.href = coordination.preview_url; link.target = "_blank"; link.rel = "noopener noreferrer";
       attention.append(link);
     } else if (coordination?.phase === "merge_ready") {
-      attention.append(element("p", undefined, "Reviewer is ready. Decide in Buzz whether to merge and deploy this revision."));
+      attention.append(element("p", undefined, "The review is complete. Tell Radhouse if you want to make this version live."));
       if (coordination.pull_request) {
-        const link = element("a", "button button--secondary", "Open pull request");
+        const link = element("a", "button button--secondary", "See changes");
         link.href = coordination.pull_request; link.target = "_blank"; link.rel = "noopener noreferrer";
         attention.append(link);
       }
@@ -616,7 +597,7 @@ function render(home: WorkHome, message?: string): void {
     } else if (latest?.task.outcome === "failed") {
       attention.append(element("p", undefined, "The latest assignment failed. Open its result to see what happened."));
     } else {
-      attention.append(element("p", "muted", "Nothing right now. Radhouse will surface a decision here when one is needed."));
+      attention.append(element("p", "muted", "Nothing right now. Radhouse will let you know when a decision is needed."));
     }
     page.append(attention);
   }
@@ -624,7 +605,7 @@ function render(home: WorkHome, message?: string): void {
     const manage = element("details", "manage-details");
     manage.open = manageOpen;
     manage.addEventListener("toggle", () => { manageOpen = manage.open; });
-    manage.append(element("summary", undefined, "Manage projects and agents"), projectsPanel(home));
+    manage.append(element("summary", undefined, "Settings"), projectsPanel(home));
     page.append(manage);
   }
   if (!reviewTarget && conversation && conversationHistory && api && signedIn) {

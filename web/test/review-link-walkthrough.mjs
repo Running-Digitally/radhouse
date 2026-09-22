@@ -19,14 +19,14 @@ try {
   await page.reload();
   await page.getByRole('heading', { name: 'Review your work', exact: true }).waitFor();
   assert.equal(await page.locator('[data-task-id]').getAttribute('data-task-id'), process.env.RADHOUSE_TEST_TASK);
-  await page.getByRole('button', { name: 'Review result', exact: true }).click();
+  await page.getByRole('button', { name: 'Review and share', exact: true }).click();
   await page.getByRole('button', { name: 'Review selected audience', exact: true }).click();
   await page.getByRole('button', { name: 'Approve and publish', exact: true }).click();
   await page.getByText('Published to alice.', { exact: true }).waitFor();
   await page.reload();
   await page.getByText('Published to alice.', { exact: true }).waitFor();
   await page.evaluate(() => { location.hash = 'review=tampered'; });
-  await page.getByText('This review link is expired or no longer available to your account.', { exact: false }).waitFor();
+  await page.getByText('This link has expired or is no longer available to your account.', { exact: false }).waitFor();
   assert.equal(await page.locator('[data-task-id]').count(), 0);
   await page.getByRole('button', { name: 'Open work home', exact: true }).click();
   await page.getByRole('heading', { name: "Alice's work", exact: true }).waitFor();

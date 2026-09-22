@@ -25,6 +25,25 @@ person can do, what an agent is doing, and what needs attention. An operator
 should be able to use an assigned agent without knowing how to administer VMs,
 configure identity providers, or maintain model servers.
 
+Design the everyday path for a person who has never developed software. In a
+project, show **what needs me**, **what is happening**, and **what happened** in
+that order. Put current work first, completed work newest first, and older work
+behind a single disclosure. Give each item a clear title, plain-language state,
+and at most one prominent next action. Put logs, revisions, hashes, permission
+receipts, and rarely used controls in details. A person should not have to
+understand PRs, commits, bot routing, or task IDs to ask for a change, try a
+preview, or find the result. Radhouse coordinates ordinary agent handoffs;
+people state the outcome they want.
+
+Before shipping a change to the work home, walk through a project as a new
+nontechnical user: can they tell what needs their attention, what the agent is
+doing, and what to do next without instructions? Check both an empty project
+and one with active, completed, and older work. A new button or confirmation
+must solve a demonstrated user problem; remove or hide a redundant control
+before adding another. Keep sign-in and authorization checks effective, but do
+not repeatedly interrupt a valid signed-in session with a fresh-assurance
+prompt. These are product acceptance checks, not optional polish.
+
 Administrators manage infrastructure, allocation, and grants. Operators work
 with assigned agents and request additional capacity or access. Viewers have
 explicitly scoped read-only access.
