@@ -78,6 +78,7 @@ textarea.field__control { resize: vertical; min-height: 48px; }
 .task-card__title-group .button { min-height: 32px; padding: 5px 10px; font-size: .78rem; }
 .task-card__title { margin: 0; max-width: 740px; font-size: 1.05rem; line-height: 1.45; }
 .task-card__context { margin: 9px 0 0; color: var(--muted); font-size: .86rem; }
+.task-card__activity { margin: 12px 0 0; color: var(--ink); font-size: .92rem; }
 .task-card__assignment { margin-top: 12px; color: var(--muted); }
 .task-card__assignment summary { cursor: pointer; font-size: .86rem; font-weight: 700; }
 .task-card__assignment .message-content { margin-top: 9px; max-height: 12rem; overflow: auto; }
