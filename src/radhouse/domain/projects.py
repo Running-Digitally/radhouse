@@ -17,6 +17,7 @@ ProjectPhase = Literal[
     "deployment",
     "deployed",
     "blocked",
+    "paused",
 ]
 
 

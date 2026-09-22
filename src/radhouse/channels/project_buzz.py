@@ -24,6 +24,9 @@ _REVIEW = re.compile(r"\b(?:review|reviewer|check the (?:pr|revision|work))\b", 
 _DEPLOY = re.compile(r"\b(?:deploy|release|deployment)\b", re.I)
 _RESEARCH = re.compile(r"\b(?:research|compare|alternatives|documentation|investigate|figure out)\b", re.I)
 _BUILD = re.compile(r"\b(?:build|implement|fix|change|improve|update|feature|import)\b", re.I)
+_PAUSE = re.compile(r"\s*(?:pause|hold)(?:\s+(?:this|the))?(?:\s+(?:work|task|project))?[?.! ]*", re.I)
+_RESUME = re.compile(r"\s*(?:resume|continue)(?:\s+(?:this|the))?(?:\s+(?:work|task|project))?[?.! ]*", re.I)
+_STOP = re.compile(r"\s*(?:stop|cancel)(?:\s+(?:this|the))?(?:\s+(?:work|task|project))?[?.! ]*", re.I)
 
 
 class ProjectBuzzConversationCycle:
@@ -114,12 +117,15 @@ class ProjectBuzzConversationCycle:
             ).validate()
             self._save_state(state, updated)
             return updated
-        updated = apply_result(state, bot.role_name, task.result)
         if task.outcome != "completed" or not task.result:
-            updated = updated.evolve(
+            updated = state.evolve(
+                active_bot_id=None,
+                active_task_id=None,
                 phase="blocked",
                 status_note=f"{bot.display_name} stopped without a usable result.",
             ).validate()
+        else:
+            updated = apply_result(state, bot.role_name, task.result)
         self._save_state(state, updated)
         self._note(
             "coord-result:" + task.task_id,
@@ -129,9 +135,14 @@ class ProjectBuzzConversationCycle:
         state = updated
         # A completed research/build plan and a Reviewer correction are the two
         # native automatic handoffs. Merge and deployment always wait for the owner.
-        target = state.handoff_bot_id
-        brief = state.handoff_brief
-        if "reviewer" in bot.role_name.casefold() and state.reviewer_verdict == "CHANGES_NEEDED":
+        target = state.handoff_bot_id if task.outcome == "completed" and task.result else None
+        brief = state.handoff_brief if target else None
+        if (
+            task.outcome == "completed"
+            and task.result
+            and "reviewer" in bot.role_name.casefold()
+            and state.reviewer_verdict == "CHANGES_NEEDED"
+        ):
             target = roles.get("builder").link.bot_id if roles.get("builder") else None
             brief = "Address the Reviewer findings against the same pull request and update the same preview."
         if target and brief:
@@ -288,6 +299,69 @@ class ProjectBuzzConversationCycle:
         with self.store.transaction() as tx:
             return tx.task(task_id)
 
+    def _control(self, state, event, action, bots):
+        if state.active_task_id is None or state.active_bot_id is None:
+            return state, "There is no active project work to control."
+        selected = next(
+            (item for item in self.specialists if item.link.bot_id == state.active_bot_id),
+            None,
+        )
+        task = self._task(state.active_task_id)
+        if selected is None or task is None or task.phase == "closed":
+            return state, "The active project step has already finished."
+        actor = AuthContext(selected.link.principal_id, "buzz", selected.link.owner_pubkey)
+        envelope = Envelope(
+            "buzz", event["id"], selected.link.conversation_id,
+            selected.link.binding_revision, event["id"],
+        )
+        if action == "pause":
+            controlled = self.service.pause(
+                actor, task.task_id, task.state_revision, envelope=envelope
+            )
+            updated = state.evolve(
+                phase="paused",
+                status_note=(
+                    "Pause requested; the exact active run is still reconciling."
+                    if controlled.phase == "stopping"
+                    else "Project work is paused."
+                ),
+            ).validate()
+            response = updated.status_note
+        elif action == "resume":
+            controlled = self.service.resume(
+                actor, task.task_id, task.state_revision, envelope=envelope
+            )
+            role = bots[task.bot_id].role_name.casefold()
+            phase = (
+                "research" if "research" in role else
+                "review" if "review" in role else
+                "deployment" if "deploy" in role else
+                "building"
+            )
+            updated = state.evolve(
+                phase=phase,
+                status_note=f"{bots[task.bot_id].display_name} resumed the active project step.",
+            ).validate()
+            response = updated.status_note
+        else:
+            controlled = self.service.cancel(
+                actor, task.task_id, task.state_revision, envelope=envelope
+            )
+            updated = state.evolve(
+                phase="blocked",
+                pending_message_id=None,
+                handoff_bot_id=None,
+                handoff_brief=None,
+                status_note=(
+                    "Stop requested; the exact active run is still reconciling."
+                    if controlled.phase == "stopping"
+                    else "The active project step was cancelled."
+                ),
+            ).validate()
+            response = updated.status_note
+        self._save_state(state, updated)
+        return updated, response
+
     def ingress(self):
         self._authorize()
         roles, bots = self._roles()
@@ -331,6 +405,20 @@ class ProjectBuzzConversationCycle:
                 if not event["content"].strip() or len(event["content"]) > 4096:
                     raise Rejected("conversation_message_requires_brief", 422)
                 state = self._reconcile(state, roles, bots)
+                control = (
+                    "pause" if _PAUSE.fullmatch(event["content"]) else
+                    "resume" if _RESUME.fullmatch(event["content"]) else
+                    "stop" if _STOP.fullmatch(event["content"]) else
+                    None
+                )
+                if control:
+                    state, response = self._control(state, event, control, bots)
+                    self._record_owner_event(
+                        event, files=files, task_id=state.active_task_id,
+                        state="project_control:" + control,
+                    )
+                    self._note("reply:" + event["id"], response, reply_to=event["id"])
+                    continue
                 selected, response, addressed, selected_state = self._select(event, state, roles, bots)
                 if selected_state != state:
                     self._save_state(state, selected_state)
