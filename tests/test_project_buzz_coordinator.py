@@ -312,7 +312,9 @@ def test_owner_radhouse_request_hands_current_preview_to_reviewer_once(
             member_pubkeys=members, default_agent=coordinator,
             coordinator=coordinator, channel_kind="stream",
         )
-    lead = link("review-handoff-coordinator", members[0], "bot-gamma", coordinator=True)
+    # The live coordinator has its own Buzz identity but shares an existing
+    # specialist bot grant. The bot's display name is therefore not Radhouse.
+    lead = link("review-handoff-coordinator", members[0], "bot-beta", coordinator=True)
     reviewer = link("review-handoff-reviewer", members[1], "bot-alpha")
     builder = link("review-handoff-builder", members[2], "bot-beta")
     with store.transaction() as tx:
@@ -326,16 +328,6 @@ def test_owner_radhouse_request_hands_current_preview_to_reviewer_once(
         tx._connection.execute(
             "UPDATE bots SET display_name='Builder',role_name='Builder' WHERE bot_id='bot-beta'"
         )
-        tx._connection.execute(
-            "INSERT INTO bots(bot_id,display_name,role_name,provider_binding,state) "
-            "VALUES ('bot-gamma','Radhouse','Coordinator','fake-local','ready')"
-        )
-        tx._connection.execute(
-            "INSERT INTO project_bots(project_id,bot_id) VALUES ('personal-alice','bot-gamma')"
-        )
-        tx._connection.execute(
-            "INSERT INTO bot_grants(principal_id,bot_id) VALUES ('alice','bot-gamma')"
-        )
         for item in (lead, reviewer, builder):
             tx.save_conversation_link(item)
     assignment = {
@@ -344,7 +336,10 @@ def test_owner_radhouse_request_hands_current_preview_to_reviewer_once(
     }
     relay = Relay([assignment])
     cycle = ProjectBuzzConversationCycle(
-        service, SimpleNamespace(link=lead, relay=relay),
+        service, SimpleNamespace(
+            link=lead, relay=relay,
+            candidate=SimpleNamespace(display_name="Radhouse"),
+        ),
         tuple(SimpleNamespace(link=item, relay=Relay()) for item in (reviewer, builder)),
     )
     assert cycle.ingress() == 1
@@ -364,11 +359,7 @@ def test_owner_radhouse_request_hands_current_preview_to_reviewer_once(
     request = {
         **assignment, "id": "5" * 64, "created_at": now + 1,
         "content": "@Radhouse Can you send the work to Reviewer",
-        "tags": [
-            ["h", channel],
-            ["mention", lead.agent_pubkey, "agent-address"],
-            ["mention", reviewer.agent_pubkey, "agent-address"],
-        ],
+        "tags": [["h", channel], ["p", lead.agent_pubkey]],
     }
     relay.events.append(request)
     cycle.ingress()
