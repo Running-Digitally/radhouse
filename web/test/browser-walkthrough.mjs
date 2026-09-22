@@ -13,6 +13,10 @@ try {
   await web.getByLabel("Authenticator code", { exact: true }).fill(process.env.RADHOUSE_TEST_TOTP);
   await web.getByRole("button", { name: "Sign in", exact: true }).click();
   await web.getByRole("heading", { name: "What needs you", exact: true }).waitFor();
+  assert.equal(await web.locator("#work-section").evaluate((work) => {
+    const start = document.querySelector("#start-section");
+    return !!start && !!(work.compareDocumentPosition(start) & Node.DOCUMENT_POSITION_FOLLOWING);
+  }), true, "Current work should appear before the message form");
   assert.equal(await web.getByRole("heading", { name: "Your agents", exact: true }).isVisible(), false,
     "Agent administration should stay out of the everyday work view");
   await web.getByLabel("Assignment", { exact: true }).fill("Read these figures and give a short report");
