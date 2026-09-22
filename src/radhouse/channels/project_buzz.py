@@ -450,9 +450,27 @@ class ProjectBuzzConversationCycle:
             if len(tag) in {2, 3} and tag[0] == "mention"
             and (len(tag) == 2 or tag[2] == "agent-address")
         }
+        coordinator = bots.get(self.link.bot_id)
+        coordinator_name = coordinator.display_name if coordinator else "Radhouse"
+        coordinator_prefix = re.match(
+            rf"^\s*@{re.escape(coordinator_name)}(?=$|[\s,:.!?])",
+            event["content"], re.I,
+        )
+        if self.link.agent_pubkey in signed or coordinator_prefix:
+            # A message to Radhouse is a coordination request. Buzz may also
+            # tag an agent named in that request; only visible @Agent addresses
+            # after the coordinator name explicitly select a specialist.
+            content = self._coordinator_content(event, bots)
+            matches = [
+                item for item in self.specialists
+                if (bot := bots.get(item.link.bot_id)) is not None
+                and re.search(
+                    rf"(?<![\w@])@{re.escape(bot.display_name)}(?=$|[\s,:.!?])",
+                    content, re.I,
+                )
+            ]
+            return matches, bool(matches)
         if signed:
-            if signed == {self.link.agent_pubkey}:
-                return [], False
             admitted = {item.link.agent_pubkey for item in self.specialists}
             if len(signed) != 1 or not signed <= admitted:
                 return [], True
@@ -466,23 +484,17 @@ class ProjectBuzzConversationCycle:
                 event["content"], re.I,
             ):
                 matches.append(item)
-        coordinator = bots.get(self.link.bot_id)
-        if coordinator and re.match(
-            rf"^\s*@{re.escape(coordinator.display_name)}(?=$|[\s,:.!?])",
-            event["content"], re.I,
-        ):
-            return [], False
         return matches, re.match(r"^\s*@[^\s,:]+", event["content"]) is not None
 
     def _coordinator_content(self, event, bots):
         """Read intent after an owner-facing @Radhouse prefix; retain the signed source unchanged."""
         content = event["content"].strip()
         coordinator = bots.get(self.link.bot_id)
-        if coordinator:
-            content = re.sub(
-                rf"^@{re.escape(coordinator.display_name)}(?=$|[\s,:.!?])[\s,:.!?]*",
-                "", content, count=1, flags=re.I,
-            )
+        coordinator_name = coordinator.display_name if coordinator else "Radhouse"
+        content = re.sub(
+            rf"^@{re.escape(coordinator_name)}(?=$|[\s,:.!?])[\s,:.!?]*",
+            "", content, count=1, flags=re.I,
+        )
         return content.strip()
 
     def _select(self, event, state, roles, bots):
