@@ -35,6 +35,11 @@ understand PRs, commits, bot routing, or task IDs to ask for a change, try a
 preview, or find the result. Radhouse coordinates ordinary agent handoffs;
 people state the outcome they want.
 
+Progress should report the latest observable, useful step and when it arrived.
+If the agent has not sent a finer update, say so plainly; do not repeat a generic
+“working” claim as though it were new progress. Keep detailed traces available
+on demand without turning ordinary work into a stream of notifications.
+
 Before shipping a change to the work home, walk through a project as a new
 nontechnical user: can they tell what needs their attention, what the agent is
 doing, and what to do next without instructions? Check both an empty project

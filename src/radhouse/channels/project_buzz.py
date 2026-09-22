@@ -89,7 +89,7 @@ class ProjectBuzzConversationCycle:
         mentioned, addressed = self._mentioned(event, bots)
         if addressed or mentioned or reply_target(event):
             return False
-        content = event["content"].strip()
+        content = self._coordinator_content(event, bots)
         if (
             _STATUS.fullmatch(content)
             or _ACCEPT.search(content)
@@ -472,6 +472,17 @@ class ProjectBuzzConversationCycle:
             return [], False
         return matches, re.match(r"^\s*@[^\s,:]+", event["content"]) is not None
 
+    def _coordinator_content(self, event, bots):
+        """Read intent after an owner-facing @Radhouse prefix; retain the signed source unchanged."""
+        content = event["content"].strip()
+        coordinator = bots.get(self.link.bot_id)
+        if coordinator:
+            content = re.sub(
+                rf"^@{re.escape(coordinator.display_name)}(?=$|[\s,:.!?])[\s,:.!?]*",
+                "", content, count=1, flags=re.I,
+            )
+        return content.strip()
+
     def _select(self, event, state, roles, bots):
         mentioned, addressed = self._mentioned(event, bots)
         if addressed:
@@ -503,7 +514,7 @@ class ProjectBuzzConversationCycle:
                         name = active.display_name if active else "Another project agent"
                         return None, f"{name} is still working. Wait for that step to finish before starting another agent.", False, state
                     return selected, None, False, state
-        content = event["content"].strip()
+        content = self._coordinator_content(event, bots)
         research, build = bool(_RESEARCH.search(content)), bool(_BUILD.search(content))
         new_work = research or build
         if _STATUS.fullmatch(content):
@@ -672,10 +683,11 @@ class ProjectBuzzConversationCycle:
                 if not event["content"].strip() or len(event["content"]) > 4096:
                     raise Rejected("conversation_message_requires_brief", 422)
                 state = self._reconcile(state, roles, bots)
+                intent = self._coordinator_content(event, bots)
                 control = (
-                    "pause" if _PAUSE.fullmatch(event["content"]) else
-                    "resume" if _RESUME.fullmatch(event["content"]) else
-                    "stop" if _STOP.fullmatch(event["content"]) else
+                    "pause" if _PAUSE.fullmatch(intent) else
+                    "resume" if _RESUME.fullmatch(intent) else
+                    "stop" if _STOP.fullmatch(intent) else
                     None
                 )
                 if control:
@@ -696,7 +708,7 @@ class ProjectBuzzConversationCycle:
                 if response:
                     self._record_owner_event(
                         event, files=files, task_id=state.active_task_id,
-                        state="status" if _STATUS.fullmatch(event["content"].strip()) else "coordination",
+                        state="status" if _STATUS.fullmatch(intent) else "coordination",
                     )
                     self._note("reply:" + event["id"], response, reply_to=event["id"])
                     continue

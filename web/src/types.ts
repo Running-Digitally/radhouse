@@ -111,6 +111,7 @@ export interface TaskEvent {
   kind: string;
   state_revision: number;
   cursor: number;
+  data: { label?: string; occurred_at?: number; event?: string };
 }
 
 export interface TaskEvents {
