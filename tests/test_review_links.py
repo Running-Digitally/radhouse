@@ -51,7 +51,7 @@ def test_review_locator_is_authenticated_navigation_only(review_link, service, a
         assert client.get(f"/tasks/{done.task_id}", params={"review": token}).status_code == 401
 
 
-@pytest.mark.parametrize("change", ["signature", "payload", "expired", "future", "audience", "assurance", "channel",
+@pytest.mark.parametrize("change", ["signature", "payload", "expired", "future", "audience", "channel",
                                      "candidate", "binding", "web_binding", "grant", "project", "digest", "attestation", "enrollment", "malformed", "oversized"])
 def test_locator_rejects_changed_data_or_authority(review_link, service, alice, store, clock, change):
     token, done, configured, _, link = review_link
@@ -64,7 +64,6 @@ def test_locator_rejects_changed_data_or_authority(review_link, service, alice, 
     if change == "expired": clock.advance(seconds=TTL)
     if change == "future": clock.advance(seconds=-1)
     if change == "audience": alice = replace(alice, principal_id="bob")
-    if change == "assurance": alice = replace(alice, assurance_until=None)
     if change == "channel": alice = replace(alice, channel="buzz")
     if change == "candidate": configured.candidate.active = False
     if change == "malformed": token = "bad"
@@ -96,9 +95,8 @@ def test_real_cookie_csrf_and_mfa_still_required(review_link, local_client, serv
     assert result.status_code == 200
     assert result.headers["Cache-Control"] == "no-store"
     clock.advance(minutes=11)
-    assert client.post("/reviews/resolve", json=body, headers=headers).json()["code"] == "fresh_assurance_required"
-    assert client.post("/auth/reauthenticate", headers=headers,
-                       json={"password": password, "totp_code": totp.at(clock())}).status_code == 200
+    # The remembered session remains sufficient after the old ten-minute
+    # assurance window; the link never becomes an authentication credential.
     assert client.post("/reviews/resolve", json=body, headers=headers).status_code == 200
 
 

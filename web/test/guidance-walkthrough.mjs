@@ -19,6 +19,7 @@ try {
   assert.equal(await original.evaluate(node => node.isConnected && node === document.activeElement), true,
     "Polling detached the empty focused guidance control");
   await guidance.fill("  Emphasize cost.\n");
+  await page.locator("[data-task-id]").locator("summary", { hasText: "More options" }).click();
   await page.getByRole("button", { name: "Show progress", exact: true }).click();
   assert.equal(await guidance.inputValue(), "  Emphasize cost.\n", "Explicit refresh lost the guidance draft");
   await page.getByRole("button", { name: "Send guidance", exact: true }).click();

@@ -20,7 +20,7 @@ def report(**values):
     )
 
 
-def test_builder_preview_owner_acceptance_and_exact_reviewer_revision():
+def test_current_preview_can_be_reviewed_without_owner_acceptance():
     revision = "a" * 40
     state = apply_result(
         ProjectCoordination(
@@ -39,16 +39,14 @@ def test_builder_preview_owner_acceptance_and_exact_reviewer_revision():
 
     assert state.phase == "preview_feedback"
     assert state.active_task_id is None
-    accepted = accept_preview(state)
-    assert accepted.accepted_preview_revision == revision
-
     reviewed = apply_result(
-        accepted.evolve(active_bot_id="reviewer", active_task_id="task-2"),
+        state.evolve(active_bot_id="reviewer", active_task_id="task-2"),
         "Reviewer",
         report(reviewed_revision=revision, reviewer_verdict="READY"),
     )
     assert reviewed.phase == "merge_ready"
     assert reviewed.reviewer_verdict == "READY"
+    assert reviewed.accepted_preview_revision is None
 
 
 def test_review_and_deployment_evidence_fail_closed_on_revision_drift():
