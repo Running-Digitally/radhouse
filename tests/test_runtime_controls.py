@@ -322,6 +322,109 @@ def test_lost_denial_is_not_retried_after_the_request_changes(
     assert recovered.permission_request["command"] == "cat /changed/report.txt"
 
 
+def test_lost_denial_closes_when_the_same_run_reaches_a_new_request(
+    service, fake_work, alice, envelope, start, store,
+):
+    admitted = service.admit(alice, envelope(), start)
+    claimed = service.claim(admitted.task_id, "worker")
+    first = {
+        "request_id": "approval-1", "command": "cat /first/report.txt",
+        "run_id": "run-" + claimed.attempt_id,
+    }
+    current_permission = [first]
+    fake_work.result = lambda *_: RuntimeResult(
+        "running", permission_request=current_permission[0]
+    )
+    task = service.run(admitted.task_id)
+    calls = []
+
+    def lose(*args):
+        calls.append(args)
+        raise RuntimeFailure("runtime_timeout")
+
+    fake_work.approve = lose
+    service.respond_permission(
+        alice, task.task_id, task.state_revision, first["request_id"],
+        task.permission_request["digest"], "deny", envelope=envelope(),
+    )
+    current_permission[0] = {
+        "request_id": "approval-2", "command": "cat /second/report.txt",
+        "run_id": first["run_id"],
+    }
+    fake_work.approve = lambda *args: pytest.fail("obsolete denial must never retry")
+    recovered = service.recover(task.task_id)
+    recovered = service.recover(task.task_id)
+    assert len(calls) == 1
+    assert recovered.guidance[-1]["state"] == "superseded"
+    assert recovered.guidance[-1]["superseded_by_request_id"] == "approval-2"
+    assert recovered.permission_request["command"] == "cat /second/report.txt"
+    with store.transaction() as tx:
+        assert tx.operation(recovered.guidance[-1]["id"]).state == "confirmed"
+
+    def deny_current(*args):
+        calls.append(args)
+        current_permission[0] = None
+        return True
+
+    fake_work.approve = deny_current
+    denied = service.respond_permission(
+        alice, task.task_id, recovered.state_revision,
+        recovered.permission_request["request_id"],
+        recovered.permission_request["digest"], "deny", envelope=envelope(),
+    )
+    assert len(calls) == 2
+    assert denied.guidance[-1]["state"] == "accepted"
+    assert denied.permission_request is None
+
+
+def test_delayed_denial_retry_cannot_reopen_a_superseded_receipt(
+    service, fake_work, alice, envelope, start, store,
+):
+    from radhouse.application.service import fingerprint
+
+    admitted = service.admit(alice, envelope(), start)
+    claimed = service.claim(admitted.task_id, "worker")
+    first = {
+        "request_id": "approval-1", "command": "cat /first/report.txt",
+        "run_id": "run-" + claimed.attempt_id,
+    }
+    current_permission = [first]
+    fake_work.result = lambda *_: RuntimeResult(
+        "running", permission_request=current_permission[0]
+    )
+    task = service.run(admitted.task_id)
+    fake_work.approve = lambda *args: (_ for _ in ()).throw(
+        RuntimeFailure("runtime_timeout")
+    )
+    service.respond_permission(
+        alice, task.task_id, task.state_revision, first["request_id"],
+        task.permission_request["digest"], "deny", envelope=envelope(),
+    )
+    second = {
+        "request_id": "approval-2", "command": "cat /second/report.txt",
+        "run_id": first["run_id"],
+    }
+
+    def delayed_retry(*args):
+        current_permission[0] = second
+        # The first poll projects the new request. The next proves that the
+        # older uncertain denial is obsolete while this retry is still in flight.
+        service.recover(task.task_id)
+        service.recover(task.task_id)
+        raise RuntimeFailure("delayed_timeout")
+
+    fake_work.approve = delayed_retry
+    recovered = service.recover(task.task_id)
+    assert recovered.permission_request == {
+        **second, "digest": fingerprint(second), "allow_once": False,
+    }
+    with store.transaction() as tx:
+        durable = tx.task(task.task_id)
+        assert durable.guidance[-1]["state"] == "superseded"
+        assert durable.permission_request == recovered.permission_request
+        assert tx.operation(durable.guidance[-1]["id"]).state == "confirmed"
+
+
 def test_legacy_lost_denial_requires_original_operation_fingerprint(
     service, fake_work, alice, envelope, start,
 ):

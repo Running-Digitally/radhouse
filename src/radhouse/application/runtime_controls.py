@@ -35,12 +35,67 @@ def _matches_original_permission(operation, task, entry, permission, observed_di
     )
 
 
+def _close_superseded_denial(service, task, dispatch, permission):
+    """Close one uncertain denial after the same run reaches a later request."""
+    from radhouse.application.service import fingerprint
+
+    if permission is None or permission.get("run_id") != dispatch.run_id:
+        return task
+    with service.store.transaction() as tx:
+        current = service._task(tx, task.task_id)
+        expected = current.permission_request
+        if (
+            expected is None
+            or expected.get("run_id") != dispatch.run_id
+            or expected.get("request_id") != permission.get("request_id")
+            or expected.get("digest") != fingerprint(permission)
+        ):
+            return current
+        candidates = tuple(
+            item for item in current.guidance
+            if item.get("kind") == "permission"
+            and item.get("choice") == "deny"
+            and item.get("state") == "unknown"
+            and item.get("run_id") == dispatch.run_id
+            and item.get("request_id") != permission.get("request_id")
+        )
+        entry = candidates[0] if len(candidates) == 1 else None
+        operation = tx.operation(entry["id"]) if entry is not None else None
+        if entry is None or operation is None:
+            return current
+        entries = tuple(
+            {
+                **item,
+                "state": "superseded",
+                "superseded_by_request_id": permission["request_id"],
+            }
+            if item["id"] == entry["id"] else item
+            for item in current.guidance
+        )
+        tx.save_operation(replace(operation, state="confirmed"))
+        updated = service._save(
+            tx, current,
+            current.evolve(
+                guidance=entries,
+                task_revision=current.task_revision + 1,
+            ),
+            "permission_superseded",
+        )
+        tx.add_event(Event(
+            task.task_id, "control_receipt", updated.state_revision,
+            {"kind": "permission", "state": "superseded",
+             "run_id": dispatch.run_id},
+        ))
+        return updated
+
+
 def reconcile_pending_denial(service, task, dispatch, permission):
-    """Retry one lost denial only while the exact request is still pending."""
+    """Retry one lost denial and report whether its observation is now stale."""
     from radhouse.application.service import fingerprint
 
     if permission is None:
-        return False
+        return None
+    task = _close_superseded_denial(service, task, dispatch, permission)
     with service.store.transaction() as tx:
         current = service._task(tx, task.task_id)
         expected = current.permission_request
@@ -68,7 +123,7 @@ def reconcile_pending_denial(service, task, dispatch, permission):
                 operation, current, entry, permission, observed_digest, fingerprint
             )
         ):
-            return False
+            return None
         entries = tuple(
             {**item, "reconcile_attempted": True}
             if item["id"] == entry["id"] else item
@@ -91,6 +146,14 @@ def reconcile_pending_denial(service, task, dispatch, permission):
 
     with service.store.transaction() as tx:
         latest = service._task(tx, task.task_id)
+        latest_entry = next(
+            item for item in latest.guidance if item["id"] == entry["id"]
+        )
+        # A concurrent poll may have proved that this same run advanced to a
+        # later permission while the one permitted retry was in flight. That
+        # proof is monotonic; a delayed reply must not reopen the old control.
+        if latest_entry.get("state") == "superseded":
+            return "stale"
         entries = tuple(
             {**item, "state": state}
             if item["id"] == entry["id"] else item
@@ -103,10 +166,15 @@ def reconcile_pending_denial(service, task, dispatch, permission):
             operation, state="confirmed" if state == "accepted" else state
         ))
         pending = latest.permission_request
+        pending_matches_observation = (
+            pending is not None
+            and pending.get("request_id") == permission["request_id"]
+            and pending.get("run_id") == dispatch.run_id
+            and pending.get("digest") == fingerprint(permission)
+        )
         if (
             state == "accepted"
-            and pending is not None
-            and pending.get("request_id") == permission["request_id"]
+            and pending_matches_observation
         ):
             pending = None
         updated = service._save(
@@ -119,7 +187,9 @@ def reconcile_pending_denial(service, task, dispatch, permission):
             {"kind": "permission", "state": state, "run_id": dispatch.run_id,
              "reconciled": True},
         ))
-    return state == "accepted"
+    if state == "accepted" and pending_matches_observation:
+        return "denied"
+    return "stale" if not pending_matches_observation else None
 
 
 def control(service, actor, task_id, expected, envelope, *, text=None, request_id=None, choice=None, digest=None):
