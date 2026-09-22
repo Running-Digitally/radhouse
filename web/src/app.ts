@@ -699,7 +699,7 @@ function render(home: WorkHome, message?: string): void {
       }
     }
   }
-  const conversationOrStart = page.querySelector(".conversation-section, .start-panel");
+  const conversationOrStart = page.querySelector("#conversation-section, #start-section");
   if (conversationOrStart) page.insertBefore(work, conversationOrStart);
   else page.append(work);
   const manage = page.querySelector(".manage-details");
