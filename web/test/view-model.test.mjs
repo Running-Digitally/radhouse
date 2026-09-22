@@ -20,6 +20,7 @@ test("guidance labels distinguish receipt, completed response, lateness and unce
   assert.match(label("not_applied"), /ended without using/);
   assert.match(label("unknown"), /could not confirm.*not be resent/);
   assert.match(label(null), /not yet confirmed/);
+  assert.match(guidanceStatus({ state: "superseded", application_state: null }), /advanced to a later decision.*closed/);
 });
 
 test("server action reasons become useful explanations", () => {
