@@ -68,6 +68,9 @@ textarea.field__control { resize: vertical; min-height: 48px; }
 .attention-panel p { margin: 8px 0 12px; }
 .attention-panel .button { display: inline-flex; align-items: center; text-decoration: none; margin-right: 8px; }
 .work-group__title { margin: 24px 0 12px; font-size: 1rem; }
+.recent-activity { margin-top: 24px; }
+.recent-activity > summary { margin: 0; cursor: pointer; font-weight: 700; }
+.recent-activity > .task-list { margin-top: 12px; }
 .older-work { margin-top: 18px; }
 .older-work > summary, .task-card__more > summary, .manage-details > summary { cursor: pointer; font-weight: 700; }
 .older-work .task-list { margin-top: 14px; }
@@ -76,6 +79,8 @@ textarea.field__control { resize: vertical; min-height: 48px; }
 .task-card__heading { display: flex; gap: 16px; justify-content: space-between; align-items: start; }
 .task-card__title-group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
 .task-card__title-group .button { min-height: 32px; padding: 5px 10px; font-size: .78rem; }
+.task-card__title-group .task-card__edit-title { min-width: 36px; min-height: 36px; padding: 4px; border: 0; background: transparent; color: var(--muted); font-size: 1.1rem; }
+.task-card__title-group .task-card__edit-title:hover, .task-card__title-group .task-card__edit-title:focus-visible { color: var(--green-ink); background: var(--line); }
 .task-card__title { margin: 0; max-width: 740px; font-size: 1.05rem; line-height: 1.45; }
 .task-card__context { margin: 9px 0 0; color: var(--muted); font-size: .86rem; }
 .task-card__activity { margin: 12px 0 0; color: var(--ink); font-size: .92rem; }

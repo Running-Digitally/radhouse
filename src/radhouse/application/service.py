@@ -232,6 +232,18 @@ class Service:
             ))
             return updated
 
+    def record_agent_title(self, task_id: str, title: str) -> None:
+        """Use a title from the existing agent/planner turn; owner edits always win."""
+        normalized = normalize_task_title(title)
+        with self.store.transaction() as tx:
+            current = tx.task_title(task_id)
+            if current is None:
+                raise Rejected("task_state_inconsistent")
+            if current.source != "owner" and current.title != normalized:
+                tx.save_task_title(TaskTitle(
+                    task_id, normalized, "agent", current.revision + 1,
+                ), current.revision)
+
     def guide(self, actor, task_id, expected, text, *, envelope):
         from radhouse.application.runtime_controls import control
         return control(self, actor, task_id, expected, envelope, text=text)

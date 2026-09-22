@@ -21,6 +21,7 @@ let signedIn: AuthSession | null = null;
 let projects: Project[] = [];
 let selectedProject = "";
 let manageOpen = false;
+let recentActivityOpen = false;
 let olderWorkOpen = false;
 let projectNameDraft = "";
 const projectBotDraft = new Set<string>();
@@ -154,7 +155,7 @@ function loginScreen(message?: string): void {
   projects = [];
   // Private display state never crosses an account change.
   drafts.clear(); reviews.clear(); expanded.clear(); timelines.clear(); conversationDrafts.clear(); guidanceDrafts.clear();
-  titleDrafts.clear(); openResults.clear(); openMore.clear(); manageOpen = false; olderWorkOpen = false;
+  titleDrafts.clear(); openResults.clear(); openMore.clear(); manageOpen = false; recentActivityOpen = false; olderWorkOpen = false;
   projectNameDraft = ""; projectBotDraft.clear(); agentDirectory.clear();
   conversationLinks = []; conversationHistory = null; selectedConversation = "";
   reviewTarget = null;
@@ -249,29 +250,33 @@ function latestActivity(data: TaskEvents | undefined): { label: string; occurred
 }
 function activityTime(seconds: number | undefined): string {
   if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds <= 0) return "";
-  return ` · Last update ${new Date(seconds * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+  return ` · ${new Date(seconds * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
 }
 function historyPanel(card: TaskCard): HTMLElement {
   const panel = element("section", "history-panel");
   panel.append(element("h4", "section-title", "Task progress"));
   const renderEvents = (data: TaskEvents): void => {
     const list = element("ol", "timeline");
-    const steps: string[] = [];
+    const steps: { key: string; label: string; occurred_at: number | undefined }[] = [];
     for (const event of data.events) {
       const activityLabel = event.data?.label;
       const label = event.kind === "runtime_activity"
         ? typeof activityLabel === "string" && activityLabel.length <= 160 ? activityLabel : undefined
         : eventNames[event.kind];
       if (label) {
-        const step = label + (event.kind === "runtime_activity" ? activityTime(event.data?.occurred_at) : "");
-        if (steps.at(-1) !== step) steps.push(step);
+        const key = event.kind === "runtime_activity" ? `runtime:${event.data?.event ?? label}` : event.kind;
+        const earlier = steps.findIndex((step) => step.key === key);
+        if (earlier >= 0) steps.splice(earlier, 1);
+        steps.push({ key, label, occurred_at: event.data?.occurred_at });
       }
     }
-    for (const step of steps.slice(-12)) list.append(element("li", undefined, step));
+    for (const step of steps.slice(-8)) list.append(element("li", undefined,
+      step.label + (step.key.startsWith("runtime:") ? activityTime(step.occurred_at) : "")));
     if (!list.children.length) list.append(element("li", undefined, "No milestones yet."));
     panel.replaceChildren(element("h4", "section-title", "Task progress"), list);
-    if (card.task.phase === "active" && !latestActivity(data)) panel.append(element("p", "muted",
-      "No finer update has arrived yet. The agent may still be working through its current step."));
+    if (card.task.phase === "active") panel.append(element("p", "muted", latestActivity(data)
+      ? "These are the latest confirmed types of activity, not a description of the actual change. This task feed has no specific work note yet."
+      : "No finer update has arrived yet. The agent may still be working through its current step."));
   };
   const cached = timelines.get(card.task.task_id);
   if (cached) renderEvents(cached); else panel.append(element("p", "muted", "Loading progress…"));
@@ -288,6 +293,17 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
   const heading = element("div", "task-card__heading");
   const titleGroup = element("div", "task-card__title-group");
   titleGroup.append(element("h3", "task-card__title", card.title.title));
+  if (home.role !== "viewer") {
+    const editTitle = button("✎", async () => {
+      titleDrafts.set(task.task_id, card.title.title);
+      await load();
+      page.querySelector<HTMLInputElement>(`input[name="title-${task.task_id}"]`)?.focus();
+    });
+    editTitle.classList.add("task-card__edit-title");
+    editTitle.setAttribute("aria-label", "Edit title");
+    editTitle.title = "Edit title";
+    titleGroup.append(editTitle);
+  }
   heading.append(titleGroup,
     element("span", `phase phase--${task.phase}`, task.outcome === "cancelled" ? "Cancelled"
       : task.outcome === "failed" ? "Needs a new assignment" : phaseLabel(task.phase)));
@@ -296,7 +312,7 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
   if (task.phase === "active") {
     const activity = latestActivity(timelines.get(task.task_id));
     article.append(element("p", "task-card__activity", activity
-      ? `Now: ${activity.label}${activityTime(activity.occurred_at)}`
+      ? `Last observed: ${activity.label}${activityTime(activity.occurred_at)}`
       : "Waiting for the agent’s first progress update."));
   }
   const titleDraft = titleDrafts.get(task.task_id);
@@ -328,7 +344,8 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
   }
   if (task.result !== null) {
     const summary = task.result.replace(/[#*_`>\[\]]/g, "").replace(/\s+/g, " ").trim();
-    article.append(element("p", "result-summary", summary.length > 220 ? `${summary.slice(0, 219).trim()}…` : summary));
+    if (summary !== card.title.title) article.append(element("p", "result-summary",
+      summary.length > 220 ? `${summary.slice(0, 219).trim()}…` : summary));
     if (openResults.has(task.task_id)) article.append(resultViewer(task.result));
   }
   if (card.publication) article.append(notice(`Published to ${card.publication.audience.join(", ")}.`));
@@ -397,11 +414,6 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
     await load();
   }));
   if (home.role !== "viewer") {
-    secondary.append(button("Edit title", async () => {
-      titleDrafts.set(task.task_id, card.title.title);
-      await load();
-      page.querySelector<HTMLInputElement>(`input[name="title-${task.task_id}"]`)?.focus();
-    }));
     for (const [label, verb, availability] of [
       ["Pause", "pause", card.pause], ["Resume", "resume", card.resume], ["Cancel", "cancel", card.cancel],
     ] as const) {
@@ -686,17 +698,21 @@ function render(home: WorkHome, message?: string): void {
       const list = element("div", "task-list"); active.forEach((card) => list.append(taskCard(card, home))); work.append(list);
     }
     if (finished.length) {
-      work.append(element("h3", "work-group__title", "Recent activity"));
+      const activity = element("details", "recent-activity");
+      activity.open = recentActivityOpen;
+      activity.addEventListener("toggle", () => { recentActivityOpen = activity.open; });
+      activity.append(element("summary", "work-group__title", `Recent activity · ${finished.length}`));
       const recent = element("div", "task-list"); finished.slice(0, 3).forEach((card) => recent.append(taskCard(card, home)));
-      work.append(recent);
+      activity.append(recent);
       if (finished.length > 3) {
         const older = element("details", "older-work");
         older.open = olderWorkOpen;
         older.addEventListener("toggle", () => { olderWorkOpen = older.open; });
         older.append(element("summary", undefined, `Older work · ${finished.length - 3}`));
         const list = element("div", "task-list"); finished.slice(3).forEach((card) => list.append(taskCard(card, home)));
-        older.append(list); work.append(older);
+        older.append(list); activity.append(older);
       }
+      work.append(activity);
     }
   }
   const conversationOrStart = page.querySelector("#conversation-section, #start-section");

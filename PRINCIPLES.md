@@ -39,6 +39,12 @@ Progress should report the latest observable, useful step and when it arrived.
 If the agent has not sent a finer update, say so plainly; do not repeat a generic
 “working” claim as though it were new progress. Keep detailed traces available
 on demand without turning ordinary work into a stream of notifications.
+Call an event the last *observed* step rather than the agent's current action
+when the runtime cannot prove what it is doing now. Group repeated signals;
+never make a list of identical tool events look like meaningful progress.
+Use an existing agent or planner response to name work automatically, preserve
+owner edits, and keep title editing beside the title rather than among task
+controls. Keep completed activity collapsed until someone asks to see it.
 
 Before shipping a change to the work home, walk through a project as a new
 nontechnical user: can they tell what needs their attention, what the agent is

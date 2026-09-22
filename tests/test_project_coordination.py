@@ -128,10 +128,11 @@ def test_llm_coordination_plan_is_strict_bounded_data():
     )
     assert "use no tools" not in prompt.lower()
     assert "groups.csv (text/csv)" in prompt
+    assert '"title"' in prompt
     result = (
         'RADHOUSE_COORDINATION_PLAN: {"route":"research_then_build",'
         '"summary":"Research the format, then implement the smallest importer change.",'
-        '"clarification":null}'
+        '"clarification":null,"title":"Import two-person Splitwise expenses"}'
     )
     plan = parse_coordination_plan(
         result,
@@ -139,6 +140,17 @@ def test_llm_coordination_plan_is_strict_bounded_data():
     )
     assert plan.route == "research_then_build"
     assert plan.clarification is None
+    assert plan.title == "Import two-person Splitwise expenses"
+    old = parse_coordination_plan(
+        result.replace(',"title":"Import two-person Splitwise expenses"', ""),
+        allowed_routes=frozenset({"research_then_build"}),
+    )
+    assert old.title is None
+    malformed_title = parse_coordination_plan(
+        result.replace("Import two-person Splitwise expenses", "x" * 101),
+        allowed_routes=frozenset({"research_then_build"}),
+    )
+    assert malformed_title.title is None
 
 
 @pytest.mark.parametrize(

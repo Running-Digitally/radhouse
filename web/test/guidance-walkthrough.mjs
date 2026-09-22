@@ -29,10 +29,12 @@ try {
   await page.getByText("Queued for this run’s next tool checkpoint.", { exact: false }).waitFor();
   await page.request.post(`${origin}/_fixture/finish-guided-response`);
   await page.reload();
+  await page.locator(".recent-activity > summary").click();
   await page.getByText("Used in a completed model response. Review the result", { exact: false }).waitFor();
-  await page.getByText("The synthetic result follows the cost emphasis.", { exact: true }).waitFor();
+  await page.getByRole("heading", { name: "The synthetic result follows the cost emphasis.", exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Send guidance", exact: true }).count(), 0);
   await page.reload();
+  await page.locator(".recent-activity > summary").click();
   await page.getByText("Used in a completed model response. Review the result", { exact: false }).waitFor();
   assert.equal(await page.getByText("Used in a completed model response. Review the result", { exact: false }).count(), 1);
   console.log("PASS: focused empty input, draft retention, queued/applied distinction, reconnect, no publication");
