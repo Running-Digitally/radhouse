@@ -35,6 +35,10 @@ try {
     "Background refresh did not resume after the file selection");
   await web.getByText("figures.txt", { exact: true }).waitFor();
   await web.getByRole("button", { name: "Send assignment" }).click();
+  const recent = web.locator(".recent-activity");
+  await recent.locator(":scope > summary").waitFor({ timeout: 20000 });
+  assert.equal(await recent.getAttribute("open"), null, "Completed work should start collapsed");
+  await recent.locator(":scope > summary").click();
   await web.getByRole("button", { name: "Review and share", exact: true }).waitFor({ timeout: 20000 });
   const taskId = await web.locator("[data-task-id]").getAttribute("data-task-id");
   assert.ok(taskId);
@@ -49,7 +53,8 @@ try {
   await task.getByRole("tab", { name: "Preview", exact: true }).press("ArrowRight");
   assert.equal(await task.getByRole("tab", { name: "Source", exact: true }).getAttribute("aria-selected"), "true");
   await task.locator('.result-viewer__source').getByText("<script>window.radhouseUnsafe = true</script>", { exact: false }).waitFor();
-  await task.locator("summary", { hasText: "More options" }).click();
+  assert.equal(await task.locator('.task-card__title-group > button[aria-label="Edit title"]').count(), 1,
+    "Title editing belongs beside the title");
   await task.getByRole("button", { name: "Edit title", exact: true }).click();
   await task.getByLabel("Task title", { exact: true }).fill("September planning figures");
   await task.getByRole("button", { name: "Save title", exact: true }).click();
@@ -57,6 +62,7 @@ try {
   // Protected review stays in a second ordinary web tab.
   const review = await context.newPage();
   await review.goto(`${origin}/app/`);
+  await review.locator(".recent-activity > summary").click();
   const reviewTask = review.locator(`[data-task-id="${taskId}"]`);
   await reviewTask.waitFor();
   await reviewTask.getByRole("button", { name: "Review and share", exact: true }).click();
@@ -65,6 +71,7 @@ try {
   await review.getByRole("button", { name: "Approve and publish", exact: true }).click();
   await review.getByText("Published to alice.", { exact: true }).waitFor();
   await web.reload();
+  await web.locator(".recent-activity > summary").click();
   await web.getByText("Published to alice.", { exact: true }).waitFor();
   await task.locator("summary", { hasText: "More options" }).click();
   await task.getByRole("button", { name: "Ask for a change", exact: true }).click();

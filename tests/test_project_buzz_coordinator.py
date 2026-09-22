@@ -183,7 +183,7 @@ def test_ambiguous_project_goal_uses_one_tools_disabled_plan_then_routes_once(
     fake_work.result_content = (
         'RADHOUSE_COORDINATION_PLAN: {"route":"research_then_build",'
         '"summary":"Check the input, then implement the smallest useful iteration.",'
-        '"clarification":null}'
+        '"clarification":null,"title":"Improve the Expenses importer"}'
     )
 
     assert cycle.ingress() == 1
@@ -213,6 +213,7 @@ def test_ambiguous_project_goal_uses_one_tools_disabled_plan_then_routes_once(
         assert state.phase == "research"
         assert state.active_task_id == research_tasks[0].task_id
         assert state.planning_task_id is None
+        assert tx.task_title(research_tasks[0].task_id).title == "Improve the Expenses importer"
         note = tx.conversation_message("coord-plan-route:" + request["id"])["message"]
         assert "I routed the first step to Researcher" in note.content
 

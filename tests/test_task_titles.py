@@ -13,7 +13,8 @@ from tests.fakes import FakeAgentWork
 def test_title_helpers_are_bounded_and_reuse_agent_headings():
     assert initial_task_title("New task: Compare two backup plans. Then recommend one.") == "Compare two backup plans."
     assert agent_task_title("Intro\n\n## Recovery plan **for owners**\nDetails") == "Recovery plan for owners"
-    assert agent_task_title("No heading here") is None
+    assert agent_task_title("No heading here") == "No heading here"
+    assert agent_task_title("RADHOUSE_PROJECT_UPDATE: {}\nDone") is None
     assert len(normalize_task_title("word " * 40)) <= 100
     with pytest.raises(Rejected, match="invalid_task_title"):
         normalize_task_title(" \n ")
@@ -53,6 +54,9 @@ def test_agent_title_and_owner_edit_do_not_change_task_or_review_identity(
     assert (renamed.title, renamed.source, renamed.revision) == (
         "My recovery decision", "owner", 3,
     )
+    service.record_agent_title(completed.task_id, "A later agent suggestion")
+    with store.transaction() as tx:
+        assert tx.task_title(completed.task_id) == renamed
     assert service.rename_task(
         alice, completed.task_id, card.title.revision, "My recovery decision",
         envelope=rename,
