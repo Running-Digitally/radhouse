@@ -2,8 +2,10 @@ from types import SimpleNamespace
 
 import pytest
 
+from radhouse.application.coordinator import Coordinator
 from radhouse.channels.project_buzz import ProjectBuzzConversationCycle
 from radhouse.domain.conversations import ConversationLink
+from radhouse.domain.tasks import InputFile
 
 
 pytestmark = pytest.mark.postgres
@@ -92,14 +94,15 @@ def test_unaddressed_project_request_routes_once_to_builder_and_status_is_read_o
         **assignment,
         "id": "3" * 64,
         "created_at": now + 1,
-        "content": "status",
+        "content": "What is Builder up to?",
     })
     cycle.ingress()
     with store.transaction() as tx:
         assert len(tx.tasks()) == 1
         reply = tx.conversation_message("reply:" + "3" * 64)["message"]
         assert "Project status · building" in reply.content
-        assert "Builder is working" in reply.content
+        assert "Builder · Working" in reply.content
+        assert "Needs you: nothing" in reply.content
 
     relay.events.append({
         **assignment,
@@ -113,6 +116,120 @@ def test_unaddressed_project_request_routes_once_to_builder_and_status_is_read_o
         assert len(tx.tasks()) == 1
         reply = tx.conversation_message("reply:" + "4" * 64)["message"]
         assert "Builder is still working" in reply.content
+
+
+def test_ambiguous_project_goal_uses_one_tools_disabled_plan_then_routes_once(
+    service, store, clock, fake_work, monkeypatch,
+):
+    now = int(clock().timestamp())
+    channel = "4d84100d-9a9c-45c0-b91f-5be6074519a3"
+    owner = "a" * 64
+    coordinator = ConversationLink(
+        "plan-coordinator", channel, "personal-alice:alice:buzz", "alice",
+        owner, "b" * 64, "bot-alpha", "personal-alice", now,
+        member_pubkeys=("b" * 64, "c" * 64, "d" * 64),
+        default_agent=True, coordinator=True, channel_kind="stream",
+    )
+    researcher = ConversationLink(
+        "plan-researcher", channel, "personal-alice:alice:buzz", "alice",
+        owner, "c" * 64, "bot-alpha", "personal-alice", now,
+        member_pubkeys=coordinator.member_pubkeys, default_agent=False,
+        channel_kind="stream",
+    )
+    builder = ConversationLink(
+        "plan-builder", channel, "personal-alice:alice:buzz", "alice",
+        owner, "d" * 64, "bot-beta", "personal-alice", now,
+        member_pubkeys=coordinator.member_pubkeys, default_agent=False,
+        channel_kind="stream",
+    )
+    with store.transaction() as tx:
+        tx._connection.execute(
+            "UPDATE channel_bindings SET subject=%s WHERE subject='alice@buzz'",
+            (owner,),
+        )
+        tx._connection.execute(
+            "UPDATE bots SET display_name='Researcher',role_name='Researcher' "
+            "WHERE bot_id='bot-alpha'"
+        )
+        tx._connection.execute(
+            "UPDATE bots SET display_name='Builder',role_name='Builder' "
+            "WHERE bot_id='bot-beta'"
+        )
+        for link in (coordinator, researcher, builder):
+            tx.save_conversation_link(link)
+    request = {
+        "id": "8" * 64,
+        "pubkey": owner,
+        "created_at": now,
+        "kind": 9,
+        "tags": [["h", channel]],
+        "content": "Work out the best approach for the next Expenses iteration.",
+        "sig": "9" * 128,
+    }
+    relay = Relay([request])
+    cycle = ProjectBuzzConversationCycle(
+        service,
+        SimpleNamespace(link=coordinator, relay=relay),
+        (
+            SimpleNamespace(link=researcher, relay=Relay()),
+            SimpleNamespace(link=builder, relay=Relay()),
+        ),
+    )
+    source_file = InputFile("groups.csv", "group,amount\nGroceries,12", "text/csv")
+    monkeypatch.setattr(
+        "radhouse.channels.project_buzz.reference_files",
+        lambda _relay, _event: (source_file,),
+    )
+    fake_work.result_content = (
+        'RADHOUSE_COORDINATION_PLAN: {"route":"research_then_build",'
+        '"summary":"Check the input, then implement the smallest useful iteration.",'
+        '"clarification":null}'
+    )
+
+    assert cycle.ingress() == 1
+    with store.transaction() as tx:
+        tasks = tx.tasks()
+        state = tx.project_coordination("personal-alice")
+        assert len(tasks) == 1
+        assert tasks[0].bot_id == "bot-alpha"
+        assert tasks[0].disable_tools is True
+        assert tasks[0].budget_remaining == 1
+        assert state.phase == "planning"
+        assert state.planning_task_id == tasks[0].task_id
+
+    result = Coordinator(service, "worker-one").run_once()
+    assert len(result.receipts) == 1 and result.receipts[0].outcome == "completed"
+    cycle.ingress()
+
+    with store.transaction() as tx:
+        tasks = tx.tasks()
+        state = tx.project_coordination("personal-alice")
+        research_tasks = [
+            task for task in tasks
+            if task.bot_id == "bot-alpha" and not task.disable_tools
+        ]
+        assert len(tasks) == 2 and len(research_tasks) == 1
+        assert research_tasks[0].files == (source_file,)
+        assert state.phase == "research"
+        assert state.active_task_id == research_tasks[0].task_id
+        assert state.planning_task_id is None
+        note = tx.conversation_message("coord-plan-route:" + request["id"])["message"]
+        assert "I routed the first step to Researcher" in note.content
+
+    fake_work.result_content = "The CSV contains one two-person expense group."
+    result = Coordinator(service, "worker-one").run_once()
+    assert len(result.receipts) == 1 and result.receipts[0].outcome == "completed"
+    cycle.ingress()
+
+    with store.transaction() as tx:
+        tasks = tx.tasks()
+        state = tx.project_coordination("personal-alice")
+        builder_tasks = [task for task in tasks if task.bot_id == "bot-beta"]
+        assert len(tasks) == 3 and len(builder_tasks) == 1
+        assert builder_tasks[0].files == (source_file,)
+        assert builder_tasks[0].previous_result == fake_work.result_content
+        assert state.phase == "building"
+        assert state.active_task_id == builder_tasks[0].task_id
 
 
 def test_new_work_with_later_review_and_deploy_steps_routes_to_builder(

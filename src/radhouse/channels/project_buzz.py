@@ -3,7 +3,13 @@
 import re
 
 from radhouse.application.conversations import Conversations
-from radhouse.application.project_coordination import apply_result, accept_preview, status_text
+from radhouse.application.project_coordination import (
+    accept_preview,
+    apply_result,
+    coordination_prompt,
+    parse_coordination_plan,
+    status_text,
+)
 from radhouse.application.service import fingerprint
 from radhouse.channels.buzz_conversations import BuzzConversationCycle, reply_target
 from radhouse.channels.buzz_files import reference_files
@@ -16,7 +22,8 @@ from radhouse.domain.tasks import Rejected, StartTask
 
 _STATUS = re.compile(
     r"(?:status|progress|any (?:progress|update|updates)|what(?:'s| is) (?:the )?status|"
-    r"what(?:'s| is) happening|how(?:'s| is) (?:it|the task|the work) (?:going|progressing))[?.! ]*",
+    r"what(?:'s| is) happening|what(?:'s| is) (?:the )?(?:builder|researcher|reviewer|deployer|agent) "
+    r"(?:doing|working on|up to)|how(?:'s| is) (?:it|the task|the work) (?:going|progressing))[?.! ]*",
     re.I,
 )
 _ACCEPT = re.compile(r"(?:looks good|preview (?:is )?(?:good|accepted|approved)|accept (?:the )?preview)", re.I)
@@ -76,6 +83,215 @@ class ProjectBuzzConversationCycle:
                 raise Rejected("project_coordination_revision_conflict")
             tx.save_project_coordination(new, old.revision)
 
+    def _planning_candidate(self, event, state, roles, bots):
+        if state.active_task_id is not None or roles.get("researcher") is None:
+            return False
+        mentioned, addressed = self._mentioned(event, bots)
+        if addressed or mentioned or reply_target(event):
+            return False
+        content = event["content"].strip()
+        if (
+            _STATUS.fullmatch(content)
+            or _ACCEPT.search(content)
+            or state.phase in {"preview_feedback", "correction", "merge_ready", "deployed"}
+        ):
+            return False
+        research, build = bool(_RESEARCH.search(content)), bool(_BUILD.search(content))
+        if (_DEPLOY.search(content) or _REVIEW.search(content)) and not (research or build):
+            return False
+        return research and build or not research and not build
+
+    def _start_planning(self, state, event, files, roles, bots):
+        selected = roles["researcher"]
+        bot = bots[selected.link.bot_id]
+        prompt = coordination_prompt(
+            event["content"],
+            phase=state.phase,
+            available_roles=tuple(sorted(roles)),
+            attachments=tuple((item.name, item.media_type) for item in files),
+        )
+        key = "project-plan:" + fingerprint(
+            [state.project_id, event["id"], event["content"]]
+        )
+        actor = AuthContext(selected.link.principal_id, "buzz", selected.link.owner_pubkey)
+        task = self.service.admit(
+            actor,
+            Envelope(
+                "buzz", key, selected.link.conversation_id,
+                selected.link.binding_revision, key,
+            ),
+            StartTask(
+                selected.link.bot_id,
+                selected.link.project_id,
+                prompt,
+                bot.provider_binding,
+                budget=1,
+                disable_tools=True,
+            ),
+        )
+        updated = state.evolve(
+            active_bot_id=task.bot_id,
+            active_task_id=task.task_id,
+            planning_task_id=task.task_id,
+            planning_source_message_id=event["id"],
+            phase="planning",
+            status_note="Radhouse is choosing the smallest useful project path.",
+        ).validate()
+        # Admission is idempotent. Persist the source event and coordination
+        # pointer together so a restart cannot mark the request processed while
+        # losing the planner task that owns it.
+        with self.store.transaction() as tx:
+            current = tx.project_coordination(state.project_id)
+            if current != state:
+                raise Rejected("project_coordination_revision_conflict")
+            tx.save_conversation_message(
+                ConversationMessage(
+                    event["id"], self.link.link_id, self.link.principal_id,
+                    event["content"], "buzz", event["created_at"],
+                    task_id=task.task_id, reply_to=reply_target(event), files=files,
+                    state="planning",
+                ),
+                event=event,
+                processed=True,
+            )
+            tx.save_project_coordination(updated, state.revision)
+        self._note(
+            "coord-plan-start:" + event["id"],
+            "I’m working out the smallest useful path for this request. Reply status anytime for details.",
+            reply_to=event["id"],
+            task_id=task.task_id,
+        )
+        return updated
+
+    def _finish_planning(self, state, planner_task, roles, bots):
+        with self.store.transaction() as tx:
+            source = tx.conversation_message(state.planning_source_message_id)
+        if source is None:
+            updated = state.evolve(
+                active_bot_id=None,
+                active_task_id=None,
+                planning_task_id=None,
+                planning_source_message_id=None,
+                phase="blocked",
+                status_note="The original project request is unavailable.",
+            ).validate()
+            self._save_state(state, updated)
+            return updated
+        allowed = {"clarify"}
+        if roles.get("researcher"):
+            allowed.add("research")
+        if roles.get("builder"):
+            allowed.add("build")
+        if roles.get("researcher") and roles.get("builder"):
+            allowed.add("research_then_build")
+        try:
+            if planner_task.outcome != "completed" or not planner_task.result:
+                raise Rejected("coordination_plan_failed", 409)
+            plan = parse_coordination_plan(
+                planner_task.result, allowed_routes=frozenset(allowed)
+            )
+        except Rejected:
+            updated = state.evolve(
+                active_bot_id=None,
+                active_task_id=None,
+                planning_task_id=None,
+                planning_source_message_id=None,
+                phase="blocked",
+                status_note="Radhouse could not confidently route the request.",
+            ).validate()
+            self._save_state(state, updated)
+            self._note(
+                "coord-plan-invalid:" + source["message"].message_id,
+                "I could not confidently choose the next agent. Please say whether you want research, implementation, or both.",
+                reply_to=source["message"].message_id,
+            )
+            return updated
+        if plan.route == "clarify":
+            updated = state.evolve(
+                active_bot_id=None,
+                active_task_id=None,
+                planning_task_id=None,
+                planning_source_message_id=None,
+                phase="intake",
+                status_note=plan.clarification,
+            ).validate()
+            self._save_state(state, updated)
+            self._note(
+                "coord-plan-clarify:" + source["message"].message_id,
+                plan.clarification,
+                reply_to=source["message"].message_id,
+            )
+            return updated
+        role = "researcher" if plan.route.startswith("research") else "builder"
+        selected = roles[role]
+        bot = bots[selected.link.bot_id]
+        source_message = source["message"]
+        brief = source_message.content + "\n\nCoordination note: " + plan.summary
+        key = "project-plan-dispatch:" + fingerprint(
+            [state.project_id, source_message.message_id, plan.route]
+        )
+        actor = AuthContext(selected.link.principal_id, "buzz", selected.link.owner_pubkey)
+        task = self.service.admit(
+            actor,
+            Envelope(
+                "buzz", key, selected.link.conversation_id,
+                selected.link.binding_revision, key,
+            ),
+            StartTask(
+                selected.link.bot_id,
+                selected.link.project_id,
+                brief,
+                bot.provider_binding,
+                files=source_message.files,
+            ),
+        )
+        anchor_id = "planned:" + key
+        with self.store.transaction() as tx:
+            if tx.conversation_message(anchor_id) is None:
+                tx.save_conversation_message(
+                    ConversationMessage(
+                        anchor_id,
+                        selected.link.link_id,
+                        selected.link.principal_id,
+                        source_message.content,
+                        "buzz",
+                        source_message.created_at,
+                        task_id=task.task_id,
+                        files=source_message.files,
+                        state="planned",
+                    ),
+                    route=MessageRoute("start"),
+                    event=source["event"],
+                    processed=True,
+                )
+        updated = state.evolve(
+            active_bot_id=task.bot_id,
+            active_task_id=task.task_id,
+            latest_task_id=task.task_id,
+            planning_task_id=None,
+            planning_source_message_id=None,
+            phase="research" if role == "researcher" else "building",
+            handoff_bot_id=(
+                roles["builder"].link.bot_id
+                if plan.route == "research_then_build"
+                else None
+            ),
+            handoff_brief=(
+                "Use the Researcher result as context and implement the requested project change."
+                if plan.route == "research_then_build"
+                else None
+            ),
+            status_note=f"{bot.display_name} is working.",
+        ).validate()
+        self._save_state(state, updated)
+        self._note(
+            "coord-plan-route:" + source_message.message_id,
+            f"Plan: {plan.summary}\n\nI routed the first step to {bot.display_name}. Reply status anytime for details.",
+            reply_to=source_message.message_id,
+            task_id=task.task_id,
+        )
+        return updated
+
     def _note(self, message_id, text, *, reply_to=None, task_id=None):
         with self.store.transaction() as tx:
             if tx.conversation_message(message_id) is None:
@@ -107,6 +323,21 @@ class ProjectBuzzConversationCycle:
             return state
         with self.store.transaction() as tx:
             task = tx.task(state.active_task_id)
+        if state.planning_task_id is not None:
+            if task is None:
+                updated = state.evolve(
+                    active_bot_id=None,
+                    active_task_id=None,
+                    planning_task_id=None,
+                    planning_source_message_id=None,
+                    phase="blocked",
+                    status_note="The coordination planning task is unavailable.",
+                ).validate()
+                self._save_state(state, updated)
+                return updated
+            if task.phase != "closed":
+                return state
+            return self._finish_planning(state, task, roles, bots)
         if task is None or task.phase != "closed":
             return state
         bot = bots.get(task.bot_id)
@@ -137,6 +368,11 @@ class ProjectBuzzConversationCycle:
         # native automatic handoffs. Merge and deployment always wait for the owner.
         target = state.handoff_bot_id if task.outcome == "completed" and task.result else None
         brief = state.handoff_brief if target else None
+        files = (
+            task.files
+            if target and "research" in bot.role_name.casefold()
+            else ()
+        )
         if (
             task.outcome == "completed"
             and task.result
@@ -145,13 +381,16 @@ class ProjectBuzzConversationCycle:
         ):
             target = roles.get("builder").link.bot_id if roles.get("builder") else None
             brief = "Address the Reviewer findings against the same pull request and update the same preview."
+            files = ()
         if target and brief:
             selected = next((item for item in self.specialists if item.link.bot_id == target), None)
             if selected is not None:
-                state = self._handoff(state, selected, task.task_id, brief, bots)
+                state = self._handoff(
+                    state, selected, task.task_id, brief, bots, files=files
+                )
         return state
 
-    def _handoff(self, state, selected, previous_task_id, brief, bots):
+    def _handoff(self, state, selected, previous_task_id, brief, bots, *, files=()):
         bot = bots[selected.link.bot_id]
         key = "project-handoff:" + fingerprint(
             [state.project_id, previous_task_id, selected.link.bot_id, brief]
@@ -163,7 +402,8 @@ class ProjectBuzzConversationCycle:
                      selected.link.binding_revision, key),
             StartTask(
                 selected.link.bot_id, selected.link.project_id, brief,
-                bot.provider_binding, follows_task_id=previous_task_id,
+                bot.provider_binding, files=files,
+                follows_task_id=previous_task_id,
             ),
         )
         message_id = "handoff:" + key
@@ -173,7 +413,7 @@ class ProjectBuzzConversationCycle:
                     ConversationMessage(
                         message_id, selected.link.link_id, selected.link.principal_id,
                         brief, "radhouse", int(self.service._now().timestamp()),
-                        task_id=task.task_id, state="handoff",
+                        task_id=task.task_id, files=files, state="handoff",
                     ),
                     route=MessageRoute("start", follows_task_id=previous_task_id),
                     processed=True,
@@ -265,8 +505,27 @@ class ProjectBuzzConversationCycle:
                 (item for item in self.specialists
                  if latest is not None and item.link.bot_id == latest.bot_id), None,
             )
-            return selected, status_text(state, bots.get(state.active_bot_id).display_name
-                                         if state.active_bot_id in bots else None), False, state
+            current = self._task(state.active_task_id) if state.active_task_id else latest
+            with self.store.transaction() as tx:
+                activity = (
+                    tx.latest_event(current.task_id, "runtime_activity")
+                    if current is not None
+                    else None
+                )
+            name = (
+                "Radhouse"
+                if state.planning_task_id is not None
+                else bots.get(state.active_bot_id).display_name
+                if state.active_bot_id in bots
+                else None
+            )
+            return selected, status_text(
+                state,
+                name,
+                task=current,
+                activity=activity.data if activity else None,
+                now=int(self.service._now().timestamp()),
+            ), False, state
         if state.active_bot_id:
             selected = next((item for item in self.specialists if item.link.bot_id == state.active_bot_id), None)
             return selected, None, False, state
@@ -419,6 +678,9 @@ class ProjectBuzzConversationCycle:
                         state="project_control:" + control,
                     )
                     self._note("reply:" + event["id"], response, reply_to=event["id"])
+                    continue
+                if self._planning_candidate(event, state, roles, bots):
+                    state = self._start_planning(state, event, files, roles, bots)
                     continue
                 selected, response, addressed, selected_state = self._select(event, state, roles, bots)
                 if selected_state != state:

@@ -4,7 +4,7 @@ import pytest
 
 from radhouse.application.coordinator import Coordinator
 from radhouse.domain.tasks import Rejected
-from radhouse.domain.tasks import RuntimeResult
+from radhouse.domain.tasks import RuntimeActivity, RuntimeResult
 
 
 class RecordingService:
@@ -102,3 +102,24 @@ def test_empty_runtime_completion_stays_unverified_without_redispatch(
     failed = service.recover(task.task_id)
     assert failed.phase == "closed" and failed.outcome == "failed"
     assert failed.result is None and fake_work.start_count == 1
+
+
+@pytest.mark.postgres
+def test_runtime_activity_is_durable_deduplicated_and_does_not_advance_task_state(
+    service, store, alice, envelope, start, fake_work,
+):
+    activity = RuntimeActivity(
+        "run-activity", "tool.started", "Using an assigned tool", 1_795_000_000
+    )
+    fake_work.result = lambda *_: RuntimeResult("running", activity=activity)
+    task = service.admit(alice, envelope(), start)
+    active = service.run(task.task_id)
+    recovered = service.recover(task.task_id)
+
+    assert recovered.state_revision == active.state_revision
+    with store.transaction() as tx:
+        events = [event for event in tx.events(task.task_id, 0)
+                  if event.kind == "runtime_activity"]
+        assert len(events) == 1
+        assert events[0].data["label"] == "Using an assigned tool"
+        assert tx.latest_event(task.task_id, "runtime_activity") == events[0]

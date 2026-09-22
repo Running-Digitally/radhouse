@@ -226,12 +226,23 @@ class RuntimeGuidanceReceipt:
 
 
 @dataclass(frozen=True)
+class RuntimeActivity:
+    """One sanitized, pollable runtime activity snapshot."""
+
+    run_id: str
+    event: str
+    label: str
+    occurred_at: int
+
+
+@dataclass(frozen=True)
 class RuntimeResult:
     state: Literal["running", "completed", "failed", "cancelled", "unknown"]
     content: str | None = None
     permission_request: dict | None = None
     guidance_receipts: tuple[RuntimeGuidanceReceipt, ...] | None = None
     guidance_terminal: bool = False
+    activity: RuntimeActivity | None = None
 
 
 def runtime_input(task: Task) -> str:
