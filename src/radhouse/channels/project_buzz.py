@@ -39,11 +39,12 @@ _STOP = re.compile(r"\s*(?:stop|cancel)(?:\s+(?:this|the))?(?:\s+(?:work|task|pr
 class ProjectBuzzConversationCycle:
     """Route owner messages while specialists keep their normal task paths."""
 
-    def __init__(self, service, coordinator, specialists):
+    def __init__(self, service, coordinator, specialists, *, automatic_private_release=False):
         self.service, self.store = service, service.store
         self.coordinator = coordinator
         self.link, self.relay = coordinator.link, coordinator.relay
         self.specialists = tuple(specialists)
+        self.automatic_private_release = automatic_private_release
         self.conversations = Conversations(service)
 
     def _authorize(self):
@@ -366,8 +367,8 @@ class ProjectBuzzConversationCycle:
             task_id=task.task_id,
         )
         state = updated
-        # A completed research/build plan and a Reviewer correction are the two
-        # native automatic handoffs. Merge and deployment always wait for the owner.
+        # The project policy may admit one automatic private release after the
+        # owner accepted the exact preview and Reviewer approved the same head.
         target = state.handoff_bot_id if task.outcome == "completed" and task.result else None
         brief = state.handoff_brief if target else None
         files = (
@@ -383,6 +384,30 @@ class ProjectBuzzConversationCycle:
         ):
             target = roles.get("builder").link.bot_id if roles.get("builder") else None
             brief = "Address the Reviewer findings against the same pull request and update the same preview."
+            files = ()
+        elif (
+            self.automatic_private_release
+            and task.outcome == "completed"
+            and task.result
+            and "reviewer" in bot.role_name.casefold()
+            and state.reviewer_verdict == "READY"
+            and state.reviewed_revision == state.preview_revision == state.source_revision
+            and state.accepted_preview_revision == state.reviewed_revision
+            and state.repository and state.pull_request and state.preview_digest
+            and state.preview_url and state.deployment_url
+            and roles.get("deployer") is not None
+        ):
+            target = roles["deployer"].link.bot_id
+            brief = (
+                f"The owner accepted preview revision {state.accepted_preview_revision} "
+                f"at {state.preview_url} (digest {state.preview_digest}), and Reviewer returned "
+                f"READY for that exact revision. Release only {state.repository} PR "
+                f"{state.pull_request} at head {state.reviewed_revision} to the project's "
+                f"existing private target {state.deployment_url}. Recheck the PR head, "
+                "merge it, verify the merge tree matches the reviewed tree, deploy only the "
+                "immutable main revision, check health and rollback, and report the verified "
+                "deployment URL and revision. Stop on any mismatch or missing target."
+            )
             files = ()
         if target and brief:
             selected = next((item for item in self.specialists if item.link.bot_id == target), None)

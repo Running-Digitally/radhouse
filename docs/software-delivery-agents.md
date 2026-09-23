@@ -10,15 +10,16 @@ A software project can include three distinct working roles:
 1. **Builder** implements and tests a bounded change.
 2. **Reviewer** independently examines the exact completed result and separates
    blocking defects from suggestions.
-3. **Deployer** checks the reviewed result against one configured release target
-   and, after the protected human decision, invokes only that target's named
-   deployment operation.
+3. **Deployer** checks the reviewed result against one configured private
+   release target, verifies the exact PR head and merge tree, and invokes only
+   that target's named deployment operation.
 
-The operator remains in control of release decisions. In a project Buzz
-channel, the signed Radhouse coordinator starts ordinary correlated child tasks
-and posts concise handoff notes. The web work home retains role-aware handoff
-buttons as an explicit fallback. Radhouse never treats free-form prose as an
-approval and never deploys without an owner deployment message.
+In a project Buzz channel, the signed Radhouse coordinator starts ordinary
+correlated child tasks and posts concise handoff notes. A project channel may
+opt into automatic private release: the owner's acceptance of the exact preview
+and an independent `READY` review of the same head cause one Deployer handoff.
+There is no separate merge/deploy prompt on each such release. Channels without
+that explicit setting retain the owner deployment-message path.
 
 ## Reused contracts
 
@@ -39,7 +40,7 @@ bounded briefs:
 | --- | --- | --- |
 | Builder | Reviewer | Review the exact result; identify blocking defects and state readiness. |
 | Reviewer | Builder | Address the blocking findings and report the updated revision and validation. |
-| Reviewer or Builder | Deployer | Check release readiness and wait for the protected deployment decision. |
+| Reviewer | Deployer | For an opted-in private project, release the accepted, READY-reviewed exact head. |
 
 Radhouse may use one bounded model turn to interpret an ambiguous project goal
 before creating a specialist task. That planner has no tools and emits a strict
@@ -55,9 +56,9 @@ consume Hermes's non-replayable event stream and does not create a model call.
 Reviewer and Deployer are separate signed bot identities and runtimes. Radhouse
 is a signed controller identity with no separate agent runtime. A role
 name never grants access. Reviewer receives only the repositories and evidence
-selected for review. Deployer holds no general shell, GitHub credential or host
-credential; a private deployment overlay may connect it to a narrowly configured
-Operations service.
+selected for review. The default Deployer has no general host or GitHub
+authority; a private project may provide a repository-scoped credential and
+one unprivileged target-specific release operation.
 
 ## GitHub and deployment boundaries
 
@@ -67,12 +68,14 @@ an administrator may separately choose the documented advanced direct-token
 mode. Builder may publish a bot branch and open a pull request. Reviewer may
 read the exact revision and publish review findings. Neither role may merge.
 
-Deployer acts only on an immutable reviewed revision and one named target. A
-deployment request records the project, root task, repository, revision, target,
-operation and current human decision. The Operations boundary validates those
-fields, expiry and idempotency before using credentials. If no matching operation
-is configured, Deployer reports that concrete gap instead of improvising a host
-command.
+Deployer acts only on an immutable reviewed revision and one named target. The
+automatic handoff carries the project, repository, PR, accepted and reviewed
+head, preview digest and existing private target. Deployer rechecks the PR head
+before merge, verifies the resulting main commit's tree, and deploys only that
+merge revision. If any prerequisite changed or no matching unprivileged release
+operation is configured, it reports the concrete gap instead of improvising a
+host command. A project without automatic private release still uses its
+existing protected owner decision.
 
 ## Vertical slices and acceptance
 
@@ -94,8 +97,8 @@ human-controlled merge. The deployment slice is complete only when one named
 target proves approved apply, idempotent retry, status and rollback. Those
 external capabilities are not implied by the role-aware handoff UI.
 
-Stop rather than broaden scope when an agent, repository, revision, review,
-target, operation or human decision cannot be verified exactly.
+Stop rather than broaden scope when an agent, repository, revision, accepted
+preview, review, target or operation cannot be verified exactly.
 
 ## Release correlation
 

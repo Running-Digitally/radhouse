@@ -229,9 +229,16 @@ class BuzzConversationConfig(StrictModel):
     channel_id: str
     conversation_id: str
     kind: Literal["dm", "stream"] = "dm"
+    automatic_private_release: bool = False
 
     _channel = field_validator("channel_id")(_identifier)
     _conversation = field_validator("conversation_id")(_identifier)
+
+    @model_validator(mode="after")
+    def release_requires_project_channel(self):
+        if self.automatic_private_release and self.kind != "stream":
+            raise ValueError("automatic private release requires a project channel")
+        return self
 
 
 class BuzzConfig(StrictModel):
