@@ -823,8 +823,9 @@ class ProjectBuzzConversationCycle:
                         f"from {state.pull_request}. The recorded Reviewer verdict is READY for the matching "
                         f"preview at {state.preview_url} (digest {state.preview_digest}). "
                         "Use the project's existing target and authority. Verify merge, deployment, health and rollback; "
-                        "end with RADHOUSE_PROJECT_UPDATE containing merged_revision, deployment_url, "
-                        "deployed_revision and deployment_status."
+                        "end with RADHOUSE_PROJECT_UPDATE containing only verified facts. "
+                        "If merge or deployment did not happen, report deployment_status=failed "
+                        "without a claimed merged_revision, deployed_revision or deployment_url."
                     )
                     state = self._handoff(state, selected, previous, brief, bots)
                     continue

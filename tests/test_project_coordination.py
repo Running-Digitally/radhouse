@@ -106,6 +106,44 @@ def test_deployer_may_report_the_owner_approved_merge_and_deployment_together():
     assert deployed.merged_revision == deployed.deployed_revision == merged
 
 
+def test_failed_deployment_does_not_promote_claimed_merge_or_release():
+    source = "a" * 40
+    state = ProjectCoordination(
+        "expenses", phase="deployment", source_revision=source,
+        preview_revision=source, reviewed_revision=source,
+        reviewer_verdict="READY", active_bot_id="deployer", active_task_id="deploy",
+    )
+    failed = apply_result(
+        state, "Deployer",
+        report(
+            merged_revision=source,
+            deployed_revision=source,
+            deployment_url="https://builder-preview.runningdigitally.com/",
+            deployment_status="failed",
+        ),
+    )
+    assert failed.phase == "blocked"
+    assert failed.merged_revision is None
+    assert failed.deployed_revision is None
+    assert failed.deployment_url is None
+    assert failed.deployment_status is None
+
+    previous = state.evolve(
+        merged_revision="b" * 40,
+        deployed_revision="b" * 40,
+        deployment_url="https://expenses.deployed.runningdigitally.com/",
+        deployment_status="healthy",
+    )
+    unchanged = apply_result(
+        previous, "Deployer",
+        report(merged_revision=source, deployed_revision=source,
+               deployment_status="failed"),
+    )
+    assert unchanged.phase == "blocked"
+    assert unchanged.merged_revision == unchanged.deployed_revision == "b" * 40
+    assert unchanged.deployment_status == "healthy"
+
+
 def test_invalid_machine_report_does_not_replace_the_human_result():
     assert result_update("RADHOUSE_PROJECT_UPDATE: not-json") == {}
     assert result_update(report(preview_url="http://public.example")) == {}
