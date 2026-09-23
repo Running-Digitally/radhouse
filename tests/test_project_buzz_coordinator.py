@@ -455,8 +455,10 @@ def test_accepted_ready_review_hands_off_one_private_release_without_owner_messa
             "personal-alice", phase="review", repository="Satish-s-RADHouse/Expenses",
             pull_request="https://github.com/Satish-s-RADHouse/Expenses/pull/3",
             source_revision=revision, preview_revision=revision,
-            accepted_preview_revision=revision, preview_digest="4" * 64,
+            preview_digest="4" * 64,
             preview_url="https://builder-preview.runningdigitally.com/",
+            deployment_url="https://builder-preview.runningdigitally.com/",
+            deployment_status="failed",
         ).validate(), None)
     cycle = ProjectBuzzConversationCycle(
         service, SimpleNamespace(link=lead, relay=Relay()),
@@ -484,6 +486,66 @@ def test_accepted_ready_review_hands_off_one_private_release_without_owner_messa
         assert release.follows_task_id == review.task_id
         assert revision in release.brief
         assert "expenses.deployed.runningdigitally.com" in release.brief
+        assert state.accepted_preview_revision is None
+
+
+def test_private_release_hands_builder_preview_to_reviewer_without_owner_message(
+    service, store, clock, fake_work,
+):
+    now = int(clock().timestamp())
+    channel = "5d84100d-9a9c-45c0-b91f-5be6074519a3"
+    owner = "a" * 64
+    members = ("b" * 64, "c" * 64, "d" * 64)
+    def link(name, pubkey, bot_id, *, coordinator=False):
+        return ConversationLink(
+            name, channel, "personal-alice:alice:buzz", "alice",
+            owner, pubkey, bot_id, "personal-alice", now,
+            member_pubkeys=members, default_agent=coordinator,
+            coordinator=coordinator, channel_kind="stream",
+        )
+    lead = link("private-review-coordinator", members[0], "bot-beta", coordinator=True)
+    reviewer = link("private-review-reviewer", members[1], "bot-alpha")
+    builder = link("private-review-builder", members[2], "bot-beta")
+    with store.transaction() as tx:
+        tx._connection.execute(
+            "UPDATE channel_bindings SET subject=%s WHERE subject='alice@buzz'", (owner,),
+        )
+        tx._connection.execute(
+            "UPDATE bots SET display_name='Reviewer',role_name='Reviewer' WHERE bot_id='bot-alpha'"
+        )
+        tx._connection.execute(
+            "UPDATE bots SET display_name='Builder',role_name='Builder' WHERE bot_id='bot-beta'"
+        )
+        for item in (lead, reviewer, builder):
+            tx.save_conversation_link(item)
+    cycle = ProjectBuzzConversationCycle(
+        service, SimpleNamespace(link=lead, relay=Relay()),
+        tuple(SimpleNamespace(link=item, relay=Relay()) for item in (reviewer, builder)),
+        automatic_private_release=True,
+        private_deployment_url="https://expenses.deployed.runningdigitally.com/",
+    )
+    roles, bots = cycle._roles()
+    cycle._handoff(cycle._state(), roles["builder"], None, "Build the import", bots)
+    revision = "3" * 40
+    fake_work.result_content = (
+        "Preview ready.\nRADHOUSE_PROJECT_UPDATE: "
+        '{"repository":"Satish-s-RADHouse/Expenses","pull_request":"https://github.com/Satish-s-RADHouse/Expenses/pull/3",'
+        f'"source_revision":"{revision}","preview_revision":"{revision}",'
+        f'"preview_digest":"{"4" * 64}","preview_url":"https://builder-preview.runningdigitally.com/"}}'
+    )
+    Coordinator(service, "worker-one").run_once()
+    cycle.ingress()
+    cycle.ingress()
+    with store.transaction() as tx:
+        state = tx.project_coordination("personal-alice")
+        tasks = tx.tasks()
+        assert len(tasks) == 2
+        assert state.phase == "review"
+        review = tx.task(state.active_task_id)
+        assert review.bot_id == "bot-alpha"
+        assert review.follows_task_id == next(task.task_id for task in tasks if task.bot_id == "bot-beta")
+        assert revision in review.brief
+        assert state.accepted_preview_revision is None
 
 
 def test_project_pause_resume_and_stop_control_only_the_active_task(

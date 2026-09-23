@@ -16,8 +16,8 @@ A software project can include three distinct working roles:
 
 In a project Buzz channel, the signed Radhouse coordinator starts ordinary
 correlated child tasks and posts concise handoff notes. A project channel may
-opt into automatic private release: the owner's acceptance of the exact preview
-and an independent `READY` review of the same head cause one Deployer handoff.
+opt into automatic private release: Builder's exact preview goes to Reviewer,
+and an independent `READY` review of the same head causes one Deployer handoff.
 The channel's fixed private deployment URL is configured once, including for
 its first release. There is no separate merge/deploy prompt on each such release. Channels without
 that explicit setting retain the owner deployment-message path.
@@ -41,7 +41,7 @@ bounded briefs:
 | --- | --- | --- |
 | Builder | Reviewer | Review the exact result; identify blocking defects and state readiness. |
 | Reviewer | Builder | Address the blocking findings and report the updated revision and validation. |
-| Reviewer | Deployer | For an opted-in private project, release the accepted, READY-reviewed exact head. |
+| Reviewer | Deployer | For an opted-in private project, release the READY-reviewed exact head. |
 
 Radhouse may use one bounded model turn to interpret an ambiguous project goal
 before creating a specialist task. That planner has no tools and emits a strict
@@ -70,7 +70,7 @@ mode. Builder may publish a bot branch and open a pull request. Reviewer may
 read the exact revision and publish review findings. Neither role may merge.
 
 Deployer acts only on an immutable reviewed revision and one named target. The
-automatic handoff carries the project, repository, PR, accepted and reviewed
+automatic handoff carries the project, repository, PR, preview and reviewed
 head, preview digest and existing private target. Deployer rechecks the PR head
 before merge, verifies the resulting main commit's tree, and deploys only that
 merge revision. If any prerequisite changed or no matching unprivileged release
@@ -98,17 +98,18 @@ human-controlled merge. The deployment slice is complete only when one named
 target proves approved apply, idempotent retry, status and rollback. Those
 external capabilities are not implied by the role-aware handoff UI.
 
-Stop rather than broaden scope when an agent, repository, revision, accepted
-preview, review, target or operation cannot be verified exactly.
+Stop rather than broaden scope when an agent, repository, revision, preview,
+review, target or operation cannot be verified exactly.
 
 ## Release correlation
 
 Builder, Reviewer and Deployer may append the strict
 `RADHOUSE_PROJECT_UPDATE` line documented in the Buzz integration profile.
 Radhouse validates its URLs, revisions, digests, allowed fields and role before
-updating the project snapshot. Preview acceptance requires
-`source_revision == preview_revision`. Reviewer READY requires the reviewed
-revision to equal that accepted revision. A healthy deployment requires the
+updating the project snapshot. Preview review requires
+`source_revision == preview_revision`; channels without automatic release can
+still request explicit owner acceptance. Reviewer READY requires the reviewed
+revision to equal the preview revision. A healthy deployment requires the
 deployed revision to equal the reported merge revision and the reviewed source
-to remain the accepted preview. Project cards expose the current phase, preview
+to remain the current preview. Project cards expose the current phase, preview
 and deployment without making the owner open a task to learn basic status.
