@@ -6,6 +6,7 @@ from radhouse.application.coordinator import Coordinator
 from radhouse.channels.project_buzz import ProjectBuzzConversationCycle
 from radhouse.domain.conversations import ConversationLink
 from radhouse.domain.tasks import InputFile
+from radhouse.domain.projects import ProjectCoordination
 
 
 pytestmark = pytest.mark.postgres
@@ -418,6 +419,71 @@ def test_owner_radhouse_request_hands_current_preview_to_reviewer_once(
         assert deployed.follows_task_id is None
         assert revision in deployed.brief
         assert "https://github.com/Satish-s-RADHouse/Expenses/pull/3" in deployed.brief
+
+
+def test_accepted_ready_review_hands_off_one_private_release_without_owner_message(
+    service, store, clock, fake_work,
+):
+    now = int(clock().timestamp())
+    channel = "4d84100d-9a9c-45c0-b91f-5be6074519a3"
+    owner = "a" * 64
+    members = ("b" * 64, "c" * 64, "d" * 64)
+    def link(name, pubkey, bot_id, *, coordinator=False):
+        return ConversationLink(
+            name, channel, "personal-alice:alice:buzz", "alice",
+            owner, pubkey, bot_id, "personal-alice", now,
+            member_pubkeys=members, default_agent=coordinator,
+            coordinator=coordinator, channel_kind="stream",
+        )
+    lead = link("automatic-release-coordinator", members[0], "bot-beta", coordinator=True)
+    reviewer = link("automatic-release-reviewer", members[1], "bot-alpha")
+    deployer = link("automatic-release-deployer", members[2], "bot-beta")
+    revision = "3" * 40
+    with store.transaction() as tx:
+        tx._connection.execute(
+            "UPDATE channel_bindings SET subject=%s WHERE subject='alice@buzz'", (owner,),
+        )
+        tx._connection.execute(
+            "UPDATE bots SET display_name='Reviewer',role_name='Reviewer' WHERE bot_id='bot-alpha'"
+        )
+        tx._connection.execute(
+            "UPDATE bots SET display_name='Deployer',role_name='Deployer' WHERE bot_id='bot-beta'"
+        )
+        for item in (lead, reviewer, deployer):
+            tx.save_conversation_link(item)
+        tx.save_project_coordination(ProjectCoordination(
+            "personal-alice", phase="review", repository="Satish-s-RADHouse/Expenses",
+            pull_request="https://github.com/Satish-s-RADHouse/Expenses/pull/3",
+            source_revision=revision, preview_revision=revision,
+            accepted_preview_revision=revision, preview_digest="4" * 64,
+            preview_url="https://builder-preview.runningdigitally.com/",
+            deployment_url="https://expenses.deployed.runningdigitally.com/",
+        ).validate(), None)
+    cycle = ProjectBuzzConversationCycle(
+        service, SimpleNamespace(link=lead, relay=Relay()),
+        tuple(SimpleNamespace(link=item, relay=Relay()) for item in (reviewer, deployer)),
+        automatic_private_release=True,
+    )
+    roles, bots = cycle._roles()
+    cycle._handoff(cycle._state(), roles["reviewer"], None, "Review exact work", bots)
+    fake_work.result_content = (
+        "READY.\nRADHOUSE_PROJECT_UPDATE: "
+        f'{{"reviewed_revision":"{revision}","reviewer_verdict":"READY"}}'
+    )
+    Coordinator(service, "worker-one").run_once()
+    cycle.ingress()
+    cycle.ingress()
+    with store.transaction() as tx:
+        state = tx.project_coordination("personal-alice")
+        tasks = tx.tasks()
+        assert state.phase == "deployment"
+        assert len(tasks) == 2
+        release = tx.task(state.active_task_id)
+        review = next(task for task in tasks if task.task_id != release.task_id)
+        assert release.bot_id == "bot-beta"
+        assert release.follows_task_id == review.task_id
+        assert revision in release.brief
+        assert "expenses.deployed.runningdigitally.com" in release.brief
 
 
 def test_project_pause_resume_and_stop_control_only_the_active_task(

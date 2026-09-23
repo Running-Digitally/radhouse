@@ -162,6 +162,11 @@ def compose_controller(
                         item for item in conversation_cycles
                         if item.candidate.channel_id == configured.candidate.channel_id
                     )
+                    configured.automatic_private_release = next(
+                        item.automatic_private_release
+                        for item in config.buzz.conversations
+                        if item.channel_id == configured.candidate.channel_id
+                    )
         from radhouse.channels.buzz_enrollment import BuzzEnrollment
         # The same configured scope fences web sends/history and relay cycles.
         # Removing a candidate must not leave its old web composer operational.
