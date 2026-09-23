@@ -269,6 +269,7 @@ class ConfiguredBuzzConversation:
         self.channel_kind = channel_kind
         self.project_members = ()
         self.automatic_private_release = False
+        self.private_deployment_url = None
 
     def profile(self, bot):
         name = self.candidate.display_name if self.coordinator else None
@@ -366,5 +367,6 @@ class ConfiguredBuzzConversation:
                 SimpleNamespace(link=link, relay=self.relay),
                 tuple(members),
                 automatic_private_release=self.automatic_private_release,
+                private_deployment_url=self.private_deployment_url,
             ).run(phase)
         return BuzzConversationCycle(self.service, self.relay, link).run(phase)

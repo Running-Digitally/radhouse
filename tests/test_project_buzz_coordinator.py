@@ -457,12 +457,12 @@ def test_accepted_ready_review_hands_off_one_private_release_without_owner_messa
             source_revision=revision, preview_revision=revision,
             accepted_preview_revision=revision, preview_digest="4" * 64,
             preview_url="https://builder-preview.runningdigitally.com/",
-            deployment_url="https://expenses.deployed.runningdigitally.com/",
         ).validate(), None)
     cycle = ProjectBuzzConversationCycle(
         service, SimpleNamespace(link=lead, relay=Relay()),
         tuple(SimpleNamespace(link=item, relay=Relay()) for item in (reviewer, deployer)),
         automatic_private_release=True,
+        private_deployment_url="https://expenses.deployed.runningdigitally.com/",
     )
     roles, bots = cycle._roles()
     cycle._handoff(cycle._state(), roles["reviewer"], None, "Review exact work", bots)

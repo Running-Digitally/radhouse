@@ -39,12 +39,16 @@ _STOP = re.compile(r"\s*(?:stop|cancel)(?:\s+(?:this|the))?(?:\s+(?:work|task|pr
 class ProjectBuzzConversationCycle:
     """Route owner messages while specialists keep their normal task paths."""
 
-    def __init__(self, service, coordinator, specialists, *, automatic_private_release=False):
+    def __init__(
+        self, service, coordinator, specialists, *,
+        automatic_private_release=False, private_deployment_url=None,
+    ):
         self.service, self.store = service, service.store
         self.coordinator = coordinator
         self.link, self.relay = coordinator.link, coordinator.relay
         self.specialists = tuple(specialists)
         self.automatic_private_release = automatic_private_release
+        self.private_deployment_url = private_deployment_url
         self.conversations = Conversations(service)
 
     def _authorize(self):
@@ -394,7 +398,8 @@ class ProjectBuzzConversationCycle:
             and state.reviewed_revision == state.preview_revision == state.source_revision
             and state.accepted_preview_revision == state.reviewed_revision
             and state.repository and state.pull_request and state.preview_digest
-            and state.preview_url and state.deployment_url
+            and state.preview_url and self.private_deployment_url
+            and state.deployment_url in (None, self.private_deployment_url)
             and roles.get("deployer") is not None
         ):
             target = roles["deployer"].link.bot_id
@@ -403,7 +408,7 @@ class ProjectBuzzConversationCycle:
                 f"at {state.preview_url} (digest {state.preview_digest}), and Reviewer returned "
                 f"READY for that exact revision. Release only {state.repository} PR "
                 f"{state.pull_request} at head {state.reviewed_revision} to the project's "
-                f"existing private target {state.deployment_url}. Recheck the PR head, "
+                f"configured private target {self.private_deployment_url}. Recheck the PR head, "
                 "merge it, verify the merge tree matches the reviewed tree, deploy only the "
                 "immutable main revision, check health and rollback, and report the verified "
                 "deployment URL and revision. Stop on any mismatch or missing target."

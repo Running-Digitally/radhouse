@@ -70,8 +70,9 @@ and an owner deployment request starts Deployer only after a READY review of
 that accepted revision. A private stream configured with
 `automatic_private_release: true` instead makes that exact accepted, READY
 review trigger one Deployer handoff without a second owner message. It requires
-the project's existing private deployment URL and a working target-specific
-release operation; changing the PR head or target blocks release. The setting
+one configured `private_deployment_url` under `*.deployed.runningdigitally.com`
+and a working target-specific release operation. This also supports a project's
+first release; changing the PR head or target blocks release. The setting
 defaults to false and is invalid for a DM. Status questions read project state
 and create no task.
 Research followed by implementation produces one visible Researcher-to-Builder

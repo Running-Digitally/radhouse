@@ -18,7 +18,8 @@ In a project Buzz channel, the signed Radhouse coordinator starts ordinary
 correlated child tasks and posts concise handoff notes. A project channel may
 opt into automatic private release: the owner's acceptance of the exact preview
 and an independent `READY` review of the same head cause one Deployer handoff.
-There is no separate merge/deploy prompt on each such release. Channels without
+The channel's fixed private deployment URL is configured once, including for
+its first release. There is no separate merge/deploy prompt on each such release. Channels without
 that explicit setting retain the owner deployment-message path.
 
 ## Reused contracts
