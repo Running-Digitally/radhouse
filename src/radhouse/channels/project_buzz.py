@@ -393,20 +393,42 @@ class ProjectBuzzConversationCycle:
             self.automatic_private_release
             and task.outcome == "completed"
             and task.result
+            and "builder" in bot.role_name.casefold()
+            and state.source_revision
+            and state.source_revision == state.preview_revision
+            and state.repository and state.pull_request and state.preview_digest
+            and state.preview_url and roles.get("reviewer") is not None
+        ):
+            target = roles["reviewer"].link.bot_id
+            brief = (
+                f"Review {state.repository} pull request {state.pull_request} at exact "
+                f"source and preview revision {state.preview_revision} "
+                f"(preview digest {state.preview_digest}) at {state.preview_url}. "
+                "Verify the pull request and preview correspond to that revision. "
+                "Run independent code, test, DOM and visual checks. End with READY or "
+                "CHANGES_NEEDED and a RADHOUSE_PROJECT_UPDATE report containing "
+                "reviewed_revision and reviewer_verdict."
+            )
+            files = ()
+        elif (
+            self.automatic_private_release
+            and task.outcome == "completed"
+            and task.result
             and "reviewer" in bot.role_name.casefold()
             and state.reviewer_verdict == "READY"
             and state.reviewed_revision == state.preview_revision == state.source_revision
-            and state.accepted_preview_revision == state.reviewed_revision
             and state.repository and state.pull_request and state.preview_digest
             and state.preview_url and self.private_deployment_url
-            and state.deployment_url in (None, self.private_deployment_url)
+            and (state.deployment_status != "healthy"
+                 or state.deployment_url in (None, self.private_deployment_url))
             and roles.get("deployer") is not None
         ):
             target = roles["deployer"].link.bot_id
             brief = (
-                f"The owner accepted preview revision {state.accepted_preview_revision} "
-                f"at {state.preview_url} (digest {state.preview_digest}), and Reviewer returned "
-                f"READY for that exact revision. Release only {state.repository} PR "
+                f"The project is opted into automatic private release. Builder's preview "
+                f"revision {state.preview_revision} at {state.preview_url} "
+                f"(digest {state.preview_digest}) received a READY review for that "
+                f"exact revision. Release only {state.repository} PR "
                 f"{state.pull_request} at head {state.reviewed_revision} to the project's "
                 f"configured private target {self.private_deployment_url}. Recheck the PR head, "
                 "merge it, verify the merge tree matches the reviewed tree, deploy only the "
@@ -848,11 +870,18 @@ class ProjectBuzzConversationCycle:
                                 state="deployment_approved",
                             ), event=event, processed=True,
                         )
+                    target_instruction = (
+                        f"Use the configured private target {self.private_deployment_url} "
+                        "and existing authority."
+                        if self.automatic_private_release
+                        else "Use the project's existing target and authority."
+                    )
                     brief = (
                         f"The owner approved merge and private deployment of reviewed revision {state.reviewed_revision} "
                         f"from {state.pull_request}. The recorded Reviewer verdict is READY for the matching "
                         f"preview at {state.preview_url} (digest {state.preview_digest}). "
-                        "Use the project's existing target and authority. Verify merge, deployment, health and rollback; "
+                        f"{target_instruction} "
+                        "Verify merge, deployment, health and rollback; "
                         "end with RADHOUSE_PROJECT_UPDATE containing only verified facts. "
                         "If merge or deployment did not happen, report deployment_status=failed "
                         "without a claimed merged_revision, deployed_revision or deployment_url."
