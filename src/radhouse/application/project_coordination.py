@@ -208,27 +208,34 @@ def apply_result(
             ),
         )
     elif "deployer" in role:
-        merged = update.get("merged_revision") or state.merged_revision
+        merged = update.get("merged_revision")
         deployed = update.get("deployed_revision")
         status = update.get("deployment_status")
         if (
-            deployed != merged
-            or state.reviewer_verdict != "READY"
-            or state.reviewed_revision != state.preview_revision
-            or state.preview_revision != state.source_revision
+            status == "healthy"
+            and merged is not None
+            and deployed == merged
+            and update.get("deployment_url") is not None
+            and state.reviewer_verdict == "READY"
+            and state.reviewed_revision == state.preview_revision
+            and state.preview_revision == state.source_revision
         ):
-            merged = deployed = status = None
-        changes.update(
-            deployment_url=update.get("deployment_url") if deployed else state.deployment_url,
-            merged_revision=merged,
-            deployed_revision=deployed,
-            deployment_status=status,
-            phase="deployed" if status == "healthy" else "blocked",
-            status_note=(
-                "Deployment is healthy." if status == "healthy"
-                else "Deployment evidence needs attention."
-            ),
-        )
+            changes.update(
+                deployment_url=update["deployment_url"],
+                merged_revision=merged,
+                deployed_revision=deployed,
+                deployment_status="healthy",
+                phase="deployed",
+                status_note="Deployment is healthy.",
+            )
+        else:
+            # A failed operation cannot establish a merge or a running release.
+            # Keep any previously verified deployment, and leave the failure
+            # details in the task result rather than promoting claimed fields.
+            changes.update(
+                phase="blocked",
+                status_note="No new deployment was verified; inspect Deployer's result.",
+            )
     elif "research" in role:
         changes.update(phase="research", status_note="Research completed.")
     return state.evolve(**changes).validate()
