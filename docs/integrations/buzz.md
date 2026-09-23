@@ -67,10 +67,18 @@ durable project phase and current task: active text becomes guidance, active
 attachments are retained as the next contextual step, preview feedback returns
 to Builder, owner preview acceptance starts an exact-revision Reviewer handoff,
 and an owner deployment request starts Deployer only after a READY review of
-that accepted revision. Status questions read project state and create no task.
+that accepted revision. A private stream configured with
+`automatic_private_release: true` instead makes that exact accepted, READY
+review trigger one Deployer handoff without a second owner message. It requires
+one configured `private_deployment_url` under `*.deployed.runningdigitally.com`
+and a working target-specific release operation. This also supports a project's
+first release; changing the PR head or target blocks release. The setting
+defaults to false and is invalid for a DM. Status questions read project state
+and create no task.
 Research followed by implementation produces one visible Researcher-to-Builder
 handoff. Reviewer `CHANGES_NEEDED` produces one correlated Builder correction;
-merge and deployment continue to require an owner message.
+merge and deployment continue to require an owner message unless that project
+channel explicitly opts into automatic private release.
 
 Clear single-role requests keep that deterministic path. For an ambiguous or
 multi-step request with no explicit agent, Radhouse may run one tools-disabled

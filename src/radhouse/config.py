@@ -229,9 +229,30 @@ class BuzzConversationConfig(StrictModel):
     channel_id: str
     conversation_id: str
     kind: Literal["dm", "stream"] = "dm"
+    automatic_private_release: bool = False
+    private_deployment_url: str | None = None
 
     _channel = field_validator("channel_id")(_identifier)
     _conversation = field_validator("conversation_id")(_identifier)
+
+    @model_validator(mode="after")
+    def release_requires_project_channel(self):
+        if self.automatic_private_release:
+            if self.kind != "stream":
+                raise ValueError("automatic private release requires a project channel")
+            if self.private_deployment_url is None:
+                raise ValueError("automatic private release requires a configured target")
+        if self.private_deployment_url is not None:
+            target = urlsplit(self.private_deployment_url)
+            if (
+                self.kind != "stream" or target.scheme != "https"
+                or target.hostname is None
+                or not target.hostname.endswith(".deployed.runningdigitally.com")
+                or target.netloc != target.hostname
+                or target.path != "/" or target.query or target.fragment
+            ):
+                raise ValueError("private deployment target must be an exact private HTTPS host")
+        return self
 
 
 class BuzzConfig(StrictModel):

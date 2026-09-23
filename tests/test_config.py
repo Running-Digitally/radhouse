@@ -230,6 +230,24 @@ def test_private_stream_project_channel_has_one_default_radhouse_coordinator():
             "agents": [coordinator, {**builder, "default_in_channel": True}],
         })
 
+    release = {
+        **value["conversations"][0],
+        "automatic_private_release": True,
+        "private_deployment_url": "https://expenses.deployed.runningdigitally.com/",
+    }
+    assert BuzzConfig.model_validate({
+        **value, "conversations": [release],
+    }).conversations[0].private_deployment_url == release["private_deployment_url"]
+    for invalid in (
+        {**release, "private_deployment_url": None},
+        {**release, "private_deployment_url": "https://example.com/"},
+        {**release, "private_deployment_url": "http://expenses.deployed.runningdigitally.com/"},
+        {**release, "private_deployment_url": "https://expenses.deployed.runningdigitally.com"},
+        {**release, "kind": "dm"},
+    ):
+        with pytest.raises(ValidationError):
+            BuzzConfig.model_validate({**value, "conversations": [invalid]})
+
 
 def test_one_agent_identity_may_join_personal_and_project_channels():
     personal = buzz_agent("researcher-personal", "b")
