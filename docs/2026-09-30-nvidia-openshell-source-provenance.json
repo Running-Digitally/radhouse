@@ -1,0 +1,655 @@
+{
+  "report": "2026-09-30-nvidia-openshell-research.md",
+  "access_date_utc": "2026-09-30",
+  "generated_at_utc": "2026-09-30T12:15:51.074316+00:00",
+  "scope": "Research and documentation only; no installations, runtime experiments, deployments, pushes or merges performed.",
+  "radhouse": {
+    "root": "/path/to/private-workspace",
+    "remote": "git@github.com:Running-Digitally/radhouse.git",
+    "branch": "fix/project-deploy-after-cancelled-review",
+    "head": "64c75cd8b6676226a148fb2efd83c30bc531daff",
+    "initial_status": "clean",
+    "files": [
+      {
+        "path": "PRINCIPLES.md",
+        "sha256": "cb08eb6e12604629c8b076eae590648a66d83ee1733661112843906daf99dc3f",
+        "bytes": 14747
+      },
+      {
+        "path": "README.md",
+        "sha256": "b23a2c28ad4ec9c3e55aa156d189b94146da9555d2a182b81d0a8fde9b61cf76",
+        "bytes": 11124
+      },
+      {
+        "path": "LICENSE",
+        "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+        "bytes": 11357
+      },
+      {
+        "path": "docs/architecture-review.md",
+        "sha256": "77c3bc470c8e87e0bef8e89ca4868ba3e97050e191357f161f74cca34a88358b",
+        "bytes": 93665
+      },
+      {
+        "path": "docs/work-model.md",
+        "sha256": "c54fe1c048d37388ff55147943086515ae033b3aab9eac325caf15b198b25f9c",
+        "bytes": 21882
+      },
+      {
+        "path": "docs/integrations/hermes.md",
+        "sha256": "9ae6e283eef824abc03098a6e5320623adcf6ff71440dae77a7a08aca24ddc4d",
+        "bytes": 5894
+      },
+      {
+        "path": "docs/integrations/buzz.md",
+        "sha256": "cb202576a5b3241342e4f2f1846d3004b28e7b04e26850e5d7734c70fed5f0cb",
+        "bytes": 7474
+      },
+      {
+        "path": "docs/configuration.md",
+        "sha256": "4ca5ce22d39f02032dd23fac0c5fd8e2a559f1e27e09417e6a80fd82ca671eca",
+        "bytes": 4171
+      },
+      {
+        "path": "docs/security-supervisor.md",
+        "sha256": "f9ce418d5cb57896676ea4ecd48f07ebf04d2e818715b1a9a8dacee21a6dfe43",
+        "bytes": 21289
+      },
+      {
+        "path": "docs/operator-buzz-completion.md",
+        "sha256": "56ad18ee4e383158b62f4c3ffaa36df29f0b94ef0d9c0f955dd0e3808f19d954",
+        "bytes": 21792
+      },
+      {
+        "path": "src/radhouse/application/ports.py",
+        "sha256": "b7239020b46b8245fe42119e2d3e8b644383f1e800ab4b521047610e9a711201",
+        "bytes": 4127
+      },
+      {
+        "path": "src/radhouse/application/coordinator.py",
+        "sha256": "8410672e15d2d4b0ec56f2ee486bbba5fc2986acfbebebadb58f3867a3cba6ce",
+        "bytes": 1881
+      },
+      {
+        "path": "src/radhouse/application/runtime_controls.py",
+        "sha256": "a7e64a5c813ca580b88c04b1d92f3aaad7051b1ac5a2ab2bacc3bccf6ab69d67",
+        "bytes": 14771
+      },
+      {
+        "path": "src/radhouse/integrations/hermes.py",
+        "sha256": "1c4a1ae93437d8246a90730f0292fd0f2593915a7007c90798700679af6e8c03",
+        "bytes": 26166
+      },
+      {
+        "path": "src/radhouse/config.py",
+        "sha256": "44de70c63712b6220983aa0833c288265604a9f0dfbae7a66d3a5db60b997f77",
+        "bytes": 15596
+      },
+      {
+        "path": "src/radhouse/composition.py",
+        "sha256": "11929df38e393c7a527cf4ccee3ec6a8b383291649a8178681f6b792f0b62e03",
+        "bytes": 7738
+      }
+    ]
+  },
+  "private_operational_evidence": {
+    "root": "/path/to/private-workspace",
+    "freshness_note": "Dated source records only; no current deployed-service observation. Private file contents not copied.",
+    "files": [
+      {
+        "path": "architecture-decisions/ADR-0073-radhouse-builder-vm-local-autonomy-boundary.md",
+        "sha256": "dda1a3a7d002af9d7619bdcd52e793ae569a61c6815a81e61be1c9a4d13e77fb",
+        "bytes": 8903
+      },
+      {
+        "path": "change-management/2026-09-20-radhouse-pragmatic-v1-completion.md",
+        "sha256": "16789c176da82c955a9e7e3e2b288237c72d5f83abe8be53a227d95e38af94d1",
+        "bytes": 42336
+      },
+      {
+        "path": "planning/2026-09-21-radhouse-project-channels-and-coordination.md",
+        "sha256": "d74d0cf6503a81c78d823b0012b09b50763928ec5bfc0a49a470f73e12e7ba79",
+        "bytes": 40186
+      },
+      {
+        "path": "workspaces/radhouse-preparedness/hermes/builder-profile/render.py",
+        "sha256": "107395985764efc9a524c7900ffc2765457ae959dd43a23efda471691994adc3",
+        "bytes": 5916
+      },
+      {
+        "path": "workspaces/codex-workload-benchmark-analysis/qualification/2026-09-20-cwb-v1-attended-recommendation.md",
+        "sha256": "9ea04182680a33f174b4e359d21c4ce783b1bdb62d1f06059b2ed08485501068",
+        "bytes": 10678
+      },
+      {
+        "path": "Research/2026-09-06-homelab-ai-specialization-switchyard-and-pair.md",
+        "sha256": "5b66038968ab57d649ffffb8ac8aac8a8b0044af38645ba8c546835e996c289f",
+        "bytes": 36990
+      }
+    ]
+  },
+  "openshell": {
+    "repository": "https://github.com/NVIDIA/OpenShell",
+    "tag": "v0.1.2",
+    "source_commit": "6648bd0c290efbc41ba131ee9831ee45cd431f94",
+    "release_url": "https://github.com/NVIDIA/OpenShell/releases/tag/v0.1.2",
+    "published_at": "2026-09-28T03:58:00Z",
+    "prerelease": false,
+    "release_metadata_sha256": "9b6820ee0735f03c5258244754caf09f55aaaebd59c60680d2788382b2ad55d5",
+    "tree_metadata_sha256": "16f560014207c7e6ac225c1c071de84aef9da5788b79d04e469a31d865b2a78a",
+    "downloaded_file_ledger": [
+      {
+        "path": "docs/CONTRIBUTING.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/CONTRIBUTING.mdx",
+        "sha256": "8a70fcb4dadc2bc7cb01599812bf9868d6beb1ba815866aec96366476a3f312d",
+        "bytes": 8881
+      },
+      {
+        "path": "docs/about/architecture.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/about/architecture.mdx",
+        "sha256": "413f9942adaf74217469f636180a24a57fbd1a1caaa5b968058529f58f3524f6",
+        "bytes": 12789
+      },
+      {
+        "path": "docs/about/installation.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/about/installation.mdx",
+        "sha256": "7ae98128aa7fbe5283b271803e3cfe66be9600fb7d20481faebf5cb24ab0422f",
+        "bytes": 7513
+      },
+      {
+        "path": "docs/about/overview.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/about/overview.mdx",
+        "sha256": "63f2fcb673496e1ff7e62ce96d3e4e59b9e2cddd42bb91e7a449f009e96b06e9",
+        "bytes": 4451
+      },
+      {
+        "path": "docs/about/run-your-first-agent.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/about/run-your-first-agent.mdx",
+        "sha256": "13e2fbf87ce455b0f6d3eadda3dfe7f3f4281ca6756e57657cc3ecbcb3e56fb4",
+        "bytes": 4355
+      },
+      {
+        "path": "docs/about/support-matrix.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/about/support-matrix.mdx",
+        "sha256": "b41a743533382eb6ae04b6198eb4e788455ec98b98748fde29b93b227ff870c5",
+        "bytes": 13451
+      },
+      {
+        "path": "docs/extensibility/drivers.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/extensibility/drivers.mdx",
+        "sha256": "2286c0febad2ac7cb59a884b5c2a2ffa63f94457af608a8202179e90180b2dd9",
+        "bytes": 3250
+      },
+      {
+        "path": "docs/extensibility/gateway-interceptors.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/extensibility/gateway-interceptors.mdx",
+        "sha256": "c6ae42fc07a20214bf6067d2418842a12bcf28a3363d299786ee9823b6cc59e6",
+        "bytes": 13329
+      },
+      {
+        "path": "docs/extensibility/isolation-backends.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/extensibility/isolation-backends.mdx",
+        "sha256": "31a9e9d6e5ebc3af6a578111e933594e18449b7c2e0cf84eb16f427ab8d865c1",
+        "bytes": 3179
+      },
+      {
+        "path": "docs/extensibility/overview.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/extensibility/overview.mdx",
+        "sha256": "4d150b60c1413e3b10089f24e326b824bc33224fdb262b79aa65ded8cae836a4",
+        "bytes": 8481
+      },
+      {
+        "path": "docs/extensibility/supervisor-middleware/configure.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/extensibility/supervisor-middleware/configure.mdx",
+        "sha256": "a5e22b41488bae82c938370697253ab16842a067330b8a6a0674b9415c652fc4",
+        "bytes": 9689
+      },
+      {
+        "path": "docs/extensibility/supervisor-middleware/index.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/extensibility/supervisor-middleware/index.mdx",
+        "sha256": "1c32f8532ad3b31ae1e6f883134dd4a641033b7044db06c5f23bfbfe3270b9b9",
+        "bytes": 5948
+      },
+      {
+        "path": "docs/extensibility/supervisor-middleware/operations.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/extensibility/supervisor-middleware/operations.mdx",
+        "sha256": "632e246f2a8f1eb5016a225a8b3438848b58d17c10c796b599e8df959a92b0ac",
+        "bytes": 13552
+      },
+      {
+        "path": "docs/how-it-works/gateways/authentication.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/how-it-works/gateways/authentication.mdx",
+        "sha256": "137482e1e2bfb1823e23f266185ed5df5ed43ac1e1a9af8bace533368818efcf",
+        "bytes": 19184
+      },
+      {
+        "path": "docs/how-it-works/gateways/configuration.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/how-it-works/gateways/configuration.mdx",
+        "sha256": "e709e0af014c7ed66bf53e30e7b3f3c87376d9dba350ad53be61c9869df4892f",
+        "bytes": 82744
+      },
+      {
+        "path": "docs/how-it-works/gateways/container-deployment.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/how-it-works/gateways/container-deployment.mdx",
+        "sha256": "f6a15be716a3bf4b55ad17c7bcbfb9288e2ba9c6c06076fc8e663b70d6c524c3",
+        "bytes": 8548
+      },
+      {
+        "path": "docs/how-it-works/gateways/overview.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/how-it-works/gateways/overview.mdx",
+        "sha256": "14c16beba933a040cf6b9fbfdaf8c07bb86a681bf780b2752d649b61440df809",
+        "bytes": 9180
+      },
+      {
+        "path": "docs/how-it-works/inference.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/how-it-works/inference.mdx",
+        "sha256": "e4e96e73353f830a168116d473b3fbaf779a437decf880dde41a1c423ce42156",
+        "bytes": 11851
+      },
+      {
+        "path": "docs/how-it-works/policies/advisor.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/how-it-works/policies/advisor.mdx",
+        "sha256": "60cbc4e9415f603a54a9ea817322ebb4d8c7d6bd142d543abe50dba93c664b40",
+        "bytes": 14187
+      },
+      {
+        "path": "docs/how-it-works/policies/default-policy.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/how-it-works/policies/default-policy.mdx",
+        "sha256": "ebc2494b29c0e263e233ce5a59117fb24e499fcd3429ac1ea92aeff4b3b62734",
+        "bytes": 5282
+      },
+      {
+        "path": "docs/how-it-works/policies/manage-policies.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/how-it-works/policies/manage-policies.mdx",
+        "sha256": "56dbb9971dfbb6218ae39bbb8ff53db2e7ab1452a40103c83bdccd2bfba7c4c6",
+        "bytes": 16416
+      },
+      {
+        "path": "docs/how-it-works/policies/network-rules.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/how-it-works/policies/network-rules.mdx",
+        "sha256": "01964b20cf9633a9524212b5ad9ced06780d5878b026bdad5a552f15e9dde527",
+        "bytes": 24146
+      },
+      {
+        "path": "docs/how-it-works/policies/overview.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/how-it-works/policies/overview.mdx",
+        "sha256": "b221eebb60055f3f52619dedec6f44d1ff48232e92d8ad0a42ee80621d06c446",
+        "bytes": 5395
+      },
+      {
+        "path": "docs/how-it-works/policies/prover.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/how-it-works/policies/prover.mdx",
+        "sha256": "c8b1d8ebd46aa6420b68192ae30e0b8c5434acdd033316caa25c080526f56ab6",
+        "bytes": 10074
+      },
+      {
+        "path": "docs/how-it-works/policies/schema.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/how-it-works/policies/schema.mdx",
+        "sha256": "c886c43d705ef8fed8ef198015452cbf84cd6e84c9ccc2cadcbc7d7ee8d9427d",
+        "bytes": 21237
+      },
+      {
+        "path": "docs/how-it-works/providers/aws.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/how-it-works/providers/aws.mdx",
+        "sha256": "b194898f888e7fbad85a794f2d7b2f36b23988afc854a61761be66d8379c8c9a",
+        "bytes": 7700
+      },
+      {
+        "path": "docs/how-it-works/providers/google.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/how-it-works/providers/google.mdx",
+        "sha256": "26da9d23af326aa401c615a5410b814d05047d53e75894cfc799f40dd52eae01",
+        "bytes": 13475
+      },
+      {
+        "path": "docs/how-it-works/providers/overview.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/how-it-works/providers/overview.mdx",
+        "sha256": "f4e7384a8ede3f8325b4747fd9b08458f9bf3ea57c3e957313ffe476a9625fc0",
+        "bytes": 20826
+      },
+      {
+        "path": "docs/how-it-works/providers/profiles.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/how-it-works/providers/profiles.mdx",
+        "sha256": "3714a467376c7dabb3fd5bd698e863c51974e007fcc238af2c078d7cdbab5471",
+        "bytes": 63703
+      },
+      {
+        "path": "docs/how-it-works/sandboxes/overview.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/how-it-works/sandboxes/overview.mdx",
+        "sha256": "cc616826547f1de8a72cf81038056d3f6cda22d4f05e51e5da3bdc668b9bcf65",
+        "bytes": 40836
+      },
+      {
+        "path": "docs/how-it-works/sandboxes/runtimes.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/how-it-works/sandboxes/runtimes.mdx",
+        "sha256": "4522bf7bf99c5ab146c6bb6b69e598e5cf1528a939af332fdbc4988cf7a4522c",
+        "bytes": 13372
+      },
+      {
+        "path": "docs/how-it-works/sandboxes/templates.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/how-it-works/sandboxes/templates.mdx",
+        "sha256": "15a5c239f6a666f2e4d5145de554b1a7ce6d383fa12f9c8819e1d8c9c744a2b4",
+        "bytes": 2702
+      },
+      {
+        "path": "docs/how-it-works/workspaces.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/how-it-works/workspaces.mdx",
+        "sha256": "8bb2e958ec5602f598df6b24f9f6148116b366f6ddde82608a3da1dd5dad1626",
+        "bytes": 9673
+      },
+      {
+        "path": "docs/index.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/index.mdx",
+        "sha256": "c5edcb6a3170c89e2ded05d3258abd7eedfbbec2f72ff0f191e0794a069f0717",
+        "bytes": 4916
+      },
+      {
+        "path": "docs/kubernetes/access-control.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/kubernetes/access-control.mdx",
+        "sha256": "0000cd784056546dcf96706aa37388e1111df34654f614ffc05a06eb6c2ad21d",
+        "bytes": 8741
+      },
+      {
+        "path": "docs/kubernetes/high-availability.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/kubernetes/high-availability.mdx",
+        "sha256": "33e98336b7335952d12d3615f4a9ffcb979e02947e11ac6b23f1fb7efe6bfee8",
+        "bytes": 7521
+      },
+      {
+        "path": "docs/kubernetes/ingress.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/kubernetes/ingress.mdx",
+        "sha256": "4882cbc784c676c90209c93b457be5802a88a42f70f3f213253ce360903d70a1",
+        "bytes": 10077
+      },
+      {
+        "path": "docs/kubernetes/managing-certificates.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/kubernetes/managing-certificates.mdx",
+        "sha256": "c5fa082bcaf454cfae3bbba64855fff7116573316991fe8e2d9e958b5f936283",
+        "bytes": 5299
+      },
+      {
+        "path": "docs/kubernetes/openshift.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/kubernetes/openshift.mdx",
+        "sha256": "5663faa91e3088456285f73299b03356904d0e0402469b812c033cf7e6f20570",
+        "bytes": 12046
+      },
+      {
+        "path": "docs/kubernetes/setup.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/kubernetes/setup.mdx",
+        "sha256": "98dabda4ab46621da201ca94becaf92fa417d155e34fae5f1bac04f97ff16f00",
+        "bytes": 18575
+      },
+      {
+        "path": "docs/observability/accessing-logs.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/observability/accessing-logs.mdx",
+        "sha256": "7fdc08b982fd8739ccb088e3f79b60ca537fb8ef8f487e15b7ff4752c8c42e02",
+        "bytes": 6255
+      },
+      {
+        "path": "docs/observability/logging.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/observability/logging.mdx",
+        "sha256": "8e363df7e48b449c29f648b0374d34ee7193d75997330096bddd9d263d716b7c",
+        "bytes": 15254
+      },
+      {
+        "path": "docs/observability/ocsf-json-export.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/observability/ocsf-json-export.mdx",
+        "sha256": "cb7caf2c4b22dc761fb8baf8b17bdfcd6d0ff84673b9fa57361ad4fb0dae98ae",
+        "bytes": 9904
+      },
+      {
+        "path": "docs/observability/telemetry.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/observability/telemetry.mdx",
+        "sha256": "bf75a0997870853861d24cba0860cd54be6f87e49f1a400641a4b9b06c160351",
+        "bytes": 3853
+      },
+      {
+        "path": "docs/resources/license.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/resources/license.mdx",
+        "sha256": "6363662c0f4f56ee3dedebfe035a33e8106af5d1044fa8738bdbcc4cb0c3dad0",
+        "bytes": 11172
+      },
+      {
+        "path": "docs/sdk/api-errors.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/sdk/api-errors.mdx",
+        "sha256": "00257fd422f9d057785a2aad0a059fe2d1ed1ac199627f63f106d8cfef11b1d4",
+        "bytes": 20439
+      },
+      {
+        "path": "docs/sdk/go.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/sdk/go.mdx",
+        "sha256": "053284f10156c760f906e8f78cea9762d93eaa5af1b73cb239444e5289bc6c6b",
+        "bytes": 3386
+      },
+      {
+        "path": "docs/sdk/protobuf-time-types.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/sdk/protobuf-time-types.mdx",
+        "sha256": "9bf4a887921f3b27ac1d901bbfb291cb43d7f58fb5e12cd3114d5a49ee804cdc",
+        "bytes": 2906
+      },
+      {
+        "path": "docs/sdk/python.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/sdk/python.mdx",
+        "sha256": "80d5baefa723f0772529500a39fa684782628ad0100f78c2755f2ded661a1074",
+        "bytes": 3481
+      },
+      {
+        "path": "docs/sdk/rust.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/sdk/rust.mdx",
+        "sha256": "fdd342fb55beb9877461d984e4cc70b64495e375b16585c23b4ec95106d42c46",
+        "bytes": 3869
+      },
+      {
+        "path": "docs/sdk/typescript.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/sdk/typescript.mdx",
+        "sha256": "38c4ff564959de65344fe339b9b3be45dc1f5212f1a4c4e6ba2560216d3028a4",
+        "bytes": 3628
+      },
+      {
+        "path": "docs/security/best-practices.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/security/best-practices.mdx",
+        "sha256": "c4b90de89fc0b6fece6bbca905ff10c815c9ce754f99972b37aed3eb6640871f",
+        "bytes": 29367
+      },
+      {
+        "path": "docs/security/verify-image-contents.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/security/verify-image-contents.mdx",
+        "sha256": "78792734f263279e543ca1f2754fed31e952d62f2b3f2fdf1a23ec7db088868c",
+        "bytes": 1541
+      },
+      {
+        "path": "docs/tutorials/first-network-policy.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/tutorials/first-network-policy.mdx",
+        "sha256": "80217d7a125eacba862805b867083cff645f635969fbaa21415f1169c7b3bcd4",
+        "bytes": 9061
+      },
+      {
+        "path": "docs/tutorials/github-push-access.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/tutorials/github-push-access.mdx",
+        "sha256": "33efb5963a6e652c5c9a70bfc1bd29257bc25731c0a2b6de66fec1731633be48",
+        "bytes": 7811
+      },
+      {
+        "path": "docs/tutorials/index.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/tutorials/index.mdx",
+        "sha256": "51a11dbe73fe7b73519ed5f910ed9ddf5c358de4e40278d073477919829576f7",
+        "bytes": 1389
+      },
+      {
+        "path": "docs/tutorials/microsoft-graph-provider-refresh.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/tutorials/microsoft-graph-provider-refresh.mdx",
+        "sha256": "603809067ffea82b77eca7dd66ae9845f6e75e4c14c970ba147826bd135dc177",
+        "bytes": 7768
+      },
+      {
+        "path": "docs/tutorials/run-pi-with-openrouter.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/tutorials/run-pi-with-openrouter.mdx",
+        "sha256": "a4d3f9bc48b8e74b7d480e4222d30f388cfb9cf145b73c95111b9a0d88686ba7",
+        "bytes": 7127
+      },
+      {
+        "path": "docs/upgrade/0-1-0.mdx",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/docs/upgrade/0-1-0.mdx",
+        "sha256": "89a7741e58057f0904aa03b2f14b5aba95ef1b8cae59c42fe5895e3fcbf5eccd",
+        "bytes": 15072
+      },
+      {
+        "path": "README.md",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/README.md",
+        "sha256": "02476232ed61e0145765379e8b5fed62abc8f81fa3f2e7af095e4dc1804421a4",
+        "bytes": 8069
+      },
+      {
+        "path": "LICENSE",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/LICENSE",
+        "sha256": "c4be3acebe12527d7de689933d98329b4065f8c50cd929d0365584eafe6c20dd",
+        "bytes": 11437
+      },
+      {
+        "path": "SECURITY.md",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/SECURITY.md",
+        "sha256": "2a6ea261981a2b5041ae70fdb5421d184323cc48bbc994e80e04a43fe54bb05b",
+        "bytes": 1908
+      },
+      {
+        "path": "e2e/rust/tests/sandbox_lifecycle.rs",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/e2e/rust/tests/sandbox_lifecycle.rs",
+        "sha256": "022e0ab5654b36a1aab7de1407be4afdf66bfe292d83c2bdda9fe325265eee50",
+        "bytes": 48329
+      },
+      {
+        "path": "e2e/rust/tests/vm_overlay.rs",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/e2e/rust/tests/vm_overlay.rs",
+        "sha256": "263a207e6f6b92ab8b03aaaf80733497542d2275caa525f9df29390bdec57bfd",
+        "bytes": 1836
+      },
+      {
+        "path": "e2e/rust/tests/bypass_detection.rs",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/e2e/rust/tests/bypass_detection.rs",
+        "sha256": "bdd00d684270c5e0af1d0d4da8b0bad1235e15f18c49cba540bd69712f313ccd",
+        "bytes": 2690
+      },
+      {
+        "path": "e2e/rust/tests/local_driver_token_restart.rs",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/e2e/rust/tests/local_driver_token_restart.rs",
+        "sha256": "3bfadb6404a88117ea767a51d3af21303de85d8bbded1336669e21178d124536",
+        "bytes": 15922
+      },
+      {
+        "path": "e2e/rust/tests/proxy_egress_pipeline.rs",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/e2e/rust/tests/proxy_egress_pipeline.rs",
+        "sha256": "759cb8a1ca34a5a7ac4250edffa7846e9cd9436a1fa84520451af1c23b443d86",
+        "bytes": 51903
+      },
+      {
+        "path": "e2e/rust/tests/landlock.rs",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/e2e/rust/tests/landlock.rs",
+        "sha256": "6fa9aa5bdc46737222a348155a02d0926f4989bd6743961c9ded384bb3c1466a",
+        "bytes": 2064
+      },
+      {
+        "path": "e2e/rust/tests/credential_gating.rs",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/e2e/rust/tests/credential_gating.rs",
+        "sha256": "79323d3388dcf33bda2cecb9cee2b4b3969b4723c04798e43251698e6d37f586",
+        "bytes": 29376
+      },
+      {
+        "path": "e2e/rust/tests/podman_resource_limits.rs",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/e2e/rust/tests/podman_resource_limits.rs",
+        "sha256": "23521efc4e1a0ed015404259a8398a120ab7afb3b1ee5ed99bbb22eab26c7b3c",
+        "bytes": 3343
+      },
+      {
+        "path": ".github/workflows/release-tag.yml",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/.github/workflows/release-tag.yml",
+        "sha256": "ac890c33f38cb8e052ecc66837f18a27d88e20ee48c63896b45c88204354e1e5",
+        "bytes": 33407
+      },
+      {
+        "path": "providers/github.yaml",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/providers/github.yaml",
+        "sha256": "dc48407b3ab3b5004f3673aa3a76feae438c67fbe95354453f24f2c7bdf319a9",
+        "bytes": 2720
+      },
+      {
+        "path": "providers/codex.yaml",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/providers/codex.yaml",
+        "sha256": "676059e95c2fa3b2bc68f98401e8ead16501d46dc500225a249f83f172a2599a",
+        "bytes": 2597
+      },
+      {
+        "path": "providers/openai.yaml",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/providers/openai.yaml",
+        "sha256": "90352d7788a103091198908efbc2594b056840aa0c48697effd0372d35082cce",
+        "bytes": 1731
+      },
+      {
+        "path": "providers/README.md",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/providers/README.md",
+        "sha256": "cbcbe54be74d63422b12623e45fa44a45bb21553c91c657158d70f39c5abe77c",
+        "bytes": 2112
+      },
+      {
+        "path": "rfc/0014-release-stability/README.md",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/rfc/0014-release-stability/README.md",
+        "sha256": "a40d29ab69eb77c5e3015a0169cb65a5dccc74ae94ecd56c621ac219cb45d6a2",
+        "bytes": 11951
+      },
+      {
+        "path": "rfc/0014-release-stability/release-qualification.md",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/rfc/0014-release-stability/release-qualification.md",
+        "sha256": "41517c3080fc8dea90af03ecebd42beb55d56359e6012bcb4fb173525e850d23",
+        "bytes": 6119
+      },
+      {
+        "path": "crates/openshell-isolation-interface/src/linux/child_seccomp.rs",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/crates/openshell-isolation-interface/src/linux/child_seccomp.rs",
+        "sha256": "3508fe89044ccdb2832a1252502afa75ed42e1d5abc33811713e9c3ad3282263",
+        "bytes": 18237
+      },
+      {
+        "path": "crates/openshell-driver-vm/src/lifecycle.rs",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/crates/openshell-driver-vm/src/lifecycle.rs",
+        "sha256": "116a25c6fb1197d89bf1b520f0d2c012191abf6558fbabea15bc0a33394fb1de",
+        "bytes": 43960
+      },
+      {
+        "path": "crates/openshell-driver-vm/src/rootfs.rs",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/crates/openshell-driver-vm/src/rootfs.rs",
+        "sha256": "5253c5de300c9268e99f974380ff0ef602f92f15f8094d6dde979e3f73026810",
+        "bytes": 63766
+      },
+      {
+        "path": "crates/openshell-driver-vm/src/runtime.rs",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/crates/openshell-driver-vm/src/runtime.rs",
+        "sha256": "75a6f0b7d26c95551ba06e6e01abae6370c38a45174025f54f8c06de040815eb",
+        "bytes": 28167
+      },
+      {
+        "path": "crates/openshell-driver-vm/src/driver.rs",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/crates/openshell-driver-vm/src/driver.rs",
+        "sha256": "00b3afb7ee8a238a46c0fcf1276c0438c1933538f7f20a8f208477cd83f297da",
+        "bytes": 426868
+      },
+      {
+        "path": "e2e/rust/tests/websocket_conformance.rs",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/e2e/rust/tests/websocket_conformance.rs",
+        "sha256": "044d2eb8d0aec74457adbd53f973c17a228fb14bc52a6c6af3c77842e78e953a",
+        "bytes": 15834
+      },
+      {
+        "path": "e2e/rust/tests/forward_proxy_l7_bypass.rs",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/e2e/rust/tests/forward_proxy_l7_bypass.rs",
+        "sha256": "a8c2dde556a064a0ccf46416d22233c57d011dc98490355e4c0f54ccea01220e",
+        "bytes": 5664
+      },
+      {
+        "path": "deploy/helm/openshell/values.yaml",
+        "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/v0.1.2/deploy/helm/openshell/values.yaml",
+        "sha256": "0d59c3b5665da9bf4fb7a92c1ef353187b69aba838d9145bee75f6b6581a03af",
+        "bytes": 32410
+      }
+    ],
+    "test_execution": "Selected test source inspected; upstream tests not run.",
+    "temporary_source_root": "/tmp/radhouse-openshell-research-20260930/upstream"
+  }
+}
