@@ -41,6 +41,10 @@ shutdown without contacting a configured service during construction.
 The `radhouse preflight` command exposes that deterministic local check before
 any online deployment probe.
 
+The opt-in [durable work foundation](docs/durable-work.md) gives artifact requests
+independent status and acceptance checks. Its rollout and remaining redesign
+slices are documented separately from existing V1 qualification.
+
 ## Why Radhouse?
 
 Running an agent in a dedicated VM is a useful beginning. Managing several

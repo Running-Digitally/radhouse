@@ -21,6 +21,7 @@ from psycopg.types.json import Jsonb
 
 from radhouse.domain.access import Access, Binding, BotProfile, ProjectProfile
 from radhouse.storage.conversations import ConversationQueries
+from radhouse.storage.work import WorkQueries
 from radhouse.domain.releases import Publication, Review
 from radhouse.domain.projects import ProjectCoordination
 from radhouse.domain.tasks import (
@@ -39,20 +40,21 @@ class ApplicationStorageError(ValueError):
 
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _INITIAL_MIGRATION = Path(__file__).parent / "migrations" / "0001_initial.sql"
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 MIGRATIONS = (_INITIAL_MIGRATION, Path(__file__).parent / "migrations" / "0002_operator_context.sql",
               Path(__file__).parent / "migrations" / "0003_conversations.sql",
               Path(__file__).parent / "migrations" / "0004_task_titles.sql",
               Path(__file__).parent / "migrations" / "0005_project_agents.sql",
               Path(__file__).parent / "migrations" / "0006_project_conversations.sql",
-              Path(__file__).parent / "migrations" / "0007_project_coordination.sql")
+              Path(__file__).parent / "migrations" / "0007_project_coordination.sql",
+              Path(__file__).parent / "migrations" / "0008_work_items.sql")
 
 
 def schema_digest(version: int = SCHEMA_VERSION) -> str:
     try:
         if version == 1:
             return hashlib.sha256(_INITIAL_MIGRATION.read_bytes()).hexdigest()
-        if version not in {2, 3, 4, 5, 6, 7}:
+        if version not in range(2, SCHEMA_VERSION + 1):
             raise ApplicationStorageError("unsupported_schema_version")
         return hashlib.sha256(f"radhouse-schema-v{version}\0".encode() + b"\0".join(path.read_bytes() for path in MIGRATIONS[:version])).hexdigest()
     except OSError:
@@ -214,7 +216,7 @@ class ApplicationPostgresStore:
                 raise Rejected("storage_conflict") from exc
 
 
-class PostgresUnitOfWork(ConversationQueries):
+class PostgresUnitOfWork(ConversationQueries, WorkQueries):
     def __init__(self, connection):
         self._connection = connection
 

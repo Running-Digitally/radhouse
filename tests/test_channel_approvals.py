@@ -179,6 +179,7 @@ def test_errors_expose_only_bounded_public_code():
 def test_internal_worker_controls_have_no_operator_route():
     routes = create_app(BoundaryService(), lambda request: _identity()).openapi()["paths"]
     assert set(routes) == {
+        "/v1/work", "/v1/work/{work_id}", "/v1/work/{work_id}/artifacts/{artifact_id}",
         "/tasks/{task_id}/guidance", "/tasks/{task_id}/permission",
         "/tasks/{task_id}/title",
         "/projects", "/tasks/{task_id}/review-audience", "/tasks/{task_id}/result",

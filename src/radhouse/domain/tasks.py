@@ -167,6 +167,7 @@ class Task:
     permission_request: dict | None = None
     disable_tools: bool = False
     allowed_tools: tuple[str, ...] = ()
+    output_contract: str | None = None
 
     def evolve(self, **changes) -> "Task":
         return replace(self, state_revision=self.state_revision + 1, **changes)
@@ -271,6 +272,8 @@ def runtime_input(task: Task) -> str:
             )
         else:
             parts.append("Attached reference file: " + file.name + "\n" + file.content)
+    if task.output_contract is not None:
+        parts.append(task.output_contract)
     return "\n\n".join(parts)
 
 
