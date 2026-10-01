@@ -25,6 +25,10 @@ from radhouse.domain.tasks import (AgentDispatch, Attempt, Delivery, Event,
     RuntimeFailure, RuntimeResult, SavedCommand, StartTask, Task, TaskTitle, Operation,
     agent_task_title, normalize_task_title, runtime_images, runtime_input, validate_input_files)
 
+_RUNTIME_ADMISSION_CODES = {'runtime_unavailable', 'runtime_identity_mismatch',
+    'runtime_version_mismatch', 'runtime_provider_mismatch', 'runtime_contract_unavailable',
+    'runtime_descriptor_stale', 'runtime_admission_held'}
+
 
 _READ_ONLY_TOOL_DIRECTIVE = re.compile(
     r"\buse only\s+((?:read_file|search_files)(?:\s*(?:,|and)\s*(?:read_file|search_files))*)\b",
@@ -538,12 +542,14 @@ class Service:
             return self._save(tx, task, task.evolve(
                 blockers=blockers, phase=phase), "needs_attention")
 
-    def _runtime_unavailable(self, task_id: str) -> Task:
+    def _runtime_unavailable(self, task_id: str, code='runtime_unavailable') -> Task:
+        if code not in _RUNTIME_ADMISSION_CODES:
+            code = 'runtime_unavailable'
         with self.store.transaction() as tx:
             task = self._task(tx, task_id)
             if task.phase == "closed":
                 return task
-            blockers = tuple(sorted(set(task.blockers) | {"runtime_unavailable"}))
+            blockers = tuple(sorted((set(task.blockers) - _RUNTIME_ADMISSION_CODES) | {code}))
             if blockers == task.blockers and task.phase == "recovering":
                 return task
             return self._save(tx, task, task.evolve(
@@ -576,7 +582,7 @@ class Service:
                 phase = "stopping" if task.phase == "stopping" else "recovering"
                 return self._save(tx, task, task.evolve(
                     phase=phase, blockers=blockers), "needs_attention")
-            dispatch_blockers = set(task.blockers) - {
+            dispatch_blockers = set(task.blockers) - _RUNTIME_ADMISSION_CODES - {
                 "operation_unknown", "runtime_stop", "runtime_unavailable",
             }
             if dispatch_blockers and task.phase != "stopping" and dispatch.state != "accepted":
@@ -612,8 +618,8 @@ class Service:
             try:
                 capabilities = self.work.capabilities(task)
                 self._validate_capabilities(capabilities)
-            except RuntimeFailure:
-                return self._runtime_unavailable(task_id)
+            except RuntimeFailure as error:
+                return self._runtime_unavailable(task_id, error.code)
             submitted_at = self._now()
             retention_until = submitted_at + timedelta(
                 seconds=capabilities.idempotency_retention_seconds
@@ -692,6 +698,12 @@ class Service:
             result = self.work.result(current, runtime_dispatch)
         except RuntimeFailure:
             return self._needs_attention(task_id, dispatch.key)
+        try:
+            if not self._accept_runtime_observation(task_id, dispatch, result):
+                with self.store.transaction() as tx:
+                    return self._task(tx, task_id)
+        except RuntimeFailure:
+            return self._needs_attention(task_id, dispatch.key)
         from radhouse.application.runtime_controls import reconcile_pending_denial
         denial_reconciliation = reconcile_pending_denial(
             self, current, runtime_dispatch, result.permission_request
@@ -707,7 +719,7 @@ class Service:
                 current = self._task(tx, task_id)
                 if current.phase == "closed" or current.phase == "stopping":
                     return current
-                blockers = tuple(x for x in current.blockers if x not in {
+                blockers = tuple(x for x in current.blockers if x not in _RUNTIME_ADMISSION_CODES and x not in {
                     "operation_unknown", "runtime_stop", "runtime_unavailable",
                 })
                 if denial_reconciliation == "stale":
@@ -727,6 +739,31 @@ class Service:
                 return self._save(tx, current, current.evolve(
                     phase="active", blockers=blockers, permission_request=permission), "runtime_running")
         return self._finish_work(task_id, dispatch.key, result)
+
+    def _accept_runtime_observation(self, task_id, dispatch, result):
+        """Persist a cursor before consuming output; identical replay can finish
+        application after a crash. An older snapshot cannot overwrite new state.
+        """
+        sequence = result.observation_sequence
+        with self.store.transaction() as tx:
+            current = self._task(tx, task_id)
+            latest = tx.dispatch(dispatch.key)
+            if current.phase == 'closed' or current.attempt_id != dispatch.attempt_id or latest is None:
+                return False
+            if sequence is None:
+                if latest.observation_sequence:
+                    raise RuntimeFailure('runtime_observation_missing')
+                return True  # Explicit legacy compatibility, not v1 qualification.
+            if type(sequence) is not int or not 1 <= sequence <= 2**63-1:
+                raise RuntimeFailure('runtime_malformed_observation')
+            if sequence < latest.observation_sequence:
+                return False
+            observed_digest = fingerprint(asdict(result))
+            if sequence == latest.observation_sequence and observed_digest != latest.observation_digest:
+                raise RuntimeFailure('runtime_observation_conflict')
+            if sequence > latest.observation_sequence:
+                tx.save_dispatch(replace(latest, observation_sequence=sequence, observation_digest=observed_digest))
+            return True
 
     def _finish_work(self, task_id: str, dispatch_key: str, result: RuntimeResult) -> Task:
         content = result.content if result.state == "completed" else None

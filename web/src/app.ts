@@ -11,7 +11,8 @@ import type { AttachedFile } from "./files.js";
 
 export function mountWorkHome(page: HTMLElement, client = operatorClient()): () => void {
 let reviewToken = new URLSearchParams(window.location.hash.slice(1)).get("review");
-let reviewTarget: { task_id: string; project_id: string; conversation_id: string; binding_revision: number } | null = null;
+let reviewTarget: Awaited<ReturnType<RadhouseApi['resolveReview']>> | null = null;
+const artifactContents = new Map<string, string>();
 function clearReviewTarget(): void {
   reviewToken = null; reviewTarget = null;
   window.history.replaceState(null, "", window.location.pathname + window.location.search);
@@ -157,6 +158,7 @@ function loginScreen(message?: string): void {
   // Private display state never crosses an account change.
   drafts.clear(); reviews.clear(); expanded.clear(); timelines.clear(); conversationDrafts.clear(); guidanceDrafts.clear();
   titleDrafts.clear(); openResults.clear(); openMore.clear(); manageOpen = false; recentActivityOpen = false; olderWorkOpen = false;
+  artifactContents.clear();
   projectNameDraft = ""; projectBotDraft.clear(); agentDirectory.clear();
   conversationLinks = []; conversationHistory = null; selectedConversation = "";
   reviewTarget = null;
@@ -402,6 +404,8 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
   more.addEventListener("toggle", () => more.open ? openMore.add(task.task_id) : openMore.delete(task.task_id));
   const secondary = element("div", "task-card__actions");
   if (card.work?.artifact) {
+    const retained = artifactContents.get(card.work.artifact.artifact_id);
+    if (retained !== undefined) article.append(resultViewer(retained));
     controls.append(button("Open artifact", async () => {
       if (!api || !card.work) return;
       const content = await api.artifactText(card.work);
@@ -786,6 +790,20 @@ async function load(message?: string): Promise<void> {
     for (const agent of home.agents) agentDirectory.set(agent.bot_id, agent);
     conversationLinks = links; selectedConversation = link?.link_id ?? ""; conversationHistory = history;
     if (reviewTarget && !home.tasks.some(card => card.task.task_id === reviewTarget?.task_id)) throw new ApiError("review_link_denied", 403);
+    if (reviewTarget?.work_id) {
+      const card = home.tasks.find(item => item.task.task_id === reviewTarget?.task_id);
+      const work = card?.work;
+      const artifact = work?.artifact;
+      if (!work || work.work_id !== reviewTarget.work_id || work.scope_revision !== reviewTarget.scope_revision
+          || !artifact || artifact.artifact_id !== reviewTarget.artifact_id || artifact.sha256 !== reviewTarget.digest) {
+        throw new ApiError('review_link_denied', 403);
+      }
+      if (!artifactContents.has(artifact.artifact_id)) {
+        const content = await scoped.artifactText(work);
+        if (generation !== loadGeneration) return;
+        artifactContents.set(artifact.artifact_id, content);
+      }
+    }
     api = scoped; selectedProject = project.project_id; projects = available;
     if (!reviewTarget && signedIn) {
       try { window.localStorage.setItem(`radhouse.project.${signedIn.principal_id}`, project.project_id); }

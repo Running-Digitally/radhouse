@@ -10,6 +10,7 @@ from radhouse.domain.tasks import (AgentDispatch, Attempt, Delivery, EffectResul
 
 
 from radhouse.domain.work import ArtifactManifest, VerificationReceipt, WorkItem, WorkCommandReceipt
+from radhouse.domain.fleet import RuntimeDescriptor
 
 
 class UnitOfWork(Protocol):
@@ -69,6 +70,7 @@ class Store(Protocol):
 
 
 class AgentWorkPort(Protocol):
+    def describe(self, bot_id: str) -> RuntimeDescriptor | None: ...
     def capabilities(self, task: Task) -> RuntimeCapabilities: ...
     def start_or_attach(
         self, task: Task, attempt: Attempt, dispatch_key: str

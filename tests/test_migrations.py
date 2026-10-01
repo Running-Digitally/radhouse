@@ -12,7 +12,7 @@ from radhouse.storage.postgres import ApplicationStorageError, schema_digest, SC
 
 
 @pytest.mark.postgres
-@pytest.mark.parametrize("legacy_version", [1, 2, 3, 4, 5, 6, 7, 8])
+@pytest.mark.parametrize("legacy_version", [1, 2, 3, 4, 5, 6, 7, 8, 9])
 def test_legacy_upgrade_preserves_tasks_and_requires_exact_version_digest(store, service, alice, envelope, start, legacy_version):
     task = service.admit(alice, envelope(), start)
     owner = os.environ["RADHOUSE_VS0_OWNER_DSN"]
@@ -20,8 +20,10 @@ def test_legacy_upgrade_preserves_tasks_and_requires_exact_version_digest(store,
     database = f"radhouse_vs0_{run_id}"
     arguments = dict(expected_database=database, deployment_id=f"fixture-{run_id}", runtime_role="radhouse_runtime")
     with psycopg.connect(owner) as connection:
-        connection.execute("DROP TABLE work_commands")
-        for table in (() if legacy_version == 8 else ("work_verifications", "work_artifacts", "work_steps", "work_items")):
+        connection.execute('ALTER TABLE agent_dispatches DROP CONSTRAINT runtime_observation_cursor')
+        if legacy_version < 9:
+            connection.execute("DROP TABLE work_commands")
+        for table in (() if legacy_version >= 8 else ("work_verifications", "work_artifacts", "work_steps", "work_items")):
             connection.execute(sql.SQL("DROP TABLE {}").format(sql.Identifier(table)))
         # Reconstruct the genuine old schema in this exclusively owned fixture.
         if legacy_version < 7:

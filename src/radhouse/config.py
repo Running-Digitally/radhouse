@@ -178,6 +178,7 @@ class ProviderConfig(StrictModel):
 
 
 class BotRuntimeConfig(StrictModel):
+    descriptor_contract: Literal['legacy', 'radhouse-runtime-v1'] = 'legacy'
     bot_id: str
     endpoint: str
     token: SecretFile

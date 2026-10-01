@@ -80,7 +80,7 @@ reachable or start the controller.
 
 `durable_work_enabled` defaults to false. It controls new artifact admission in
 web and Buzz; disabling it retains existing work, control receipts and recovery.
-This binary requires database schema 9 regardless of that flag. Migrations and
+This binary requires database schema 10 regardless of that flag. Migrations and
 live enablement remain explicit deployment operations.
 
 Each `buzz.conversations` entry may specify `workflow_version: artifact-v1`
@@ -99,3 +99,10 @@ timer when preparing rollout, and retain one active controller. Loop health is
 emitted as bounded JSON every 30 seconds. No unit or live process is changed by
 loading configuration. See [durable work](durable-work.md) for commands, failure
 behavior and remaining acceptance gates.
+
+Each bot may opt in to `descriptor_contract: radhouse-runtime-v1` after its guest
+qualifies the [runtime contract](runtime-contract.md). Default `legacy` retains
+the existing Hermes protocol. Opt-in verifies configured identity, profile,
+version and provider before admission, retains durable observation cursors, and
+refuses unsupported endpoints rather than guessing compatibility. Source tests
+alone do not authorize changing a live overlay or guest.

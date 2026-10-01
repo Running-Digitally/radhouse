@@ -207,6 +207,8 @@ class AgentDispatch:
     runtime_revision: str | None = None
     submitted_at: datetime | None = None
     retention_until: datetime | None = None
+    observation_sequence: int = 0
+    observation_digest: str | None = None
 
 
 @dataclass(frozen=True)
@@ -257,6 +259,7 @@ class RuntimeResult:
     guidance_receipts: tuple[RuntimeGuidanceReceipt, ...] | None = None
     guidance_terminal: bool = False
     activity: RuntimeActivity | None = None
+    observation_sequence: int | None = None
 
 
 def runtime_input(task: Task) -> str:

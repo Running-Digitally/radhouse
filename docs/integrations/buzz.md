@@ -45,9 +45,11 @@ In artifact mode, the coordinator resolves signed owner events into the same
 used by web. Reply ancestry retains work identity and revisions; known status
 does not invoke a planner. Closed-work replies cannot create new work silently.
 Progress and completion messages use verified work state, retain blockers, and
-do not display the runtime's JSON report as a finished result. Artifact sharing
-and protected artifact review links remain pending; open retained artifacts in
-the authenticated work home.
+do not display the runtime's JSON report as a finished result. Signed artifact
+navigation binds exact retained bytes, work/scope and the enrolled owner. Normal
+sign-in and current access checks remain mandatory. Contextual status can refresh
+an expired link; the original outbox event stays immutable. Links approve nothing;
+general artifact sharing/publication remains pending.
 
 Run the continuous `radhouse coordinator` command for separate execution,
 ingress and egress loops. Relay failures retain work/outbox and do not block

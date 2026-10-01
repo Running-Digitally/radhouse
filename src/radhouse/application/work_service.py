@@ -15,6 +15,12 @@ _LABELS = {'queued': 'Queued', 'active': 'Working', 'waiting': 'Waiting',
            'failed': 'Could not finish', 'cancelled': 'Stopped'}
 _MESSAGES = {
     'runtime_unavailable': 'The agent is unavailable. Your work is retained.',
+    'runtime_identity_mismatch': 'The agent identity needs an administrator check.',
+    'runtime_version_mismatch': 'The agent version is incompatible with this controller.',
+    'runtime_provider_mismatch': 'The agent model binding needs an administrator check.',
+    'runtime_contract_unavailable': 'The agent does not yet support the required work contract.',
+    'runtime_descriptor_stale': 'The agent readiness report is stale. Your work is retained.',
+    'runtime_admission_held': 'The agent is held for maintenance or another checked condition.',
     'provider_unavailable': 'The model service is unavailable. Your work is retained.',
     'provider_incompatible': 'The selected model cannot run this assignment.',
     'provider_mismatch': 'The model connection needs an administrator check.',

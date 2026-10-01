@@ -112,6 +112,9 @@ def compose_controller(
                 client,
                 runtime_revision=bot.runtime_revision,
                 clock=clock,
+                expected_bot_id=bot.bot_id, expected_profile=bot.profile,
+                expected_provider_binding=bot.provider_binding,
+                descriptor_required=bot.descriptor_contract == 'radhouse-runtime-v1',
             )
         work = RoutingAgentWork(adapters)
         service = Service(store, work, provider, clock,

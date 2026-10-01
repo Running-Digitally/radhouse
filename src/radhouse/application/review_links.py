@@ -15,6 +15,7 @@ from radhouse.domain.tasks import Rejected
 
 TTL = 15 * 60
 DOMAIN = b"radhouse:authenticated-web-review:v1\x00"
+ARTIFACT_DOMAIN = b"radhouse:authenticated-artifact-review:v1\x00"
 Identifier = Annotated[str, Field(min_length=1, max_length=200)]
 Digest = Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
 
@@ -34,6 +35,16 @@ class ReviewLocator(BaseModel):
 
     def signing_digest(self):
         return hashlib.sha256(DOMAIN + self.model_dump_json().encode()).digest()
+
+
+class ArtifactLocator(ReviewLocator):
+    version: Literal[2] = 2
+    work_id: Annotated[str, Field(pattern=r'^work-[a-f0-9]{32}$')]
+    artifact_id: Annotated[str, Field(pattern=r'^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$')]
+    scope_revision: Annotated[int, Field(ge=1)]
+
+    def signing_digest(self):
+        return hashlib.sha256(ARTIFACT_DOMAIN + self.model_dump_json().encode()).digest()
 
 
 class ReviewLinks:
@@ -62,6 +73,8 @@ class ReviewLinks:
         return candidate
 
     def issue(self, tx, link, task):
+        if tx.work_for_task(task.task_id) is not None:
+            raise Rejected('artifact_review_required')
         candidate = self._authorize(tx, link, task)
         now = int(self.service._now().timestamp())
         locator = ReviewLocator(task_id=task.task_id, digest=task.result_digest,
@@ -70,6 +83,29 @@ class ReviewLinks:
             issued_at=now, expires_at=now + TTL)
         body = base64.urlsafe_b64encode(locator.model_dump_json().encode()).decode().rstrip("=")
         return self.origin + "/app/#review=" + body + "." + candidate.relay.sign_review_locator(locator)
+
+    def _artifact(self, tx, link, task, work):
+        candidate = self._authorize(tx, link, task)
+        stored = tx.artifact(work.artifact_id) if work and work.artifact_id else None
+        if (work is None or work.workflow_version != 'artifact-v1' or work.task_id != task.task_id
+                or work.owner_id != link.principal_id or stored is None
+                or stored[0].work_id != work.work_id or stored[0].scope_revision != work.scope_revision):
+            raise Rejected('review_link_denied', 403)
+        from radhouse.domain.work import content_digest
+        if stored[0].sha256 != content_digest(stored[1]):
+            raise Rejected('review_link_denied', 403)
+        return candidate, stored[0]
+
+    def issue_artifact(self, tx, link, task, work):
+        candidate, artifact = self._artifact(tx, link, task, work)
+        now = int(self.service._now().timestamp())
+        locator = ArtifactLocator(task_id=task.task_id, digest=artifact.sha256,
+            work_id=work.work_id, artifact_id=artifact.artifact_id, scope_revision=work.scope_revision,
+            project_id=link.project_id, link_id=link.link_id, binding_revision=link.binding_revision,
+            agent_pubkey=link.agent_pubkey, principal_id=link.principal_id,
+            issued_at=now, expires_at=now + TTL)
+        body = base64.urlsafe_b64encode(locator.model_dump_json().encode()).decode().rstrip('=')
+        return self.origin + '/app/#review=' + body + '.' + candidate.relay.sign_review_locator(locator)
 
     def resolve(self, actor, token):
         # A normal authenticated session is sufficient for this navigation link.
@@ -80,7 +116,8 @@ class ReviewLinks:
                 raise ValueError()
             body, signature = token.split(".")
             raw = base64.urlsafe_b64decode(body + "=" * (-len(body) % 4))
-            locator = ReviewLocator.model_validate_json(raw)
+            from pydantic import TypeAdapter
+            locator = TypeAdapter(Annotated[ReviewLocator | ArtifactLocator, Field(discriminator='version')]).validate_json(raw)
             # Canonical encoding rejects duplicate fields, alternate field order,
             # alternate JSON types and ambiguous base64 encodings.
             if base64.urlsafe_b64encode(locator.model_dump_json().encode()).decode().rstrip("=") != body:
@@ -96,9 +133,19 @@ class ReviewLinks:
             raise Rejected("review_link_denied", 403) from None
         with self.service.store.transaction() as tx:
             link, task = tx.conversation_link(locator.link_id), tx.task(locator.task_id)
-            self._authorize(tx, link, task)
+            work = tx.work_item(locator.work_id) if isinstance(locator, ArtifactLocator) else None
+            if isinstance(locator, ArtifactLocator):
+                _, artifact = self._artifact(tx, link, task, work)
+                if (artifact.artifact_id != locator.artifact_id or artifact.sha256 != locator.digest
+                        or work.scope_revision != locator.scope_revision):
+                    raise Rejected('review_link_denied', 403)
+            else:
+                if task is not None and tx.work_for_task(task.task_id) is not None:
+                    raise Rejected('review_link_denied', 403)
+                self._authorize(tx, link, task)
             if (locator.agent_pubkey != link.agent_pubkey or locator.binding_revision != link.binding_revision
-                    or locator.project_id != task.project_id or locator.digest != task.result_digest):
+                    or locator.project_id != task.project_id
+                    or not isinstance(locator, ArtifactLocator) and locator.digest != task.result_digest):
                 raise Rejected("review_link_denied", 403)
             bindings = [b for b in tx.bindings(actor.channel, actor.subject, actor.principal_id)
                         if b.active and b.project_id == task.project_id]
@@ -108,4 +155,7 @@ class ReviewLinks:
             envelope = Envelope(actor.channel, "read", binding.conversation_id, binding.revision, "read")
             self.service._authorize(tx, actor, task, envelope)
             return {"task_id": task.task_id, "project_id": task.project_id,
-                    "conversation_id": binding.conversation_id, "binding_revision": binding.revision}
+                    "conversation_id": binding.conversation_id, "binding_revision": binding.revision,
+                    **({'work_id': work.work_id, 'artifact_id': artifact.artifact_id,
+                        'scope_revision': work.scope_revision, 'digest': artifact.sha256}
+                       if isinstance(locator, ArtifactLocator) else {})}
