@@ -1,5 +1,5 @@
-import type { Project, Review, TaskEvents, TaskSummary, WorkHome } from "./types.js";
-import { parseWorkHome } from "./contract.js";
+import type { Project, Review, TaskEvents, TaskSummary, WorkHome, WorkView } from "./types.js";
+import { parseWorkHome, parseWork } from "./contract.js";
 import { CommandLedger } from "./commands.js";
 import type { ConversationLink, ConversationHistory, ConversationMessage } from "./conversations.js";
 import type { AttachedFile } from "./files.js";
@@ -178,6 +178,23 @@ export class RadhouseApi {
           follows_task_id: input.followsTaskId ?? null,
         },
     });
+  }
+
+  async startWork(input: { botId: string; projectId: string; brief: string; providerBinding: string;
+    files?: AttachedFile[]; followsTaskId?: string }): Promise<WorkView> {
+    return parseWork(await this.command("/v1/work", { start: {
+      bot_id: input.botId, project_id: input.projectId, brief: input.brief,
+      provider_binding: input.providerBinding, resource_key: null, budget: 3,
+      files: input.files ?? [], follows_task_id: input.followsTaskId ?? null,
+    } }));
+  }
+
+  async artifactText(work: WorkView): Promise<string> {
+    if (!work.artifact) throw new ApiError("artifact_not_found", 404);
+    const path = `/v1/work/${encodeURIComponent(work.work_id)}/artifacts/${encodeURIComponent(work.artifact.artifact_id)}?${this.query()}`;
+    const response = await this.transport(path, {});
+    if (!response.ok) throw new ApiError("artifact_unavailable", response.status);
+    return response.text();
   }
 
   async changeState(

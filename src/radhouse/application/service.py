@@ -54,11 +54,13 @@ def runtime_request_fingerprint(task: Task, session_id: str) -> str:
 class Service:
     def __init__(self, store: Store, work: AgentWorkPort, provider: ProviderPort,
                  clock: Callable[[], datetime], *, approval_commands: dict[str, tuple[str, ...]] | None = None,
-                 conversation_scope: Callable[[ConversationLink], bool] | None = None):
+                 conversation_scope: Callable[[ConversationLink], bool] | None = None,
+                 durable_work_enabled: bool = False):
         self.store, self.work, self.provider, self.clock = store, work, provider, clock
         self.approval_commands = approval_commands or {}
         self.conversation_scope = conversation_scope
         self.review_links = None
+        self.durable_work_enabled = durable_work_enabled
 
     def _now(self) -> datetime:
         value = self.clock()
@@ -86,10 +88,11 @@ class Service:
         binding = tx.binding(actor.channel, actor.subject, envelope.conversation_id)
         verify_envelope(actor, envelope, binding, project_id)
 
-    @staticmethod
-    def _save(tx: UnitOfWork, old: Task, new: Task, kind: str) -> Task:
+    def _save(self, tx: UnitOfWork, old: Task, new: Task, kind: str) -> Task:
         tx.save_task(new, old.state_revision)
         tx.add_event(Event(new.task_id, kind, new.state_revision))
+        from radhouse.application.work_service import reconcile_task
+        reconcile_task(tx, new, self._now())
         return new
 
     def _record_runtime_activity(self, task_id: str, result: RuntimeResult) -> None:
@@ -125,6 +128,12 @@ class Service:
             raise Rejected("stale_state")
 
     def admit(self, actor: AuthContext, envelope: Envelope, start: StartTask) -> Task:
+        with self.store.transaction() as tx:
+            return self._admit(tx, actor, envelope, start)
+
+    def _admit(self, tx: UnitOfWork, actor: AuthContext, envelope: Envelope, start: StartTask,
+               *, output_contract: str | None = None) -> Task:
+        """Internal admission seam: parent work and execution commit in one transaction."""
         # An explicit no-tools assignment narrows runtime authority. Only the
         # operator's brief is considered; reference material cannot set policy.
         if re.search(r"\b(?:use no tools|do not use (?:any )?tools|don't use (?:any )?tools|no tool calls)\b", start.brief, re.I):
@@ -153,51 +162,53 @@ class Service:
             body.pop("disable_tools")
         if not start.allowed_tools:
             body.pop("allowed_tools")
+        if output_contract is not None:
+            body["output_contract"] = output_contract
         identity = fingerprint(body)
         event_identity = fingerprint({"kind": "start", "key": envelope.command_key, "body": body})
-        with self.store.transaction() as tx:
-            require_access(tx.access(actor.principal_id), start.bot_id, start.project_id, write=True)
-            bot = next(
-                (candidate for candidate in tx.bots(actor.principal_id, start.project_id)
-                 if candidate.bot_id == start.bot_id),
-                None,
-            )
-            if bot is None or bot.state != "ready":
-                raise Rejected("bot_unavailable", 409)
-            if bot.provider_binding != start.provider_binding:
-                raise Rejected("provider_binding_denied", 403)
-            self._binding(tx, actor, envelope, start.project_id)
-            previous_result = None
-            if start.follows_task_id:
-                previous = self._task(tx, start.follows_task_id)
-                self._authorize(tx, actor, previous, envelope, write=True)
-                if previous.project_id != start.project_id or previous.phase != "closed" or previous.result is None:
-                    raise Rejected("followup_context_unavailable")
-                previous_result = previous.result
-            delivery = tx.delivery(envelope.channel, envelope.event_id)
-            if delivery:
-                if delivery.principal_id != actor.principal_id or delivery.fingerprint != event_identity:
-                    raise Rejected("delivery_conflict")
-                task = self._task(tx, delivery.task_id)
-                self._authorize(tx, actor, task, envelope, write=True)
-                return task
-            old = tx.command(actor.principal_id, envelope.command_key)
-            if old:
-                if old.fingerprint != identity:
-                    raise Rejected("command_conflict")
-                task = self._task(tx, old.task_id)
-                self._authorize(tx, actor, task, envelope, write=True)
-            else:
-                task = Task(str(uuid4()), actor.principal_id, start.bot_id, start.project_id,
-                            start.brief, start.provider_binding, start.resource_key, start.budget,
-                            files=start.files, follows_task_id=start.follows_task_id, previous_result=previous_result,
-                            disable_tools=start.disable_tools, allowed_tools=start.allowed_tools)
-                tx.insert_task(task)
-                tx.save_command(SavedCommand(actor.principal_id, envelope.command_key, identity, task.task_id))
-                tx.add_event(Event(task.task_id, "admitted", task.state_revision))
-            tx.save_delivery(Delivery(envelope.channel, envelope.event_id, actor.principal_id,
-                                      event_identity, task.task_id, "start"))
+        require_access(tx.access(actor.principal_id), start.bot_id, start.project_id, write=True)
+        bot = next(
+            (candidate for candidate in tx.bots(actor.principal_id, start.project_id)
+             if candidate.bot_id == start.bot_id),
+            None,
+        )
+        if bot is None or bot.state != "ready":
+            raise Rejected("bot_unavailable", 409)
+        if bot.provider_binding != start.provider_binding:
+            raise Rejected("provider_binding_denied", 403)
+        self._binding(tx, actor, envelope, start.project_id)
+        previous_result = None
+        if start.follows_task_id:
+            previous = self._task(tx, start.follows_task_id)
+            self._authorize(tx, actor, previous, envelope, write=True)
+            if previous.project_id != start.project_id or previous.phase != "closed" or previous.result is None:
+                raise Rejected("followup_context_unavailable")
+            previous_result = previous.result
+        delivery = tx.delivery(envelope.channel, envelope.event_id)
+        if delivery:
+            if delivery.principal_id != actor.principal_id or delivery.fingerprint != event_identity:
+                raise Rejected("delivery_conflict")
+            task = self._task(tx, delivery.task_id)
+            self._authorize(tx, actor, task, envelope, write=True)
             return task
+        old = tx.command(actor.principal_id, envelope.command_key)
+        if old:
+            if old.fingerprint != identity:
+                raise Rejected("command_conflict")
+            task = self._task(tx, old.task_id)
+            self._authorize(tx, actor, task, envelope, write=True)
+        else:
+            task = Task(str(uuid4()), actor.principal_id, start.bot_id, start.project_id,
+                        start.brief, start.provider_binding, start.resource_key, start.budget,
+                        files=start.files, follows_task_id=start.follows_task_id, previous_result=previous_result,
+                        disable_tools=start.disable_tools, allowed_tools=start.allowed_tools,
+                        output_contract=output_contract)
+            tx.insert_task(task)
+            tx.save_command(SavedCommand(actor.principal_id, envelope.command_key, identity, task.task_id))
+            tx.add_event(Event(task.task_id, "admitted", task.state_revision))
+        tx.save_delivery(Delivery(envelope.channel, envelope.event_id, actor.principal_id,
+                                  event_identity, task.task_id, "start"))
+        return task
 
     def get(self, actor: AuthContext, task_id: str, *, envelope: Envelope) -> Task:
         with self.store.transaction() as tx:
@@ -270,6 +281,11 @@ class Service:
     def advance(self, task_id: str, worker_id: str) -> Task:
         with self.store.transaction() as tx:
             task = self._task(tx, task_id)
+            work = tx.work_for_task(task_id)
+            if work and work.workflow_version != "artifact-v1":
+                from radhouse.application.work_service import reconcile_task
+                reconcile_task(tx, task, self._now())
+                return task
         if task.phase == "closed" or (task.phase != "stopping" and
                 set(task.blockers) & {"human_pause", "grant_withdrawal", "budget_exhausted"}):
             return self.refresh_guidance(task_id)
@@ -365,6 +381,12 @@ class Service:
             )
             publications = {task.task_id: tx.publication(task.task_id) for task in tasks}
             titles = {task.task_id: tx.task_title(task.task_id) for task in tasks}
+            from radhouse.application.work_service import project_work
+            work_views = {}
+            for task in tasks:
+                work = tx.work_for_task(task.task_id)
+                if work:
+                    work_views[task.task_id] = project_work(tx, work, task)
             order = tx.task_admission_order(tuple(task.task_id for task in tasks))
 
         can_write = access.role in {"admin", "operator"}
@@ -391,6 +413,8 @@ class Service:
             resumable = paused and task.phase not in {"closed", "stopping"}
             publication = publications[task.task_id]
             reviewable = task.outcome == "completed" and task.result is not None and publication is None
+            if task.task_id in work_views:
+                reviewable = False  # Artifact sharing needs an artifact-bound review, not raw protocol JSON.
             if not can_write:
                 review = ActionView(False, "read_only_role")
             else:
@@ -401,11 +425,13 @@ class Service:
                 action(pausable, "task_not_pausable"),
                 action(resumable, "task_not_paused"),
                 review,
-                publication,
+                publication, work_views.get(task.task_id),
             ))
         return WorkHome(
             actor.principal_id, access.role, binding.project_id, project.display_name,
             agents, tuple(sorted(cards, key=lambda card: card.sequence, reverse=True)), start,
+            tuple(view.work_id for view in work_views.values() if view.needs_input),
+            self.durable_work_enabled,
         )
 
     @staticmethod
@@ -440,6 +466,11 @@ class Service:
         with self.store.transaction() as tx:
             task = self._task(tx, task_id)
             if task.phase != "queued":
+                return task
+            work = tx.work_for_task(task_id)
+            if work and work.workflow_version != "artifact-v1":
+                from radhouse.application.work_service import reconcile_task
+                reconcile_task(tx, task, self._now())
                 return task
             blockers = set(task.blockers) - {"resource_busy"}
             try:
@@ -688,8 +719,14 @@ class Service:
         content = result.content if result.state == "completed" else None
         if result.state == "completed" and (content is None or not content.strip()):
             return self._needs_attention(task_id, dispatch_key)
+        source_digest = digest(content) if content is not None else None
         if content is not None and len(content.encode()) > 65536:
-            raise Rejected("result_too_large")
+            with self.store.transaction() as tx:
+                managed = tx.work_for_task(task_id) is not None
+            if not managed:
+                raise Rejected("result_too_large")
+            # The run is terminal, but its oversized output is not accepted or retained.
+            content = None
         with self.store.transaction() as tx:
             task = self._task(tx, task_id)
             if task.phase == "closed":
@@ -712,7 +749,7 @@ class Service:
             )
             updated = task.evolve(
                 phase="closed", outcome=terminal, blockers=tuple(sorted(blockers)),
-                result=content, result_digest=digest(content) if content is not None else None,
+                result=content, result_digest=source_digest,
                 permission_request=None,
             )
             saved = self._save(tx, task, updated, terminal)
@@ -855,6 +892,8 @@ class Service:
         with self.store.transaction() as tx:
             task = self._task(tx, task_id)
             self._authorize(tx, actor, task, envelope, write=True)
+            if tx.work_for_task(task_id) is not None:
+                raise Rejected("artifact_review_required")
             self._expected(task, expected_state_revision)
             if task.outcome != "completed" or task.result is None:
                 raise Rejected("result_not_ready")

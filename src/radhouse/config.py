@@ -355,6 +355,7 @@ BuzzConfig.model_rebuild()
 
 
 class RadhouseConfig(StrictModel):
+    durable_work_enabled: bool = False
     schema_version: Literal[1]
     database: DatabaseConfig
     coordinator: CoordinatorConfig

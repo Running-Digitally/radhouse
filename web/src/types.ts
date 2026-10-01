@@ -57,6 +57,7 @@ export interface TaskCard {
   pause: ActionState;
   resume: ActionState;
   review: ActionState;
+  work?: WorkView | null;
   publication: { publication_id: string; digest: string; audience: string[] } | null;
 }
 
@@ -68,6 +69,8 @@ export interface WorkHome {
   agents: AgentSummary[];
   tasks: TaskCard[];
   start: ActionState;
+  attention?: string[];
+  durable_work_enabled?: boolean;
 }
 
 export interface Project {
@@ -141,4 +144,19 @@ export interface Envelope {
   binding_revision: number;
   command_key: string;
   mirrored: false;
+}
+
+export interface WorkView {
+  work_id: string;
+  task_id: string;
+  title: string;
+  scope_revision: number;
+  state_revision: number;
+  state: "queued" | "active" | "waiting" | "paused" | "stopping" | "completed" | "failed" | "cancelled";
+  state_label: string;
+  needs_input: boolean;
+  blockers: { code: string; resolver: "automatic" | "owner" | "administrator"; message: string }[];
+  artifact: { artifact_id: string; name: string; media_type: string; sha256: string; size_bytes: number } | null;
+  created_at: string;
+  updated_at: string;
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { actionReason, blockerMessages, guidanceStatus, phaseLabel } from "../dist/view-model.js";
+import { actionReason, blockerMessages, guidanceStatus, phaseLabel, isFinished, attentionFor } from "../dist/view-model.js";
 import { parseWorkHome } from "../dist/contract.js";
 
 test("phase labels use operator language", () => {
@@ -54,4 +54,21 @@ test("work-home contract accepts the bounded empty view", () => {
     start: { enabled: false, reason: "no_assigned_agents" },
   });
   assert.equal(view.project_id, "personal-alice");
+});
+
+test("a closed agent run does not hide waiting parent work", () => {
+  const card = { task: { phase: "closed", outcome: "completed", blockers: [] },
+    work: { state: "waiting", blockers: [{ message: "A dependency prevented completion." }] } };
+  assert.equal(isFinished(card), false);
+  assert.deepEqual(blockerMessages(card), ["A dependency prevented completion."]);
+  assert.equal(isFinished({ ...card, work: { ...card.work, state: "completed" } }), true);
+});
+
+test("waiting work never hides a decision on a retained legacy task", () => {
+  const waiting = { task: { phase: "closed", permission_request: null },
+    work: { work_id: "new", state: "waiting", needs_input: false } };
+  const permission = { task: { phase: "active", permission_request: { request_id: "permission" } } };
+  assert.equal(attentionFor({tasks:[waiting,permission],attention:[]}).kind,"input");
+  assert.deepEqual(attentionFor({tasks:[waiting,permission],attention:[]}).tasks,[permission]);
+  assert.equal(attentionFor({tasks:[waiting],attention:[]}).kind,"waiting");
 });

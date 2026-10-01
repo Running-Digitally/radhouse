@@ -174,8 +174,15 @@ class Run:
                 if time.monotonic() >= ready_deadline:
                     raise FixtureError("owned PostgreSQL did not become ready within 60 seconds") from None
                 time.sleep(0.2)
+        connection.close()
+        self.initialize(owner_dsn, port)
+
+    def initialize(self, owner_dsn, port):
+        import psycopg
+        from psycopg import sql
+        from psycopg.conninfo import make_conninfo
         runtime_password = secrets.token_urlsafe(32)
-        with connection:
+        with psycopg.connect(owner_dsn) as connection:
             # Empty schema plus exact database and container ownership are mandatory.
             if connection.execute("SELECT current_database()").fetchone()[0] != self.manifest["database"]:
                 raise FixtureError("bootstrap database identity mismatch")
@@ -257,7 +264,7 @@ def service_for_environment(env, *, crash=False):
 
 def controller_child(action, task_id):
     manifest = json.loads(Path(os.environ["RADHOUSE_VS0_MANIFEST"]).read_text())
-    if manifest["run_id"] != os.environ["RADHOUSE_VS0_RUN_ID"] or not manifest.get("container_id"):
+    if manifest["run_id"] != os.environ["RADHOUSE_VS0_RUN_ID"] or not (manifest.get("container_id") or manifest.get("native_cluster_id") == manifest["run_id"]):
         raise FixtureError("child controller fixture ownership mismatch")
     service, _ = service_for_environment(os.environ, crash=action == "run")
     if action == "run":
@@ -333,11 +340,11 @@ def demonstration(run: Run):
     print("PASS: both simulated channel directions, duplicate admission, separate-process recovery, one run per completed task, protected publication, unknown runtime stays blocked")
 
 
-def main():
+def main(run_factory=Run):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("verify", "demo"))
     args = parser.parse_args()
-    run = Run()
+    run = run_factory()
     def deadline_expired(signum, frame):
         raise FixtureError("VS0 reached its 15-minute execution limit")
     signal.signal(signal.SIGALRM, deadline_expired)
@@ -378,7 +385,8 @@ def main():
     if run.output.exists():
         print(f"Sanitized run manifest: {run.manifest_path.relative_to(ROOT)}")
     if succeeded:
-        print(f"PASS: offline {args.mode}; Python {run.manifest['python']}; source {run.manifest['source_commit']}; image {run.manifest['image']}")
+        backend = run.manifest.get("image") or run.manifest.get("postgres_version", "unqualified")
+        print(f"PASS: offline {args.mode}; Python {run.manifest['python']}; source {run.manifest['source_commit']}; database {backend}")
     return 2 if prerequisite_missing else (0 if succeeded and run.manifest.get("cleanup") == "complete" else 1)
 
 

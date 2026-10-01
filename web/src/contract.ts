@@ -1,5 +1,5 @@
 import type {
-  ActionState, AgentSummary, Phase, Role, TaskCard, TaskSummary, WorkHome,
+  ActionState, AgentSummary, Phase, Role, TaskCard, TaskSummary, WorkHome, WorkView,
 } from "./types.js";
 
 type RecordValue = Record<string, unknown>;
@@ -114,6 +114,7 @@ function taskCard(value: unknown): TaskCard {
   const title = record(item.title);
   return {
     task: task(item.task),
+    work: item.work == null ? null : parseWork(item.work),
     sequence: integer(item.sequence),
     title: {
       task_id: string(title.task_id),
@@ -145,5 +146,26 @@ export function parseWorkHome(value: unknown): WorkHome {
     agents: item.agents.map(agent),
     tasks: item.tasks.map(taskCard),
     start: action(item.start),
+    attention: item.attention == null ? [] : stringArray(item.attention),
+    durable_work_enabled: item.durable_work_enabled === true,
+  };
+}
+
+export function parseWork(value: unknown): WorkView {
+  const item = record(value);
+  if (typeof item.needs_input !== "boolean" || !Array.isArray(item.blockers)) throw new Error("invalid_work_home");
+  const artifact = item.artifact == null ? null : record(item.artifact);
+  return {
+    work_id: string(item.work_id), task_id: string(item.task_id), title: string(item.title),
+    scope_revision: integer(item.scope_revision), state_revision: integer(item.state_revision),
+    state: oneOf(item.state, ["queued", "active", "waiting", "paused", "stopping", "completed", "failed", "cancelled"] as const),
+    state_label: string(item.state_label), needs_input: item.needs_input,
+    blockers: item.blockers.map(value => { const blocker = record(value); return {
+      code: string(blocker.code), resolver: oneOf(blocker.resolver, ["automatic", "owner", "administrator"] as const),
+      message: string(blocker.message),
+    }; }),
+    artifact: artifact === null ? null : { artifact_id: string(artifact.artifact_id), name: string(artifact.name),
+      media_type: string(artifact.media_type), sha256: string(artifact.sha256), size_bytes: integer(artifact.size_bytes) },
+    created_at: string(item.created_at), updated_at: string(item.updated_at),
   };
 }
