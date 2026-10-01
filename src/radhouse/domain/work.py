@@ -9,6 +9,28 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 
 WorkState = Literal['queued', 'active', 'waiting', 'paused', 'stopping', 'completed', 'failed', 'cancelled']
+WorkCommandKind = Literal['pause', 'resume', 'cancel', 'guidance']
+
+
+@dataclass(frozen=True)
+class WorkCommand:
+    kind: WorkCommandKind
+    expected_state_revision: int
+    scope_revision: int
+    text: str | None = None
+
+
+@dataclass(frozen=True)
+class WorkCommandReceipt:
+    principal_id: str
+    command_key: str
+    work_id: str
+    kind: WorkCommandKind
+    scope_revision: int
+    accepted_state_revision: int
+    task_state_revision: int
+    created_at: datetime
+    application_state: Literal['accepted', 'applied', 'not_applied', 'unknown'] = 'accepted'
 
 
 @dataclass(frozen=True)

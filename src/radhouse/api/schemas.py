@@ -74,6 +74,18 @@ class GuidanceRequest(StateRequest):
     text: Annotated[str, Field(min_length=1, max_length=4096)]
 
 
+class WorkCommandRequest(StrictModel):
+    envelope: EnvelopeSchema
+    kind: Literal['pause', 'resume', 'cancel', 'guidance']
+    expected_state_revision: Revision
+    scope_revision: Revision
+    text: Annotated[str, Field(min_length=1, max_length=4096)] | None = None
+
+    def command(self):
+        from radhouse.domain.work import WorkCommand
+        return WorkCommand(**self.model_dump(exclude={'envelope'}))
+
+
 class TaskTitleRequest(StrictModel):
     envelope: EnvelopeSchema
     expected_title_revision: Revision
@@ -216,6 +228,24 @@ class WorkResponse(StrictModel):
     artifact: ArtifactResponse | None
     created_at: datetime
     updated_at: datetime
+
+
+class WorkCommandReceiptResponse(StrictModel):
+    principal_id: str
+    command_key: str
+    work_id: str
+    kind: Literal['pause', 'resume', 'cancel', 'guidance']
+    scope_revision: int
+    accepted_state_revision: int
+    task_state_revision: int
+    created_at: datetime
+    application_state: Literal['accepted', 'applied', 'not_applied', 'unknown']
+
+
+class WorkCommandResponse(StrictModel):
+    receipt: WorkCommandReceiptResponse
+    work: WorkResponse
+    application_state: Literal['accepted', 'applied', 'not_applied', 'unknown']
 
 
 class TaskCardResponse(StrictModel):

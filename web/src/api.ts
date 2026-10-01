@@ -197,6 +197,17 @@ export class RadhouseApi {
     return response.text();
   }
 
+  async workCommand(work: WorkView, kind: "pause" | "resume" | "cancel" | "guidance", text?: string): Promise<WorkView> {
+    const value = await this.command<{ work: unknown; application_state: string }>(`/v1/work/${encodeURIComponent(work.work_id)}/commands`, {
+      kind, expected_state_revision: work.state_revision, scope_revision: work.scope_revision, text: text ?? null,
+    });
+    const current = parseWork(value.work);
+    if (current.work_id !== work.work_id || !["accepted", "applied", "not_applied", "unknown"].includes(value.application_state)) {
+      throw new ApiError("invalid_server_response", 502);
+    }
+    return current;
+  }
+
   async changeState(
     taskId: string,
     action: "cancel" | "pause" | "resume",

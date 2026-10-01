@@ -83,6 +83,10 @@ def parser() -> argparse.ArgumentParser:
     cycle = commands.add_parser("coordinator-once", help="run one bounded coordinator cycle")
     cycle.add_argument("--config", required=True)
     cycle.add_argument("--overlay")
+    loops = commands.add_parser('coordinator', help='run independent work and Buzz loops')
+    loops.add_argument('--config', required=True)
+    loops.add_argument('--overlay')
+    loops.add_argument('--interval', type=float)
     return result
 
 
@@ -133,6 +137,9 @@ def main(arguments: list[str] | None = None) -> int:
                 )
             return 0
         elif args.command == "coordinator-once":
+            if config.buzz and (config.durable_work_enabled or any(
+                    item.workflow_version == 'artifact-v1' for item in config.buzz.conversations)):
+                raise Rejected('independent_cycles_required')
             with compose_controller(config) as controller:
                 ingress=[bridge.run("ingress") for bridge in controller.conversations]
                 cycle = controller.coordinator.run_once()
@@ -143,6 +150,26 @@ def main(arguments: list[str] | None = None) -> int:
                 "errors": sum(receipt.error_code is not None for receipt in cycle.receipts),
                 "conversation_errors":sum(receipt["error_code"] is not None for receipt in ingress+egress),
             }
+        elif args.command == 'coordinator':
+            import signal
+            from threading import Event
+            from radhouse.application.controller_loops import ControllerLoops
+            stopped = Event()
+            previous = {number: signal.signal(number, lambda *_: stopped.set())
+                        for number in (signal.SIGINT, signal.SIGTERM)}
+            try:
+                with compose_controller(config) as controller:
+                    loops = ControllerLoops(controller, interval=args.interval if args.interval is not None else config.coordinator.interval_seconds)
+                    loops.start()
+                    try:
+                        while not stopped.wait(30):
+                            print(json.dumps({'result': 'running', 'loops': loops.snapshot()}), flush=True)
+                    finally:
+                        loops.stop()
+                    output = {'result': 'stopped', 'loops': loops.snapshot()}
+            finally:
+                for number, handler in previous.items():
+                    signal.signal(number, handler)
         elif args.command == "buzz-bind":
             if not args.apply:
                 output = {**_summary(config), "result": "apply_required"}

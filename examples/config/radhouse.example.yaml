@@ -1,4 +1,6 @@
 schema_version: 1
+# Opt in only after schema migration and the durable-work rollout are qualified.
+durable_work_enabled: false
 
 database:
   dsn:

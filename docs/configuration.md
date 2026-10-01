@@ -75,3 +75,27 @@ radhouse preflight --config /etc/radhouse/base.yaml \
 A successful result is `offline_ready`. It is a prerequisite for online health,
 identity, database, and runtime checks; it does not claim that any service is
 reachable or start the controller.
+
+## Opt-in durable work
+
+`durable_work_enabled` defaults to false. It controls new artifact admission in
+web and Buzz; disabling it retains existing work, control receipts and recovery.
+This binary requires database schema 9 regardless of that flag. Migrations and
+live enablement remain explicit deployment operations.
+
+Each `buzz.conversations` entry may specify `workflow_version: artifact-v1`
+(default `legacy`). The mode is frozen at enrollment, so changing the YAML of
+an already enrolled conversation causes an ownership conflict rather than
+transferring its work. Prepare a new artifact enrollment or the separately
+reviewed cutover; do not edit stored snapshots to bypass this check. Artifact
+mode rejects `automatic_private_release` and `private_deployment_url` because
+software-release acceptance has not been qualified for that workflow.
+
+An installation using Buzz and durable work must use the continuous
+`radhouse coordinator --config … --overlay …` command. It runs execution and
+channel I/O independently; its interval defaults to `coordinator.interval_seconds`
+and an optional `--interval` accepts 0.1–60 seconds. Replace the old one-shot
+timer when preparing rollout, and retain one active controller. Loop health is
+emitted as bounded JSON every 30 seconds. No unit or live process is changed by
+loading configuration. See [durable work](durable-work.md) for commands, failure
+behavior and remaining acceptance gates.

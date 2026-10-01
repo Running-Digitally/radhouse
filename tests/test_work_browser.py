@@ -17,12 +17,15 @@ from tests.test_local_reauthentication import local_client
 pytestmark = pytest.mark.postgres
 
 
-def test_artifact_work_browser_retains_blocked_outcome(local_client, service, fake_work, clock, tmp_path):
+@pytest.mark.parametrize('controls', [False, True])
+def test_artifact_work_browser_retains_blocked_outcome(local_client, service, fake_work, clock, tmp_path, controls):
     root = Path(__file__).resolve().parents[1]
     playwright = os.environ.get('RADHOUSE_PLAYWRIGHT_MODULE', str(root/'web/node_modules/@playwright/test/index.mjs'))
     assert Path(playwright).is_file()
     _, auth, totp, password = local_client
     service.durable_work_enabled = True
+    if controls:
+        fake_work.mode = 'running'
     clock.now = datetime.now(timezone.utc)
     sock = socket.socket(); sock.bind(('127.0.0.1',0))
     origin = f'http://127.0.0.1:{sock.getsockname()[1]}'
@@ -50,14 +53,18 @@ def test_artifact_work_browser_retains_blocked_outcome(local_client, service, fa
         for _ in range(100):
             if server.started:break
             time.sleep(0.02)
-        run = subprocess.run(['node',str(root/'web/test/work-walkthrough.mjs')],env={**os.environ,
+        script = 'work-controls-walkthrough.mjs' if controls else 'work-walkthrough.mjs'
+        run = subprocess.run(['node',str(root/'web/test'/script)],env={**os.environ,
             'RADHOUSE_PLAYWRIGHT_MODULE':playwright,'RADHOUSE_BROWSER_ORIGIN':origin,
             'RADHOUSE_TEST_PASSWORD':password,'RADHOUSE_TEST_TOTP':totp.at(clock()),
             'RADHOUSE_SCREENSHOT':str(tmp_path/'work-outcomes.png')},capture_output=True,text=True,timeout=90)
         assert run.returncode == 0, run.stdout+run.stderr
         with service.store.transaction() as tx:
             work = tx.work_items('alice','personal-alice')
-            assert len(work) == 2 and {row.state for row in work} == {'completed','waiting'}
+            if controls:
+                assert len(work) == 1 and work[0].state == 'cancelled'
+            else:
+                assert len(work) == 2 and {row.state for row in work} == {'completed','waiting'}
         assert fake_work.start_count == 2
     finally:
         stop.set();server.should_exit=True

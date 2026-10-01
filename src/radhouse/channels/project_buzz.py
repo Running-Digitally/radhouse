@@ -52,6 +52,8 @@ class ProjectBuzzConversationCycle:
         self.conversations = Conversations(service)
 
     def _authorize(self):
+        if self.link.workflow_version != 'legacy':
+            raise Rejected('workflow_owner_conflict')
         self.relay.verify_conversation(self.link)
         with self.store.transaction() as tx:
             self.conversations.authorize(tx, self.link, write=True)

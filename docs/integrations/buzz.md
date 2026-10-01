@@ -32,6 +32,37 @@ retained conversations or media.
 
 ## One task and authority path
 
+### Opt-in durable artifact coordination
+
+New artifact conversations may select `workflow_version: artifact-v1` alongside
+controller `durable_work_enabled: true`. Enrollment freezes the workflow owner;
+changing configuration cannot reinterpret an enrolled legacy channel. A mismatch
+holds routing. Existing project/software delivery remains on its legacy owner
+until a separately reviewed cutover settles active work and delivery authority.
+
+In artifact mode, the coordinator resolves signed owner events into the same
+`WorkService` admission, status, guidance, pause/resume and cancellation commands
+used by web. Reply ancestry retains work identity and revisions; known status
+does not invoke a planner. Closed-work replies cannot create new work silently.
+Progress and completion messages use verified work state, retain blockers, and
+do not display the runtime's JSON report as a finished result. Artifact sharing
+and protected artifact review links remain pending; open retained artifacts in
+the authenticated work home.
+
+Run the continuous `radhouse coordinator` command for separate execution,
+ingress and egress loops. Relay failures retain work/outbox and do not block
+execution. The old serialized `coordinator-once` command refuses this configured
+mode. Use one active controller; source isolation tests are not multi-controller
+or host-failure high-availability qualification.
+
+The signed protocol harness and real web browser qualify this application seam.
+Official desktop/mobile journeys, live enrollment and detection of duplicate
+local executors remain rollout gates. Historical client observations above are
+not a claim that these new commands have been qualified on those clients. See
+[durable work](../durable-work.md) for the executable contracts and schema.
+
+### Retained task/software workflow
+
 ```text
 signed Buzz event -> verified key and conversation binding
                   -> Radhouse command/use case
