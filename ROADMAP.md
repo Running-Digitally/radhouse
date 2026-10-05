@@ -10,12 +10,16 @@ later to the same conversation.**
    application size/count caps, optional bounded readings, pending
    reply recovery and clear errors.
 2. Verify the browser journey, auth boundary and retry behavior locally with
-   synthetic Hermes and an owned disposable authentication database.
+   synthetic Hermes and an owned disposable authentication database. The local UI
+   now includes a persistent composer, separate outgoing/next drafts, compact
+   files, long-paste preservation, upload progress, formatted answers and recovery.
 3. Qualify two real turns and restart continuity against the exact existing
    Hermes runtime, beginning with text-only conversation and tools disabled. Then
    prove image understanding, extracted-document answers and the existing STT
    connection with bounded reading examples. Original-file transfer is independent
    of those readings; selective file access needs its own runtime handoff contract.
+   Qualify incremental reply streaming and a trustworthy Stop action against that
+   runtime before exposing either in the UI; current replies arrive on completion.
 4. Activate behind the existing private Warp access after the bounded live
    decision, then retire unused infrastructure using verified dependencies and
    explicit data disposition.

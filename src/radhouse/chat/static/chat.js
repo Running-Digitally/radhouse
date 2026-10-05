@@ -1,288 +1,421 @@
 "use strict";
-const $ = (id) => document.getElementById(id);
-const terminal = new Set(["completed", "failed", "cancelled", "interrupted"]);
+const $ = id => document.getElementById(id);
+const terminal = new Set(["completed","failed","cancelled","interrupted"]);
 const explanations = {
-  authentication_required: "Please sign in to continue.", login_denied: "Check your username, password and authenticator code.",
-  invalid_credentials: "Check your username, password and authenticator code.",
-  authentication_unavailable: "Sign-in is temporarily unavailable. Try again shortly.",
-  identity_binding_denied: "Your account’s conversation access needs to be checked.", work_home_unavailable: "Your account’s conversation access needs to be checked.",
-  assistant_unavailable: "Your assistant is unavailable. Your conversation is saved; try again shortly.",
-  conversation_unavailable: "Your saved conversation is temporarily unavailable. Try again shortly.",
-  reply_pending: "Wait for this reply before sending another message.",
-  reply_dispatch_uncertain: "The connection was lost while sending. Retry this message to check whether it was received.",
-  reply_recovery_required: "We couldn’t confirm this reply in time. It is saved and needs recovery before you continue.",
-  reply_status_unavailable: "The reply is still saved. We couldn’t check its progress just now.",
-  chat_capability_unavailable: "Your assistant isn’t ready for chat yet. Try again after its connection is checked.",
-  unexpected_runtime_approval: "The assistant needs a capability this conversation doesn’t support. Your message is saved.",
-  reply_failed: "Your assistant couldn’t finish this reply. You can send another message.", reply_cancelled: "This reply was cancelled. You can send another message.",
-  reply_interrupted: "This reply was interrupted. You can send another message.", empty_reply: "Your assistant finished without a response. You can send another message.",
-  request_origin_denied: "Refresh this page and try again.", csrf_denied: "Refresh this page and try again.", owner_access_required: "This account doesn’t have access to this conversation.",
-  invalid_request: "Check the fields and try again.", network_error: "We lost the connection. Retry the saved message to check whether it was received.",
-  empty_message: "Write a message or attach a file before sending.", message_conflict: "This message was already received with different content. Refresh to recover the conversation.",
-  attachment_invalid: "This file’s name couldn’t be used. Rename it and try again.",
-  attachment_conflict: "This saved upload has different content. Attach the file again.",
-  file_storage_unavailable: "The file couldn’t be saved. Check the server’s available storage and retry.",
-  draft_storage_unavailable: "Your browser couldn’t save this file draft. Free some browser storage and try again.",
+  authentication_required:"Sign in again to continue. Your message and draft are kept.",
+  login_denied:"Check your username, password and authenticator code.",
+  invalid_credentials:"Check your username, password and authenticator code.",
+  authentication_unavailable:"Sign-in is temporarily unavailable. Try again shortly.",
+  identity_binding_denied:"This account’s conversation access needs to be checked.",
+  work_home_unavailable:"This account’s conversation access needs to be checked.",
+  owner_access_required:"This account doesn’t have access to this conversation.",
+  assistant_unavailable:"The assistant is unavailable. Your message is kept; retry to check whether it was received.",
+  conversation_unavailable:"Your conversation couldn’t be loaded. Your draft is kept.",
+  reply_pending:"A reply is already in progress. You can keep writing your next message.",
+  reply_dispatch_uncertain:"The connection was lost. Your message is kept; retry to check whether it was received.",
+  reply_recovery_required:"This saved message needs recovery before another can be sent. You can keep your next draft here.",
+  reply_status_unavailable:"Your message is saved. We couldn’t check the reply just now.",
+  chat_capability_unavailable:"The assistant isn’t ready to receive this message. It is kept here for retry.",
+  unexpected_runtime_approval:"The assistant needs attention before it can continue. Your message is saved.",
+  reply_failed:"The assistant couldn’t finish this reply. You can send another message.",
+  reply_cancelled:"Reply stopped. You can send another message.",
+  reply_interrupted:"The reply was interrupted. You can send another message.",
+  empty_reply:"The assistant finished without an answer. You can send another message.",
+  request_origin_denied:"Your connection needs refreshing. Your message and draft are kept.",
+  csrf_denied:"Your connection needs refreshing. Your message and draft are kept.",
+  invalid_request:"This message couldn’t be sent. Its text and files are kept so you can edit it.",
+  network_error:"We lost the connection. Your message and files are kept.",
+  empty_message:"Write a message or attach a file before sending.",
+  message_conflict:"This message has already been received with different content. Reconnect to check the saved conversation.",
+  attachment_invalid:"This filename couldn’t be used. Edit the message and attach a renamed copy.",
+  attachment_conflict:"This upload has different saved content. Edit the message and attach the file again.",
+  attachment_not_found:"A saved file couldn’t be found. Your message is kept; reconnect and try again.",
+  file_storage_unavailable:"The upload couldn’t be saved. Your original file and message are kept here for retry.",
+  draft_storage_unavailable:"Your browser couldn’t save this draft. Keep this tab open and retry saving it.",
+  original_unavailable:"This browser no longer has the unsent original. Edit this message and attach the file again.",
 };
-let session = null, turns = new Map(), olderBefore = null, olderLoaded = false, busy = false, polling = false, filesLoading = false;
-const emptyDraft = () => ({text:"", request_id:null, attachments:[]});
-let draft = emptyDraft(), noticeCode = null, renderedHistory = "", transferStatus = "";
-const previewUrls = new Map();
-function tell(code) { noticeCode = code; $("notice").textContent = explanations[code] || "Something went wrong. Refresh the page and try again."; $("notice").hidden = false; }
-function clearNotice() { noticeCode = null; $("notice").hidden = true; }
-function draftKey() { return "radhouse-chat-draft:" + session.username; }
-// IndexedDB can retain binary-sized drafts beyond localStorage's small quota.
+let session=null, turns=new Map(), outbox=null, busy=false, polling=false, filesLoading=false;
+let olderBefore=null, olderLoaded=false, openingHistory=false, followingLatest=true;
+const emptyDraft = () => ({text:"",attachments:[]});
+let draft=emptyDraft(), noticeCode=null, noticeAction=null, draftSignature="";
+const turnNodes=new Map(), previewUrls=new Map();
+function messageFits(text) { let count=0; for (const _ of text) if (++count>16000) return false; return true; }
+function tell(code, action=null) {
+  noticeCode=code; noticeAction=action;
+  if (!session) { $("login-notice").textContent=explanations[code] || "We couldn’t sign you in. Try again."; $("login-notice").hidden=false; return; }
+  $("notice-text").textContent=explanations[code] || "Something went wrong. Your draft is kept. Try reconnecting.";
+  $("notice").hidden=false; $("notice-action").hidden=!action;
+  $("notice-action").textContent=["csrf_denied","request_origin_denied","message_conflict"].includes(code) ? "Reconnect" : "Retry";
+}
+function clearNotice() { noticeCode=null; noticeAction=null; $("notice").hidden=true; $("login-notice").hidden=true; }
+function key() { return "radhouse-chat-draft:"+session.username; }
 let draftDatabase;
 function database() {
-  if (!draftDatabase) draftDatabase = new Promise((resolve,reject) => {
-    const request = indexedDB.open("radhouse-chat-drafts",1);
-    request.onupgradeneeded = () => request.result.createObjectStore("drafts");
-    request.onsuccess = () => resolve(request.result); request.onerror = () => reject(new Error("draft_storage_unavailable"));
+  if (!draftDatabase) draftDatabase=new Promise((resolve,reject) => {
+    const request=indexedDB.open("radhouse-chat-drafts",1);
+    request.onupgradeneeded=() => request.result.createObjectStore("drafts");
+    request.onsuccess=() => resolve(request.result); request.onerror=() => reject(new Error("draft_storage_unavailable"));
   });
   return draftDatabase;
 }
-async function draftOperation(key, value) {
-  const db = await database();
+async function draftOperation(storageKey,value) {
+  const db=await database();
   return new Promise((resolve,reject) => {
-    const transaction = db.transaction("drafts",value === undefined ? "readonly" : "readwrite");
-    const store = transaction.objectStore("drafts"), request = value === undefined ? store.get(key) : store.put(value,key);
-    transaction.oncomplete = () => resolve(request.result);
-    transaction.onerror = transaction.onabort = () => reject(new Error("draft_storage_unavailable"));
+    const transaction=db.transaction("drafts",value===undefined ? "readonly" : "readwrite"), store=transaction.objectStore("drafts");
+    const request=value===undefined ? store.get(storageKey) : store.put(value,storageKey);
+    transaction.oncomplete=() => resolve(request.result);
+    transaction.onerror=transaction.onabort=() => reject(new Error("draft_storage_unavailable"));
   });
 }
-let draftWrites = Promise.resolve();
-function saveDraft() {
+let draftWrites=Promise.resolve();
+function saveState() {
   if (!session) return Promise.resolve();
-  draft.text = $("message").value;
-  const key = draftKey(), saved = structuredClone(draft);
-  // Keep a small text-only recovery record for older browsers and old drafts.
-  let fallbackSaved = false;
-  try { localStorage.setItem(key,JSON.stringify({text:saved.text,request_id:saved.request_id,has_files:!!saved.attachments.length})); fallbackSaved = true; } catch (_) {}
-  draftWrites = draftWrites.catch(() => {}).then(() => draftOperation(key,saved)).catch(error => {
-    if (saved.attachments.length || !fallbackSaved) throw error;
+  draft.text=$("message").value;
+  const storageKey=key(), saved=structuredClone({version:2,...draft,outbox});
+  let fallback=false;
+  try {
+    localStorage.setItem(storageKey,JSON.stringify({version:2,text:saved.text,
+      attachments:saved.attachments.map(file => ({...file,blob:undefined})),
+      has_files:!!(saved.attachments.length || saved.outbox?.attachments.length || saved.outbox?.missing_files),
+      outbox:saved.outbox ? {...saved.outbox,attachments:saved.outbox.attachments.map(file => ({...file,blob:undefined}))} : null})); fallback=true;
+  } catch (_) {}
+  draftWrites=draftWrites.catch(() => {}).then(() => draftOperation(storageKey,saved)).catch(error => {
+    if (saved.attachments.length || saved.outbox?.attachments.length || !fallback) throw error;
   });
   return draftWrites;
 }
+function persist() { return saveState().catch(() => tell("draft_storage_unavailable",persist)); }
+function releaseFile(file) { const url=previewUrls.get(file.file_id); if (url) URL.revokeObjectURL(url); previewUrls.delete(file.file_id); }
 function releasePreviews() { for (const url of previewUrls.values()) URL.revokeObjectURL(url); previewUrls.clear(); }
-function clearDraft() { releasePreviews(); draft = emptyDraft(); $("message").value = ""; saveDraft().catch(() => tell("draft_storage_unavailable")); }
-function showLogin() {
-  session = null; releasePreviews(); draft = emptyDraft(); turns.clear(); renderedHistory = "";
-  $("messages").replaceChildren(); $("draft-files").replaceChildren(); $("message").value = "";
-  $("chat-view").hidden = true; $("logout").hidden = true; $("login-view").hidden = false; $("loading").hidden = true;
+function showLogin(expired=false) {
+  if (session) $("username").value=session.username;
+  session=null; releasePreviews(); draft=emptyDraft(); outbox=null; turns.clear(); turnNodes.clear(); draftSignature="";
+  $("messages").replaceChildren(); $("draft-files").replaceChildren(); $("message").value="";
+  $("chat-view").hidden=true; $("logout").hidden=true; $("login-view").hidden=false; $("loading").hidden=true;
+  clearNotice(); if (expired) tell("authentication_required");
 }
-async function api(path, body) {
-  const headers = {};
-  if (body !== undefined) { headers["Content-Type"] = "application/json"; if (session) headers["X-Radhouse-CSRF"] = session.csrf_token; }
+async function api(path,body,initial=false) {
+  const headers={};
+  if (body!==undefined) { headers["Content-Type"]="application/json"; if (session) headers["X-Radhouse-CSRF"]=session.csrf_token; }
   let response;
-  try { response = await fetch(path,{method:body === undefined ? "GET" : "POST",headers,body:body === undefined ? undefined : JSON.stringify(body)}); }
+  try { response=await fetch(path,{method:body===undefined ? "GET" : "POST",headers,body:body===undefined ? undefined : JSON.stringify(body)}); }
   catch (_) { throw new Error("network_error"); }
   if (!response.ok) {
-    let value; try { value = await response.json(); } catch (_) { value = {}; }
-    if (response.status === 401) showLogin();
-    const error = new Error(value.error || "service_unavailable"); error.status = response.status; throw error;
+    let value; try { value=await response.json(); } catch (_) { value={}; }
+    if (response.status===401) showLogin(!initial);
+    const error=new Error(value.error || "service_unavailable"); error.status=response.status; throw error;
   }
-  return response.status === 204 ? null : response.json();
-}
-function accept(data, older = false) {
-  for (const turn of data.turns) { turns.set(turn.seq,turn); if (draft.request_id === turn.request_id) clearDraft(); }
-  if (older || !olderLoaded) olderBefore = data.older_before;
-  if (older) olderLoaded = true;
-  if (!pendingTurn() && !draft.request_id && ["network_error","assistant_unavailable"].includes(noticeCode)) clearNotice();
-  render();
+  return response.status===204 ? null : response.json();
 }
 function pendingTurn() { return [...turns.values()].find(turn => !terminal.has(turn.status)); }
+function accept(data,older=false,latest=false) {
+  for (const turn of data.turns) {
+    turns.set(turn.seq,turn);
+    if (outbox?.request_id===turn.request_id) { outbox.attachments.forEach(releaseFile); outbox=null; persist(); }
+  }
+  if (older || !olderLoaded) olderBefore=data.older_before;
+  if (older) olderLoaded=true;
+  if (["network_error","conversation_unavailable","assistant_unavailable"].includes(noticeCode)) clearNotice();
+  render({older,latest});
+}
 function fileKind(file) {
-  const extension = file.name.split(".").pop().toLowerCase();
-  return ["png","jpg","jpeg","webp"].includes(extension) || ["image/png","image/jpeg","image/webp"].includes(file.type) ? "image" :
-    ["wav","mp3","m4a","ogg","flac","webm"].includes(extension) ? "audio" : "document";
+  const extension=file.name.split(".").pop().toLowerCase();
+  if (["png","jpg","jpeg","webp"].includes(extension) || ["image/png","image/jpeg","image/webp"].includes(file.type)) return "image";
+  if (["wav","mp3","m4a","ogg","flac","webm"].includes(extension)) return "audio";
+  return ["pdf","docx","xlsx","pptx"].includes(extension) ? "document" : "file";
 }
-function sizeLabel(bytes) { return bytes < 1024 * 1024 ? Math.max(1,Math.round(bytes/1024)) + " KB" : (bytes/1024/1024).toFixed(1) + " MB"; }
-function previewUrl(file) {
-  if (!previewUrls.has(file)) {
-    previewUrls.set(file,URL.createObjectURL(file.blob));
-  }
-  return previewUrls.get(file);
+function sizeLabel(bytes) { return bytes<1024 ? bytes+" B" : bytes<1024*1024 ? Math.round(bytes/1024)+" KB" : (bytes/1024/1024).toFixed(1)+" MB"; }
+function previewUrl(file) { if (!(file.blob instanceof Blob)) return null; if (!previewUrls.has(file.file_id)) previewUrls.set(file.file_id,URL.createObjectURL(file.blob)); return previewUrls.get(file.file_id); }
+const documentTypes={pdf:{icon:"pdf",label:"PDF"},docx:{icon:"word",label:"Word"},xlsx:{icon:"excel",label:"Excel"},pptx:{icon:"powerpoint",label:"PowerPoint"}};
+function readingLabel(file) {
+  if (file.reading_state==="excerpt") return "Text excerpt shared";
+  if (file.reading_state!=="not_read") return null;
+  return ({document_encrypted:"Password-protected; original saved",document_needs_ocr:"No readable text; original saved",
+    audio_transcription_not_configured:"Audio saved; transcription isn’t connected",audio_no_speech:"No speech found; original saved",
+    image_transport_unavailable:"Image saved; not provided to the assistant",reading_budget:"Original saved; not included in this reply"})[file.reading_error] || "Original saved; assistant access pending";
 }
-const documentTypes = {
-  pdf: {icon:"pdf", label:"PDF", description:"PDF document"},
-  docx: {icon:"word", label:"Word", description:"Word document"},
-  xlsx: {icon:"excel", label:"Excel", description:"Excel workbook"},
-  pptx: {icon:"powerpoint", label:"PowerPoint", description:"PowerPoint presentation"},
-};
-function fileCard(file, url, removable) {
-  const card = document.createElement("div"); card.className = "attachment";
-  const extension = file.name.split(".").pop().toLowerCase();
-  const documentType = file.kind === "document" && Object.hasOwn(documentTypes,extension) ? documentTypes[extension] : null;
-  if (file.kind === "image") { const img = document.createElement("img"); img.src = url; img.alt = file.name; card.append(img); }
-  else if (documentType) {
-    const tile = document.createElement("div"); tile.className = "document-thumbnail";
-    const icon = document.createElement("img"); icon.className = "document-icon";
-    icon.src = "/icons/" + documentType.icon + ".svg"; icon.alt = documentType.description;
-    tile.append(icon); card.append(tile);
+function fileCard(file,url,removable) {
+  const card=document.createElement("div"); card.className="attachment";
+  const extension=file.name.split(".").pop().toLowerCase(), type=Object.hasOwn(documentTypes,extension) ? documentTypes[extension] : null;
+  if (file.kind==="image" && url || type) {
+    const img=document.createElement("img"); img.className="file-visual "+(type ? "document-icon" : "image-preview");
+    img.src=type ? "/icons/"+type.icon+".svg" : url; img.alt=type ? type.label+" document" : file.name; card.append(img);
+  } else { const icon=document.createElement("span"); icon.className="file-visual file-generic"; icon.textContent=file.kind==="audio" ? "♫" : "▤"; icon.setAttribute("aria-hidden","true"); card.append(icon); }
+  const info=document.createElement("div"); info.className="file-info";
+  const name=document.createElement(removable || !url ? "span" : "a"); name.className="file-name"; name.textContent=file.name;
+  if (!removable && url) { name.href=file.blob ? url : url+"?download=true"; name.setAttribute("download",file.name); }
+  const detail=document.createElement("span"); detail.className="file-detail"; detail.textContent=(type?.label || file.kind)+" · "+sizeLabel(file.size); info.append(name,detail);
+  const label=readingLabel(file);
+  if (label) { const reading=document.createElement("span"); reading.className="file-detail"+(file.reading_state==="not_read" ? " file-warning" : ""); reading.textContent=label; info.append(reading); }
+  if (file.kind==="audio" && url) {
+    const playback=document.createElement("details"), summary=document.createElement("summary"), audio=document.createElement("audio");
+    playback.dataset.detail="audio"; summary.textContent="Play audio"; audio.controls=true; audio.preload="none"; audio.src=url; audio.setAttribute("aria-label",file.name); playback.append(summary,audio); info.append(playback);
   }
-  const label = document.createElement(removable ? "span" : "a"); label.className = "file-name"; label.textContent = file.name;
-  if (!removable) { label.href = url + "?download=true"; label.setAttribute("download",file.name); }
-  card.append(label);
-  const detail = document.createElement("span"); detail.className = "file-detail"; detail.textContent = (documentType ? documentType.label : file.kind) + " · " + sizeLabel(file.size); card.append(detail);
-  if (file.kind === "audio") { const audio = document.createElement("audio"); audio.controls = true; audio.preload = "none"; audio.src = url; audio.setAttribute("aria-label",file.name); card.append(audio); }
-  if (!removable && file.reading_state) {
-    const reading = document.createElement("span"); reading.className = "file-detail";
-    reading.textContent = "Original saved · " + ({not_read:"not read",excerpt:"excerpt provided",read:"text provided",transcript:"transcript provided",inline_image:"image provided"}[file.reading_state] || "available"); card.append(reading);
+  if (file.transcript) {
+    const transcript=document.createElement("details"), summary=document.createElement("summary"), text=document.createElement("p");
+    transcript.dataset.detail="transcript"; summary.textContent="Audio transcript"; text.textContent=file.transcript; transcript.append(summary,text); info.append(transcript);
   }
-  if (file.transcript) { const transcript = document.createElement("details"), summary = document.createElement("summary"), text = document.createElement("p"); summary.textContent = "Audio transcript"; text.textContent = file.transcript; transcript.append(summary,text); card.append(transcript); }
+  card.append(info);
   if (removable) {
-    const remove = document.createElement("button"); remove.type = "button"; remove.className = "remove-file"; remove.textContent = "×"; remove.setAttribute("aria-label","Remove " + file.name);
-    remove.disabled = busy || filesLoading || !!draft.request_id;
-    remove.addEventListener("click",() => { const url = previewUrls.get(file); if (url) URL.revokeObjectURL(url); previewUrls.delete(file); draft.attachments = draft.attachments.filter(a => a !== file); saveDraft().catch(() => tell("draft_storage_unavailable")); render(); }); card.append(remove);
+    const remove=document.createElement("button"); remove.type="button"; remove.className="remove-file"; remove.textContent="×"; remove.setAttribute("aria-label","Remove "+file.name);
+    remove.addEventListener("click",() => { releaseFile(file); draft.attachments=draft.attachments.filter(a => a.file_id!==file.file_id); persist(); render(); $("attach").focus(); }); card.append(remove);
   }
   return card;
 }
-function render() {
-  const ordered = [...turns.values()].sort((a,b) => a.seq-b.seq), signature = JSON.stringify(ordered);
-  if (signature !== renderedHistory) {
-    const fragment = document.createDocumentFragment();
-    for (const turn of ordered) {
-      const block = document.createElement("article"); block.className = "turn";
-      const label = document.createElement("p"); label.className = "message-label"; label.textContent = "You";
-      const text = document.createElement("p"); text.className = "message-text"; text.textContent = turn.text; block.append(label,text);
-      const files = document.createElement("div"); files.className = "attachments";
-      for (const file of turn.attachments || []) files.append(fileCard(file,"/chat/messages/" + turn.request_id + "/attachments/" + file.position,false));
-      if (files.childNodes.length) block.append(files);
-      if (turn.output) {
-        const reply = document.createElement("div"); reply.className = "assistant";
-        const name = document.createElement("p"); name.className = "message-label"; name.textContent = "Radhouse";
-        const answer = document.createElement("p"); answer.className = "message-text"; answer.textContent = turn.output; reply.append(name,answer); block.append(reply);
-      } else {
-        const status = document.createElement("p"); status.className = turn.error ? "turn-error" : "pending";
-        status.textContent = turn.error ? (explanations[turn.error] || "This reply needs attention.") : turn.status === "awaiting_dispatch" && (turn.attachments || []).some(a => a.kind === "audio" && !a.transcript) ? "Preparing your audio transcript…" : "Your assistant is replying…"; block.append(status);
-        if (turn.status === "awaiting_dispatch" && turn.error !== "reply_recovery_required") {
-          const retry = document.createElement("button"); retry.className = "retry"; retry.textContent = "Retry this message";
-          retry.addEventListener("click",() => submit(turn.request_id,null)); block.append(retry);
-        }
-      }
-      fragment.append(block);
-    }
-    $("messages").replaceChildren(fragment); renderedHistory = signature;
+function attachmentList(turn) {
+  const files=document.createElement("div"); files.className="attachments";
+  const attachments=turn.attachments || [];
+  const append=(target,file) => target.append(fileCard(file,turn.local ? previewUrl(file) : "/chat/messages/"+turn.request_id+"/attachments/"+file.position,false));
+  attachments.slice(0,3).forEach(file => append(files,file));
+  if (attachments.length>3) {
+    const more=document.createElement("details"), summary=document.createElement("summary"), rest=document.createElement("div");
+    more.className="attachment-list-more"; more.dataset.detail="more"; summary.textContent=(attachments.length-3)+" more files"; rest.className="attachments";
+    attachments.slice(3).forEach(file => append(rest,file)); more.append(summary,rest); files.append(more);
   }
-  document.querySelectorAll(".retry").forEach(button => { button.disabled = busy; });
-  $("draft-files").replaceChildren(...draft.attachments.map(file => fileCard(file,previewUrl(file),true)));
-  $("empty").hidden = turns.size > 0; $("older").hidden = !olderBefore;
-  const pending = pendingTurn(), locked = busy || filesLoading || !!pending || !!draft.request_id;
-  $("send").disabled = busy || filesLoading || !!pending; $("message").disabled = locked; $("attach").disabled = locked;
-  $("send").textContent = draft.request_id ? "Retry message" : "Send ↗";
-  $("reply-status").textContent = filesLoading ? "Adding files…" : busy ? (transferStatus || "Preparing and sending…") : pending ? "Your conversation is saved. You can leave and return." : "Ready when you are.";
+  return files;
+}
+function makeTurn(turn) {
+  const block=document.createElement("article"); block.className="turn"; block.dataset.requestId=turn.request_id;
+  const label=document.createElement("p"), text=document.createElement("p"); label.className="message-label"; label.textContent="You";
+  text.className="message-text"; text.textContent=turn.text; block.append(label,text);
+  if (turn.attachments?.length) block.append(attachmentList(turn));
+  if (turn.output) {
+    const reply=document.createElement("div"); reply.className="assistant";
+    const name=document.createElement("p"), answer=document.createElement("div"), copy=document.createElement("button"); name.className="message-label"; name.textContent="Radhouse";
+    answer.className="answer"; answer.append(window.RadhouseFormat.render(turn.output)); copy.type="button"; copy.className="copy-answer"; copy.dataset.label="Copy answer"; copy.textContent="Copy answer";
+    copy.addEventListener("click",() => window.RadhouseFormat.copyText(turn.output,copy)); reply.append(name,answer,copy); block.append(reply);
+  } else {
+    const status=document.createElement("p"); status.className=turn.error ? "turn-error" : "pending";
+    status.textContent=turn.error ? (explanations[turn.error] || "This message needs attention. Its text and files are kept.") :
+      turn.local ? (turn.phase==="uploading" ? "Uploading files…" : turn.phase==="checking" ? "Checking your saved message…" : "Sending…") :
+      turn.status==="awaiting_dispatch" ? "Your message is saved. Preparing the reply…" : "Radhouse is replying…";
+    block.append(status);
+    if (turn.local && turn.phase==="uploading") { const progress=document.createElement("p"); progress.className="sending-files"; progress.dataset.uploadProgress=""; block.append(progress); }
+    if (turn.local && turn.error) {
+      const retry=document.createElement("button"); retry.className="retry"; retry.textContent="Retry message"; retry.addEventListener("click",retryOutgoing); block.append(retry);
+      if (!turn.transmitted) { const edit=document.createElement("button"); edit.className="retry"; edit.textContent="Edit message"; edit.addEventListener("click",editOutgoing); block.append(edit); }
+    } else if (!turn.local && turn.status==="awaiting_dispatch" && turn.error!=="reply_recovery_required") {
+      const retry=document.createElement("button"); retry.className="retry"; retry.textContent="Retry message"; retry.addEventListener("click",() => retrySaved(turn.request_id)); block.append(retry);
+    }
+  }
+  return block;
+}
+function scrollAnchor() {
+  const top=$("history-pane").getBoundingClientRect().top;
+  for (const node of $("messages").children) { const r=node.getBoundingClientRect(); if (r.bottom>top) return {id:node.dataset.requestId,offset:r.top-top}; }
+  return null;
+}
+function updateLatest() { $("latest").hidden=followingLatest || $("history-pane").scrollHeight<=$("history-pane").clientHeight+80; }
+function renderHistory({older=false,latest=false}={}) {
+  const pane=$("history-pane"), anchor=scrollAnchor();
+  const ordered=[...turns.values()].sort((a,b) => a.seq-b.seq);
+  if (outbox) ordered.push({...outbox,local:true});
+  let preceding=null;
+  const current=new Set();
+  for (const turn of ordered) {
+    current.add(turn.request_id);
+    const signature=JSON.stringify({...turn,attachments:turn.attachments?.map(file => ({...file,blob:undefined}))});
+    let saved=turnNodes.get(turn.request_id);
+    if (!saved || saved.signature!==signature) {
+      const node=makeTurn(turn);
+      if (saved) {
+        const open=[...saved.node.querySelectorAll("details")].map(d => d.open);
+        [...node.querySelectorAll("details")].forEach((d,i) => { d.open=!!open[i]; }); saved.node.replaceWith(node);
+      }
+      saved={signature,node}; turnNodes.set(turn.request_id,saved);
+    }
+    const expected=preceding ? preceding.nextSibling : $("messages").firstChild;
+    if (saved.node!==expected) $("messages").insertBefore(saved.node,expected);
+    preceding=saved.node;
+  }
+  for (const [id,saved] of turnNodes) if (!current.has(id)) { saved.node.remove(); turnNodes.delete(id); }
+  $("empty").hidden=ordered.length>0; $("older").hidden=!olderBefore;
+  if (latest || followingLatest && !older) { followingLatest=true; pane.scrollTop=pane.scrollHeight; }
+  else if (anchor && turnNodes.has(anchor.id)) { pane.scrollTop+=turnNodes.get(anchor.id).node.getBoundingClientRect().top-pane.getBoundingClientRect().top-anchor.offset; }
+  updateLatest();
+}
+function renderDraft() {
+  const signature=draft.attachments.map(a => a.file_id).join(":");
+  if (signature!==draftSignature) { $("draft-files").replaceChildren(...draft.attachments.map(file => fileCard(file,previewUrl(file),true))); draftSignature=signature; }
+}
+function resizeMessage() { const input=$("message"); input.style.height="auto"; input.style.height=Math.min(input.scrollHeight,Math.min(180,innerHeight*.24))+"px"; }
+function controls() {
+  const pending=pendingTurn(), tooLong=!messageFits($("message").value), hasContent=!!($("message").value.trim() || draft.attachments.length);
+  $("send").disabled=busy || filesLoading || !!pending || !!outbox || tooLong || !hasContent || openingHistory;
+  $("attach").disabled=filesLoading; $("attach-text").disabled=filesLoading; $("long-text").hidden=!tooLong;
+  $("send").textContent=busy ? "Sending…" : "Send ↗";
+  $("reply-status").textContent=filesLoading ? "Adding files…" : busy ? (outbox?.phase==="uploading" ? "Uploading…" : "Sending…") : pending ? "Radhouse is replying…" : "";
+  document.querySelectorAll(".retry,#notice-action").forEach(button => { button.disabled=busy || openingHistory; });
+  resizeMessage();
+}
+function render(options) { renderHistory(options); renderDraft(); controls(); }
+function migrateFile(file) {
+  if (file.blob instanceof Blob) return {...file,file_id:file.file_id || crypto.randomUUID()};
+  if (file.content===undefined) return file; // Text-only recovery preserves immutable file references, never omits them.
+  const bytes=Uint8Array.from(atob(file.content),c => c.charCodeAt(0));
+  return {...file,content:undefined,blob:new Blob([bytes],{type:file.type}),file_id:crypto.randomUUID()};
 }
 async function openConversation() {
-  const openingSession = session;
-  turns.clear(); renderedHistory = ""; olderLoaded = false; olderBefore = null; draft = emptyDraft();
-  $("login-view").hidden = true; $("chat-view").hidden = false; $("logout").hidden = false; $("loading").hidden = true;
+  const openingSession=session; openingHistory=true; followingLatest=true; olderLoaded=false; olderBefore=null;
+  turns.clear(); turnNodes.clear(); $("messages").replaceChildren(); draftSignature=""; draft=emptyDraft(); outbox=null;
+  $("login-view").hidden=true; $("chat-view").hidden=false; $("logout").hidden=false; $("loading").hidden=true;
   let saved;
-  try { saved = await draftOperation(draftKey()); } catch (_) {}
-  if (!saved) { try { saved = JSON.parse(localStorage.getItem(draftKey()) || "null"); if (saved?.has_files) tell("draft_storage_unavailable"); } catch (_) {} }
-  if (session !== openingSession) return;
-  if (saved && typeof saved.text === "string" && saved.text.length <= 16000) {
-    draft = {text:saved.text,request_id:/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(saved.request_id || "") ? saved.request_id : null,
-      attachments:Array.isArray(saved.attachments) ? saved.attachments.map(file => {
-        if (file.blob instanceof Blob) return file;
-        // Preserve drafts created by the earlier base64 uploader.
-        const bytes = Uint8Array.from(atob(file.content), c => c.charCodeAt(0));
-        return {...file,content:undefined,blob:new Blob([bytes],{type:file.type}),file_id:crypto.randomUUID()};
-      }) : [], legacy_request:!!saved.legacy_request || !!(saved.request_id && saved.attachments?.some(file => file.content))};
-  }
-  $("message").value = draft.text; render();
-  const data = await api("/chat/history"); if (session === openingSession) accept(data);
-}
-async function uploadOriginal(file) {
-  if (file.uploaded) return;
-  let receipt;
-  try { receipt = await api("/chat/files/" + file.file_id); }
-  catch (error) { if (error.status !== 404) throw error; }
-  if (!receipt) {
-    let response;
-    try { response = await fetch("/chat/files/" + file.file_id + "?name=" + encodeURIComponent(file.name), {
-      method:"PUT",headers:{"Content-Type":"application/octet-stream","X-Radhouse-CSRF":session.csrf_token},body:file.blob}); }
-    catch (_) { throw new Error("network_error"); }
-    receipt = await response.json();
-    if (!response.ok) {
-      if (response.status === 401) showLogin();
-      const error = new Error(receipt.error || "file_storage_unavailable"); error.status = response.status; throw error;
+  try { saved=await draftOperation(key()); } catch (_) {}
+  if (!saved) { try { saved=JSON.parse(localStorage.getItem(key()) || "null"); if (saved?.has_files) tell("draft_storage_unavailable",persist); } catch (_) {} }
+  if (session!==openingSession) return;
+  if (saved && typeof saved.text==="string") {
+    if (saved.version===2) { draft={text:saved.text,attachments:(saved.attachments || []).map(migrateFile)}; outbox=saved.outbox; }
+    else if (saved.request_id) { outbox={text:saved.text,request_id:saved.request_id,attachments:(saved.attachments || []).map(migrateFile),transmitted:true,legacy:true}; }
+    else { draft={text:saved.text,attachments:(saved.attachments || []).map(migrateFile)}; }
+    if (outbox) {
+      // Earlier text-only recovery records did not retain file IDs. Never retry these as a text-only message.
+      if (saved.version!==2 && saved.has_files && !outbox.attachments.length) outbox.missing_files=true;
+      outbox.attachments=outbox.attachments.map(migrateFile); outbox.phase="checking"; outbox.error=null;
     }
   }
-  if (receipt.name !== file.name || receipt.size !== file.size) throw new Error("attachment_conflict");
-  file.uploaded = true;
+  $("message").value=draft.text; render({latest:true});
+  try { const data=await api("/chat/history"); if (session===openingSession) accept(data,false,true); }
+  catch (error) { if (session===openingSession) tell(error.message,refreshHistory); }
+  finally {
+    if (session===openingSession) {
+      openingHistory=false;
+      if (outbox) { outbox.phase="failed"; outbox.error="network_error"; }
+      await persist(); render(); if (!matchMedia("(pointer:coarse)").matches) $("message").focus();
+    }
+  }
 }
-async function submit(requestId, text) {
+async function refreshHistory() {
   if (busy || !session) return;
-  const sendingSession = session, isRetry = text === null;
-  busy = true; clearNotice(); let transmitted = false;
   try {
-    if (!isRetry) { draft.request_id = requestId; draft.text = text; render(); await saveDraft(); }
-    if (session !== sendingSession) return;
-    if (!isRetry && draft.legacy_request) {
-      try {
-        transmitted = true;
-        const recovered = await api("/chat/messages/" + requestId + "/retry",{});
-        if (session === sendingSession) { clearDraft(); accept(recovered); }
-        return;
-      } catch (error) { if (error.status !== 404) throw error; transmitted = false; }
+    const fresh=await api("/auth/session"); session=fresh; clearNotice();
+    const data=await api("/chat/history"); accept(data);
+  } catch (error) { if (session) tell(error.message,refreshHistory); }
+}
+function progress(file,loaded,total) {
+  const box=outbox; if (!box) return;
+  const target=document.querySelector("[data-upload-progress]");
+  if (target) target.textContent=file.name+" · "+(total ? Math.round(loaded/total*100)+"% transferred" : sizeLabel(loaded)+" transferred");
+}
+async function uploadOriginal(file, sendingSession) {
+  let receipt;
+  try { receipt=await api("/chat/files/"+file.file_id); }
+  catch (error) { if (error.status!==404) throw error; }
+  if (session!==sendingSession) throw new Error("authentication_required");
+  if (!receipt && !(file.blob instanceof Blob)) throw new Error("original_unavailable");
+  if (!receipt) receipt=await new Promise((resolve,reject) => {
+    const request=new XMLHttpRequest(); request.open("PUT","/chat/files/"+file.file_id+"?name="+encodeURIComponent(file.name));
+    request.setRequestHeader("Content-Type","application/octet-stream"); request.setRequestHeader("X-Radhouse-CSRF",sendingSession.csrf_token);
+    request.upload.onprogress=event => progress(file,event.loaded,event.lengthComputable ? event.total : 0);
+    request.onerror=request.onabort=() => reject(new Error("network_error"));
+    request.onload=() => {
+      let value; try { value=JSON.parse(request.responseText); } catch (_) { value={}; }
+      if (request.status>=200 && request.status<300) resolve(value);
+      else { if (request.status===401) showLogin(true); const error=new Error(value.error || "file_storage_unavailable"); error.status=request.status; reject(error); }
+    };
+    progress(file,0,file.size); request.send(file.blob);
+  });
+  if (receipt.name!==file.name || receipt.size!==file.size) throw new Error("attachment_conflict");
+  file.uploaded=true;
+}
+async function transmit(box) {
+  if (busy || !session || outbox!==box) return;
+  const sendingSession=session; busy=true; box.error=null; clearNotice(); box.phase="sending"; render({latest:true});
+  try {
+    await saveState();
+    if (session!==sendingSession) return;
+    if (box.legacy) {
+      try { const data=await api("/chat/messages/"+box.request_id+"/retry",{}); if (session===sendingSession) accept(data); return; }
+      catch (error) { if (error.status!==404) throw error; box.transmitted=false; }
     }
-    if (!isRetry) for (const file of draft.attachments) {
-      if (session !== sendingSession) return;
-      transferStatus = "Saving " + file.name + "…"; render();
-      await uploadOriginal(file);
-      if (session !== sendingSession) return;
-      await saveDraft();
+    if (box.missing_files) throw new Error("original_unavailable");
+    for (const file of box.attachments) {
+      box.phase="uploading"; render(); await uploadOriginal(file,sendingSession);
+      if (session!==sendingSession) return;
+      await saveState();
     }
-    if (session !== sendingSession) return;
-    transferStatus = "Preparing and sending…"; render(); transmitted = true;
-    const data = isRetry ? await api("/chat/messages/" + requestId + "/retry",{}) :
-      await api("/chat/messages",{request_id:requestId,text,attachments:draft.attachments.map(a => a.file_id)});
-    if (session === sendingSession) { if (!isRetry) clearDraft(); accept(data); }
+    box.phase="sending"; box.transmitted=true; await saveState(); render();
+    if (session!==sendingSession) return;
+    const data=await api("/chat/messages",{request_id:box.request_id,text:box.text,attachments:box.attachments.map(a => a.file_id)});
+    if (session===sendingSession) accept(data);
   } catch (error) {
-    if (session === sendingSession) {
-      // Definite validation rejection allows correcting the unsent draft.
-      if (!isRetry && (!transmitted || [413,422].includes(error.status))) { draft.request_id = null; saveDraft().catch(() => {}); }
-      tell(error.message);
-      try { const data = await api("/chat/history"); if (session === sendingSession) accept(data); } catch (_) {}
+    if (session===sendingSession && outbox===box) {
+      box.phase="failed"; box.error=error.message;
+      if ([413,422].includes(error.status)) box.transmitted=false;
+      await persist();
+      try { const data=await api("/chat/history"); if (session===sendingSession) accept(data); } catch (_) {}
     }
-  } finally { busy = false; transferStatus = ""; if (session === sendingSession) render(); }
+  } finally { busy=false; if (session===sendingSession) render(); }
+}
+function retryOutgoing() { if (outbox && !pendingTurn()) transmit(outbox); }
+async function retrySaved(requestId) {
+  if (busy || !session) return;
+  const sendingSession=session; busy=true; clearNotice(); controls();
+  try { const data=await api("/chat/messages/"+requestId+"/retry",{}); if (session===sendingSession) accept(data); }
+  catch (error) { if (session===sendingSession) tell(error.message,refreshHistory); }
+  finally { busy=false; if (session===sendingSession) render(); }
+}
+function editOutgoing() {
+  if (!outbox || outbox.transmitted || busy) return;
+  const missingFiles=outbox.missing_files;
+  draft.text=[outbox.text,$("message").value].filter(Boolean).join("\n\n");
+  draft.attachments=[...outbox.attachments,...draft.attachments]; outbox=null;
+  $("message").value=draft.text; persist(); render(); if (missingFiles) tell("original_unavailable"); $("message").focus();
 }
 async function addFiles(fileList) {
-  if (!session || busy || filesLoading || pendingTurn() || draft.request_id) return;
-  const addingSession = session; filesLoading = true; clearNotice(); render();
+  if (!session || filesLoading) return;
+  const addingSession=session; filesLoading=true; clearNotice(); controls();
   try {
-    const files = [...fileList];
-    const next = files.map(file => ({name:file.name,blob:file,file_id:crypto.randomUUID(),kind:fileKind(file),type:file.type,size:file.size}));
-    const all = [...draft.attachments,...next];
-    if (session !== addingSession) return;
-    draft.attachments = all; await saveDraft();
-  } catch (error) { if (session === addingSession) tell(error.message); }
-  finally { filesLoading = false; if (session === addingSession) render(); }
+    draft.attachments.push(...[...fileList].map(file => ({name:file.name,blob:file,file_id:crypto.randomUUID(),kind:fileKind(file),type:file.type,size:file.size})));
+    await saveState();
+  } catch (error) { if (session===addingSession) tell(error.message,persist); }
+  finally { filesLoading=false; if (session===addingSession) render(); }
 }
 $("attach").addEventListener("click",() => $("file-picker").click());
-$("file-picker").addEventListener("change",event => { addFiles(event.target.files); event.target.value = ""; });
-$("compose").addEventListener("paste",event => {
-  const files = [...(event.clipboardData?.files || [])];
-  if (files.length) { event.preventDefault(); addFiles(files); }
+$("file-picker").addEventListener("change",event => { addFiles(event.target.files); event.target.value=""; });
+$("attach-text").addEventListener("click",async () => {
+  const text=$("message").value;
+  await addFiles([new File([text],"pasted-text.txt",{type:"text/plain"})]);
+  // Only clear after the file draft was successfully written.
+  try { await saveState(); draft.text=""; $("message").value=""; await saveState(); render(); $("message").focus(); }
+  catch (_) { tell("draft_storage_unavailable",persist); }
 });
-$("compose").addEventListener("dragover",event => { if ([...event.dataTransfer.types].includes("Files")) { event.preventDefault(); $("compose").classList.add("dragging"); } });
-$("compose").addEventListener("dragleave",event => { if (!$("compose").contains(event.relatedTarget)) $("compose").classList.remove("dragging"); });
-$("compose").addEventListener("drop",event => { event.preventDefault(); $("compose").classList.remove("dragging"); addFiles(event.dataTransfer.files); });
+$("compose").addEventListener("paste",event => { const files=[...(event.clipboardData?.files || [])]; if (files.length) { event.preventDefault(); addFiles(files); } });
+$("chat-view").addEventListener("dragover",event => { if ([...event.dataTransfer.types].includes("Files")) { event.preventDefault(); $("compose").classList.add("dragging"); } });
+$("chat-view").addEventListener("dragleave",event => { if (!$("chat-view").contains(event.relatedTarget)) $("compose").classList.remove("dragging"); });
+$("chat-view").addEventListener("drop",event => { event.preventDefault(); $("compose").classList.remove("dragging"); addFiles(event.dataTransfer.files); });
+$("compose").addEventListener("submit",event => {
+  event.preventDefault();
+  if ($("send").disabled) return;
+  outbox={request_id:crypto.randomUUID(),text:$("message").value,attachments:draft.attachments,phase:"sending",transmitted:false,error:null};
+  draft=emptyDraft(); $("message").value=""; render({latest:true}); $("message").focus(); transmit(outbox);
+});
+$("message").addEventListener("input",() => { persist(); controls(); });
+$("message").addEventListener("keydown",event => {
+  if (event.key==="Enter" && !event.shiftKey && !event.isComposing && (!matchMedia("(pointer:coarse)").matches || event.ctrlKey || event.metaKey) && !$("send").disabled) { event.preventDefault(); $("compose").requestSubmit(); }
+});
+$("notice-action").addEventListener("click",() => noticeAction?.());
+$("history-pane").addEventListener("scroll",() => { const pane=$("history-pane"); followingLatest=pane.scrollHeight-pane.scrollTop-pane.clientHeight<80; updateLatest(); });
+$("latest").addEventListener("click",() => { followingLatest=true; $("history-pane").scrollTop=$("history-pane").scrollHeight; updateLatest(); });
+new ResizeObserver(entries => { $("chat-view").style.setProperty("--composer-height",entries[0].target.offsetHeight+14+"px"); if (followingLatest) $("history-pane").scrollTop=$("history-pane").scrollHeight; updateLatest(); }).observe($("compose"));
+$("older").addEventListener("click",async () => {
+  const readingSession=session;
+  try { const data=await api("/chat/history?before="+olderBefore); if (session===readingSession) accept(data,true); }
+  catch (error) { if (session===readingSession) tell(error.message,refreshHistory); }
+});
 $("login-form").addEventListener("submit",async event => {
-  event.preventDefault(); clearNotice(); const button = event.submitter; button.disabled = true;
-  try {
-    session = await api("/auth/login",{username:$("username").value,password:$("password").value,totp_code:$("totp").value,remember_browser:$("remember").checked});
-    $("password").value = ""; $("totp").value = ""; await openConversation();
-  } catch (error) { tell(error.message); } finally { button.disabled = false; }
+  event.preventDefault(); clearNotice(); const button=event.submitter; button.disabled=true;
+  try { session=await api("/auth/login",{username:$("username").value,password:$("password").value,totp_code:$("totp").value,remember_browser:$("remember").checked}); $("password").value=""; $("totp").value=""; await openConversation(); }
+  catch (error) { tell(error.message); } finally { button.disabled=false; }
 });
-$("compose").addEventListener("submit",event => { event.preventDefault(); if (!$("message").value.trim() && !draft.attachments.length) { tell("empty_message"); return; } if (!pendingTurn()) submit(draft.request_id || crypto.randomUUID(),$("message").value); });
-$("message").addEventListener("input",() => { saveDraft().catch(() => tell("draft_storage_unavailable")); });
-$("message").addEventListener("keydown",event => { if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); if (!$("send").disabled && ($("message").value.trim() || draft.attachments.length)) $("compose").requestSubmit(); } });
-$("older").addEventListener("click",async () => { const readingSession = session; try { const data = await api("/chat/history?before=" + olderBefore); if (session === readingSession) accept(data,true); } catch (error) { tell(error.message); } });
-$("logout").addEventListener("click",async () => { try { await api("/auth/logout",{}); showLogin(); clearNotice(); } catch (error) { tell(error.message); } });
+$("logout").addEventListener("click",async () => { try { await saveState(); await api("/auth/logout",{}); showLogin(); } catch (error) { tell(error.message); } });
 setInterval(async () => {
   if (!session || !pendingTurn() || busy || polling) return;
-  polling = true; const readingSession = session;
-  try { const data = await api("/chat/reply"); if (session === readingSession) accept(data); } catch (error) { if (session === readingSession) tell(error.message); } finally { polling = false; }
+  polling=true; const readingSession=session;
+  try { const data=await api("/chat/reply"); if (session===readingSession) accept(data); }
+  catch (error) { if (session===readingSession) tell(error.message,refreshHistory); }
+  finally { polling=false; }
 },2000);
-(async () => { try { session = await api("/auth/session"); await openConversation(); } catch (error) { tell(error.message); } })();
+(async () => {
+  try { session=await api("/auth/session",undefined,true); await openConversation(); }
+  catch (error) { if (error.status!==401) { showLogin(); tell(error.message); } }
+})();

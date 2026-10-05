@@ -98,6 +98,10 @@ def create_app(auth, service):
     def javascript():
         return FileResponse(STATIC / "chat.js", media_type="text/javascript")
 
+    @app.get("/format.js")
+    def answer_formatter():
+        return FileResponse(STATIC / "format.js", media_type="text/javascript")
+
     @app.get("/chat.css")
     def stylesheet():
         return FileResponse(STATIC / "chat.css", media_type="text/css")

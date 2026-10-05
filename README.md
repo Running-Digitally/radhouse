@@ -73,12 +73,30 @@ remain a separate reviewed change.
 ## Attach files
 
 Paste images or clipboard files, drag files into the composer, or use **Attach**.
-Inspect the thumbnails, file names and audio controls; remove any file before
+Inspect compact thumbnails and document icons; expand audio playback or transcripts
+when needed. Sent messages show the first three files with the rest one click away.
+Remove any draft file before
 sending. Sending files without message text is supported. Unsent drafts are saved
 in this browser's IndexedDB as binary files. Sent originals remain downloadable
 after reload or restart. Clearing browser storage removes unsent drafts. Signing
 out clears their display, not their local storage. Use a trusted browser for this
 private application.
+
+The composer stays visible while you read. Opening the conversation resumes at
+the latest message; **Latest** returns there when you scroll back. Loading earlier
+messages preserves your reading position. Replies show paragraphs, lists, safe
+links and code with copy controls; source HTML remains literal text.
+
+Sending moves the message into the conversation immediately. You can write and
+attach files to your next draft during upload or reply; it is kept separately from
+the outgoing request. Byte progress describes the upload, not assistant reading.
+An uncertain delivery keeps the same request ID for recovery. In-place retry and,
+when transmission has not happened, editing preserve the message and files.
+Signing in again restores the outgoing request and the separate next draft.
+
+Long pasted text is never truncated by the input. Above the message endpoint's
+16,000-character text contract, **Attach as text file** explicitly saves the whole
+paste as a UTF-8 original. It is not silently shortened or automatically sent.
 
 There is no configured file-size, aggregate-size or file-count ceiling. The browser
 streams raw file uploads, receives immutable owner-scoped file IDs, then sends a
@@ -116,12 +134,15 @@ requests; other originals are forced downloads with content sniffing disabled.
 ```sh
 PYTHONPATH=src:. python -m pytest -q tests/test_minimal_chat.py tests/test_chat_attachments.py
 node --check src/radhouse/chat/static/chat.js
+node --check src/radhouse/chat/static/format.js
 ```
 
 `tests/test_minimal_chat_postgres.py` also exercises the real login service and
 Chromium against an exclusively owned disposable PostgreSQL fixture. It uses a
 synthetic Hermes and transcription transports, never a provider. It checks file
-picking, dropping, removal, draft reload, image/PDF/audio sending and original
-downloads as well as conversation recovery. The fixture runner's ownership,
+picking, dropping, removal, binary draft reload, image/PDF/audio sending, exact
+original downloads, long-paste conversion, safe formatting/copy, a separate next
+draft during sending, session-expiry recovery, pagination anchors, latest scroll
+and a mobile composer as well as conversation recovery. The fixture runner's ownership,
 identity and cleanup contract in `scripts/vs0.py` applies. Passing these checks
 does not prove live Hermes session continuity or model usefulness.
