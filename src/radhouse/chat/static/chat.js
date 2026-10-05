@@ -111,13 +111,27 @@ function previewUrl(file) {
   }
   return previewUrls.get(file);
 }
+const documentTypes = {
+  pdf: {icon:"pdf", label:"PDF", description:"PDF document"},
+  docx: {icon:"word", label:"Word", description:"Word document"},
+  xlsx: {icon:"excel", label:"Excel", description:"Excel workbook"},
+  pptx: {icon:"powerpoint", label:"PowerPoint", description:"PowerPoint presentation"},
+};
 function fileCard(file, url, removable) {
   const card = document.createElement("div"); card.className = "attachment";
+  const extension = file.name.split(".").pop().toLowerCase();
+  const documentType = file.kind === "document" && Object.hasOwn(documentTypes,extension) ? documentTypes[extension] : null;
   if (file.kind === "image") { const img = document.createElement("img"); img.src = url; img.alt = file.name; card.append(img); }
+  else if (documentType) {
+    const tile = document.createElement("div"); tile.className = "document-thumbnail";
+    const icon = document.createElement("img"); icon.className = "document-icon";
+    icon.src = "/icons/" + documentType.icon + ".svg"; icon.alt = documentType.description;
+    tile.append(icon); card.append(tile);
+  }
   const label = document.createElement(removable ? "span" : "a"); label.className = "file-name"; label.textContent = file.name;
   if (!removable) { label.href = url + "?download=true"; label.setAttribute("download",file.name); }
   card.append(label);
-  const detail = document.createElement("span"); detail.className = "file-detail"; detail.textContent = file.kind + " · " + sizeLabel(file.size); card.append(detail);
+  const detail = document.createElement("span"); detail.className = "file-detail"; detail.textContent = (documentType ? documentType.label : file.kind) + " · " + sizeLabel(file.size); card.append(detail);
   if (file.kind === "audio") { const audio = document.createElement("audio"); audio.controls = true; audio.preload = "none"; audio.src = url; audio.setAttribute("aria-label",file.name); card.append(audio); }
   if (file.transcript) { const transcript = document.createElement("details"), summary = document.createElement("summary"), text = document.createElement("p"); summary.textContent = "Audio transcript"; text.textContent = file.transcript; transcript.append(summary,text); card.append(transcript); }
   if (removable) {

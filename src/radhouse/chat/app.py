@@ -133,6 +133,12 @@ def create_app(auth, service):
     def stylesheet():
         return FileResponse(STATIC / "chat.css", media_type="text/css")
 
+    @app.get("/icons/{name}.svg")
+    def file_icon(name: str):
+        if name not in {"pdf", "word", "excel", "powerpoint"}:
+            raise Rejected("icon_not_found", 404)
+        return FileResponse(STATIC / "icons" / (name + ".svg"), media_type="image/svg+xml")
+
     @app.post("/auth/login")
     def login(body: Login, request: Request, response: Response):
         auth.verify_origin(request)
