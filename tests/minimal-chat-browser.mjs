@@ -46,7 +46,7 @@ try {
   const fixtures = process.env.RADHOUSE_ATTACHMENT_FIXTURES;
   await page.locator("#file-picker").setInputFiles([fixtures+"/diagram.png",fixtures+"/plan.pdf",fixtures+"/plan.docx"]);
   await expect(page.locator("#draft-files .attachment")).toHaveCount(3);
-  await expect(page.locator("#draft-files img")).toBeVisible();
+  await expect(page.locator("#draft-files img:not(.document-icon)")).toBeVisible();
   await page.reload();
   await expect(page.locator("#draft-files .attachment")).toHaveCount(3);
   await page.getByRole("button",{name:"Remove plan.docx",exact:true}).click();
