@@ -1,11 +1,46 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Radhouse</title><link rel="stylesheet" href="/chat.css"><script src="/chat.js" defer></script></head>
-<body><div class="shell"><header><a href="/" class="brand">Radhouse<span>Your private assistant</span></a><button id="logout" hidden>Sign out</button></header>
-<main><section id="login-view" hidden><p class="eyebrow">WELCOME BACK</p><h1>A place to think<br>things through.</h1><p class="intro">Sign in to pick up your conversation.</p><form id="login-form">
-<label>Username<input id="username" name="username" autocomplete="username" required minlength="3" maxlength="64"></label>
-<label>Password<input id="password" name="password" type="password" autocomplete="current-password" required maxlength="1024"></label>
-<label>Authenticator code<input id="totp" name="totp" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label>
-<label class="remember"><input id="remember" type="checkbox">Remember this browser</label><button class="primary" type="submit">Sign in</button></form></section>
-<section id="chat-view" hidden><div class="conversation-heading"><div><p class="eyebrow">YOUR CONVERSATION</p><h1>What’s on your mind?</h1></div><p class="continuity">You can leave and pick up here later.</p></div><button id="older" hidden>Show earlier messages</button><div id="messages" role="log" aria-label="Conversation" aria-live="polite"></div><p id="empty" hidden>Ask a question, explore an idea, or work something through.</p>
-<form id="compose"><label class="sr-only" for="message">Message your assistant</label><textarea id="message" placeholder="Message your assistant…" maxlength="16000" rows="4"></textarea><div id="draft-files" class="attachments" aria-label="Attached files"></div><input id="file-picker" type="file" multiple hidden><div class="compose-footer"><button id="attach" type="button" aria-label="Attach files">＋ Attach</button><span id="reply-status" role="status">Ready when you are.</span><button class="primary" id="send" type="submit">Send <span aria-hidden="true">↗</span></button></div><p class="attachment-hint">Paste or drop files here · Images, documents &amp; audio</p></form></section>
-<p id="notice" role="alert" hidden></p><p id="loading" role="status">Opening your conversation…</p></main><footer>Private web access · One ongoing conversation</footer></div></body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Radhouse</title><link rel="stylesheet" href="/chat.css">
+  <script src="/format.js" defer></script><script src="/chat.js" defer></script>
+</head>
+<body>
+<div class="shell">
+  <header><a href="/" class="brand">Radhouse</a><button id="logout" hidden>Sign out</button></header>
+  <main>
+    <section id="login-view" hidden>
+      <h1>Welcome to Radhouse</h1><p class="intro">Sign in to continue your conversation.</p>
+      <form id="login-form">
+        <label>Username<input id="username" name="username" autocomplete="username" required minlength="3" maxlength="64"></label>
+        <label>Password<input id="password" name="password" type="password" autocomplete="current-password" required maxlength="1024"></label>
+        <label>Authenticator code<input id="totp" name="totp" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label>
+        <label class="remember"><input id="remember" type="checkbox">Remember this browser</label>
+        <p id="login-notice" role="alert" hidden></p><button class="primary" type="submit">Sign in</button>
+      </form>
+    </section>
+    <section id="chat-view" hidden aria-label="Your conversation">
+      <div id="history-pane" tabindex="0" aria-label="Conversation history">
+        <button id="older" hidden>Show earlier messages</button>
+        <div id="messages" role="log" aria-label="Conversation" aria-live="off"></div>
+        <div id="empty" hidden><h1>What’s on your mind?</h1><p>Ask a question or attach something to work through.</p></div>
+      </div>
+      <button id="latest" hidden>Latest ↓</button>
+      <form id="compose">
+        <div id="draft-files" class="attachments" aria-label="Attached files"></div>
+        <label class="sr-only" for="message">Message your assistant</label>
+        <textarea id="message" placeholder="Message your assistant…" rows="1" aria-describedby="long-text"></textarea>
+        <div id="long-text" hidden><span>Your text is kept. Attach it as a file to send it.</span><button id="attach-text" type="button">Attach as text file</button></div>
+        <input id="file-picker" type="file" multiple hidden>
+        <div id="notice" role="alert" hidden><span id="notice-text"></span><button id="notice-action" type="button" hidden>Retry</button></div>
+        <div class="compose-footer">
+          <button id="attach" type="button" aria-label="Attach files" title="Attach files, or paste or drop them here">＋ Attach</button>
+          <span id="reply-status" role="status" aria-live="polite"></span>
+          <button class="primary" id="send" type="submit" title="Send · Enter on desktop, Shift+Enter for a new line">Send ↗</button>
+        </div>
+      </form>
+    </section>
+    <div id="loading" role="status">Opening your conversation…</div>
+  </main>
+</div>
+</body></html>

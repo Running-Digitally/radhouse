@@ -34,6 +34,7 @@ def real_chat(store, clock, tmp_path):
         password=password, totp_secret=secret, project_id="personal-alice", project_name="My work",
         bot_id="bot-alpha", bot_display_name="Assistant", bot_role_name="Assistant", provider_binding="fake-local", now=clock())
     auth = LocalAuthService(dsn, **common, expected_origin="http://127.0.0.1", secure_cookie=False, clock=clock)
+    auth._test_next_totp_code = pyotp.TOTP(secret).at(clock().timestamp()+30)
     hermes = SyntheticHermes(); hermes.status = "completed"
     service = ChatService(ChatStore(tmp_path / "chat.sqlite3"), hermes.client, owner_id="alice")
     yield auth, service, hermes, pyotp.TOTP(secret).at(clock()), password
@@ -72,7 +73,7 @@ def test_actual_browser_login_reload_lost_response_and_text_rendering(real_chat,
         (tmp_path / name).write_bytes(data)
     with (tmp_path / "large.bin").open("wb") as large:
         for _ in range(36): large.write(b"\x00original transfer" * 65536)
-    hermes.output = "Here is your saved reply. <script>window.chatInjected=true</script>"
+    hermes.output = "Here is your saved reply. <script>window.chatInjected=true</script>\n\n**Small step**\n\n- Try one thing\n- Keep it simple\n\n```python\nprint('hello')\n```\n\n[Guide](https://example.com/guide) [Unsafe](javascript:alert(1))"
     sock = socket.socket(); sock.bind(("127.0.0.1", 0))
     origin = f"http://127.0.0.1:{sock.getsockname()[1]}"
     auth._expected_origin = origin
@@ -87,13 +88,14 @@ def test_actual_browser_login_reload_lost_response_and_text_rendering(real_chat,
         result = subprocess.run(["node", str(root / "tests/minimal-chat-browser.mjs")], env={**os.environ,
             "RADHOUSE_PLAYWRIGHT_MODULE": str(root / "web/node_modules/@playwright/test/index.mjs"),
             "RADHOUSE_BROWSER_ORIGIN":origin,"RADHOUSE_TEST_PASSWORD":password,"RADHOUSE_TEST_TOTP":code,
+            "RADHOUSE_TEST_NEXT_TOTP":auth._test_next_totp_code,
             "RADHOUSE_SCREENSHOT":str(tmp_path / "minimal-chat.png"),"RADHOUSE_ATTACHMENT_FIXTURES":str(tmp_path)}, capture_output=True, text=True, timeout=90)
         assert result.returncode == 0, result.stdout + result.stderr
-        assert len(hermes.runs) == 7
-        assert "A small plan" in hermes.requests[-3][1]["input"][0]["content"][0]["text"]
-        assert "simulated voice note" in hermes.requests[-3][1]["input"][0]["content"][0]["text"]
-        assert hermes.requests[-3][1]["input"][0]["content"][1]["type"] == "image_url"
-        assert "large.bin" in hermes.requests[-1][1]["input"] and "original saved, not read" in hermes.requests[-1][1]["input"]
+        assert len(hermes.runs) == 8
+        assert "A small plan" in hermes.requests[4][1]["input"][0]["content"][0]["text"]
+        assert "simulated voice note" in hermes.requests[4][1]["input"][0]["content"][0]["text"]
+        assert hermes.requests[4][1]["input"][0]["content"][1]["type"] == "image_url"
+        assert "large.bin" in hermes.requests[6][1]["input"] and "original saved, not read" in hermes.requests[6][1]["input"]
         assert len({body["session_id"] for _, body in hermes.requests}) == 1
         print("MINIMAL_CHAT_SCREENSHOT", tmp_path / "minimal-chat.png")
     finally:
