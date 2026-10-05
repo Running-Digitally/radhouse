@@ -62,6 +62,10 @@ def test_real_auth_cookie_csrf_logout_and_schema_unchanged(real_chat, store):
 
 def test_actual_browser_login_reload_lost_response_and_text_rendering(real_chat, tmp_path):
     auth, service, hermes, code, password = real_chat
+    service.transcriber = type("Speech",(),{"transcribe":lambda _,a:"A simulated voice note transcript."})()
+    from tests.test_chat_attachments import PNG, pdf, office, wav
+    for name,data in [("diagram.png",PNG),("plan.pdf",pdf()),("plan.docx",office(".docx")),("voice.wav",wav()),("notes.txt",b"A simple plan")]:
+        (tmp_path / name).write_bytes(data)
     hermes.output = "Here is your saved reply. <script>window.chatInjected=true</script>"
     sock = socket.socket(); sock.bind(("127.0.0.1", 0))
     origin = f"http://127.0.0.1:{sock.getsockname()[1]}"
@@ -77,9 +81,12 @@ def test_actual_browser_login_reload_lost_response_and_text_rendering(real_chat,
         result = subprocess.run(["node", str(root / "tests/minimal-chat-browser.mjs")], env={**os.environ,
             "RADHOUSE_PLAYWRIGHT_MODULE": str(root / "web/node_modules/@playwright/test/index.mjs"),
             "RADHOUSE_BROWSER_ORIGIN":origin,"RADHOUSE_TEST_PASSWORD":password,"RADHOUSE_TEST_TOTP":code,
-            "RADHOUSE_SCREENSHOT":str(tmp_path / "minimal-chat.png")}, capture_output=True, text=True, timeout=60)
+            "RADHOUSE_SCREENSHOT":str(tmp_path / "minimal-chat.png"),"RADHOUSE_ATTACHMENT_FIXTURES":str(tmp_path)}, capture_output=True, text=True, timeout=90)
         assert result.returncode == 0, result.stdout + result.stderr
-        assert len(hermes.runs) == 4
+        assert len(hermes.runs) == 6
+        assert "A small plan" in hermes.requests[-2][1]["input"][0]["content"][0]["text"]
+        assert "simulated voice note" in hermes.requests[-2][1]["input"][0]["content"][0]["text"]
+        assert hermes.requests[-2][1]["input"][0]["content"][1]["type"] == "image_url"
         assert len({body["session_id"] for _, body in hermes.requests}) == 1
         print("MINIMAL_CHAT_SCREENSHOT", tmp_path / "minimal-chat.png")
     finally:

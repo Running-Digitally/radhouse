@@ -6,11 +6,14 @@ Acceptance: **I open Radhouse, talk to my assistant, close the browser, and retu
 later to the same conversation.**
 
 1. Implement the small `radhouse.chat` app: existing password/TOTP sign-in, one
-   stable Hermes session, readable history, pending reply recovery and clear errors.
+   stable Hermes session, readable history, image/document/audio attachments, pending
+   reply recovery and clear errors.
 2. Verify the browser journey, auth boundary and retry behavior locally with
    synthetic Hermes and an owned disposable authentication database.
 3. Qualify two real turns and restart continuity against the exact existing
-   Hermes runtime, beginning with text-only conversation and tools disabled.
+   Hermes runtime, beginning with text-only conversation and tools disabled. Then
+   prove image understanding, extracted-document answers and the existing STT
+   connection with bounded attachment examples.
 4. Activate behind the existing private Warp access after the bounded live
    decision, then retire unused infrastructure using verified dependencies and
    explicit data disposition.

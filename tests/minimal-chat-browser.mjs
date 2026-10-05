@@ -1,3 +1,4 @@
+import {readFile} from "node:fs/promises";
 import {pathToFileURL} from "node:url";
 const {chromium, expect: baseExpect} = await import(pathToFileURL(process.env.RADHOUSE_PLAYWRIGHT_MODULE).href);
 const expect = baseExpect.configure({timeout:10000});
@@ -41,6 +42,45 @@ try {
   if (!saved.request_id || !saved.text.includes("history check")) throw new Error("Lost recovery request identity");
   await page.reload();
   await expect(page.locator(".assistant")).toHaveCount(4);
+  // File picker, durable unsent draft, removal, audio and attachment-only send.
+  const fixtures = process.env.RADHOUSE_ATTACHMENT_FIXTURES;
+  await page.locator("#file-picker").setInputFiles([fixtures+"/diagram.png",fixtures+"/plan.pdf",fixtures+"/plan.docx"]);
+  await expect(page.locator("#draft-files .attachment")).toHaveCount(3);
+  await expect(page.locator("#draft-files img")).toBeVisible();
+  await page.reload();
+  await expect(page.locator("#draft-files .attachment")).toHaveCount(3);
+  await page.getByRole("button",{name:"Remove plan.docx",exact:true}).click();
+  await page.locator("#file-picker").setInputFiles(fixtures+"/voice.wav");
+  await expect(page.locator("#draft-files audio")).toBeVisible();
+  await expect(page.locator("#attach")).toBeEnabled();
+  await page.screenshot({path:process.env.RADHOUSE_SCREENSHOT.replace(".png","-attachments.png"),fullPage:true});
+  await page.route("**/chat/messages",async route => { await route.fetch(); await route.abort("failed"); },{times:1});
+  await page.route("**/chat/history",async route => { await route.abort("failed"); },{times:1});
+  await page.locator("#send").click();
+  await expect(page.locator("#send")).toHaveText("Retry message");
+  await expect(page.locator("#send")).toBeEnabled();
+  await expect(page.getByRole("button",{name:"Remove voice.wav",exact:true})).toBeDisabled();
+  await page.reload();
+  await expect(page.locator(".assistant")).toHaveCount(5);
+  await expect(page.locator("#draft-files .attachment")).toHaveCount(0);
+  await expect(page.locator(".turn .attachment")).toHaveCount(3);
+  await expect(page.locator(".turn audio")).toBeVisible();
+  await page.locator(".turn details summary").click();
+  await expect(page.locator(".turn details")).toContainText("simulated voice note");
+  const downloadEvent = page.waitForEvent("download");
+  await page.getByRole("link",{name:"plan.pdf",exact:true}).click();
+  const download = await downloadEvent;
+  if (!(await readFile(await download.path())).equals(await readFile(fixtures+"/plan.pdf"))) throw new Error("Changed original attachment");
+  // Exercise the drop handler using browser-native File and DataTransfer objects.
+  const transfer = await page.evaluateHandle(() => {
+    const value = new DataTransfer(); value.items.add(new File(["A dropped text note"],"dropped.txt",{type:"text/plain"})); return value;
+  });
+  await page.locator("#compose").dispatchEvent("drop",{dataTransfer:transfer});
+  await expect(page.locator("#draft-files")).toContainText("dropped.txt");
+  await page.locator("#send").click();
+  await expect(page.locator(".assistant")).toHaveCount(6);
+  await page.reload();
+  await expect(page.locator(".turn .attachment")).toHaveCount(4);
   await page.screenshot({path:process.env.RADHOUSE_SCREENSHOT, fullPage:true});
   await page.setViewportSize({width:390,height:844});
   await page.screenshot({path:process.env.RADHOUSE_SCREENSHOT.replace(".png","-mobile.png"),fullPage:true});
@@ -49,5 +89,5 @@ try {
   await expect(page.locator("#login-view")).toBeVisible();
   await expect(page.locator(".turn")).toHaveCount(0);
   if (errors.length) throw new Error(errors.join("; "));
-  console.log("PASS: real browser sign-in, send, literal text, reload, follow-up, lost response, mobile layout, logout");
+  console.log("PASS: real browser sign-in, send, literal text, reload, follow-up, lost response, file picker, images, PDF, audio, draft reload, removal, original download, drop, mobile layout, logout");
 } catch (error) { console.log("Browser state", (await page.locator("main").innerText()).slice(-2000)); throw error; } finally { await browser.close(); }
