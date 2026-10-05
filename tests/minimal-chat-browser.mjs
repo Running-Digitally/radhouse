@@ -5,17 +5,23 @@ const expect = baseExpect.configure({timeout:10000});
 const browser = await chromium.launch({headless: true});
 const context = await browser.newContext({viewport:{width:1200,height:950}});
 const page = await context.newPage(); const errors = [];
+async function screenshot(options) {
+  for (let attempt=0; ; attempt++) {
+    try { return await page.screenshot(options); }
+    catch (error) { if (attempt >= 2 || !error.message.includes("Unable to capture screenshot")) throw error; }
+  }
+}
 page.on("pageerror", error => errors.push(error.message));
 try {
   await page.goto(process.env.RADHOUSE_BROWSER_ORIGIN);
   await expect(page.locator("#login-view")).toBeVisible();
-  await page.screenshot({path:process.env.RADHOUSE_SCREENSHOT.replace(".png","-login.png"),fullPage:true});
+  await screenshot({path:process.env.RADHOUSE_SCREENSHOT.replace(".png","-login.png"),fullPage:true});
   await page.locator("#username").fill("alice");
   await page.locator("#password").fill(process.env.RADHOUSE_TEST_PASSWORD);
   await page.locator("#totp").fill(process.env.RADHOUSE_TEST_TOTP);
   await page.getByRole("button", {name:"Sign in",exact:true}).click();
   await expect(page.locator("#chat-view")).toBeVisible();
-  await page.screenshot({path:process.env.RADHOUSE_SCREENSHOT.replace(".png","-empty.png"),fullPage:true});
+  await screenshot({path:process.env.RADHOUSE_SCREENSHOT.replace(".png","-empty.png"),fullPage:true});
   await page.locator("#message").fill("Help me think through a simpler morning routine.");
   await page.locator("#send").click();
   await expect(page.locator(".assistant")).toHaveCount(1);
@@ -53,7 +59,7 @@ try {
   await page.locator("#file-picker").setInputFiles(fixtures+"/voice.wav");
   await expect(page.locator("#draft-files audio")).toBeVisible();
   await expect(page.locator("#attach")).toBeEnabled();
-  await page.screenshot({path:process.env.RADHOUSE_SCREENSHOT.replace(".png","-attachments.png"),fullPage:true});
+  await screenshot({path:process.env.RADHOUSE_SCREENSHOT.replace(".png","-attachments.png"),fullPage:true});
   await page.route("**/chat/messages",async route => { await route.fetch(); await route.abort("failed"); },{times:1});
   await page.route("**/chat/history",async route => { await route.abort("failed"); },{times:1});
   await page.locator("#send").click();
@@ -81,13 +87,37 @@ try {
   await expect(page.locator(".assistant")).toHaveCount(6);
   await page.reload();
   await expect(page.locator(".turn .attachment")).toHaveCount(4);
-  await page.screenshot({path:process.env.RADHOUSE_SCREENSHOT, fullPage:true});
+  // Above former file/aggregate/request limits; binary drafts survive reload.
+  await page.locator("#file-picker").setInputFiles([fixtures+"/large.bin",fixtures+"/notes.txt",fixtures+"/plan.pdf",fixtures+"/plan.docx",fixtures+"/voice.wav"]);
+  await expect(page.locator("#draft-files .attachment")).toHaveCount(5);
+  await page.reload();
+  await expect(page.locator("#draft-files .attachment")).toHaveCount(5);
+  await page.route("**/chat/files/*",async route => {
+    if (route.request().method() === "PUT") { await route.fetch(); await route.abort("failed"); }
+    else await route.continue();
+  },{times:2}); // GET receipt lookup, then lost upload acknowledgement.
+  await page.locator("#send").click();
+  await expect(page.locator("#notice")).toContainText("lost the connection");
+  await expect(page.locator("#send")).toBeEnabled();
+  await page.reload();
+  await expect(page.locator("#draft-files .attachment")).toHaveCount(5);
+  const uploadIds = [];
+  page.on("request",request => { if (request.method() === "PUT") uploadIds.push(request.url()); });
+  await page.locator("#send").click();
+  await expect(page.locator(".assistant")).toHaveCount(7);
+  if (uploadIds.some(url => url.includes("name=large.bin"))) throw new Error("Lost upload acknowledgement caused a duplicate large transfer");
+  await expect(page.locator(".turn .attachment")).toHaveCount(9);
+  await expect(page.locator(".turn .attachment").filter({hasText:"large.bin"})).toContainText("Original saved · not read");
+  const largeDownload = page.waitForEvent("download");
+  await page.getByRole("link",{name:"large.bin",exact:true}).click();
+  if (!(await readFile(await (await largeDownload).path())).equals(await readFile(fixtures+"/large.bin"))) throw new Error("Changed large original");
+  await screenshot({path:process.env.RADHOUSE_SCREENSHOT, fullPage:true});
   await page.setViewportSize({width:390,height:844});
-  await page.screenshot({path:process.env.RADHOUSE_SCREENSHOT.replace(".png","-mobile.png"),fullPage:true});
+  await screenshot({path:process.env.RADHOUSE_SCREENSHOT.replace(".png","-mobile.png"),fullPage:true});
   if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error("Mobile horizontal overflow");
   await page.getByRole("button",{name:"Sign out"}).click();
   await expect(page.locator("#login-view")).toBeVisible();
   await expect(page.locator(".turn")).toHaveCount(0);
   if (errors.length) throw new Error(errors.join("; "));
-  console.log("PASS: real browser sign-in, send, literal text, reload, follow-up, lost response, file picker, images, PDF, audio, draft reload, removal, original download, drop, mobile layout, logout");
+  console.log("PASS: real browser conversation recovery, binary draft reload, 36 MiB original, five files, lost upload acknowledgement recovery without retransmission, exact download, images/PDF/audio, mobile and logout");
 } catch (error) { console.log("Browser state", (await page.locator("main").innerText()).slice(-2000)); throw error; } finally { await browser.close(); }

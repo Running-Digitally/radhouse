@@ -19,21 +19,14 @@ const explanations = {
   request_origin_denied: "Refresh this page and try again.", csrf_denied: "Refresh this page and try again.", owner_access_required: "This account doesn’t have access to this conversation.",
   invalid_request: "Check the fields and try again.", network_error: "We lost the connection. Retry the saved message to check whether it was received.",
   empty_message: "Write a message or attach a file before sending.", message_conflict: "This message was already received with different content. Refresh to recover the conversation.",
-  attachments_too_many: "Attach up to 4 files per message.", attachment_too_large: "Images can be up to 4 MB each; documents and audio up to 20 MB each.",
-  attachments_too_large: "Use up to 24 MB per message, including at most 8 MB of images.", attachment_empty: "This file is empty. Choose another file.",
-  attachment_invalid: "This file’s name or content couldn’t be read. Choose another file.",
-  attachment_unsupported: "Use PNG, JPEG, WebP, text/code, PDF, DOCX, XLSX, PPTX, WAV, MP3, M4A, OGG, FLAC or WebM files.",
-  attachment_text_too_large: "There’s too much document text for one message. Split it into smaller files.",
-  document_unreadable: "This document couldn’t be read. Try exporting it as text or a searchable PDF.", document_encrypted: "Use a copy without password protection.",
-  document_too_complex: "This document is too large or complex to read. Try a smaller export.", document_needs_ocr: "This PDF has no readable text. Attach its pages as images or use a searchable PDF.",
-  audio_transcription_not_configured: "Audio transcription hasn’t been connected yet. Your file is still in the draft.",
-  audio_transcription_unavailable: "We couldn’t transcribe the audio just now. Your file is saved; retry this message.",
-  audio_no_speech: "No readable speech was found in this audio. You can try another file.",
+  attachment_invalid: "This file’s name couldn’t be used. Rename it and try again.",
+  attachment_conflict: "This saved upload has different content. Attach the file again.",
+  file_storage_unavailable: "The file couldn’t be saved. Check the server’s available storage and retry.",
   draft_storage_unavailable: "Your browser couldn’t save this file draft. Free some browser storage and try again.",
 };
 let session = null, turns = new Map(), olderBefore = null, olderLoaded = false, busy = false, polling = false, filesLoading = false;
 const emptyDraft = () => ({text:"", request_id:null, attachments:[]});
-let draft = emptyDraft(), noticeCode = null, renderedHistory = "";
+let draft = emptyDraft(), noticeCode = null, renderedHistory = "", transferStatus = "";
 const previewUrls = new Map();
 function tell(code) { noticeCode = code; $("notice").textContent = explanations[code] || "Something went wrong. Refresh the page and try again."; $("notice").hidden = false; }
 function clearNotice() { noticeCode = null; $("notice").hidden = true; }
@@ -106,8 +99,7 @@ function fileKind(file) {
 function sizeLabel(bytes) { return bytes < 1024 * 1024 ? Math.max(1,Math.round(bytes/1024)) + " KB" : (bytes/1024/1024).toFixed(1) + " MB"; }
 function previewUrl(file) {
   if (!previewUrls.has(file)) {
-    const bytes = Uint8Array.from(atob(file.content), c => c.charCodeAt(0));
-    previewUrls.set(file,URL.createObjectURL(new Blob([bytes],{type:file.type})));
+    previewUrls.set(file,URL.createObjectURL(file.blob));
   }
   return previewUrls.get(file);
 }
@@ -133,6 +125,10 @@ function fileCard(file, url, removable) {
   card.append(label);
   const detail = document.createElement("span"); detail.className = "file-detail"; detail.textContent = (documentType ? documentType.label : file.kind) + " · " + sizeLabel(file.size); card.append(detail);
   if (file.kind === "audio") { const audio = document.createElement("audio"); audio.controls = true; audio.preload = "none"; audio.src = url; audio.setAttribute("aria-label",file.name); card.append(audio); }
+  if (!removable && file.reading_state) {
+    const reading = document.createElement("span"); reading.className = "file-detail";
+    reading.textContent = "Original saved · " + ({not_read:"not read",excerpt:"excerpt provided",read:"text provided",transcript:"transcript provided",inline_image:"image provided"}[file.reading_state] || "available"); card.append(reading);
+  }
   if (file.transcript) { const transcript = document.createElement("details"), summary = document.createElement("summary"), text = document.createElement("p"); summary.textContent = "Audio transcript"; text.textContent = file.transcript; transcript.append(summary,text); card.append(transcript); }
   if (removable) {
     const remove = document.createElement("button"); remove.type = "button"; remove.className = "remove-file"; remove.textContent = "×"; remove.setAttribute("aria-label","Remove " + file.name);
@@ -174,7 +170,7 @@ function render() {
   const pending = pendingTurn(), locked = busy || filesLoading || !!pending || !!draft.request_id;
   $("send").disabled = busy || filesLoading || !!pending; $("message").disabled = locked; $("attach").disabled = locked;
   $("send").textContent = draft.request_id ? "Retry message" : "Send ↗";
-  $("reply-status").textContent = filesLoading ? "Adding files…" : busy && draft.attachments.some(a => a.kind === "audio") ? "Transcribing audio and sending…" : pending ? "Your conversation is saved. You can leave and return." : "Ready when you are.";
+  $("reply-status").textContent = filesLoading ? "Adding files…" : busy ? (transferStatus || "Preparing and sending…") : pending ? "Your conversation is saved. You can leave and return." : "Ready when you are.";
 }
 async function openConversation() {
   const openingSession = session;
@@ -186,10 +182,34 @@ async function openConversation() {
   if (session !== openingSession) return;
   if (saved && typeof saved.text === "string" && saved.text.length <= 16000) {
     draft = {text:saved.text,request_id:/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(saved.request_id || "") ? saved.request_id : null,
-      attachments:Array.isArray(saved.attachments) ? saved.attachments : []};
+      attachments:Array.isArray(saved.attachments) ? saved.attachments.map(file => {
+        if (file.blob instanceof Blob) return file;
+        // Preserve drafts created by the earlier base64 uploader.
+        const bytes = Uint8Array.from(atob(file.content), c => c.charCodeAt(0));
+        return {...file,content:undefined,blob:new Blob([bytes],{type:file.type}),file_id:crypto.randomUUID()};
+      }) : [], legacy_request:!!saved.legacy_request || !!(saved.request_id && saved.attachments?.some(file => file.content))};
   }
   $("message").value = draft.text; render();
   const data = await api("/chat/history"); if (session === openingSession) accept(data);
+}
+async function uploadOriginal(file) {
+  if (file.uploaded) return;
+  let receipt;
+  try { receipt = await api("/chat/files/" + file.file_id); }
+  catch (error) { if (error.status !== 404) throw error; }
+  if (!receipt) {
+    let response;
+    try { response = await fetch("/chat/files/" + file.file_id + "?name=" + encodeURIComponent(file.name), {
+      method:"PUT",headers:{"Content-Type":"application/octet-stream","X-Radhouse-CSRF":session.csrf_token},body:file.blob}); }
+    catch (_) { throw new Error("network_error"); }
+    receipt = await response.json();
+    if (!response.ok) {
+      if (response.status === 401) showLogin();
+      const error = new Error(receipt.error || "file_storage_unavailable"); error.status = response.status; throw error;
+    }
+  }
+  if (receipt.name !== file.name || receipt.size !== file.size) throw new Error("attachment_conflict");
+  file.uploaded = true;
 }
 async function submit(requestId, text) {
   if (busy || !session) return;
@@ -198,9 +218,25 @@ async function submit(requestId, text) {
   try {
     if (!isRetry) { draft.request_id = requestId; draft.text = text; render(); await saveDraft(); }
     if (session !== sendingSession) return;
-    render(); transmitted = true;
+    if (!isRetry && draft.legacy_request) {
+      try {
+        transmitted = true;
+        const recovered = await api("/chat/messages/" + requestId + "/retry",{});
+        if (session === sendingSession) { clearDraft(); accept(recovered); }
+        return;
+      } catch (error) { if (error.status !== 404) throw error; transmitted = false; }
+    }
+    if (!isRetry) for (const file of draft.attachments) {
+      if (session !== sendingSession) return;
+      transferStatus = "Saving " + file.name + "…"; render();
+      await uploadOriginal(file);
+      if (session !== sendingSession) return;
+      await saveDraft();
+    }
+    if (session !== sendingSession) return;
+    transferStatus = "Preparing and sending…"; render(); transmitted = true;
     const data = isRetry ? await api("/chat/messages/" + requestId + "/retry",{}) :
-      await api("/chat/messages",{request_id:requestId,text,attachments:draft.attachments.map(a => ({name:a.name,content:a.content}))});
+      await api("/chat/messages",{request_id:requestId,text,attachments:draft.attachments.map(a => a.file_id)});
     if (session === sendingSession) { if (!isRetry) clearDraft(); accept(data); }
   } catch (error) {
     if (session === sendingSession) {
@@ -209,24 +245,15 @@ async function submit(requestId, text) {
       tell(error.message);
       try { const data = await api("/chat/history"); if (session === sendingSession) accept(data); } catch (_) {}
     }
-  } finally { busy = false; if (session === sendingSession) render(); }
+  } finally { busy = false; transferStatus = ""; if (session === sendingSession) render(); }
 }
 async function addFiles(fileList) {
   if (!session || busy || filesLoading || pendingTurn() || draft.request_id) return;
   const addingSession = session; filesLoading = true; clearNotice(); render();
   try {
     const files = [...fileList];
-    if (draft.attachments.length + files.length > 4) throw new Error("attachments_too_many");
-    const next = [];
-    for (const file of files) {
-      const kind = fileKind(file);
-      if (!file.size) throw new Error("attachment_empty");
-      if (file.size > (kind === "image" ? 4 : 20) * 1024 * 1024) throw new Error("attachment_too_large");
-      const content = await new Promise((resolve,reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result.split(",")[1]); reader.onerror = () => reject(new Error("attachment_invalid")); reader.readAsDataURL(file); });
-      next.push({name:file.name,content,kind,type:file.type || (kind === "image" ? "image/" + file.name.split(".").pop().replace("jpg","jpeg") : "application/octet-stream"),size:file.size});
-    }
+    const next = files.map(file => ({name:file.name,blob:file,file_id:crypto.randomUUID(),kind:fileKind(file),type:file.type,size:file.size}));
     const all = [...draft.attachments,...next];
-    if (all.reduce((n,a) => n+a.size,0) > 24*1024*1024 || all.filter(a => a.kind === "image").reduce((n,a) => n+a.size,0) > 8*1024*1024) throw new Error("attachments_too_large");
     if (session !== addingSession) return;
     draft.attachments = all; await saveDraft();
   } catch (error) { if (session === addingSession) tell(error.message); }

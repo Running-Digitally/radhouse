@@ -72,7 +72,7 @@ class SyntheticAuth:
     def session(self, request):
         if not self.active or request.cookies.get(self.cookie_name) != "synthetic-cookie":
             raise Rejected("authentication_required", 401)
-        if request.method == "POST":
+        if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
             self.verify_origin(request)
             if request.headers.get("x-radhouse-csrf") != "synthetic-csrf":
                 raise Rejected("csrf_denied", 403)

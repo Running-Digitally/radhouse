@@ -4,6 +4,9 @@ import base64
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 import sqlite3
+import hashlib
+import os
+from pathlib import Path
 from uuid import uuid4
 import wave
 from zipfile import ZipFile, ZIP_DEFLATED
@@ -14,7 +17,7 @@ from fastapi.testclient import TestClient
 from pypdf import PdfWriter
 from pypdf.generic import DictionaryObject, NameObject, DecodedStreamObject
 
-from radhouse.chat.app import create_app, BoundedBody
+from radhouse.chat.app import create_app
 from radhouse.chat.attachments import decode_uploads, MAX_IMAGE, MAX_TEXT
 from radhouse.chat.documents import extract_document
 from radhouse.chat.service import ChatService
@@ -116,33 +119,27 @@ def test_audio_is_transcribed_once_then_frozen_across_lost_ack(chat):
     assert service.store.history("alice")["turns"][0]["attachments"][0]["transcript"].startswith("Start")
 
 
-def test_audio_unavailability_preserves_original_for_retry(chat):
+def test_audio_unavailability_preserves_original_and_frozen_not_read_outcome(chat):
     service,hermes = chat; key = str(uuid4()); calls = []
     class Speech:
         def transcribe(self,attachment):
-            calls.append(1)
-            if len(calls) == 1: raise Rejected("audio_transcription_unavailable",503)
-            return "Now available"
-    service.transcriber = Speech()
-    with pytest.raises(Rejected,match="audio_transcription_unavailable"):
+            calls.append(1); raise Rejected("audio_transcription_unavailable",503)
+    service.transcriber = Speech(); hermes.lose_ack = True
+    with pytest.raises(Rejected,match="assistant_unavailable"):
         service.send("alice",key,"",decode_uploads([upload("note.wav",wav())]))
-    assert not hermes.requests and service.store.attachment("alice",key,0).data == wav()
-    assert service.store.pending("alice")["error"] == "audio_transcription_unavailable"
+    assert service.store.attachment("alice",key,0).data == wav()
+    assert "original saved, not read" in hermes.requests[0][1]["input"]
     service.retry("alice",key)
-    assert len(hermes.requests) == 1 and len(calls) == 2
+    assert len(calls) == 1 and hermes.requests[0] == hermes.requests[1]
+    assert service.store.history("alice")["turns"][0]["attachments"][0]["reading_state"] == "not_read"
 
 
-def test_missing_audio_connection_and_no_speech_are_honest(chat):
-    service,hermes = chat; files = decode_uploads([upload("note.wav",wav())]); key = str(uuid4())
-    with pytest.raises(Rejected,match="audio_transcription_not_configured"): service.send("alice",key,"",files)
-    assert service.store.history("alice")["turns"] == []
-    class Silence:
-        def transcribe(self,_): raise Rejected("audio_no_speech",422)
-    service.transcriber = Silence()
-    with pytest.raises(Rejected,match="audio_no_speech"): service.send("alice",key,"",files)
-    assert service.store.pending("alice") is None
-    service.send("alice",str(uuid4()),"Try text")
-    assert len(hermes.requests) == 1
+def test_missing_audio_connection_is_honest_and_does_not_block_transfer(chat):
+    service,hermes = chat; key = str(uuid4())
+    history = service.send("alice",key,"",decode_uploads([upload("note.wav",wav())]))
+    assert "audio_transcription_not_configured" in hermes.requests[0][1]["input"]
+    assert history["turns"][0]["attachments"][0]["transcript"] is None
+    assert service.store.attachment("alice",key,0).data == wav()
 
 
 def test_concurrent_audio_retries_share_prepared_input(chat):
@@ -158,10 +155,12 @@ def test_concurrent_audio_retries_share_prepared_input(chat):
 def test_original_download_requires_owner_and_supports_audio_range(chat):
     service,hermes = chat; auth = SyntheticAuth(); service.transcriber = type("Speech",(),{"transcribe":lambda _,a:"Hello"})()
     with TestClient(create_app(auth,service),base_url="http://127.0.0.1") as client:
-        key = str(uuid4()); body = {"request_id":key,"text":"","attachments":[upload("voice note.wav",wav())]}
+        key = str(uuid4()); file_id = str(uuid4())
+        body = {"request_id":key,"text":"","attachments":[file_id]}
         assert client.post("/chat/messages",json=body,headers=HEADERS).status_code == 401
         client.cookies.set(auth.cookie_name,"synthetic-cookie")
         assert client.post("/chat/messages",json=body,headers={"Origin":"http://127.0.0.1"}).status_code == 403
+        assert client.put(f"/chat/files/{file_id}?name=voice%20note.wav",content=wav(),headers=HEADERS).status_code == 200
         assert client.post("/chat/messages",json=body,headers=HEADERS).status_code == 200
         assert client.post(f"/chat/messages/{key}/retry",json={}).status_code == 403
         assert client.post(f"/chat/messages/{key}/retry",json={},headers=HEADERS).status_code == 200
@@ -177,19 +176,13 @@ def test_original_download_requires_owner_and_supports_audio_range(chat):
         auth.active = False; assert client.get(path).status_code == 401
 
 
-@pytest.mark.parametrize("name,data,code",[
-    ("../image.png",PNG,"attachment_invalid"),("bad.txt",b"\x00secret","attachment_unsupported"),
-    ("old.doc",b"old","attachment_unsupported"),("picture.svg",b"<svg/>","attachment_unsupported"),
-    ("empty.txt",b"","attachment_empty"),("huge.txt",b"x"*(MAX_TEXT+1),"attachment_text_too_large"),
-    ("huge.png",PNG+b"x"*MAX_IMAGE,"attachment_too_large"),("bad.wav",b"bad","attachment_invalid")])
-def test_invalid_formats_and_limits_are_refused(name,data,code):
-    with pytest.raises(Rejected,match=code): decode_uploads([upload(name,data)])
-
-
-def test_file_count_image_total_and_invalid_base64_are_bounded():
-    with pytest.raises(Rejected,match="attachments_too_many"): decode_uploads([upload("x.txt",b"x")]*5)
-    with pytest.raises(Rejected,match="attachments_too_large"): decode_uploads([upload("x.png",PNG+b"x"*(3*1024*1024))]*3)
+def test_names_and_base64_fixture_syntax_are_validated():
+    with pytest.raises(Rejected,match="attachment_invalid"): decode_uploads([upload("../image.png",PNG)])
     with pytest.raises(Rejected,match="attachment_invalid"): decode_uploads([{"name":"x.txt","content":"%%%"}])
+    # Unknown, legacy, binary and empty originals are retained for later access.
+    assert decode_uploads([upload("old.doc",b"old")])[0].kind == "file"
+    assert decode_uploads([upload("binary.bin",b"\x00secret")])[0].kind == "file"
+    assert decode_uploads([upload("empty.txt",b"")])[0].size == 0
 
 
 @pytest.mark.parametrize("data,code",[(pdf(""),"document_needs_ocr"),(pdf(encrypted=True),"document_encrypted")])
@@ -237,15 +230,158 @@ def test_schema_one_upgrade_retains_existing_pending_receipt(tmp_path):
     assert store.find("alice","old-request")["input_text"] == "Keep me"
     assert store.pending("alice")["run_id"] == "run_old"
     assert store.history("alice")["turns"][0]["attachments"] == []
-    with store.connection() as db: assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+    with store.connection() as db: assert db.execute("PRAGMA user_version").fetchone()[0] == 3
 
 
-def test_chunked_request_is_bounded_before_json_parser(monkeypatch):
-    import radhouse.chat.app as module
-    monkeypatch.setattr(module,"MAX_REQUEST",10)
-    calls = []; sent = []; messages = iter([{"type":"http.request","body":b"123456","more_body":True},{"type":"http.request","body":b"123456","more_body":False}])
-    async def receive(): return next(messages)
-    async def send(message): sent.append(message)
-    async def downstream(*_): calls.append(1)
-    asyncio.run(BoundedBody(downstream)({"type":"http","method":"POST"},receive,send))
-    assert not calls and sent[0]["status"] == 413
+def test_large_stream_upload_and_many_files_do_not_expand_prompt_or_duplicate_storage(chat):
+    service,hermes = chat; auth = SyntheticAuth()
+    with TestClient(create_app(auth,service),base_url="http://127.0.0.1") as client:
+        client.cookies.set(auth.cookie_name,"synthetic-cookie")
+        # Exceeds all former document, aggregate and HTTP size thresholds.
+        chunk = b"large original line\n" * 32768
+        count = 60; size = len(chunk) * count; file_id = str(uuid4())
+        def chunks():
+            for _ in range(count): yield chunk
+        reply = client.put(f"/chat/files/{file_id}?name=large.txt",content=chunks(),headers=HEADERS)
+        assert reply.status_code == 200 and reply.json()["size"] == size > 34*1024*1024
+        attachment = service.store.upload("alice",file_id)
+        assert isinstance(attachment.data,Path) and attachment.data.stat().st_size == size
+        expected = hashlib.sha256()
+        for _ in range(count): expected.update(chunk)
+        assert attachment.sha256 == expected.hexdigest()
+        assert attachment.data.stat().st_mode & 0o777 == 0o600
+        assert service.store.files_path.stat().st_mode & 0o777 == 0o700
+        assert client.put(f"/chat/files/{file_id}?name=large.txt",content=chunks(),headers=HEADERS).json() == reply.json()
+        assert client.put(f"/chat/files/{file_id}?name=large.txt",content=b"different",headers=HEADERS).status_code == 409
+        assert len(list(service.store.files_path.iterdir())) == 1
+        files = [file_id]
+        for i in range(6):
+            other = str(uuid4()); files.append(other)
+            assert client.put(f"/chat/files/{other}?name=note{i}.txt",content=b"small",headers=HEADERS).status_code == 200
+        key = str(uuid4()); hermes.lose_ack = True
+        body = {"request_id":key,"text":"Consider what you can read","attachments":files}
+        assert client.post("/chat/messages",json=body,headers=HEADERS).status_code == 503
+        restarted = ChatService(ChatStore(service.store.path),hermes.client,owner_id="alice",clock=lambda:1001)
+        restarted.retry("alice",key)
+        assert hermes.requests[0] == hermes.requests[1] and len(hermes.runs) == 1
+        assert len(hermes.requests[0][1]["input"].encode()) < 262144
+        history = client.get("/chat/history").json()["turns"][0]
+        assert len(history["attachments"]) == 7 and history["attachments"][0]["reading_state"] == "excerpt"
+        with service.store.connection() as db:
+            assert db.execute("SELECT length(data),file_id FROM attachments ORDER BY position").fetchone()[0] == 0
+        path = f"/chat/messages/{key}/attachments/0"
+        part = client.get(path,headers={"Range":f"bytes={size-20}-{size-1}"})
+        assert part.status_code == 206 and part.content == chunk[-20:]
+        assert client.get(f"/chat/messages/{key}/attachments/6").content == b"small"
+        # Download streaming verification avoids materializing the large original.
+        digest = hashlib.sha256()
+        with client.stream("GET",path) as response:
+            for block in response.iter_bytes(): digest.update(block)
+        assert digest.hexdigest() == expected.hexdigest()
+
+
+def test_upload_checks_owner_csrf_and_origin_before_consuming_stream(chat):
+    service,_ = chat; auth = SyntheticAuth(); app = create_app(auth,service)
+    async def attempt(headers):
+        consumed = []
+        async def body(): consumed.append(1); yield b"private bytes"
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url="http://127.0.0.1") as client:
+            response = await client.put(f"/chat/files/{uuid4()}?name=secret.txt",content=body(),headers=headers)
+        assert not consumed
+        return response.status_code
+    assert asyncio.run(attempt(HEADERS)) == 401
+    cookie = {**HEADERS,"Cookie":"radhouse_session=synthetic-cookie"}
+    # Derive the actual synthetic cookie name, not a hardcoded product name.
+    cookie["Cookie"] = auth.cookie_name + "=synthetic-cookie"
+    assert asyncio.run(attempt({"Cookie":cookie["Cookie"],"Origin":"http://127.0.0.1"})) == 403
+    assert asyncio.run(attempt({**cookie,"Origin":"https://evil.test"})) == 403
+    auth.principal = "bob"
+    assert asyncio.run(attempt(cookie)) == 403
+    assert list(service.store.files_path.iterdir()) == []
+
+
+def test_interrupted_and_failed_storage_leave_no_partial_upload(chat, monkeypatch):
+    service,_ = chat; auth = SyntheticAuth(); app = create_app(auth,service)
+    async def interrupted():
+        async def body(): yield b"first chunk"; raise RuntimeError("lost client")
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url="http://127.0.0.1",cookies={auth.cookie_name:"synthetic-cookie"}) as client:
+            with pytest.raises(ExceptionGroup) as failure:
+                await client.put(f"/chat/files/{uuid4()}?name=note.txt",content=body(),headers=HEADERS)
+            assert isinstance(failure.value.exceptions[0], RuntimeError)
+            assert str(failure.value.exceptions[0]) == "lost client"
+    asyncio.run(interrupted())
+    assert list(service.store.files_path.iterdir()) == []
+    with service.store.connection() as db: assert db.execute("SELECT count(*) FROM uploads").fetchone()[0] == 0
+    def unavailable(*_): raise OSError("synthetic storage failure")
+    monkeypatch.setattr(service.store,"commit_upload",unavailable)
+    with TestClient(app,base_url="http://127.0.0.1") as client:
+        client.cookies.set(auth.cookie_name,"synthetic-cookie")
+        response = client.put(f"/chat/files/{uuid4()}?name=note.txt",content=b"note",headers=HEADERS)
+        assert response.status_code == 507 and response.json()["error"] == "file_storage_unavailable"
+    assert list(service.store.files_path.iterdir()) == []
+
+
+def test_unreadable_document_and_oversize_images_remain_saved(chat):
+    service,hermes = chat; key = str(uuid4())
+    files = decode_uploads([upload("encrypted.pdf",pdf(encrypted=True)),
+        upload("huge.png",PNG+b"x"*MAX_IMAGE), *[upload(f"image{i}.png",PNG) for i in range(5)]])
+    history = service.send("alice",key,"Keep the originals",files)
+    saved = history["turns"][0]["attachments"]
+    assert len(saved) == 7
+    assert saved[0]["reading_error"] == "document_encrypted" and saved[0]["reading_state"] == "not_read"
+    assert saved[1]["reading_state"] == saved[-1]["reading_state"] == "not_read"
+    content = hermes.requests[0][1]["input"][0]["content"]
+    assert len([c for c in content if c["type"] == "image_url"]) == 4
+    assert service.store.attachment("alice",key,1).size > MAX_IMAGE
+
+
+def test_upload_writes_before_request_finishes(chat):
+    service,_ = chat; auth = SyntheticAuth(); file_id = str(uuid4())
+    async def stream_proof():
+        first = b'\x00original block' * 65536
+        async def body():
+            yield first
+            temporary = list(service.store.files_path.iterdir())
+            assert len(temporary) == 1 and temporary[0].stat().st_size == len(first)
+            with service.store.connection() as db:
+                assert db.execute("SELECT count(*) FROM uploads").fetchone()[0] == 0
+            yield b"last block"
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(auth,service)),base_url="http://127.0.0.1",cookies={auth.cookie_name:"synthetic-cookie"}) as client:
+            reply = await client.put(f"/chat/files/{file_id}?name=original.bin",content=body(),headers=HEADERS)
+            assert reply.status_code == 200 and reply.json()["size"] == len(first)+10
+    asyncio.run(stream_proof())
+    assert service.store.upload("alice",file_id).data.is_file()
+
+
+def test_large_inventory_is_saved_even_when_this_reading_omits_entries(chat):
+    service,hermes = chat; key = str(uuid4()); hermes.lose_ack = True
+    files = decode_uploads([upload(f"original{i}.txt",b"") for i in range(1000)])
+    with pytest.raises(Rejected,match="assistant_unavailable"):
+        service.send("alice",key,"\U0001F603"*16000,files)
+    service.retry("alice",key)
+    assert hermes.requests[0] == hermes.requests[1]
+    prompt = hermes.requests[0][1]["input"]
+    assert len(prompt.encode()) < 262144 and "additional originals are saved" in prompt
+    assert len(service.store.history("alice")["turns"][0]["attachments"]) == 1000
+    assert service.store.attachment("alice",key,999).size == 0
+
+
+def test_schema_two_upgrade_retains_blob_and_frozen_unacknowledged_input(tmp_path):
+    path = tmp_path / "schema2.sqlite3"; path.touch(mode=0o600)
+    with sqlite3.connect(path) as db:
+        db.executescript('''CREATE TABLE conversations(owner TEXT PRIMARY KEY,session_id TEXT);
+            CREATE TABLE turns(seq INTEGER PRIMARY KEY,owner TEXT,request_id TEXT,text TEXT,dispatch_key TEXT,created_at REAL,retry_until REAL,run_id TEXT,status TEXT,output TEXT,error TEXT,input_text TEXT);
+            CREATE TABLE attachments(turn_seq INTEGER,position INTEGER,name TEXT,media_type TEXT,kind TEXT,sha256 TEXT,data BLOB,reference_text TEXT,PRIMARY KEY(turn_seq,position));
+            INSERT INTO conversations VALUES('alice','chat:old');
+            INSERT INTO turns VALUES(1,'alice','old-request','Keep me','chat:saved',1000,4000,NULL,'awaiting_dispatch',NULL,NULL,'Frozen existing input');
+            PRAGMA user_version=2;''')
+        db.execute("INSERT INTO attachments VALUES(1,0,'voice.wav','audio/wav','audio',?,?,?)",(hashlib.sha256(wav()).hexdigest(),wav(),"Saved transcript"))
+    hermes = SyntheticHermes()
+    try:
+        service = ChatService(ChatStore(path),hermes.client,owner_id="alice",clock=lambda:1001)
+        service.retry("alice","old-request")
+        assert hermes.requests[0][1]["input"] == "Frozen existing input"
+        assert service.store.attachment("alice","old-request",0).data == wav()
+        assert service.store.history("alice")["turns"][0]["attachments"][0]["transcript"] == "Saved transcript"
+        assert service.store.session_id("alice") == "chat:old"
+    finally: hermes.client.close()

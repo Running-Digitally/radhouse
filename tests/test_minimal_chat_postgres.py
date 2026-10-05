@@ -48,6 +48,10 @@ def test_real_auth_cookie_csrf_logout_and_schema_unchanged(real_chat, store):
         assert response.status_code == 200
         token = response.json()["csrf_token"]
         headers = {"Origin":"http://127.0.0.1", "X-Radhouse-CSRF":token}
+        file_path = f"/chat/files/{uuid4()}?name=note.txt"
+        assert client.put(file_path,content=b"private note",headers={"Origin":"http://127.0.0.1"}).status_code == 403
+        assert client.put(file_path,content=b"private note",headers={**headers,"Origin":"https://evil.test"}).status_code == 403
+        assert client.put(file_path,content=b"private note",headers=headers).status_code == 200
         body = {"request_id":str(uuid4()),"text":"A real authenticated synthetic conversation"}
         assert client.post("/chat/messages", json=body, headers={"Origin":"http://127.0.0.1"}).status_code == 403
         assert client.post("/chat/messages", json=body, headers={**headers, "Origin":"https://evil.test"}).status_code == 403
@@ -66,6 +70,8 @@ def test_actual_browser_login_reload_lost_response_and_text_rendering(real_chat,
     from tests.test_chat_attachments import PNG, pdf, office, wav
     for name,data in [("diagram.png",PNG),("plan.pdf",pdf()),("plan.docx",office(".docx")),("voice.wav",wav()),("notes.txt",b"A simple plan")]:
         (tmp_path / name).write_bytes(data)
+    with (tmp_path / "large.bin").open("wb") as large:
+        for _ in range(36): large.write(b"\x00original transfer" * 65536)
     hermes.output = "Here is your saved reply. <script>window.chatInjected=true</script>"
     sock = socket.socket(); sock.bind(("127.0.0.1", 0))
     origin = f"http://127.0.0.1:{sock.getsockname()[1]}"
@@ -83,10 +89,11 @@ def test_actual_browser_login_reload_lost_response_and_text_rendering(real_chat,
             "RADHOUSE_BROWSER_ORIGIN":origin,"RADHOUSE_TEST_PASSWORD":password,"RADHOUSE_TEST_TOTP":code,
             "RADHOUSE_SCREENSHOT":str(tmp_path / "minimal-chat.png"),"RADHOUSE_ATTACHMENT_FIXTURES":str(tmp_path)}, capture_output=True, text=True, timeout=90)
         assert result.returncode == 0, result.stdout + result.stderr
-        assert len(hermes.runs) == 6
-        assert "A small plan" in hermes.requests[-2][1]["input"][0]["content"][0]["text"]
-        assert "simulated voice note" in hermes.requests[-2][1]["input"][0]["content"][0]["text"]
-        assert hermes.requests[-2][1]["input"][0]["content"][1]["type"] == "image_url"
+        assert len(hermes.runs) == 7
+        assert "A small plan" in hermes.requests[-3][1]["input"][0]["content"][0]["text"]
+        assert "simulated voice note" in hermes.requests[-3][1]["input"][0]["content"][0]["text"]
+        assert hermes.requests[-3][1]["input"][0]["content"][1]["type"] == "image_url"
+        assert "large.bin" in hermes.requests[-1][1]["input"] and "original saved, not read" in hermes.requests[-1][1]["input"]
         assert len({body["session_id"] for _, body in hermes.requests}) == 1
         print("MINIMAL_CHAT_SCREENSHOT", tmp_path / "minimal-chat.png")
     finally:

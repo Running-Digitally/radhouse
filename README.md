@@ -9,7 +9,7 @@ existing Warp connection for private access.
 The new app is `radhouse.chat`, independent of the earlier platform composition.
 It reuses local password/TOTP authentication and the pinned Hermes HTTP client.
 It saves the displayed transcript and pending reply receipt in one private SQLite
-file, including original attachments. A small observer within the web process saves the reply even while the
+file. New original attachments are streamed to a private directory beside it. A small observer within the web process saves the reply even while the
 browser is closed; it only checks existing runs and never submits messages.
 Hermes owns the assistant's persistent session context and memory.
 
@@ -43,15 +43,16 @@ placeholders, not working credentials:
 Optional `transcription_endpoint` selects an existing OpenAI-compatible
 `/v1/audio/transcriptions` service; optional `transcription_bearer` belongs only to
 that endpoint. Leave both absent until the service connection is qualified.
-Audio fails clearly when transcription is not configured. The adapter follows no
+Audio originals can be sent without transcription; their cards say they have not been read. The adapter follows no
 redirects and does not inherit proxy settings. It adds no VM or model runtime.
 
 Run one web worker: message preparation is serialized within that process.
 The parent data directory must already exist. Keep the transcript path stable
-across releases, retain its data on rollback, and include it in the backup plan.
-The first start upgrades a schema-1 chat file to schema 2 while retaining all
-messages, saved sessions and run receipts. Keep the compatible reader on rollback;
-the previous binary refuses schema 2. Do not replace the transcript with an older
+across releases, retain both the SQLite file and its `<transcript_path>.files`
+directory on rollback, and back them up together. The first start upgrades
+schema-1/2 chat files to schema 3 while retaining messages, legacy BLOB originals,
+saved sessions, frozen inputs and run receipts. Keep a compatible reader on rollback;
+previous binaries refuse schema 3. Do not replace the transcript with an older
 copy and lose newer messages. Startup verifies the exact existing authentication database, deployment marker,
 schema version 7 and migration digest. It does not provision users or migrate
 PostgreSQL. Do not start this version against a divergent or newer schema.
@@ -74,30 +75,41 @@ remain a separate reviewed change.
 Paste images or clipboard files, drag files into the composer, or use **Attach**.
 Inspect the thumbnails, file names and audio controls; remove any file before
 sending. Sending files without message text is supported. Unsent drafts are saved
-in this browser's IndexedDB; sent originals and audio transcripts live in the
-private chat file and remain available after reload or restart. Clearing browser
-storage removes unsent drafts. Signing out clears their display, not their local
-storage. Use a trusted browser for this private application.
+in this browser's IndexedDB as binary files. Sent originals remain downloadable
+after reload or restart. Clearing browser storage removes unsent drafts. Signing
+out clears their display, not their local storage. Use a trusted browser for this
+private application.
 
-Supported files:
+There is no configured file-size, aggregate-size or file-count ceiling. The browser
+streams raw file uploads, receives immutable owner-scoped file IDs, then sends a
+small message containing those references. Checksums bind upload retries to the
+same bytes; an upload receipt recovers a lost acknowledgement without retransmission.
+Available disk space and browser storage still determine whether a transfer can
+complete. Interrupted uploads publish no partial-file receipt. A process crash can
+leave unpublished temporary or original files; no automatic pruning is installed.
 
-- PNG, JPEG and WebP images, passed through Hermes' existing image input.
-- UTF-8 text/code files, searchable PDFs, and DOCX, XLSX and PPTX documents.
-  The assistant receives extracted text. Spreadsheet formulas are shown with
-  cached values and never evaluated; document images/layout are not interpreted.
-- WAV, MP3, M4A, OGG, FLAC and WebM audio, transcribed by the configured existing
-  service. The assistant receives the saved transcript, not sound analysis.
+Original storage and assistant reading are separate. Small PNG/JPEG/WebP images
+can use the pinned Hermes inline-image transport. UTF-8 text, searchable PDF and
+DOCX/XLSX/PPTX have an automatic text reading; optional STT can transcribe audio.
+Unknown binary formats, encrypted/scanned PDFs, extra or large images, and files
+whose reader fails remain saved. Their cards distinguish a provided excerpt or
+transcript from an original that was not read. Spreadsheet formulas are shown
+with cached values, never evaluated. Document layout/images are not interpreted;
+macros are never run and external references are not followed.
 
-Use up to four files: 4 MiB per image, 8 MiB of images total, 20 MiB per document or
-audio file, and 24 MiB combined. Extracted text/transcripts are limited to 128 KiB
-combined per message. Originals require the same signed-in owner to download;
-images and audio can be previewed. Text documents are always served as downloads.
+Automatic reading still has time, resource and excerpt budgets. The current
+inline-image client allows four images of up to 4 MiB each and 8 MiB combined;
+these constrain which images are provided to this run, **not which files can be
+uploaded**. The prepared prompt and reading outcome are frozen for retries.
 
-Scanned PDFs need OCR or individual page images; encrypted PDFs and legacy
-DOC/XLS/PPT or macro-enabled Office files are refused clearly. Parsing runs in a
-bounded child process without running macros or following external references.
-A saved message's text, file order, names and bytes cannot change on retry. Its
-prepared input is frozen before the Hermes request, including cached transcripts.
+The current assistant connection still disables tools and does not provide
+arbitrary incoming-file handoff. Stored originals prepare for selective agent
+reading, but the agent cannot open them yet. That requires a separately reviewed
+file-access contract and qualification against the existing runtime. Upload size
+is no longer coupled to context length.
+
+Downloads require the same signed-in owner. Images/audio support streaming range
+requests; other originals are forced downloads with content sniffing disabled.
 
 ## Verify locally
 

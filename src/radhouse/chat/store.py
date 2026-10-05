@@ -4,10 +4,11 @@ from pathlib import Path
 import os
 import sqlite3
 import stat
+import tempfile
 from uuid import uuid4
 
 from radhouse.domain.tasks import Rejected
-from .attachments import Attachment
+from .attachments import Attachment, FILE_ID, validate_name
 
 TERMINAL = ("completed", "failed", "cancelled", "interrupted")
 
@@ -25,7 +26,7 @@ class ChatStore:
             os.close(fd)
         with self.connection() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2):
+            if version not in (0, 1, 2, 3):
                 raise ValueError("chat_schema_mismatch")
             if version == 0:
                 if db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchone():
@@ -65,6 +66,63 @@ class ChatStore:
                     COMMIT;
                 """)
 
+                version = 2
+            if version == 2:
+                db.executescript("""
+                    BEGIN IMMEDIATE;
+                    CREATE TABLE uploads (
+                        file_id TEXT PRIMARY KEY, owner TEXT NOT NULL,
+                        name TEXT NOT NULL, media_type TEXT NOT NULL, kind TEXT NOT NULL,
+                        sha256 TEXT NOT NULL, size INTEGER NOT NULL, storage_name TEXT NOT NULL
+                    );
+                    ALTER TABLE attachments ADD COLUMN file_id TEXT REFERENCES uploads(file_id);
+                    ALTER TABLE attachments ADD COLUMN reading_state TEXT;
+                    ALTER TABLE attachments ADD COLUMN reading_error TEXT;
+                    PRAGMA user_version=3;
+                    COMMIT;
+                """)
+        self.files_path = self.path.with_name(self.path.name + ".files")
+        self.files_path.mkdir(mode=0o700, exist_ok=True)
+        info = self.files_path.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+            raise ValueError("chat_files_require_private_directory")
+
+    def begin_upload(self, owner, file_id, name):
+        if not FILE_ID.fullmatch(file_id): raise Rejected("attachment_invalid", 422)
+        validate_name(name)
+        with self.connection() as db:
+            row = db.execute("SELECT owner,name FROM uploads WHERE file_id=?", (file_id,)).fetchone()
+            if row and (row["owner"] != owner or row["name"] != name):
+                raise Rejected("attachment_conflict", 409)
+        fd, path = tempfile.mkstemp(prefix="upload-", dir=self.files_path)
+        return os.fdopen(fd, "wb"), Path(path)
+
+    def commit_upload(self, owner, file_id, name, path, media, kind, sha256, size):
+        # The complete immutable file is durable before the DB publishes it.
+        # A crash can leave an unpublished file, never a receipt for partial bytes.
+        with self.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT * FROM uploads WHERE file_id=?", (file_id,)).fetchone()
+            if row:
+                if (row["owner"], row["name"], row["sha256"], row["size"]) != (owner, name, sha256, size):
+                    raise Rejected("attachment_conflict", 409)
+            else:
+                storage_name = uuid4().hex
+                os.replace(path, self.files_path / storage_name)
+                directory = os.open(self.files_path, os.O_RDONLY)
+                try: os.fsync(directory)
+                finally: os.close(directory)
+                db.execute("INSERT INTO uploads VALUES(?,?,?,?,?,?,?,?)",
+                           (file_id, owner, name, media, kind, sha256, size, storage_name))
+        return self.upload(owner, file_id)
+
+    def upload(self, owner, file_id):
+        with self.connection() as db:
+            row = db.execute("SELECT * FROM uploads WHERE owner=? AND file_id=?", (owner, file_id)).fetchone()
+            if not row: raise Rejected("attachment_not_found", 404)
+            return Attachment(row["name"], row["media_type"], row["kind"], self.files_path / row["storage_name"],
+                              file_id=file_id, stored_sha256=row["sha256"], stored_size=row["size"])
+
     @contextmanager
     def connection(self):
         db = sqlite3.connect(self.path, timeout=5)
@@ -95,14 +153,15 @@ class ChatStore:
                        (owner, request_id, text, "chat:" + uuid4().hex, now, now + retention, "awaiting_dispatch"))
             row = db.execute("SELECT * FROM turns WHERE owner=? AND request_id=?", (owner, request_id)).fetchone()
             for i, attachment in enumerate(attachments):
-                db.execute("INSERT INTO attachments VALUES(?,?,?,?,?,?,?,?)",
+                db.execute("INSERT INTO attachments VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                     (row["seq"], i, attachment.name, attachment.media_type, attachment.kind,
-                     attachment.sha256, attachment.data, attachment.reference_text))
+                     attachment.sha256, b"" if attachment.file_id else attachment.data, attachment.reference_text,
+                     attachment.file_id, attachment.reading_state, attachment.reading_error))
             return dict(row)
 
     @staticmethod
     def _match(db, row, text, attachments):
-        saved = db.execute("SELECT name,media_type,sha256 FROM attachments WHERE turn_seq=? ORDER BY position", (row["seq"],)).fetchall()
+        saved = db.execute("SELECT name,media_type,sha256,file_id FROM attachments WHERE turn_seq=? ORDER BY position", (row["seq"],)).fetchall()
         if row["text"] != text or [tuple(a) for a in saved] != [a.identity() for a in attachments]:
             raise Rejected("message_conflict", 409)
 
@@ -112,18 +171,23 @@ class ChatStore:
 
     def attachments(self, owner, request_id):
         with self.connection() as db:
-            rows = db.execute("SELECT a.* FROM attachments a JOIN turns t ON t.seq=a.turn_seq WHERE t.owner=? AND t.request_id=? ORDER BY position", (owner, request_id)).fetchall()
-            return tuple(Attachment(r["name"],r["media_type"],r["kind"],r["data"],r["reference_text"]) for r in rows)
+            rows = db.execute("SELECT a.*,u.storage_name,u.size FROM attachments a LEFT JOIN uploads u ON u.file_id=a.file_id JOIN turns t ON t.seq=a.turn_seq WHERE t.owner=? AND t.request_id=? ORDER BY position", (owner, request_id)).fetchall()
+            return tuple(self._attachment(r) for r in rows)
+
+    def _attachment(self, row):
+        data = self.files_path / row["storage_name"] if row["file_id"] else row["data"]
+        return Attachment(row["name"], row["media_type"], row["kind"], data, row["reference_text"],
+                          row["file_id"], row["sha256"], row["size"], row["reading_state"], row["reading_error"])
 
     def attachment(self, owner, request_id, position):
         with self.connection() as db:
-            row = db.execute("SELECT a.* FROM attachments a JOIN turns t ON t.seq=a.turn_seq WHERE t.owner=? AND t.request_id=? AND a.position=?", (owner, request_id, position)).fetchone()
+            row = db.execute("SELECT a.*,u.storage_name,u.size FROM attachments a LEFT JOIN uploads u ON u.file_id=a.file_id JOIN turns t ON t.seq=a.turn_seq WHERE t.owner=? AND t.request_id=? AND a.position=?", (owner, request_id, position)).fetchone()
             if not row: raise Rejected("attachment_not_found", 404)
-            return Attachment(row["name"],row["media_type"],row["kind"],row["data"],row["reference_text"])
+            return self._attachment(row)
 
-    def cache_reference(self, turn, position, text):
+    def cache_reference(self, turn, position, text, state="excerpt", error=None):
         with self.connection() as db:
-            db.execute("UPDATE attachments SET reference_text=? WHERE turn_seq=? AND position=? AND reference_text IS NULL", (text, turn["seq"], position))
+            db.execute("UPDATE attachments SET reference_text=?,reading_state=?,reading_error=? WHERE turn_seq=? AND position=? AND reading_state IS NULL", (text, state, error, turn["seq"], position))
 
     def freeze_input(self, turn, text):
         with self.connection() as db:
@@ -168,7 +232,8 @@ class ChatStore:
             more = len(rows) > limit
             page = [dict(row) for row in reversed(rows[:limit])]
             for turn in page:
-                rows = db.execute("SELECT position,name,media_type,kind,length(data) AS size,CASE WHEN kind='audio' THEN reference_text END AS reference_text FROM attachments WHERE turn_seq=? ORDER BY position", (turn["seq"],)).fetchall()
+                rows = db.execute("SELECT position,a.name,a.media_type,a.kind,coalesce(u.size,length(a.data)) AS size,CASE WHEN a.kind='audio' THEN reference_text END AS reference_text,reading_state,reading_error FROM attachments a LEFT JOIN uploads u ON u.file_id=a.file_id WHERE turn_seq=? ORDER BY position", (turn["seq"],)).fetchall()
                 turn["attachments"] = [{"position":a["position"], "name":a["name"], "media_type":a["media_type"], "kind":a["kind"], "size":a["size"],
-                    "transcript":a["reference_text"] if a["kind"] == "audio" else None} for a in rows]
+                    "transcript":a["reference_text"] if a["kind"] == "audio" else None,
+                    "reading_state":a["reading_state"], "reading_error":a["reading_error"]} for a in rows]
             return {"turns": page, "older_before": page[0]["seq"] if more else None}
