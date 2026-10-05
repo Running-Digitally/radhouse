@@ -4,6 +4,8 @@ from contextlib import asynccontextmanager
 import asyncio
 import logging
 import sqlite3
+import re
+from urllib.parse import quote
 from typing import Annotated
 
 from fastapi import FastAPI, Request, Response
@@ -12,6 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from radhouse.domain.tasks import Rejected
+from .attachments import MAX_FILES, MAX_FILE, MAX_REQUEST, decode_uploads
 
 STATIC = Path(__file__).with_name("static")
 
@@ -24,10 +27,42 @@ class Login(BaseModel):
     remember_browser: bool = False
 
 
+class Upload(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    name: Annotated[str, Field(min_length=1, max_length=200)]
+    content: Annotated[str, Field(min_length=1, max_length=4 * ((MAX_FILE + 2) // 3))]
+
+
 class Message(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     request_id: Annotated[str, Field(pattern=r"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$")]
-    text: Annotated[str, Field(min_length=1, max_length=16000)]
+    text: Annotated[str, Field(max_length=16000)]
+    attachments: Annotated[list[Upload], Field(max_length=MAX_FILES)] = Field(default_factory=list)
+
+
+class BoundedBody:
+    """Bound streamed bodies before JSON parsing, including chunked requests."""
+    def __init__(self, app): self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope["method"] != "POST":
+            return await self.app(scope, receive, send)
+        body = bytearray()
+        while True:
+            message = await receive()
+            if message["type"] == "http.disconnect": return
+            chunk = message.get("body", b"")
+            if len(body) + len(chunk) > MAX_REQUEST:
+                return await JSONResponse({"error":"attachments_too_large"},status_code=413)(scope, receive, send)
+            body.extend(chunk)
+            if not message.get("more_body", False): break
+        delivered = False
+        async def bounded_receive():
+            nonlocal delivered
+            if delivered: return await receive()
+            delivered = True
+            return {"type":"http.request", "body":bytes(body), "more_body":False}
+        await self.app(scope, bounded_receive, send)
 
 
 def create_app(auth, service):
@@ -56,12 +91,14 @@ def create_app(auth, service):
 
     app = FastAPI(title="Radhouse", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
+    app.add_middleware(BoundedBody)
+
     @app.middleware("http")
     async def private_responses(request, call_next):
         response = await call_next(request)
         response.headers.update({"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
             "Referrer-Policy": "no-referrer", "X-Frame-Options": "DENY",
-            "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"})
+            "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"})
         return response
 
     @app.exception_handler(Rejected)
@@ -124,7 +161,32 @@ def create_app(auth, service):
 
     @app.post("/chat/messages")
     def send(body: Message, request: Request):
-        return service.send(owner(request), body.request_id, body.text)
+        principal = owner(request)
+        return service.send(principal, body.request_id, body.text, decode_uploads([a.model_dump() for a in body.attachments]))
+
+    @app.post("/chat/messages/{request_id}/retry")
+    def retry(request_id: str, request: Request):
+        return service.retry(owner(request), request_id)
+
+    @app.get("/chat/messages/{request_id}/attachments/{position}")
+    def attachment(request_id: str, position: Annotated[int, Field(ge=0,lt=MAX_FILES)], request: Request, download: bool = False):
+        attachment = service.store.attachment(owner(request), request_id, position)
+        disposition = "inline" if not download and attachment.kind in {"image","audio"} else "attachment"
+        headers = {"Content-Disposition":disposition + "; filename*=UTF-8''" + quote(attachment.name,safe=""), "Accept-Ranges":"bytes"}
+        data = attachment.data
+        range_header = request.headers.get("range")
+        if range_header:
+            match = re.fullmatch(r"bytes=(\d{0,20})-(\d{0,20})", range_header)
+            if not match or not any(match.groups()):
+                return Response(status_code=416,headers={"Content-Range":f"bytes */{len(data)}"})
+            first,last = match.groups()
+            start = int(first) if first else max(0,len(data)-int(last))
+            end = min(int(last),len(data)-1) if first and last else len(data)-1
+            if start > end or start >= len(data):
+                return Response(status_code=416,headers={"Content-Range":f"bytes */{len(data)}"})
+            headers["Content-Range"] = f"bytes {start}-{end}/{len(data)}"
+            return Response(data[start:end+1],status_code=206,media_type=attachment.media_type,headers=headers)
+        return Response(data,media_type=attachment.media_type,headers=headers)
 
     @app.get("/chat/reply")
     def reply(request: Request):
