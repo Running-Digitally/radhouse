@@ -1,6 +1,7 @@
 """Text-only PDF/OOXML extraction in a bounded disposable child process."""
 import base64
 from io import BytesIO
+from pathlib import Path
 import json
 import os
 import resource
@@ -24,7 +25,7 @@ def _xml(archive, name):
 def _extract(data, extension):
     if extension == ".pdf":
         from pypdf import PdfReader
-        reader = PdfReader(BytesIO(data), strict=True)
+        reader = PdfReader(data if isinstance(data, Path) else BytesIO(data), strict=True)
         if reader.is_encrypted:
             raise ValueError("document_encrypted")
         if len(reader.pages) > 100:
@@ -41,7 +42,7 @@ def _extract(data, extension):
         if not has_text:
             raise ValueError("document_needs_ocr")
     else:
-        with ZipFile(BytesIO(data)) as archive:
+        with ZipFile(data if isinstance(data, Path) else BytesIO(data)) as archive:
             entries = archive.infolist()
             if (len(entries) > 2000 or sum(e.file_size for e in entries) > 32 * 1024 * 1024
                     or any(e.flag_bits & 1 or e.file_size / max(e.compress_size, 1) > 200 for e in entries)):
@@ -87,15 +88,17 @@ def _extract(data, extension):
                     parts.append(sheet.attrib.get("name", "Sheet") + "\n" + "\n".join(rows))
                 text = "\n\n".join(parts)
     if not text.strip(): raise ValueError("document_unreadable")
-    if len(text.encode()) > MAX_TEXT: raise ValueError("attachment_text_too_large")
-    return text
+    # This is an automatic excerpt, not a condition for retaining an original.
+    return text.encode()[:MAX_TEXT].decode("utf-8", errors="ignore")
 
 
 def extract_document(attachment):
     from pathlib import PurePath
-    payload = json.dumps({"extension":PurePath(attachment.name).suffix.lower(),"data":base64.b64encode(attachment.data).decode()})
+    payload = {"extension":PurePath(attachment.name).suffix.lower()}
+    if isinstance(attachment.data, Path): payload["path"] = str(attachment.data)
+    else: payload["data"] = base64.b64encode(attachment.data).decode()
     try:
-        result = subprocess.run([sys.executable, "-m", "radhouse.chat.documents"], input=payload,
+        result = subprocess.run([sys.executable, "-m", "radhouse.chat.documents"], input=json.dumps(payload),
             text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=15, env={**os.environ,"PYTHONDONTWRITEBYTECODE":"1"})
         if result.returncode or len(result.stdout.encode()) > MAX_TEXT * 6 + 32768:
             raise Rejected("document_too_complex", 422)
@@ -115,7 +118,8 @@ def _main():
     resource.setrlimit(resource.RLIMIT_FSIZE, (0,0))
     try:
         value = json.load(sys.stdin)
-        print(json.dumps({"text":_extract(base64.b64decode(value["data"],validate=True),value["extension"])},ensure_ascii=False))
+        data = Path(value["path"]) if "path" in value else base64.b64decode(value["data"],validate=True)
+        print(json.dumps({"text":_extract(data,value["extension"])},ensure_ascii=False))
     except Exception as exc:
         code = str(exc) if isinstance(exc,ValueError) and str(exc) in {"document_unreadable","document_encrypted","document_too_complex","document_needs_ocr","attachment_text_too_large"} else "document_unreadable"
         print(json.dumps({"error":code}))

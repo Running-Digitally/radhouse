@@ -5,6 +5,8 @@ import asyncio
 import logging
 import sqlite3
 import re
+import os
+import hashlib
 from urllib.parse import quote
 from typing import Annotated
 
@@ -14,7 +16,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from radhouse.domain.tasks import Rejected
-from .attachments import MAX_FILES, MAX_FILE, MAX_REQUEST, decode_uploads
+from .attachments import FILE_ID, classify
 
 STATIC = Path(__file__).with_name("static")
 
@@ -27,42 +29,11 @@ class Login(BaseModel):
     remember_browser: bool = False
 
 
-class Upload(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-    name: Annotated[str, Field(min_length=1, max_length=200)]
-    content: Annotated[str, Field(min_length=1, max_length=4 * ((MAX_FILE + 2) // 3))]
-
-
 class Message(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     request_id: Annotated[str, Field(pattern=r"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$")]
     text: Annotated[str, Field(max_length=16000)]
-    attachments: Annotated[list[Upload], Field(max_length=MAX_FILES)] = Field(default_factory=list)
-
-
-class BoundedBody:
-    """Bound streamed bodies before JSON parsing, including chunked requests."""
-    def __init__(self, app): self.app = app
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] != "http" or scope["method"] != "POST":
-            return await self.app(scope, receive, send)
-        body = bytearray()
-        while True:
-            message = await receive()
-            if message["type"] == "http.disconnect": return
-            chunk = message.get("body", b"")
-            if len(body) + len(chunk) > MAX_REQUEST:
-                return await JSONResponse({"error":"attachments_too_large"},status_code=413)(scope, receive, send)
-            body.extend(chunk)
-            if not message.get("more_body", False): break
-        delivered = False
-        async def bounded_receive():
-            nonlocal delivered
-            if delivered: return await receive()
-            delivered = True
-            return {"type":"http.request", "body":bytes(body), "more_body":False}
-        await self.app(scope, bounded_receive, send)
+    attachments: list[Annotated[str, Field(pattern=FILE_ID.pattern)]] = Field(default_factory=list)
 
 
 def create_app(auth, service):
@@ -90,8 +61,6 @@ def create_app(auth, service):
             await observer
 
     app = FastAPI(title="Radhouse", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
-
-    app.add_middleware(BoundedBody)
 
     @app.middleware("http")
     async def private_responses(request, call_next):
@@ -168,18 +137,51 @@ def create_app(auth, service):
     @app.post("/chat/messages")
     def send(body: Message, request: Request):
         principal = owner(request)
-        return service.send(principal, body.request_id, body.text, decode_uploads([a.model_dump() for a in body.attachments]))
+        return service.send(principal, body.request_id, body.text, tuple(service.store.upload(principal, file_id) for file_id in body.attachments))
+
+    def file_receipt(attachment):
+        return {"file_id":attachment.file_id, "name":attachment.name, "size":attachment.size,
+                "sha256":attachment.sha256, "media_type":attachment.media_type, "kind":attachment.kind}
+
+    @app.put("/chat/files/{file_id}")
+    async def upload_file(file_id: str, request: Request, name: str):
+        principal = owner(request)  # Cookie, owner, origin and CSRF before body consumption.
+        digest, size, prefix = hashlib.sha256(), 0, bytearray()
+        path = None
+        try:
+            stream, path = service.store.begin_upload(principal, file_id, name)
+            with stream:
+                async for chunk in request.stream():
+                    # Offload disk writes; never assemble the file in memory.
+                    await asyncio.to_thread(stream.write, chunk)
+                    digest.update(chunk); size += len(chunk)
+                    prefix.extend(chunk[:max(0,4096-len(prefix))])
+                await asyncio.to_thread(stream.flush)
+                await asyncio.to_thread(os.fsync, stream.fileno())
+            media, kind = classify(name, bytes(prefix))
+            attachment = await asyncio.to_thread(service.store.commit_upload, principal, file_id, name, path, media, kind, digest.hexdigest(), size)
+            return file_receipt(attachment)
+        except OSError:
+            raise Rejected("file_storage_unavailable", 507) from None
+        finally:
+            if path is not None: path.unlink(missing_ok=True)
+
+    @app.get("/chat/files/{file_id}")
+    def upload_receipt(file_id: str, request: Request):
+        return file_receipt(service.store.upload(owner(request), file_id))
 
     @app.post("/chat/messages/{request_id}/retry")
     def retry(request_id: str, request: Request):
         return service.retry(owner(request), request_id)
 
     @app.get("/chat/messages/{request_id}/attachments/{position}")
-    def attachment(request_id: str, position: Annotated[int, Field(ge=0,lt=MAX_FILES)], request: Request, download: bool = False):
+    def attachment(request_id: str, position: Annotated[int, Field(ge=0)], request: Request, download: bool = False):
         attachment = service.store.attachment(owner(request), request_id, position)
         disposition = "inline" if not download and attachment.kind in {"image","audio"} else "attachment"
         headers = {"Content-Disposition":disposition + "; filename*=UTF-8''" + quote(attachment.name,safe=""), "Accept-Ranges":"bytes"}
         data = attachment.data
+        if isinstance(data, Path):
+            return FileResponse(data, media_type=attachment.media_type, headers=headers)
         range_header = request.headers.get("range")
         if range_header:
             match = re.fullmatch(r"bytes=(\d{0,20})-(\d{0,20})", range_header)

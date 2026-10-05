@@ -28,8 +28,8 @@ class Transcriber:
 
     def transcribe(self, attachment):
         try:
-            with self.client.stream("POST", self.endpoint, data={"model":"whisper-1","response_format":"json","temperature":"0"},
-                    files={"file":(attachment.name,attachment.data,attachment.media_type)}) as response:
+            with attachment.open() as audio, self.client.stream("POST", self.endpoint, data={"model":"whisper-1","response_format":"json","temperature":"0"},
+                    files={"file":(attachment.name,audio,attachment.media_type)}) as response:
                 if response.status_code != 200: raise Rejected("audio_transcription_unavailable",503)
                 body = bytearray()
                 for chunk in response.iter_bytes():
