@@ -1,96 +1,84 @@
-# Radhouse Public Site Hosting
+# Radhouse public site hosting
 
-Status: current as of 2026-09-16
+Updated 6 October 2026. Owner: Satish. The owner approved the reviewed redesign,
+Personal PostHog verification, GitHub merge and Cloudflare public rollout.
+The frozen artifact is recorded in `release-manifest.json`.
 
-Owner: Satish
+## Hosting contract
 
-## Hosting Contract
-
-| Concern | Current value |
+| Concern | Value |
 | --- | --- |
 | Public URL | `https://radhouse.runningdigitally.com/` |
 | Hosting | Cloudflare Workers Static Assets |
-| Worker project | `radhouse` |
-| Worker URL | recorded at first deployment; see `../../private-installation-record` |
+| Existing Worker | `radhouserunningdigitallycom` |
+| Worker URL | `https://radhouserunningdigitallycom.connect-a95.workers.dev/` |
 | Source root | `site/` |
-| Build command | none — `site/public/` is committed as-is |
-| Deployable output | `site/public/` |
-| Access | Public and unauthenticated |
+| Build command | none |
+| Upload root | contents of `site/public/`, with `index.html` at root |
+| Access | public and unauthenticated |
 
-This is a separate Cloudflare Workers Static Assets project from the main
-`runningdigitally` project that serves `https://runningdigitally.com/`.
-Keeping them separate lets the two sites deploy and roll back independently.
-This site is not hosted on OpenAI Sites, Cloudflare Pages, or a homelab
-origin. The custom domain is attached directly to the Cloudflare Worker, and
-Cloudflare owns the public TLS and DNS edge path.
+The Worker name is corrected from this document's earlier proposed `radhouse`
+name. The current name and endpoint are recorded in the infrastructure placement
+reference, `private-installation-record`,
+and the parent release handoff. The Cloudflare dashboard was independently inspected on 6 October in the
+owner's existing account. It names the same Worker and links its custom domain
+to `radhouse.runningdigitally.com`. Its existing static-file uploader supplies
+routine content releases.
 
-The infrastructure-side placement and DNS guidance live in
-[`private-installation-record`](https://github.com/satishsurath/private-installation-record).
+Radhouse is independent of the `runningdigitally` Worker. It is not a Pages
+project, an OpenAI Site or a homelab origin. Routine releases don't require
+changes to DNS, access, bindings or any other Worker.
 
-## Build And Validate
+## Validate the artifact
 
-There is no build step. `site/public/` is hand-written HTML and CSS, committed
-directly, with no dependencies and no compilation. This means the deployed
-artifact is always exactly what is in Git — there is no drift risk between
-source and release.
+There is no compilation. HTML, CSS, JavaScript, SVGs and the pinned, licensed
+PostHog SDK are committed as the deployable artifact. Run the targeted checks
+in [README.md](README.md), review desktop and narrow layouts and exercise
+keyboard, reduced-motion, disclosures, error recovery and external links.
+Serve with `python3 site/preview.py` to test the actual security headers.
 
-Before a release, confirm the brand assets are still in sync with their
-source:
+Only the exact public hostname collects production analytics. A loopback
+preview requires `?analytics=preview`; that parameter is removed from captured
+URLs. The Worker endpoint does not collect production events. PostHog uses
+https://posthog.sati.sh, Radhouse-specific browser persistence and production/
+preview labels. See README for masking and collection details.
 
-```bash
-uv run pytest tests/test_brand_assets.py
-```
+The prior claim of no third-party requests describes the old production page.
+The refresh adds owner-approved public analytics and replay. `_headers` allows
+scripts only from the site and connections only to the personal PostHog host;
+there is no inline-script allowance. No application secrets, API credentials,
+database, runtime variables or application server are needed.
 
-And serve the directory locally to eyeball it:
+## Release
 
-```bash
-cd site/public
-python3 -m http.server 8931
-# open http://localhost:8931/
-```
+1. Freeze the reviewed `public/` directory and record a per-file SHA-256 manifest.
+2. Sign in to Cloudflare and open the existing `radhouserunningdigitallycom`
+   Worker. Confirm its custom domain is `radhouse.runningdigitally.com`.
+3. Retain the current deployment ID for rollback.
+4. Direct-upload all contents of `public/` as a new deployment, preserving the
+   relative paths, including `vendor/`, `_headers` and `404.html`.
+5. Verify the Worker endpoint first, then the custom domain. Compare every
+   served artifact to the frozen manifest, including the response headers.
+6. Check public interactions, anonymous project links, 404 status, PostHog
+   events with `site=radhouse.runningdigitally.com` and `environment=production`,
+   in personal project 1. Session replay viewing requires separate authorization;
+   it is not a prerequisite for checking tagged ingestion.
 
-## Publish
-
-1. If this is the first deployment: in the Cloudflare dashboard, create a new
-   Workers & Pages project using Static Assets. Suggested project name:
-   `radhouse`.
-2. Direct-upload the contents of `site/public/` as a new deployment.
-3. Verify the generated `*.workers.dev` URL returns `200` before touching DNS.
-4. Attach `radhouse.runningdigitally.com` as the Worker's custom domain.
-   Cloudflare creates the required DNS record; do not hand-create one.
-5. For subsequent releases, direct-upload the contents of `site/public/` to
-   the existing `radhouse` project. Do not create a second project.
-
-No application secrets, runtime variables, database, or persistent storage are
-required. The site has no server-side component and makes no third-party
-network requests — see `site/public/_headers` for the enforced Content
-Security Policy.
-
-## Verify
-
-```bash
-curl -fsS -o /dev/null -w '%{http_code}\n' \
-  https://<project>.workers.dev/
-curl -fsS -o /dev/null -w '%{http_code}\n' \
-  https://radhouse.runningdigitally.com/
-```
-
-Both endpoints should return HTTP `200`. Confirm the page title, the status
-line, the brand mark, and that the Running Digitally and GitHub links resolve
-after a content release.
+No deploy configuration is added, and no second Worker should be created. The
+owner authorized committing this review, opening a draft PR, merging it, and
+performing the public Cloudflare rollout. Upload the artifact from merged source.
 
 ## Rollback
 
-Use the Cloudflare Worker deployment history to promote the previous
-known-good deployment. A routine content rollback does not require changing
-the custom domain, DNS, or any homelab route.
+Promote the previous known-good deployment in this Worker's deployment history
+when available. If the static uploader does not expose its prior deployment ID,
+retain a verified archive of the pre-release public files and restore it through
+the same uploader. Keep the same custom domain, DNS, bindings and access. Verify
+both endpoints and served hashes again after rollback.
 
-## DNS Cache Troubleshooting
+## DNS cache troubleshooting
 
-After first attaching or changing a custom domain, recursive resolvers may
-temporarily cache the earlier no-answer response. Wait for the negative TTL or
-flush the recursive resolver cache. Do not create a local DNS override.
-
-The active homelab Pi-hole resolvers can be flushed with `pihole reloaddns` in
-their `pihole` containers. If both resolvers return the new public answer but a
-Mac still fails, flush the Mac DNS cache and retry.
+If an endpoint cannot resolve, compare public and local resolver answers before
+changing anything. Negative resolver caches can persist after first attachment.
+Don't create a local DNS override or alter the public route as a content-release
+workaround. Any resolver or host action belongs to a separate diagnosed issue.
