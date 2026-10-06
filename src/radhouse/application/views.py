@@ -1,6 +1,7 @@
 """Permission-aware read models for the operator work home."""
 from dataclasses import dataclass
 
+from radhouse.application.work_service import WorkView
 from radhouse.domain.access import BotProfile
 from radhouse.domain.tasks import Task, TaskTitle
 from radhouse.domain.releases import Publication
@@ -33,6 +34,7 @@ class TaskCard:
     resume: ActionView
     review: ActionView
     publication: Publication | None = None
+    work: WorkView | None = None
 
 
 @dataclass(frozen=True)
@@ -44,3 +46,5 @@ class WorkHome:
     agents: tuple[BotProfile, ...]
     tasks: tuple[TaskCard, ...]
     start: ActionView
+    attention: tuple[str, ...] = ()
+    durable_work_enabled: bool = False

@@ -30,7 +30,7 @@ def owned_environment() -> tuple[str, str]:
     if not re.fullmatch(r"[0-9a-f]{32}", run_id):
         raise RuntimeError("invalid VS0 run ownership")
     manifest = json.loads(Path(manifest_path).read_text())
-    if manifest.get("run_id") != run_id or manifest.get("database") != f"radhouse_vs0_{run_id}" or not manifest.get("container_id"):
+    if manifest.get("run_id") != run_id or manifest.get("database") != f"radhouse_vs0_{run_id}" or not (manifest.get("container_id") or manifest.get("native_cluster_id") == run_id):
         raise RuntimeError("missing VS0 fixture ownership")
     return dsn, run_id
 
@@ -40,7 +40,7 @@ def seed_fixture(dsn: str) -> None:
     data = json.loads(FIXTURE.read_text())
     with psycopg.connect(dsn) as connection:
         # Reverse FK order from the fixture schema. No schema/role authority is used.
-        for table in ("conversation_outbox", "conversation_messages", "conversation_links", "project_coordination", "local_sessions", "local_login_throttles", "local_credentials", "events", "deliveries", "commands", "publications", "reviews", "agent_dispatches", "operations", "budget_reservations", "claims", "task_revisions", "attempts", "tasks", "channel_bindings", "project_bots", "project_members", "bot_grants", "bots", "projects", "actors"):
+        for table in ("work_verifications", "work_artifacts", "work_steps", "work_items", "conversation_outbox", "conversation_messages", "conversation_links", "project_coordination", "local_sessions", "local_login_throttles", "local_credentials", "events", "deliveries", "commands", "publications", "reviews", "agent_dispatches", "operations", "budget_reservations", "claims", "task_revisions", "attempts", "tasks", "channel_bindings", "project_bots", "project_members", "bot_grants", "bots", "projects", "actors"):
             connection.execute(sql.SQL("DELETE FROM {}").format(sql.Identifier("public", table)))
         for bot in data["bots"]:
             connection.execute(

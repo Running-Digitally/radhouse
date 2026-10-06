@@ -184,6 +184,40 @@ class AgentResponse(StrictModel):
     state: str
 
 
+class ArtifactResponse(StrictModel):
+    artifact_id: str
+    work_id: str
+    scope_revision: int
+    task_id: str
+    attempt_id: str
+    name: str
+    media_type: Literal["text/markdown", "text/plain"]
+    sha256: str
+    size_bytes: int
+    created_at: datetime
+
+
+class WorkBlockerResponse(StrictModel):
+    code: str
+    resolver: Literal["automatic", "owner", "administrator"]
+    message: str
+
+
+class WorkResponse(StrictModel):
+    work_id: str
+    task_id: str
+    title: str
+    scope_revision: int
+    state_revision: int
+    state: Literal["queued", "active", "waiting", "paused", "stopping", "completed", "failed", "cancelled"]
+    state_label: str
+    needs_input: bool
+    blockers: tuple[WorkBlockerResponse, ...]
+    artifact: ArtifactResponse | None
+    created_at: datetime
+    updated_at: datetime
+
+
 class TaskCardResponse(StrictModel):
     task: TaskResponse
     title: TaskTitleResponse
@@ -193,6 +227,7 @@ class TaskCardResponse(StrictModel):
     resume: ActionResponse
     review: ActionResponse
     publication: PublicationResponse | None = None
+    work: WorkResponse | None = None
 
 
 class WorkHomeResponse(StrictModel):
@@ -203,6 +238,8 @@ class WorkHomeResponse(StrictModel):
     agents: tuple[AgentResponse, ...]
     tasks: tuple[TaskCardResponse, ...]
     start: ActionResponse
+    attention: tuple[str, ...] = ()
+    durable_work_enabled: bool = False
 
 
 class ProjectCoordinationResponse(StrictModel):

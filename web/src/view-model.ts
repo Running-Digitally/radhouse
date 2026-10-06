@@ -58,7 +58,21 @@ export function actionReason(action: ActionState): string | null {
 }
 
 export function blockerMessages(card: TaskCard): string[] {
+  if (card.work) return card.work.blockers.map(blocker => blocker.message);
   return card.task.blockers.map(
     (blocker) => blockerLabels[blocker] ?? "This task is waiting for a checked condition.",
   );
+}
+
+export function isFinished(card: TaskCard): boolean {
+  return card.work ? ["completed", "failed", "cancelled"].includes(card.work.state) : card.task.phase === "closed";
+}
+
+export function attentionFor(home: import("./types.js").WorkHome): { kind: "input" | "waiting" | "none"; tasks: TaskCard[] } {
+  const pending = home.tasks.filter(card => card.work
+    ? card.work.needs_input && (home.attention ?? []).includes(card.work.work_id)
+    : card.task.phase === "active" && card.task.permission_request !== null);
+  if (pending.length) return { kind: "input", tasks: pending };
+  const waiting = home.tasks.filter(card => card.work?.state === "waiting");
+  return { kind: waiting.length ? "waiting" : "none", tasks: waiting };
 }
