@@ -51,6 +51,7 @@ function tell(code, action=null) {
   $("notice-action").textContent=["csrf_denied","request_origin_denied","message_conflict"].includes(code) ? "Reconnect" : "Retry";
 }
 function clearNotice() { noticeCode=null; noticeAction=null; $("notice").hidden=true; $("login-notice").hidden=true; }
+function managementNavigation() { $("management-nav").hidden=session?.management?.read!==true; }
 function key() { return "radhouse-chat-draft:"+session.username; }
 let draftDatabase;
 function database() {
@@ -71,6 +72,7 @@ async function draftOperation(storageKey,value) {
   });
 }
 let draftWrites=Promise.resolve(), draftRevision=0, savedSignature=null, draftWriteFailed=false;
+let managementLeaving=false;
 function snapshotSignature(value) {
   return JSON.stringify({...value,revision:undefined,
     attachments:value.attachments.map(file => ({...file,blob:undefined})),
@@ -94,12 +96,31 @@ function saveState() {
       has_files:!!(saved.attachments.length || saved.outbox?.attachments.length || saved.outbox?.missing_files),
       outbox:saved.outbox ? {...saved.outbox,attachments:saved.outbox.attachments.map(file => ({...file,blob:undefined}))} : null})); fallback=true;
   } catch (_) {}
-  draftWrites=draftWrites.catch(() => {}).then(() => draftOperation(storageKey,saved)).then(() => { draftWriteFailed=false; }).catch(error => {
-    if (saved.attachments.length || saved.outbox?.attachments.length || !fallback) { draftWriteFailed=true; throw error; }
+  draftWrites=draftWrites.catch(() => {}).then(() => draftOperation(storageKey,saved)).then(() => { draftWriteFailed=false; }).catch(() => {
+    if (saved.attachments.length || saved.outbox?.attachments.length || !fallback) { draftWriteFailed=true; throw new Error("draft_storage_unavailable"); }
   });
   return draftWrites;
 }
 function persist() { const savingSession=session; return saveState().catch(() => { if (session===savingSession) tell("draft_storage_unavailable",persist); }); }
+$("management-nav").addEventListener("click",async event => {
+  const link=event.target.closest("a");
+  if (!link || event.button!==0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  const destination=new URL(link.href);
+  if (destination.pathname==="/" || !session || openingHistory || managementLeaving) return;
+  const leavingSession=session; managementLeaving=true;
+  try {
+    // Full-page navigation must not discard the only unsent original. Also
+    // await edits/files queued while a previous IndexedDB write was pending.
+    while (session===leavingSession && !openingHistory) {
+      const saving=saveState(); await saving;
+      if (session!==leavingSession || openingHistory) return;
+      if (saving!==draftWrites || snapshotSignature({...draft,text:$("message").value,outbox})!==savedSignature) continue;
+      location.assign(destination.href); return;
+    }
+  } catch (_) { if (session===leavingSession) tell("draft_storage_unavailable",persist); }
+  finally { managementLeaving=false; }
+});
 function releaseFile(file) { const url=previewUrls.get(file.file_id); if (url) URL.revokeObjectURL(url); previewUrls.delete(file.file_id); }
 function releasePreviews() { for (const url of previewUrls.values()) URL.revokeObjectURL(url); previewUrls.clear(); }
 function showLogin(expired=false) {
@@ -111,6 +132,7 @@ function showLogin(expired=false) {
       structuredClone({...draft,text:$("message").value,outbox,version:2,revision:draftRevision}));
   }
   session=null; pendingLookup=null; releasePreviews(); draft=emptyDraft(); outbox=null; turns.clear(); turnNodes.clear(); draftSignature="";
+  managementNavigation();
   busy=false; polling=false; filesLoading=false; openingHistory=false;
   $("messages").replaceChildren(); $("draft-files").replaceChildren(); $("message").value="";
   $("chat-view").hidden=true; $("logout").hidden=true; $("login-view").hidden=false; $("loading").hidden=true;
@@ -317,6 +339,7 @@ async function openConversation() {
   const openingSession=session; openingHistory=true; followingLatest=true; olderLoaded=false; olderBefore=null;
   turns.clear(); turnNodes.clear(); $("messages").replaceChildren(); draftSignature=""; draft=emptyDraft(); outbox=null;
   $("login-view").hidden=true; $("chat-view").hidden=false; $("logout").hidden=false; $("loading").hidden=true;
+  managementNavigation();
   controls();
   const storageKey=key(); let stored, fallback;
   try { stored=await draftOperation(storageKey); } catch (_) {}
@@ -357,7 +380,7 @@ async function refreshHistory() {
   try {
     const fresh=await api("/auth/session");
     if (session!==readingSession) return;
-    Object.assign(readingSession,fresh); clearNotice();
+    Object.assign(readingSession,fresh); managementNavigation(); clearNotice();
     const data=await api("/chat/history"); if (session===readingSession) accept(data);
   } catch (error) { if (session===readingSession) tell(error.message,refreshHistory); }
 }
@@ -394,7 +417,7 @@ async function transmit(box) {
   try {
     const credentials=await api("/auth/session");
     if (session!==sendingSession) return;
-    Object.assign(sendingSession,credentials);
+    Object.assign(sendingSession,credentials); managementNavigation();
     await saveState();
     if (session!==sendingSession) return;
     if (box.legacy) {
@@ -428,7 +451,7 @@ async function retrySaved(requestId) {
   try {
     const credentials=await api("/auth/session");
     if (session!==sendingSession) return;
-    Object.assign(sendingSession,credentials);
+    Object.assign(sendingSession,credentials); managementNavigation();
     const data=await api("/chat/messages/"+requestId+"/retry",{}); if (session===sendingSession) accept(data);
   }
   catch (error) { if (session===sendingSession) tell(error.message,refreshHistory); }
@@ -511,6 +534,7 @@ setInterval(async () => {
   catch (error) { if (session===readingSession) tell(error.message,refreshHistory); }
   finally { if (session===readingSession) polling=false; }
 },2000);
+window.addEventListener("resize", resizeMessage);
 (async () => {
   const startingSession=session;
   try { const credentials=await api("/auth/session",undefined,true); if (session!==startingSession) return; session=credentials; await openConversation(); }
