@@ -132,6 +132,34 @@ try {
   const largeDownload = page.waitForEvent("download");
   await page.getByRole("link",{name:"large.bin",exact:true}).click();
   if (!(await readFile(await (await largeDownload).path())).equals(await readFile(fixtures+"/large.bin"))) throw new Error("Changed large original");
+  // A failed IndexedDB write must not let an older readable record replace
+  // newer fallback text, and matching binary originals must remain available.
+  await page.locator("#file-picker").setInputFiles(fixtures+"/notes.txt");
+  await expect(page.locator("#draft-files")).toContainText("notes.txt");
+  await page.locator("#message").fill("Older draft with a retained original.");
+  await page.evaluate(async () => { await draftWrites; window.originalDraftOperation=draftOperation;
+    draftOperation=(storageKey,value) => value===undefined ? window.originalDraftOperation(storageKey) : Promise.reject(new Error("draft_storage_unavailable")); });
+  await page.locator("#message").fill("Newer draft survives the failed storage write.");
+  await expect(page.locator("#notice")).toContainText("couldn’t save this draft");
+  await page.reload();
+  await expect(page.locator("#message")).toHaveValue("Newer draft survives the failed storage write.");
+  if (await page.evaluate(() => draft.attachments[0].blob.text())!=="A simple plan") throw new Error("Fallback recovery lost the retained original");
+  // The same reconciliation must retain an outgoing request, rather than
+  // reintroducing the old unsent draft or creating a second request identity.
+  const recoveredRequest=await page.evaluate(async () => {
+    await draftWrites; window.originalDraftOperation=draftOperation;
+    draftOperation=(storageKey,value) => value===undefined ? window.originalDraftOperation(storageKey) : Promise.reject(new Error("draft_storage_unavailable"));
+    outbox={request_id:crypto.randomUUID(),text:$("message").value,attachments:draft.attachments,transmitted:false};
+    draft=emptyDraft(); $("message").value="A separate next draft.";
+    try { await saveState(); } catch (_) {}
+    return outbox.request_id;
+  });
+  await page.reload();
+  await expect(page.locator("#message")).toHaveValue("A separate next draft.");
+  if (await page.evaluate(() => outbox.request_id)!==recoveredRequest) throw new Error("Fallback recovery changed the outgoing request");
+  if (await page.evaluate(() => outbox.attachments[0].blob.text())!=="A simple plan") throw new Error("Outgoing fallback lost the retained original");
+  await page.getByRole("button",{name:"Edit message",exact:true}).click();
+  await page.getByRole("button",{name:"Remove notes.txt",exact:true}).click();
   // Long text is preserved verbatim, and conversion is an explicit owner action.
   const longText="A long pasted line — 😀\n".repeat(1100);
   await page.locator("#message").fill(longText);
@@ -140,6 +168,23 @@ try {
   await expect(page.locator("#send")).toBeDisabled();
   await page.reload();
   await expect(page.locator("#message")).toHaveValue(longText);
+  await page.evaluate(() => { window.originalDraftOperation=draftOperation; window.holdDraftWrite=true;
+    draftOperation=async (storageKey,value) => {
+      if (value!==undefined && window.holdDraftWrite) await new Promise(resolve => { window.releaseDraftWrite=resolve; });
+      return window.originalDraftOperation(storageKey,value);
+    }; });
+  await page.getByRole("button",{name:"Attach as text file",exact:true}).click();
+  await expect.poll(() => page.evaluate(() => typeof window.releaseDraftWrite)).toBe("function");
+  const editedLongText=longText+"Edits typed while the file conversion is saving.";
+  await page.locator("#message").fill(editedLongText);
+  await page.evaluate(() => { window.holdDraftWrite=false; window.releaseDraftWrite(); });
+  await expect(page.locator("#draft-files")).toContainText("pasted-text.txt");
+  await expect(page.locator("#message")).toHaveValue(editedLongText);
+  await page.reload();
+  await expect(page.locator("#message")).toHaveValue(editedLongText);
+  // Unchanged text still clears normally; retain that file for the download proof.
+  await page.getByRole("button",{name:"Remove pasted-text.txt",exact:true}).click();
+  await page.locator("#message").fill(longText);
   await page.getByRole("button",{name:"Attach as text file",exact:true}).click();
   await expect(page.locator("#message")).toHaveValue("");
   await expect(page.locator("#draft-files")).toContainText("pasted-text.txt");

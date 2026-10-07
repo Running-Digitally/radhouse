@@ -67,14 +67,15 @@ async function draftOperation(storageKey,value) {
     transaction.onerror=transaction.onabort=() => reject(new Error("draft_storage_unavailable"));
   });
 }
-let draftWrites=Promise.resolve();
+let draftWrites=Promise.resolve(), draftRevision=0;
 function saveState() {
   if (!session) return Promise.resolve();
   draft.text=$("message").value;
-  const storageKey=key(), saved=structuredClone({version:2,...draft,outbox});
+  draftRevision=Math.max(draftRevision+1,Date.now());
+  const storageKey=key(), saved=structuredClone({version:2,revision:draftRevision,...draft,outbox});
   let fallback=false;
   try {
-    localStorage.setItem(storageKey,JSON.stringify({version:2,text:saved.text,
+    localStorage.setItem(storageKey,JSON.stringify({version:2,revision:saved.revision,text:saved.text,
       attachments:saved.attachments.map(file => ({...file,blob:undefined})),
       has_files:!!(saved.attachments.length || saved.outbox?.attachments.length || saved.outbox?.missing_files),
       outbox:saved.outbox ? {...saved.outbox,attachments:saved.outbox.attachments.map(file => ({...file,blob:undefined}))} : null})); fallback=true;
@@ -255,13 +256,27 @@ function migrateFile(file) {
   const bytes=Uint8Array.from(atob(file.content),c => c.charCodeAt(0));
   return {...file,content:undefined,blob:new Blob([bytes],{type:file.type}),file_id:crypto.randomUUID()};
 }
+function recoveredSnapshot(stored,fallback) {
+  const revision=value => Number.isSafeInteger(value?.revision) && value.revision>=0 ? value.revision : 0;
+  draftRevision=Math.max(draftRevision,revision(stored),revision(fallback));
+  if (!fallback || stored && revision(stored)>=revision(fallback)) return stored;
+  // The fallback owns newer text/request state; IndexedDB may still hold the
+  // same immutable originals after a failed write. Never restore removed files.
+  const originals=new Map([...(stored?.attachments || []),...(stored?.outbox?.attachments || [])]
+    .filter(file => file.file_id && file.blob instanceof Blob).map(file => [file.file_id,file.blob]));
+  const files=values => (values || []).map(file => originals.has(file.file_id) ? {...file,blob:originals.get(file.file_id)} : file);
+  return {...fallback,attachments:files(fallback.attachments),
+    outbox:fallback.outbox ? {...fallback.outbox,attachments:files(fallback.outbox.attachments)} : null};
+}
 async function openConversation() {
   const openingSession=session; openingHistory=true; followingLatest=true; olderLoaded=false; olderBefore=null;
   turns.clear(); turnNodes.clear(); $("messages").replaceChildren(); draftSignature=""; draft=emptyDraft(); outbox=null;
   $("login-view").hidden=true; $("chat-view").hidden=false; $("logout").hidden=false; $("loading").hidden=true;
-  let saved;
-  try { saved=await draftOperation(key()); } catch (_) {}
-  if (!saved) { try { saved=JSON.parse(localStorage.getItem(key()) || "null"); if (saved?.has_files) tell("draft_storage_unavailable",persist); } catch (_) {} }
+  let stored, fallback;
+  try { stored=await draftOperation(key()); } catch (_) {}
+  try { fallback=JSON.parse(localStorage.getItem(key()) || "null"); } catch (_) {}
+  const saved=recoveredSnapshot(stored,fallback);
+  if (saved?.has_files && [...(saved.attachments || []),...(saved.outbox?.attachments || [])].some(file => !(file.blob instanceof Blob))) tell("draft_storage_unavailable",persist);
   if (session!==openingSession) return;
   if (saved && typeof saved.text==="string") {
     if (saved.version===2) { draft={text:saved.text,attachments:(saved.attachments || []).map(migrateFile)}; outbox=saved.outbox; }
@@ -376,7 +391,11 @@ $("attach-text").addEventListener("click",async () => {
   const text=$("message").value;
   await addFiles([new File([text],"pasted-text.txt",{type:"text/plain"})]);
   // Only clear after the file draft was successfully written.
-  try { await saveState(); draft.text=""; $("message").value=""; await saveState(); render(); $("message").focus(); }
+  try {
+    await saveState();
+    if ($("message").value===text) { draft.text=""; $("message").value=""; }
+    await saveState(); render(); $("message").focus();
+  }
   catch (_) { tell("draft_storage_unavailable",persist); }
 });
 $("compose").addEventListener("paste",event => { const files=[...(event.clipboardData?.files || [])]; if (files.length) { event.preventDefault(); addFiles(files); } });
