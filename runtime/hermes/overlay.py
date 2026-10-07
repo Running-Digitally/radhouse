@@ -87,7 +87,8 @@ def patch_browser(source):
 
 
 def patch_browser_install(source):
-    return _insert_function(source, "_find_agent_browser", "    from radhouse_hermes_bridge import browser_argv\n    pinned = browser_argv()\n    if pinned is not None:\n        return pinned[0]  # No npx/lazy dependency install for scoped native runs.\n")
+    source = _insert_function(source, "_find_agent_browser", "    from radhouse_hermes_bridge import browser_argv\n    pinned = browser_argv()\n    if pinned is not None:\n        return pinned[0]  # No npx/lazy dependency install for scoped native runs.\n")
+    return _insert_function(source, "_chromium_installed", "    from radhouse_hermes_bridge import browser_argv\n    if browser_argv() is not None:\n        return True  # Scoped runs use the configured, qualified Chrome pair, not ambient caches.\n")
 
 
 def patch_browser_session(source):
