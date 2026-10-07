@@ -535,6 +535,66 @@ def test_bootstrap_verify_runs_bot_canary_after_package_or_reboot_changes(monkey
     assert "maintenance-qualify" in calls[0][0] and calls[0][1] == {"candidate": selected}
 
 
+@pytest.mark.parametrize("entrypoint", ["qualify", "verify"])
+def test_bot_qualification_restores_private_umask_after_pam_reset(tmp_path, monkeypatch, entrypoint):
+    import os
+    import stat
+    import subprocess
+    bootstrap = load("radhouse_browser_bootstrap_private_profile_test", RUNTIME / "bootstrap.py")
+    bot_uid = os.geteuid()
+    identity = {"uid": bot_uid if entrypoint == "qualify" else 0}
+    selected = {"release_id": "a" * 32, "manifest_path": "fixed", "manifest_sha256": "b" * 64}
+    profile = tmp_path / "native-profile"
+    monkeypatch.setattr(bootstrap.os, "geteuid", lambda: identity["uid"])
+    monkeypatch.setattr(bootstrap.pwd, "getpwnam", lambda name: SimpleNamespace(pw_uid=bot_uid))
+    monkeypatch.setattr(bootstrap, "current_receipt", lambda: selected)
+    monkeypatch.setattr(bootstrap, "candidate", lambda item, policy: (tmp_path, {}))
+
+    def private_canary(*args, **kwargs):
+        # Native children create the Chrome profile using the inherited mask.
+        subprocess.run([sys.executable, "-I", "-c",
+            "from pathlib import Path; import sys; p=Path(sys.argv[1]); p.mkdir(); (p/'DevToolsActivePort').write_text('private')",
+            str(profile)], check=True, timeout=10)
+        assert stat.S_IMODE(profile.stat().st_mode) == 0o700
+        assert stat.S_IMODE((profile / "DevToolsActivePort").stat().st_mode) == 0o600
+        return {"sandbox_enabled": True}
+
+    monkeypatch.setattr(bootstrap, "qualify_pair", private_canary)
+
+    def nested_runuser(argv, payload):
+        assert argv[:4] == ["/usr/sbin/runuser", "-u", "radhousebot", "--"]
+        assert "maintenance-qualify" in argv
+        identity["uid"] = bot_uid
+        os.umask(0o022)  # PAM resets the parent mask in verify's nested bot launch.
+        return bootstrap.canonical(bootstrap.qualify(json.loads(payload), policy))
+
+    monkeypatch.setattr(bootstrap, "qualification_output", nested_runuser)
+    policy = {"hermes_root": str(tmp_path), "runtime_sha256": "e" * 64, "hermes_python": sys.executable}
+    previous = os.umask(0o022)
+    try:
+        result = getattr(bootstrap, entrypoint)({"candidate": selected}, policy)
+        assert result["state"] == ("qualified" if entrypoint == "qualify" else "verified")
+    finally:
+        os.umask(previous)
+
+
+def test_qualification_rejects_wrong_identity_before_changing_umask(tmp_path, monkeypatch):
+    import os
+    bootstrap = load("radhouse_browser_bootstrap_private_profile_guard_test", RUNTIME / "bootstrap.py")
+    actual_uid = os.geteuid()
+    monkeypatch.setattr(bootstrap.os, "geteuid", lambda: actual_uid)
+    monkeypatch.setattr(bootstrap.pwd, "getpwnam", lambda name: SimpleNamespace(pw_uid=actual_uid + 1))
+    monkeypatch.setattr(bootstrap, "staged_candidate", lambda *args: pytest.fail("wrong identity reached candidate"))
+    previous = os.umask(0o022)
+    try:
+        with pytest.raises(ValueError, match="maintenance_bot_required"):
+            bootstrap.qualify({}, {})
+        assert os.umask(0o022) == 0o022
+        assert not list(tmp_path.iterdir())
+    finally:
+        os.umask(previous)
+
+
 def test_qualification_observation_timeout_waits_for_child_finally(tmp_path):
     bootstrap = load("radhouse_browser_qualification_cleanup_test", RUNTIME / "bootstrap.py")
     marker = tmp_path / "finally-finished"
