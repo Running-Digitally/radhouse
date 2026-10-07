@@ -58,6 +58,9 @@ first-party security findings.
 This command performs **static analysis**. It does not execute the application
 test suite, generate test coverage or audit dependency vulnerabilities.
 Coverage displayed without an imported report is not evidence of test quality.
+The qualified Community Build also warns that it does not detect critical
+injection vulnerabilities such as SQL injection and XSS; this lane is a limited
+security check and does not establish application security.
 Continue to use the owned local fixture (`uv run python scripts/vs0.py verify`)
 and web tests independently. Review security hotspots in SonarQube; an analysis
 alone does not mark them safe. Findings on main require fixes through the normal
