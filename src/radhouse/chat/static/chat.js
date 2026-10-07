@@ -67,12 +67,23 @@ async function draftOperation(storageKey,value) {
     transaction.onerror=transaction.onabort=() => reject(new Error("draft_storage_unavailable"));
   });
 }
-let draftWrites=Promise.resolve(), draftRevision=0;
+let draftWrites=Promise.resolve(), draftRevision=0, savedSignature=null, draftWriteFailed=false;
+function snapshotSignature(value) {
+  return JSON.stringify({...value,revision:undefined,
+    attachments:value.attachments.map(file => ({...file,blob:undefined})),
+    outbox:value.outbox ? {...value.outbox,phase:undefined,error:undefined,
+      attachments:value.outbox.attachments.map(file => ({...file,blob:undefined}))} : null});
+}
 function saveState() {
   if (!session) return Promise.resolve();
   draft.text=$("message").value;
+  const saved=structuredClone({...draft,outbox}), signature=snapshotSignature(saved);
+  // Merely checking history or signing out in an unchanged tab must not give
+  // its older draft a fresh revision over another tab's newer user edits.
+  if (signature===savedSignature && !draftWriteFailed) return draftWrites;
+  savedSignature=signature;
   draftRevision=Math.max(draftRevision+1,Date.now());
-  const storageKey=key(), saved=structuredClone({version:2,revision:draftRevision,...draft,outbox});
+  const storageKey=key(); saved.version=2; saved.revision=draftRevision;
   let fallback=false;
   try {
     localStorage.setItem(storageKey,JSON.stringify({version:2,revision:saved.revision,text:saved.text,
@@ -80,8 +91,8 @@ function saveState() {
       has_files:!!(saved.attachments.length || saved.outbox?.attachments.length || saved.outbox?.missing_files),
       outbox:saved.outbox ? {...saved.outbox,attachments:saved.outbox.attachments.map(file => ({...file,blob:undefined}))} : null})); fallback=true;
   } catch (_) {}
-  draftWrites=draftWrites.catch(() => {}).then(() => draftOperation(storageKey,saved)).catch(error => {
-    if (saved.attachments.length || saved.outbox?.attachments.length || !fallback) throw error;
+  draftWrites=draftWrites.catch(() => {}).then(() => draftOperation(storageKey,saved)).then(() => { draftWriteFailed=false; }).catch(error => {
+    if (saved.attachments.length || saved.outbox?.attachments.length || !fallback) { draftWriteFailed=true; throw error; }
   });
   return draftWrites;
 }
@@ -110,6 +121,7 @@ async function api(path,body,initial=false) {
 }
 function pendingTurn() { return [...turns.values()].find(turn => !terminal.has(turn.status)); }
 function accept(data,older=false,latest=false) {
+  if (outbox && outbox.request_id===data.accepted_request_id) { outbox.attachments.forEach(releaseFile); outbox=null; persist(); }
   for (const turn of data.turns) {
     turns.set(turn.seq,turn);
     if (outbox?.request_id===turn.request_id) { outbox.attachments.forEach(releaseFile); outbox=null; persist(); }
@@ -288,6 +300,7 @@ async function openConversation() {
       outbox.attachments=outbox.attachments.map(migrateFile); outbox.phase="checking"; outbox.error=null;
     }
   }
+  savedSignature=snapshotSignature({...draft,outbox}); draftWriteFailed=false;
   $("message").value=draft.text; render({latest:true});
   try { const data=await api("/chat/history"); if (session===openingSession) accept(data,false,true); }
   catch (error) { if (session===openingSession) tell(error.message,refreshHistory); }
@@ -336,6 +349,9 @@ async function transmit(box) {
   if (busy || !session || outbox!==box) return;
   const sendingSession=session; busy=true; box.error=null; clearNotice(); box.phase="sending"; render({latest:true});
   try {
+    const credentials=await api("/auth/session");
+    if (session!==sendingSession) return;
+    Object.assign(sendingSession,credentials);
     await saveState();
     if (session!==sendingSession) return;
     if (box.legacy) {
@@ -357,6 +373,7 @@ async function transmit(box) {
       box.phase="failed"; box.error=error.message;
       if ([413,422].includes(error.status)) box.transmitted=false;
       await persist();
+      if (["csrf_denied","request_origin_denied"].includes(error.message)) tell(error.message,refreshHistory);
       try { const data=await api("/chat/history"); if (session===sendingSession) accept(data); } catch (_) {}
     }
   } finally { busy=false; if (session===sendingSession) render(); }
@@ -365,7 +382,12 @@ function retryOutgoing() { if (outbox && !pendingTurn()) transmit(outbox); }
 async function retrySaved(requestId) {
   if (busy || !session) return;
   const sendingSession=session; busy=true; clearNotice(); controls();
-  try { const data=await api("/chat/messages/"+requestId+"/retry",{}); if (session===sendingSession) accept(data); }
+  try {
+    const credentials=await api("/auth/session");
+    if (session!==sendingSession) return;
+    Object.assign(sendingSession,credentials);
+    const data=await api("/chat/messages/"+requestId+"/retry",{}); if (session===sendingSession) accept(data);
+  }
   catch (error) { if (session===sendingSession) tell(error.message,refreshHistory); }
   finally { busy=false; if (session===sendingSession) render(); }
 }

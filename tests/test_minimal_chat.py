@@ -124,6 +124,22 @@ def test_lost_ack_retries_saved_key_and_reads_completed_replay(chat):
     assert reopened.poll("alice")["turns"][0]["output"] == "A synthetic reply."
 
 
+def test_old_retry_acknowledges_exact_request_outside_latest_history_page(chat):
+    service, hermes = chat
+    hermes.status = "completed"
+    first = str(uuid4())
+    service.send("alice", first, "Keep this older message")
+    service.poll("alice")
+    for index in range(50):
+        service.send("alice", str(uuid4()), f"A later message {index}")
+        service.poll("alice")
+    response = service.retry("alice", first)
+    assert response["accepted_request_id"] == first
+    assert len(response["turns"]) == 50
+    assert all(turn["request_id"] != first for turn in response["turns"])
+    assert len(hermes.runs) == 51
+
+
 def test_expired_unknown_dispatch_never_sends_again(chat):
     service, hermes = chat
     key = str(uuid4()); hermes.lose_ack = True
