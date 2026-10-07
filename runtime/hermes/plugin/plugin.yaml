@@ -1,0 +1,7 @@
+name: radhouse-documents
+version: 1.0.0
+description: Read only the original files bound to the current Radhouse turn.
+provides_tools:
+  - document_search
+  - document_read
+kind: standalone

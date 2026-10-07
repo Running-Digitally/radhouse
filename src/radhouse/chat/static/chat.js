@@ -42,6 +42,43 @@ const emptyDraft = () => ({text:"",attachments:[]});
 let draft=emptyDraft(), noticeCode=null, noticeAction=null, draftSignature="";
 const turnNodes=new Map(), previewUrls=new Map();
 const retainedSnapshots=new Map();
+const browserView=typeof window.BrowserView==="function" ? new window.BrowserView($("assistant-browser")) : null;
+let browserEpoch=0, browserStatusRequest=null, browserRequestId=null, browserSuspended=false;
+function stopBrowser() {
+  browserEpoch++; browserStatusRequest?.controller.abort(); browserStatusRequest=null;
+  browserRequestId=null; browserView?.stop();
+}
+async function refreshBrowser() {
+  const pending=pendingTurn();
+  if (!browserView || !session || session.features?.browser!==true || !pending || browserSuspended || openingHistory) {
+    stopBrowser(); return;
+  }
+  if (document.hidden) return;
+  if (browserRequestId!==pending.request_id) { stopBrowser(); browserRequestId=pending.request_id; }
+  if (browserStatusRequest) return;
+  const request={session,request_id:pending.request_id,epoch:browserEpoch,controller:new AbortController()};
+  browserStatusRequest=request;
+  const timeout=setTimeout(()=>request.controller.abort(),5000);
+  const current=()=>session===request.session && browserEpoch===request.epoch && !browserSuspended &&
+    pendingTurn()?.request_id===request.request_id && session.features?.browser===true;
+  try {
+    const status=await api("/chat/browser",undefined,false,request.controller.signal);
+    if (current()) browserView.update(status);
+  } catch (error) {
+    if (current() && !request.controller.signal.aborted) {
+      browserView.update({state:"unavailable",run_id:browserView.run,generation:null,url:null});
+    }
+  } finally {
+    clearTimeout(timeout);
+    if (browserStatusRequest===request) browserStatusRequest=null;
+  }
+}
+$("assistant-browser").addEventListener("browser-auth-required",()=>{ if (session) showLogin(true); });
+document.addEventListener("visibilitychange",()=>{
+  browserEpoch++; browserStatusRequest?.controller.abort(); browserStatusRequest=null;
+  if (!document.hidden) void refreshBrowser();
+});
+window.addEventListener("pagehide",stopBrowser);
 function messageFits(text) { let count=0; for (const _ of text) if (++count>16000) return false; return true; }
 function tell(code, action=null) {
   noticeCode=code; noticeAction=action;
@@ -51,6 +88,7 @@ function tell(code, action=null) {
   $("notice-action").textContent=["csrf_denied","request_origin_denied","message_conflict"].includes(code) ? "Reconnect" : "Retry";
 }
 function clearNotice() { noticeCode=null; noticeAction=null; $("notice").hidden=true; $("login-notice").hidden=true; }
+function managementNavigation() { $("management-nav").hidden=session?.management?.read!==true; }
 function key() { return "radhouse-chat-draft:"+session.username; }
 let draftDatabase;
 function database() {
@@ -71,6 +109,7 @@ async function draftOperation(storageKey,value) {
   });
 }
 let draftWrites=Promise.resolve(), draftRevision=0, savedSignature=null, draftWriteFailed=false;
+let managementLeaving=false;
 function snapshotSignature(value) {
   return JSON.stringify({...value,revision:undefined,
     attachments:value.attachments.map(file => ({...file,blob:undefined})),
@@ -94,15 +133,35 @@ function saveState() {
       has_files:!!(saved.attachments.length || saved.outbox?.attachments.length || saved.outbox?.missing_files),
       outbox:saved.outbox ? {...saved.outbox,attachments:saved.outbox.attachments.map(file => ({...file,blob:undefined}))} : null})); fallback=true;
   } catch (_) {}
-  draftWrites=draftWrites.catch(() => {}).then(() => draftOperation(storageKey,saved)).then(() => { draftWriteFailed=false; }).catch(error => {
-    if (saved.attachments.length || saved.outbox?.attachments.length || !fallback) { draftWriteFailed=true; throw error; }
+  draftWrites=draftWrites.catch(() => {}).then(() => draftOperation(storageKey,saved)).then(() => { draftWriteFailed=false; }).catch(() => {
+    if (saved.attachments.length || saved.outbox?.attachments.length || !fallback) { draftWriteFailed=true; throw new Error("draft_storage_unavailable"); }
   });
   return draftWrites;
 }
 function persist() { const savingSession=session; return saveState().catch(() => { if (session===savingSession) tell("draft_storage_unavailable",persist); }); }
+$("management-nav").addEventListener("click",async event => {
+  const link=event.target.closest("a");
+  if (!link || event.button!==0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  const destination=new URL(link.href);
+  if (destination.pathname==="/" || !session || openingHistory || managementLeaving) return;
+  const leavingSession=session; managementLeaving=true;
+  try {
+    // Full-page navigation must not discard the only unsent original. Also
+    // await edits/files queued while a previous IndexedDB write was pending.
+    while (session===leavingSession && !openingHistory) {
+      const saving=saveState(); await saving;
+      if (session!==leavingSession || openingHistory) return;
+      if (saving!==draftWrites || snapshotSignature({...draft,text:$("message").value,outbox})!==savedSignature) continue;
+      location.assign(destination.href); return;
+    }
+  } catch (_) { if (session===leavingSession) tell("draft_storage_unavailable",persist); }
+  finally { managementLeaving=false; }
+});
 function releaseFile(file) { const url=previewUrls.get(file.file_id); if (url) URL.revokeObjectURL(url); previewUrls.delete(file.file_id); }
 function releasePreviews() { for (const url of previewUrls.values()) URL.revokeObjectURL(url); previewUrls.clear(); }
 function showLogin(expired=false) {
+  stopBrowser(); browserSuspended=false;
   if (session) {
     $("username").value=session.username;
     // Keep the only original in this tab when browser storage is unavailable.
@@ -111,17 +170,18 @@ function showLogin(expired=false) {
       structuredClone({...draft,text:$("message").value,outbox,version:2,revision:draftRevision}));
   }
   session=null; pendingLookup=null; releasePreviews(); draft=emptyDraft(); outbox=null; turns.clear(); turnNodes.clear(); draftSignature="";
+  managementNavigation();
   busy=false; polling=false; filesLoading=false; openingHistory=false;
   $("messages").replaceChildren(); $("draft-files").replaceChildren(); $("message").value="";
   $("chat-view").hidden=true; $("logout").hidden=true; $("login-view").hidden=false; $("loading").hidden=true;
   clearNotice(); if (expired) tell("authentication_required");
 }
-async function api(path,body,initial=false) {
+async function api(path,body,initial=false,signal=undefined) {
   const requestingSession=session;
   const headers={};
   if (body!==undefined) { headers["Content-Type"]="application/json"; if (session) headers["X-Radhouse-CSRF"]=session.csrf_token; }
   let response;
-  try { response=await fetch(path,{method:body===undefined ? "GET" : "POST",headers,body:body===undefined ? undefined : JSON.stringify(body)}); }
+  try { response=await fetch(path,{method:body===undefined ? "GET" : "POST",headers,body:body===undefined ? undefined : JSON.stringify(body),signal}); }
   catch (_) { throw new Error("network_error"); }
   if (!response.ok) {
     let value; try { value=await response.json(); } catch (_) { value={}; }
@@ -143,7 +203,7 @@ async function reconcilePending(data) {
   try {
     const receipt=await api("/chat/messages/"+encodeURIComponent(lookup.request_id));
     if (session!==lookup.session) return;
-    rememberTurn(receipt.turn); render();
+    rememberTurn(receipt.turn); render(); void refreshBrowser();
   } catch (error) { if (session===lookup.session) tell(error.message,refreshHistory); }
   finally { if (pendingLookup===lookup) pendingLookup=null; }
 }
@@ -159,6 +219,7 @@ function accept(data,older=false,latest=false,requestedBefore=olderBefore) {
   if (older) olderLoaded=true;
   if (["network_error","conversation_unavailable","assistant_unavailable"].includes(noticeCode)) clearNotice();
   render({older,latest});
+  if (!older) void refreshBrowser();
   if (!older) reconcilePending(data);
 }
 function fileKind(file) {
@@ -171,6 +232,7 @@ function sizeLabel(bytes) { return bytes<1024 ? bytes+" B" : bytes<1024*1024 ? M
 function previewUrl(file) { if (!(file.blob instanceof Blob)) return null; if (!previewUrls.has(file.file_id)) previewUrls.set(file.file_id,URL.createObjectURL(file.blob)); return previewUrls.get(file.file_id); }
 const documentTypes={pdf:{icon:"pdf",label:"PDF"},docx:{icon:"word",label:"Word"},xlsx:{icon:"excel",label:"Excel"},pptx:{icon:"powerpoint",label:"PowerPoint"}};
 function readingLabel(file) {
+  if (file.reading_state==="available") return "Available to the assistant";
   if (file.reading_state==="excerpt") return "Text excerpt shared";
   if (file.reading_state!=="not_read") return null;
   return ({document_encrypted:"Password-protected; original saved",document_needs_ocr:"No readable text; original saved",
@@ -314,9 +376,11 @@ function recoveredSnapshot(stored,fallback) {
     outbox:chosen.outbox ? {...chosen.outbox,attachments:files(chosen.outbox.attachments)} : null};
 }
 async function openConversation() {
+  stopBrowser(); browserSuspended=false;
   const openingSession=session; openingHistory=true; followingLatest=true; olderLoaded=false; olderBefore=null;
   turns.clear(); turnNodes.clear(); $("messages").replaceChildren(); draftSignature=""; draft=emptyDraft(); outbox=null;
   $("login-view").hidden=true; $("chat-view").hidden=false; $("logout").hidden=false; $("loading").hidden=true;
+  managementNavigation();
   controls();
   const storageKey=key(); let stored, fallback;
   try { stored=await draftOperation(storageKey); } catch (_) {}
@@ -347,7 +411,7 @@ async function openConversation() {
       await persist();
       if (session!==openingSession) return;
       if (!draftWriteFailed) retainedSnapshots.delete(openingSession.username);
-      render(); if (!matchMedia("(pointer:coarse)").matches) $("message").focus();
+      render(); void refreshBrowser(); if (!matchMedia("(pointer:coarse)").matches) $("message").focus();
     }
   }
 }
@@ -357,7 +421,7 @@ async function refreshHistory() {
   try {
     const fresh=await api("/auth/session");
     if (session!==readingSession) return;
-    Object.assign(readingSession,fresh); clearNotice();
+    Object.assign(readingSession,fresh); managementNavigation(); clearNotice();
     const data=await api("/chat/history"); if (session===readingSession) accept(data);
   } catch (error) { if (session===readingSession) tell(error.message,refreshHistory); }
 }
@@ -394,7 +458,7 @@ async function transmit(box) {
   try {
     const credentials=await api("/auth/session");
     if (session!==sendingSession) return;
-    Object.assign(sendingSession,credentials);
+    Object.assign(sendingSession,credentials); managementNavigation();
     await saveState();
     if (session!==sendingSession) return;
     if (box.legacy) {
@@ -428,7 +492,7 @@ async function retrySaved(requestId) {
   try {
     const credentials=await api("/auth/session");
     if (session!==sendingSession) return;
-    Object.assign(sendingSession,credentials);
+    Object.assign(sendingSession,credentials); managementNavigation();
     const data=await api("/chat/messages/"+requestId+"/retry",{}); if (session===sendingSession) accept(data);
   }
   catch (error) { if (session===sendingSession) tell(error.message,refreshHistory); }
@@ -483,6 +547,7 @@ $("notice-action").addEventListener("click",() => noticeAction?.());
 $("history-pane").addEventListener("scroll",() => { const pane=$("history-pane"); followingLatest=pane.scrollHeight-pane.scrollTop-pane.clientHeight<80; updateLatest(); });
 $("latest").addEventListener("click",() => { followingLatest=true; $("history-pane").scrollTop=$("history-pane").scrollHeight; updateLatest(); });
 new ResizeObserver(entries => { $("chat-view").style.setProperty("--composer-height",entries[0].target.offsetHeight+14+"px"); if (followingLatest) $("history-pane").scrollTop=$("history-pane").scrollHeight; updateLatest(); }).observe($("compose"));
+new ResizeObserver(()=>{ if (followingLatest) $("history-pane").scrollTop=$("history-pane").scrollHeight; updateLatest(); }).observe($("assistant-browser"));
 $("older").addEventListener("click",async () => {
   const readingSession=session, requestedBefore=olderBefore;
   try { const data=await api("/chat/history?before="+requestedBefore); if (session===readingSession) accept(data,true,false,requestedBefore); }
@@ -498,11 +563,12 @@ $("login-form").addEventListener("submit",async event => {
   catch (error) { if (session===signingInSession) tell(error.message); } finally { button.disabled=false; }
 });
 $("logout").addEventListener("click",async () => {
+  browserSuspended=true; stopBrowser();
   const signingOutSession=session; let saved=true;
   try { await saveState(); } catch (_) { saved=false; }
   if (session!==signingOutSession) return;
   try { await api("/auth/logout",{}); if (session===signingOutSession) { showLogin(); if (!saved) tell("draft_recovery_in_tab"); } }
-  catch (error) { if (session===signingOutSession) tell(error.message); }
+  catch (error) { if (session===signingOutSession) { browserSuspended=false; void refreshBrowser(); tell(error.message); } }
 });
 setInterval(async () => {
   if (!session || !pendingTurn() || busy || polling) return;
@@ -511,6 +577,8 @@ setInterval(async () => {
   catch (error) { if (session===readingSession) tell(error.message,refreshHistory); }
   finally { if (session===readingSession) polling=false; }
 },2000);
+setInterval(()=>{ void refreshBrowser(); },2000);
+window.addEventListener("resize", resizeMessage);
 (async () => {
   const startingSession=session;
   try { const credentials=await api("/auth/session",undefined,true); if (session!==startingSession) return; session=credentials; await openConversation(); }

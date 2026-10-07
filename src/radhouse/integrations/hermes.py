@@ -70,6 +70,9 @@ class HermesRun:
     permission_request: dict | None = None
     guidance_receipts: tuple[RuntimeGuidanceReceipt, ...] | None = None
     activity: RuntimeActivity | None = None
+    session_id: str | None = None
+    dispatch_key: str | None = None
+    allowed_tools: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -78,6 +81,9 @@ class HermesCapabilities:
     disable_tools: bool = False
     allowed_tools: bool = False
     guidance_receipts: bool = False
+    document_scope: bool = False
+    browser_view: bool = False
+    browser_network_policy: dict | None = None
 
 
 class HermesRunsClient:
@@ -161,6 +167,8 @@ class HermesRunsClient:
         restriction = features.get("runs_disable_tools")
         allowed = features.get("runs_allowed_tools")
         steering = features.get("runs_steering_receipts")
+        documents = features.get("runs_document_scope")
+        browser = features.get("runs_browser_view")
         identified_steering = (isinstance(steering, dict)
             and steering.get("supported") is True and steering.get("durable") is True
             and type(steering.get("version")) is int and steering["version"] == 1
@@ -175,11 +183,19 @@ class HermesRunsClient:
                 and type(allowed.get("version")) is int and allowed.get("version") == 1
                 and allowed.get("durable") is True
                 and allowed.get("mode") == "exact_subset_of_profile" and allowed.get("max_names") == 32),
-            guidance_receipts=identified_steering)
+            guidance_receipts=identified_steering,
+            document_scope=(isinstance(documents, dict) and documents.get("supported") is True
+                and documents.get("durable") is True and type(documents.get("version")) is int
+                and documents["version"] == 1 and documents.get("scope") == "saved_turn_files"),
+            browser_view=(isinstance(browser, dict) and browser.get("supported") is True
+                and type(browser.get("version")) is int and browser["version"] == 1
+                and browser.get("mode") == "same_session_view_only"),
+            browser_network_policy=browser_network_policy(features.get("browser_network_policy")))
 
     def start_or_attach(
         self, *, input_text: str, session_id: str, dispatch_key: str, disable_tools: bool = False,
         allowed_tools: tuple[str, ...] = (), images: tuple[InputFile, ...] = (),
+        document_scope_token: str | None = None,
     ) -> HermesDispatch:
         if not input_text or len(input_text.encode("utf-8")) > MAX_INPUT_BYTES:
             raise ValueError("invalid_hermes_input")
@@ -189,6 +205,11 @@ class HermesRunsClient:
                 or any(re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value) is None for value in allowed_tools)
                 or disable_tools and allowed_tools):
             raise ValueError("invalid_hermes_tool_restriction")
+        if document_scope_token is not None and (
+                type(document_scope_token) is not str
+                or re.fullmatch(r"[A-Za-z0-9_-]{43}", document_scope_token) is None
+                or disable_tools or not {"document_search", "document_read"} <= set(allowed_tools)):
+            raise ValueError("invalid_hermes_document_scope")
         if (type(images) is not tuple or len(images) > 4
                 or any(not isinstance(image, InputFile) or not image.is_image or image.encoding != "base64"
                        for image in images)):
@@ -217,7 +238,8 @@ class HermesRunsClient:
                     ]}] if images else input_text
                 ), "session_id": session_id,
                   **({"disable_tools": True} if disable_tools else {}),
-                  **({"allowed_tools": list(allowed_tools)} if allowed_tools else {})},
+                  **({"allowed_tools": list(allowed_tools)} if allowed_tools else {}),
+                  **({"document_scope_token": document_scope_token} if document_scope_token else {})},
             headers={"Idempotency-Key": dispatch_key},
         )
         replayed = payload.get("replayed")
@@ -296,6 +318,13 @@ class HermesRunsClient:
             ),
             0,
         )
+        session_id = _response_identifier(payload, "session_id") if "session_id" in payload else None
+        dispatch_key = _response_identifier(payload, "dispatch_key") if "dispatch_key" in payload else None
+        tools = payload.get("allowed_tools")
+        if tools is not None and (type(tools) is not list or len(tools) > 32
+                or any(type(name) is not str or re.fullmatch(r"[A-Za-z0-9_-]{1,128}", name) is None for name in tools)
+                or len(set(tools)) != len(tools)):
+            raise HermesGatewayError("runtime_malformed_response")
         return HermesRun(
             run_id=run_id,
             status=status,
@@ -303,6 +332,8 @@ class HermesRunsClient:
             permission_request=permission,
             guidance_receipts=receipts,
             activity=RuntimeActivity(run_id, event, label, int(timestamp)),
+            session_id=session_id, dispatch_key=dispatch_key,
+            allowed_tools=tuple(tools) if tools is not None else None,
         )
 
     def steer(self, run_id: str, text: str, *, control_id: str | None = None) -> bool | RuntimeGuidanceReceipt:
@@ -381,6 +412,35 @@ class HermesRunsClient:
         if not isinstance(payload, dict):
             raise HermesGatewayError("runtime_malformed_response")
         return payload, response.headers
+
+
+def browser_network_policy(value):
+    """Only the fixed informational policy; malformed evidence stays unknown."""
+    if type(value) is not dict or set(value) != {
+            "schema", "verified", "source", "verified_at", "enforcement", "allowed", "denied"}:
+        return None
+    if (value["schema"] != "radhouse.browser-network-policy.v1" or type(value["verified"]) is not bool
+            or value["enforcement"] != "vm_firewall"):
+        return None
+    def summary(item):
+        return type(item) is str and 1 <= len(item) <= 256 and all(32 <= ord(c) < 127 for c in item)
+    if (value["source"] is not None and not summary(value["source"])) or any(
+            type(value[key]) is not list or len(value[key]) > 16 or not all(summary(item) for item in value[key])
+            for key in ("allowed", "denied")):
+        return None
+    stamp = value["verified_at"]
+    if stamp is not None:
+        try:
+            if type(stamp) is not str or len(stamp) > 64:
+                raise ValueError()
+            parsed = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+            if parsed.tzinfo is None or parsed > datetime.now(timezone.utc) + timedelta(minutes=5):
+                raise ValueError()
+        except ValueError:
+            return None
+    if value["verified"] and (not value["source"] or stamp is None):
+        return None
+    return {**value, "allowed": list(value["allowed"]), "denied": list(value["denied"])}
 
 
 def _validated_identifier(value: str, kind: str) -> str:

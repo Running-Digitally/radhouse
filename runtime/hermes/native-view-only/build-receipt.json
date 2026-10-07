@@ -1,0 +1,79 @@
+{
+  "schema": "radhouse.native-browser-build.v1",
+  "status": "local_fixture_passed",
+  "installed_qualification": false,
+  "inputs": {
+    "upstream_commit": "39a74c70d7759d5a6de7a22c04570bb626bbd081",
+    "source_archive_sha256": "f95f730316f2849fd62f41b2153f06fc6b78c76636270f98495c7e773ef77274",
+    "patch_sha256": "66764271d8dccf5424a17a300bed1cf820103cc84d37bf17624c2ddb681eb85a",
+    "cargo_lock_sha256": "f1f1980cf6802f2fe1f6543645c91779f95531156690a452f0342da35e4aa92f",
+    "source_lock_sha256": "b97ea62faded6ae15ed95c4c238457f90e996cb4449317a7a2ce1b609f4a8d1e"
+  },
+  "toolchain": {
+    "rustc": "1.99.0 (b940084d7 2026-09-28)",
+    "cargo": "1.99.0 (5f94df478 2026-08-27)",
+    "rustc_commit": "b940084d7eb6a299eb4bfeb8e34901bc051e7ac4",
+    "llvm": "23.1.1",
+    "container_image": "rust@sha256:114c7a4425406451c2866b6aafe69fe29b1b298832db1277d411ac73c82d04d6",
+    "target": "x86_64-unknown-linux-gnu",
+    "profile": "ci",
+    "cargo_resolution": "offline --locked"
+  },
+  "artifact": {
+    "version": "0.38.2",
+    "binary_sha256": "3cf7cebfc3e3e920c319c31f89a327b5e5a8abca1846c5d06a61cf2e2a54307b",
+    "availability": "Retained in the local task artifact directory; no published binary or installation",
+    "licenses": "Upstream Apache-2.0 and bundled third-party notices retained with local artifact"
+  },
+  "tests": [
+    {
+      "filter": "radhouse_",
+      "passed": 23
+    },
+    {
+      "filter": "native::stream",
+      "passed": 111
+    },
+    {
+      "filter": "flags::tests",
+      "passed": 91
+    }
+  ],
+  "test_count_note": "Filters overlap; these counts must not be summed as unique tests.",
+  "native_test_log_sha256": "f4207c9ca687cb1743f2468db1c07732ab4e2f1997530c0cfa9a12843ecfd71c",
+  "chromium": {
+    "version": "155.0.8059.39",
+    "revision": "1697595",
+    "archive_sha256": "55672d1f392fd3e7b7a08621b6e804e6bcb39d40cf155504abb74b3a021ea8ea",
+    "binary_sha256": "ed05e73a2cdf875326fcfa438b31c71a6a885a353610731dd52090dfc476f778"
+  },
+  "compatibility_fixture": {
+    "container_image": "sha256:269945ef1a8f3a6e5b09890f33f294b0589084fa1318f81869aa479ec49135f4",
+    "bootstrap_sha256": "113c3cdb4698c85febac3b19263eec268373deb109fff292997a65ba7a6d62bb",
+    "driver_path": "exact built Linux artifact",
+    "network": "none; disposable loopback page and control endpoints only",
+    "service_umask": "0077",
+    "result": {
+      "same_session_frame_progression": true,
+      "stationary_frame_available": true,
+      "sandbox_enabled": false,
+      "origin_guard_verified": true,
+      "view_only_input_ignored": true,
+      "chrome_control_guard_verified": true,
+      "agent_browser_version": "0.38.2",
+      "agent_browser_sha256": "3cf7cebfc3e3e920c319c31f89a327b5e5a8abca1846c5d06a61cf2e2a54307b",
+      "chromium_sha256": "ed05e73a2cdf875326fcfa438b31c71a6a885a353610731dd52090dfc476f778",
+      "runtime_sha256": null,
+      "checked_at": "2026-10-07T17:57:40.208956+00:00",
+      "environment": "disposable local amd64 Docker fixture under emulation",
+      "deployed_qualification": false,
+      "emulated_process_identity": true,
+      "process_identity_note": "Fixture-only Rosetta executable mapping from owned process command line; installed executable identity and sandbox unproven"
+    }
+  },
+  "activation_requirements": [
+    "Actual unprivileged installed bot executable identity and browser sandbox",
+    "Exact installed runtime/profile, startup capabilities and callback TLS/forward",
+    "Effective VM network policy evidence and actual browser/model/document acceptance"
+  ]
+}

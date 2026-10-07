@@ -1,0 +1,990 @@
+--- a/cli/src/native/stream/http.rs
++++ b/cli/src/native/stream/http.rs
+@@ -17,7 +17,8 @@
+ #[folder = "../packages/dashboard/out/"]
+ struct DashboardAssets;
+ 
+-pub(super) const CORS_HEADERS: &str = "Access-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\n";
++// Radhouse observers use a private relay; browser pages receive no CORS grant.
++pub(super) const CORS_HEADERS: &str = "";
+ 
+ /// Build CORS headers that reflect the request origin only when it passes
+ /// `is_allowed_origin`. Used for sensitive endpoints (chat, models) so the
+@@ -185,6 +186,15 @@
+     let first_line = request.lines().next().unwrap_or("");
+     let method = first_line.split_whitespace().next().unwrap_or("GET");
+     let path = first_line.split_whitespace().nth(1).unwrap_or("/");
++    // Radhouse: this native transport observes the existing CLI-owned browser.
++    // Deny every HTTP mutation before reading a body or invoking any handler.
++    // Presence, not validity, of Origin also blocks browser-page observation.
++    if method != "GET" || path.starts_with("/api/") || request_header_value(&request, "origin").is_some() {
++        write_json_error_response_no_cors(
++            &mut stream, "403 Forbidden", "Native browser stream is view-only.",
++        ).await;
++        return;
++    }
+     let origin = parse_origin(peeked);
+ 
+     if method == "OPTIONS" {
+@@ -666,7 +676,7 @@
+ 
+     #[cfg(unix)]
+     #[tokio::test(flavor = "current_thread")]
+-    async fn same_origin_command_post_relays_without_wildcard_cors() {
++    async fn radhouse_same_origin_command_post_never_reaches_cli_socket() {
+         let temp_parent = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+             .join("target")
+             .join("t");
+@@ -694,22 +704,57 @@
+         let response = send_request_to_handler(&request, session_name).await;
+ 
+         assert!(
+-            response.starts_with("HTTP/1.1 200 OK"),
++            response.starts_with("HTTP/1.1 403 Forbidden"),
+             "unexpected response: {response}"
+         );
+-        assert!(
+-            response.contains("Access-Control-Allow-Origin: http://localhost:7777"),
+-            "same-origin command response did not reflect origin: {response}"
+-        );
++        assert!(!response.contains("Access-Control-Allow-Origin"),
++            "view-only response exposed a CORS grant: {response}");
+         assert!(
+             !response.contains("Access-Control-Allow-Origin: *"),
+             "same-origin command response exposed wildcard CORS: {response}"
+         );
+ 
+-        let relayed = tokio::time::timeout(std::time::Duration::from_secs(1), daemon_command)
+-            .await
+-            .unwrap()
+-            .unwrap();
+-        assert!(relayed.contains(r#""action":"tabs""#), "{relayed}");
+-    }
+-}
++        assert!(tokio::time::timeout(
++            std::time::Duration::from_millis(50), daemon_command,
++        ).await.is_err(), "view-only request reached the CLI socket");
++
++    }
++
++    #[tokio::test(flavor = "current_thread")]
++    async fn radhouse_http_mutations_are_disabled_for_every_origin_and_path() {
++        for origin in [None, Some("https://public.example"), Some("http://192.168.50.1:8080"),
++            Some("http://localhost:7777"), Some("file:///fixture"), Some("null"), Some("")] {
++            for method in ["POST", "OPTIONS", "PUT", "PATCH", "DELETE", "HEAD"] {
++                for path in ["/api/command", "/api/sessions", "/api/chat", "/api/exec", "/api/kill", "/unknown"] {
++                    let origin = origin.map(|o| format!("Origin: {o}\r\n")).unwrap_or_default();
++                    let request = format!("{method} {path} HTTP/1.1\r\nHost: localhost:7777\r\n{origin}Content-Length: 0\r\n\r\n");
++                    let response = send_request_to_handler(&request, "x").await;
++                    assert!(response.starts_with("HTTP/1.1 403 Forbidden"), "{method} {path}: {response}");
++                    assert!(!response.contains("Access-Control-Allow-Origin"));
++                }
++            }
++        }
++    }
++
++    #[tokio::test(flavor = "current_thread")]
++    async fn radhouse_browser_origin_cannot_discover_native_sessions() {
++        for origin in ["https://public.example", "http://192.168.50.1:8080", "http://localhost:7777", "null", ""] {
++            let request = format!("GET /api/sessions HTTP/1.1\r\nHost: localhost:7777\r\nOrigin: {origin}\r\n\r\n");
++            let response = send_request_to_handler(&request, "x").await;
++            assert!(response.starts_with("HTTP/1.1 403 Forbidden"));
++            assert!(!response.contains("Access-Control-Allow-Origin"));
++        }
++    }
++
++    #[tokio::test(flavor = "current_thread")]
++    async fn radhouse_unused_native_http_apis_cannot_leak_inventory_after_dns_rebinding() {
++        for host in ["localhost:7777", "127.0.0.1:7777", "attacker.example:7777"] {
++            for path in ["/api/sessions", "/api/status", "/api/tabs", "/api/models", "/api/chat/status"] {
++                let request = format!("GET {path} HTTP/1.1\r\nHost: {host}\r\n\r\n");
++                let response = send_request_to_handler(&request, "x").await;
++                assert!(response.starts_with("HTTP/1.1 403 Forbidden"));
++                assert!(!response.contains("Access-Control-Allow-Origin"));
++            }
++        }
++    }
++}
+--- a/cli/src/native/stream/dashboard.rs
++++ b/cli/src/native/stream/dashboard.rs
+@@ -658,13 +658,27 @@
+ }
+ 
+ async fn handle_dashboard_connection(mut stream: tokio::net::TcpStream) {
+-    let mut buf = vec![0u8; 8192];
+-    let peeked_len = match stream.peek(&mut buf).await {
+-        Ok(n) if n > 0 => n,
+-        _ => return,
++    let Some(mut buf) = super::peek_request_headers(&stream).await else {
++        write_json_error_response_no_cors(
++            &mut stream, "403 Forbidden", "Native request headers are invalid.",
++        ).await;
++        return;
+     };
++    let peeked_len = buf.len();
+     let peeked_request = String::from_utf8_lossy(&buf[..peeked_len]);
+     let (peeked_method, peeked_path) = parse_request_method_and_path(&peeked_request);
++    // Also close the optional dashboard's exec/kill/chat/session control paths.
++    // A dashboard token or matching loopback origin cannot widen this artifact.
++    if peeked_method != "GET" || peeked_path.starts_with("/api/") || request_header_value(&peeked_request, "origin").is_some() {
++        // Consume only bounded bytes already available. Closing with the
++        // entire request unread otherwise resets TCP before denial is read.
++        let mut discarded = vec![0u8; peeked_len];
++        let _ = stream.read_exact(&mut discarded).await;
++        write_json_error_response_no_cors(
++            &mut stream, "403 Forbidden", "Native browser stream is view-only.",
++        ).await;
++        return;
++    }
+ 
+     if peeked_path.starts_with("/api/session/") {
+         let (port, endpoint) = match parse_session_proxy_route(peeked_path) {
+@@ -1169,7 +1183,7 @@
+     }
+ 
+     #[tokio::test(flavor = "current_thread")]
+-    async fn same_origin_dashboard_exec_runs_without_cors() {
++    async fn radhouse_same_origin_dashboard_exec_is_disabled() {
+         let _guard = EnvGuard::new(&[]);
+         EXEC_CLI_INVOCATIONS.store(0, std::sync::atomic::Ordering::SeqCst);
+         let body = r#"{"args":["--version"]}"#;
+@@ -1183,7 +1197,7 @@
+         let response = send_request_to_dashboard_handler(&request).await;
+ 
+         assert!(
+-            response.starts_with("HTTP/1.1 200 OK"),
++            response.starts_with("HTTP/1.1 403 Forbidden"),
+             "unexpected response: {response}"
+         );
+         assert!(
+@@ -1192,13 +1206,13 @@
+         );
+         assert_eq!(
+             EXEC_CLI_INVOCATIONS.load(std::sync::atomic::Ordering::SeqCst),
+-            1,
+-            "same-origin request did not reach exec_cli"
++            0,
++            "same-origin request reached exec_cli"
+         );
+     }
+ 
+     #[tokio::test(flavor = "current_thread")]
+-    async fn reverse_proxy_dashboard_requires_an_access_token() {
++    async fn radhouse_dashboard_token_cannot_enable_execution() {
+         let guard = EnvGuard::new(&[
+             "AGENT_BROWSER_DASHBOARD_ALLOWED_ORIGINS",
+             "AGENT_BROWSER_DASHBOARD_ACCESS_TOKEN",
+@@ -1229,16 +1243,16 @@
+             body.len(),
+         );
+         let response = send_request_to_dashboard_handler(&with_token).await;
+-        assert!(response.starts_with("HTTP/1.1 200 OK"));
++        assert!(response.starts_with("HTTP/1.1 403 Forbidden"));
+         assert_eq!(
+             EXEC_CLI_INVOCATIONS.load(std::sync::atomic::Ordering::SeqCst),
+-            1,
+-            "authenticated reverse-proxy request did not reach exec_cli"
++            0,
++            "authenticated reverse-proxy request reached exec_cli"
+         );
+     }
+ 
+     #[tokio::test(flavor = "current_thread")]
+-    async fn loopback_dashboard_does_not_require_external_access_token() {
++    async fn radhouse_loopback_dashboard_cannot_enable_execution() {
+         let guard = EnvGuard::new(&[
+             "AGENT_BROWSER_DASHBOARD_ALLOWED_ORIGINS",
+             "AGENT_BROWSER_DASHBOARD_ACCESS_TOKEN",
+@@ -1257,13 +1271,13 @@
+ 
+         let response = send_request_to_dashboard_handler(&request).await;
+         assert!(
+-            response.starts_with("HTTP/1.1 200 OK"),
++            response.starts_with("HTTP/1.1 403 Forbidden"),
+             "unexpected response: {response}"
+         );
+         assert_eq!(
+             EXEC_CLI_INVOCATIONS.load(std::sync::atomic::Ordering::SeqCst),
+-            1,
+-            "tokenless loopback request did not reach exec_cli"
++            0,
++            "tokenless loopback request reached exec_cli"
+         );
+ 
+         let websocket = "GET /api/session/9222/stream HTTP/1.1\r\nHost: localhost:4848\r\nOrigin: http://localhost:4848\r\nUpgrade: websocket\r\n\r\n";
+@@ -1628,4 +1642,44 @@
+         assert_eq!(parsed.1, "application/json; charset=utf-8");
+         assert_eq!(parsed.2, b"{\"ok\":true}".to_vec());
+     }
+-}
++
++    #[tokio::test(flavor = "current_thread")]
++    async fn radhouse_dashboard_controls_and_browser_upgrades_are_disabled() {
++        for path in ["/api/exec", "/api/kill", "/api/sessions", "/api/chat", "/api/command"] {
++            for method in ["GET", "POST", "OPTIONS", "PUT", "DELETE"] {
++                let request = dashboard_request(method, path, "", "{}");
++                let response = send_request_to_dashboard_handler(&request).await;
++                assert!(response.starts_with("HTTP/1.1 403 Forbidden"));
++                assert!(!response.contains("Access-Control-Allow-Origin"));
++            }
++        }
++        let request = "GET /api/session/9222/stream HTTP/1.1\r\nHost: localhost:4848\r\nOrigin: http://localhost:4848\r\nUpgrade: websocket\r\n\r\n";
++        let response = send_request_to_dashboard_handler(request).await;
++        assert!(response.starts_with("HTTP/1.1 403 Forbidden"));
++    }
++
++    #[tokio::test(flavor = "current_thread")]
++    async fn radhouse_dashboard_waits_for_fragmented_and_large_origin_headers() {
++        for padding in [0usize, 9000usize] {
++            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
++            let address = listener.local_addr().unwrap();
++            let handler = tokio::spawn(async move {
++                let (stream, _) = listener.accept().await.unwrap();
++                handle_dashboard_connection(stream).await;
++            });
++            let mut client = tokio::net::TcpStream::connect(address).await.unwrap();
++            let prefix = format!("GET /api/sessions HTTP/1.1\r\nHost: localhost:4848\r\nX-Padding: {}\r\n", "a".repeat(padding));
++            client.write_all(prefix.as_bytes()).await.unwrap();
++            let mut unexpected = [0u8; 1];
++            assert!(tokio::time::timeout(std::time::Duration::from_millis(50), client.peek(&mut unexpected)).await.is_err(), "partial headers were dispatched");
++            client.write_all(b"Origin: https://public.example\r\n\r\n").await.unwrap();
++            client.shutdown().await.unwrap();
++            let mut response = Vec::new();
++            client.read_to_end(&mut response).await.unwrap();
++            handler.await.unwrap();
++            let response = String::from_utf8(response).unwrap();
++            assert!(response.starts_with("HTTP/1.1 403 Forbidden"));
++            assert!(!response.contains("Access-Control-Allow-Origin"));
++        }
++    }
++}
+--- a/cli/src/native/stream/websocket.rs
++++ b/cli/src/native/stream/websocket.rs
+@@ -14,7 +14,7 @@
+ use crate::native::cdp::client::CdpClient;
+ 
+ use super::http::handle_http_request;
+-use super::{is_allowed_origin, timestamp_ms, IdleActivity, StreamFrame};
++use super::{timestamp_ms, IdleActivity, StreamFrame};
+ 
+ /// Highest per-client frame rate a client may request via the `config` message.
+ const MAX_CONFIGURABLE_FPS: u32 = 120;
+@@ -36,6 +36,7 @@
+ /// rest of `current` untouched. Returns `None` when the message carries no
+ /// recognized setting, so an unknown or malformed config never disturbs a
+ /// working connection.
++#[cfg(test)]
+ fn apply_config(current: ClientConfig, parsed: &Value) -> Option<ClientConfig> {
+     let mut next = current;
+     let mut changed = false;
+@@ -109,6 +110,7 @@
+ /// Read the acknowledged frame id from a client `ack` message. Acks are
+ /// cumulative: a client that skipped intermediate ids still unblocks the
+ /// writer by acknowledging the newest one it rendered.
++#[cfg(test)]
+ fn parse_ack_seq(parsed: &Value) -> Option<u64> {
+     parsed.get("seq").and_then(|v| v.as_u64())
+ }
+@@ -238,16 +240,21 @@
+     shutdown_rx: watch::Receiver<bool>,
+     session_name: Arc<str>,
+ ) {
+-    let mut buf = [0u8; 4096];
+-    let n = match stream.peek(&mut buf).await {
+-        Ok(n) => n,
+-        Err(_) => return,
++    let Some(buf) = super::peek_request_headers(&stream).await else {
++        use tokio::io::AsyncWriteExt;
++        let mut stream = stream;
++        let _ = stream.write_all(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await;
++        return;
+     };
++    let n = buf.len();
+     let request = String::from_utf8_lossy(&buf[..n]);
+ 
+     if is_websocket_upgrade(&request) {
+         let frame_rx = frame_tx.subscribe();
+-        let initial_config = config_from_upgrade(&request);
++        let mut initial_config = config_from_upgrade(&request);
++        // The private observer never owes application acknowledgements.
++        // Preserve a handshake FPS cap, but forbid client-controlled ack pacing.
++        initial_config.ack_pacing = false;
+         handle_ws_client(
+             stream,
+             addr,
+@@ -300,12 +307,9 @@
+     let callback =
+         |req: &tokio_tungstenite::tungstenite::handshake::server::Request,
+          resp: tokio_tungstenite::tungstenite::handshake::server::Response| {
+-            let origin = req
+-                .headers()
+-                .get("origin")
+-                .and_then(|v| v.to_str().ok())
+-                .map(|s| s.to_string());
+-            if !is_allowed_origin(origin.as_deref()) {
++            // Browser JavaScript always supplies Origin, including local/file
++            // and opaque "null" pages. Reject presence even when it cannot parse.
++            if req.headers().contains_key("origin") {
+                 let mut reject =
+                     tokio_tungstenite::tungstenite::handshake::server::ErrorResponse::new(Some(
+                         "Origin not allowed".to_string(),
+@@ -327,6 +331,7 @@
+     }
+ 
+     let (mut ws_tx, ws_rx) = ws_stream.split();
++    let flush_notify = Arc::new(Notify::new());
+ 
+     // Watch channels, not atomics, so a mid-stream change wakes the writer's
+     // select! below instead of leaving it asleep on a stale deadline.
+@@ -342,6 +347,7 @@
+         config_tx,
+         ack_tx,
+         idle_activity.clone(),
++        flush_notify.clone(),
+     )));
+ 
+     {
+@@ -408,6 +414,11 @@
+             }
+             _ = &mut reader_task.0 => {
+                 break;
++            }
++            _ = flush_notify.notified() => {
++                // Tungstenite queues protocol Pong replies in the reader.
++                // Flush even on a stationary page with no new frame to write.
++                if ws_tx.flush().await.is_err() { break; }
+             }
+             msg = broadcast_rx.recv() => {
+                 match msg {
+@@ -492,65 +503,22 @@
+     client_notify.notify_one();
+ }
+ 
+-/// Reads client messages and dispatches them without waiting on frame
+-/// delivery. Input reaches CDP sequentially: mouse move, press and release
+-/// must not be reordered.
++/// Drain protocol liveness only. All application data is discarded before
++/// parsing or touching CDP, activity, frame configuration or acknowledgement.
+ async fn reader_loop(
+     mut ws_rx: SplitStream<WebSocketStream<TcpStream>>,
+-    client_slot: Arc<RwLock<Option<Arc<CdpClient>>>>,
+-    cdp_session_id: Arc<RwLock<Option<String>>>,
+-    config: watch::Sender<ClientConfig>,
+-    ack: watch::Sender<u64>,
+-    idle_activity: Arc<IdleActivity>,
++    _client_slot: Arc<RwLock<Option<Arc<CdpClient>>>>,
++    _cdp_session_id: Arc<RwLock<Option<String>>>,
++    _config: watch::Sender<ClientConfig>,
++    _ack: watch::Sender<u64>,
++    _idle_activity: Arc<IdleActivity>,
++    flush_notify: Arc<Notify>,
+ ) {
+     while let Some(msg) = ws_rx.next().await {
+         match msg {
+-            Ok(Message::Text(text)) => {
+-                let parsed: Value = match serde_json::from_str(&text) {
+-                    Ok(v) => v,
+-                    Err(_) => continue,
+-                };
+-                let msg_type = parsed.get("type").and_then(|v| v.as_str()).unwrap_or("");
+-                if msg_type == "config" {
+-                    // Bound to a local first: a `watch` Ref taken in the
+-                    // `if let` scrutinee lives for the whole body, and
+-                    // `send_replace` would deadlock against it.
+-                    let current = *config.borrow();
+-                    if let Some(next) = apply_config(current, &parsed) {
+-                        // send_replace, not send, so an unchanged value still
+-                        // wakes the writer to re-derive its deadline.
+-                        let _ = config.send_replace(next);
+-                    }
+-                    continue;
+-                }
+-                if msg_type == "ack" {
+-                    if let Some(seq) = parse_ack_seq(&parsed) {
+-                        // send_if_modified keeps the acknowledged id monotonic:
+-                        // a late ack for an older frame must not walk it back
+-                        // and re-block the writer.
+-                        ack.send_if_modified(|current| {
+-                            if seq > *current {
+-                                *current = seq;
+-                                true
+-                            } else {
+-                                false
+-                            }
+-                        });
+-                    }
+-                    continue;
+-                }
+-                let guard = client_slot.read().await;
+-                if let Some(ref client) = *guard {
+-                    // Marked inside the guard: only input that reaches CDP
+-                    // counts as activity.
+-                    if is_user_input_message_type(msg_type) {
+-                        idle_activity.mark();
+-                    }
+-                    let sid = cdp_session_id.read().await;
+-                    dispatch_input(msg_type, &parsed, client.as_ref(), sid.as_deref()).await;
+-                }
+-            }
+             Ok(Message::Close(_)) | Err(_) => break,
++            Ok(Message::Ping(_)) => { flush_notify.notify_one(); }
++            // Text and binary input/control messages never reach the browser.
+             _ => {}
+         }
+     }
+@@ -575,6 +543,7 @@
+ /// CDP rejects the whole command on a null string and the caller discards the
+ /// error, so one null silently drops the keystroke. `""` is not a substitute:
+ /// `text: ""` on a printable key inserts no character.
++#[cfg(test)]
+ fn keyboard_params(parsed: &Value) -> Value {
+     let mut params = serde_json::Map::new();
+     params.insert(
+@@ -613,6 +582,7 @@
+ /// trip per event, so a mouse sweep delays the click behind it. Ordering still
+ /// holds: every send takes the same socket mutex and this task calls them in
+ /// order, so press never overtakes move.
++#[cfg(test)]
+ async fn dispatch_input(
+     msg_type: &str,
+     parsed: &Value,
+@@ -665,6 +635,7 @@
+     }
+ }
+ 
++#[cfg(test)]
+ fn is_user_input_message_type(msg_type: &str) -> bool {
+     matches!(msg_type, "input_mouse" | "input_keyboard" | "input_touch")
+ }
+@@ -941,4 +912,44 @@
+             now + Duration::from_millis(100)
+         );
+     }
+-}
++
++    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++    async fn radhouse_no_origin_client_cannot_dispatch_input_and_frames_continue() {
++        let (url, seen) = silent_cdp_server().await;
++        let client = Arc::new(CdpClient::connect(&url).await.expect("fake CDP"));
++        let (server, slot) = super::super::StreamServer::start_without_client(
++            0, "view-only-input".to_string(), true, Arc::new(IdleActivity::new()),
++        ).await.expect("server");
++        *slot.write().await = Some(client);
++        let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{}", server.port())).await.expect("no-Origin observer");
++        for text in [
++            r#"{"type":"input_mouse","eventType":"mousePressed","x":1,"y":1}"#,
++            r#"{"type":"input_keyboard","eventType":"keyDown","key":"a","text":"a"}"#,
++            r#"{"type":"input_touch","eventType":"touchStart"}"#,
++            r#"{"type":"config","pacing":"ack","maxFps":1}"#,
++            r#"{"type":"ack","seq":999999}"#,
++            r#"{"action":"navigate","url":"http://localhost/"}"#,
++            "invalid-json",
++        ] {
++            ws.send(Message::Text(text.to_string())).await.expect("send denied application data");
++        }
++        ws.send(Message::Binary(vec![1, 2, 3])).await.expect("binary ignored");
++        tokio::time::sleep(Duration::from_millis(100)).await;
++        assert!(!seen.lock().await.iter().any(|m| m.starts_with("Input.")), "observer input reached CDP");
++        for seq in [1, 2] {
++            server.broadcast_frame(&format!(r#"{{"type":"frame","seq":{seq},"data":"fixture"}}"#));
++            loop {
++                let msg = tokio::time::timeout(Duration::from_secs(2), ws.next()).await.expect("frame deadline").expect("open stream").expect("message");
++                if let Message::Text(text) = msg {
++                    let value: Value = serde_json::from_str(&text).unwrap();
++                    if value.get("type").and_then(Value::as_str) == Some("frame") {
++                        assert_eq!(value.get("seq").and_then(Value::as_u64), Some(seq));
++                        break;
++                    }
++                }
++            }
++        }
++        assert!(!seen.lock().await.iter().any(|m| m.starts_with("Input.")));
++        server.shutdown().await;
++    }
++}
+--- a/cli/src/native/stream/mod.rs
++++ b/cli/src/native/stream/mod.rs
+@@ -621,6 +621,54 @@
+         .unwrap_or(0)
+ }
+ 
++/// Inspect complete bounded headers without consuming the WebSocket handshake.
++/// One TCP peek is insufficient: Origin may arrive in a later segment or after
++/// a large header. Never dispatch until the terminator and syntax are verified.
++pub(super) async fn peek_request_headers(stream: &tokio::net::TcpStream) -> Option<Vec<u8>> {
++    const MAX_HEADERS: usize = 16 * 1024;
++    tokio::time::timeout(std::time::Duration::from_secs(2), async {
++        let mut buf = vec![0u8; MAX_HEADERS];
++        loop {
++            let n = stream.peek(&mut buf).await.ok()?;
++            if n == 0 { return None; }
++            let end = buf[..n].windows(4).position(|w| w == b"\r\n\r\n").map(|i| i + 4)
++                .or_else(|| buf[..n].windows(2).position(|w| w == b"\n\n").map(|i| i + 2));
++            if let Some(end) = end {
++                let text = std::str::from_utf8(&buf[..end]).ok()?;
++                let mut lines = text.lines();
++                let first_line = lines.next()?;
++                if !first_line.bytes().all(|b| (32..=126).contains(&b)) { return None; }
++                let first: Vec<&str> = first_line.split_whitespace().collect();
++                if first.len() != 3 || !first[0].bytes().all(|b| b.is_ascii_uppercase())
++                    || !first[1].starts_with('/') || !matches!(first[2], "HTTP/1.0" | "HTTP/1.1") {
++                    return None;
++                }
++                let mut host_count = 0;
++                for line in lines {
++                    if line.is_empty() { break; }
++                    if line.starts_with(' ') || line.starts_with('\t') { return None; }
++                    let (name, value) = line.split_once(':')?;
++                    if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric()
++                        || b"!#$%&'*+-.^_`|~".contains(&b))
++                        || !value.bytes().all(|b| b == b'\t' || (32..=126).contains(&b)) {
++                        return None;
++                    }
++                    if name.eq_ignore_ascii_case("host") {
++                        if value.trim().is_empty() { return None; }
++                        host_count += 1;
++                    }
++                }
++                if host_count != 1 { return None; }
++                return Some(buf[..n].to_vec());
++            }
++            if n == MAX_HEADERS { return None; }
++            // Peek retains bytes for tungstenite. Yield until another segment
++            // arrives, with a fixed outer deadline and bounded allocation.
++            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
++        }
++    }).await.ok().flatten()
++}
++
+ pub fn is_allowed_origin(origin: Option<&str>) -> bool {
+     match origin {
+         None => true,
+@@ -848,37 +896,17 @@
+     /// the client sees on the wire. No other test reads both, so offsetting one
+     /// of them is invisible to them and wedges ack pacing in production.
+     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+-    async fn test_ack_of_the_wire_id_releases_the_next_frame() {
+-        let (server, _slot) = StreamServer::start_without_client(
+-            0,
+-            "t14".to_string(),
+-            true,
+-            Arc::new(IdleActivity::new()),
+-        )
+-        .await
+-        .expect("server start");
+-        let meta = FrameMetadata::default();
+-
++    async fn radhouse_frame_progress_does_not_require_wire_ack() {
++        let (server, _slot) = StreamServer::start_without_client(
++            0, "view-only-flow".to_string(), true, Arc::new(IdleActivity::new()),
++        ).await.expect("server");
+         let mut ws = connect_client_to(server.port(), "/?pacing=ack").await;
+-        server.broadcast_screencast_frame("aaa", &meta);
+-        let first = next_frame(&mut ws).await;
+-        let wire_seq = first
+-            .get("seq")
+-            .and_then(|v| v.as_u64())
+-            .expect("frame carries an id");
+-
+-        server.broadcast_screencast_frame("bbb", &meta);
+-        expect_no_frame(&mut ws, 200).await;
+-
+-        ws.send(Message::Text(format!(
+-            r#"{{"type":"ack","seq":{}}}"#,
+-            wire_seq
+-        )))
+-        .await
+-        .expect("send ack");
+-        let second = next_frame(&mut ws).await;
+-        assert_eq!(second.get("data").and_then(|v| v.as_str()), Some("bbb"));
+-
++        ws.send(Message::Text(r#"{"type":"config","pacing":"ack","maxFps":1}"#.to_string())).await.unwrap();
++        for seq in [1, 2] {
++            server.broadcast_frame(&format!(r#"{{"type":"frame","seq":{seq},"data":"fixture"}}"#));
++            let frame = next_frame(&mut ws).await;
++            assert_eq!(frame.get("seq").and_then(Value::as_u64), Some(seq));
++        }
+         server.shutdown().await;
+     }
+ 
+@@ -1009,13 +1037,7 @@
+         .await
+         .expect("server start");
+ 
+-        let mut ws = connect_client(server.port()).await;
+-        ws.send(Message::Text(r#"{"type":"config","maxFps":1}"#.to_string()))
+-            .await
+-            .expect("send config");
+-        // Let the reader task apply the config before frames start flowing.
+-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+-
++        let mut ws = connect_client_to(server.port(), "/?maxFps=1").await;
+         server.broadcast_frame(r#"{"type":"frame","data":"first"}"#);
+         let frame = next_frame(&mut ws).await;
+         assert_eq!(frame.get("data").and_then(|v| v.as_str()), Some("first"));
+@@ -1057,74 +1079,34 @@
+     /// client owes an ack collapse to the newest. Without it latest-frame-wins
+     /// stops at the socket and a stalled client drains a stale backlog.
+     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+-    async fn test_ack_pacing_holds_one_frame_and_skips_to_newest() {
+-        let (server, _slot) = StreamServer::start_without_client(
+-            0,
+-            "t5".to_string(),
+-            true,
+-            Arc::new(IdleActivity::new()),
+-        )
+-        .await
+-        .expect("server start");
+-
+-        let mut ws = connect_client(server.port()).await;
+-        ws.send(Message::Text(
+-            r#"{"type":"config","pacing":"ack"}"#.to_string(),
+-        ))
+-        .await
+-        .expect("send config");
+-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+-
+-        server.broadcast_frame(r#"{"type":"frame","seq":1,"data":"one"}"#);
+-        let frame = next_frame(&mut ws).await;
+-        assert_eq!(frame.get("seq").and_then(|v| v.as_u64()), Some(1));
+-
+-        // Two more frames while frame 1 is unacknowledged: neither may be sent.
+-        server.broadcast_frame(r#"{"type":"frame","seq":2,"data":"two"}"#);
+-        server.broadcast_frame(r#"{"type":"frame","seq":3,"data":"three"}"#);
+-        expect_no_frame(&mut ws, 300).await;
+-
+-        // Acknowledging releases exactly one frame, and it is the newest, not
+-        // the next in order.
+-        ws.send(Message::Text(r#"{"type":"ack","seq":1}"#.to_string()))
+-            .await
+-            .expect("send ack");
+-        let frame = next_frame(&mut ws).await;
+-        assert_eq!(frame.get("seq").and_then(|v| v.as_u64()), Some(3));
+-
++    async fn radhouse_application_ack_pacing_is_ignored() {
++        let (server, _slot) = StreamServer::start_without_client(
++            0, "view-only-flow".to_string(), true, Arc::new(IdleActivity::new()),
++        ).await.expect("server");
++        let mut ws = connect_client_to(server.port(), "/?pacing=ack").await;
++        ws.send(Message::Text(r#"{"type":"config","pacing":"ack","maxFps":1}"#.to_string())).await.unwrap();
++        for seq in [1, 2] {
++            server.broadcast_frame(&format!(r#"{{"type":"frame","seq":{seq},"data":"fixture"}}"#));
++            let frame = next_frame(&mut ws).await;
++            assert_eq!(frame.get("seq").and_then(Value::as_u64), Some(seq));
++        }
+         server.shutdown().await;
+     }
+ 
+     /// Ack pacing declared on the URL covers the opening frame. A `config`
+     /// message cannot: the cached frame is written before it arrives.
+     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+-    async fn test_url_ack_pacing_covers_the_opening_frame() {
+-        let (server, _slot) = StreamServer::start_without_client(
+-            0,
+-            "t10".to_string(),
+-            true,
+-            Arc::new(IdleActivity::new()),
+-        )
+-        .await
+-        .expect("server start");
+-
+-        server.broadcast_frame(r#"{"type":"frame","seq":1,"data":"seed"}"#);
++    async fn radhouse_url_ack_pacing_cannot_hold_the_stream() {
++        let (server, _slot) = StreamServer::start_without_client(
++            0, "view-only-flow".to_string(), true, Arc::new(IdleActivity::new()),
++        ).await.expect("server");
+         let mut ws = connect_client_to(server.port(), "/?pacing=ack").await;
+-
+-        let frame = next_frame(&mut ws).await;
+-        assert_eq!(frame.get("seq").and_then(|v| v.as_u64()), Some(1));
+-
+-        // Nothing else may follow while the seed is unacknowledged.
+-        server.broadcast_frame(r#"{"type":"frame","seq":2,"data":"two"}"#);
+-        server.broadcast_frame(r#"{"type":"frame","seq":3,"data":"three"}"#);
+-        expect_no_frame(&mut ws, 300).await;
+-
+-        ws.send(Message::Text(r#"{"type":"ack","seq":1}"#.to_string()))
+-            .await
+-            .expect("send ack");
+-        let frame = next_frame(&mut ws).await;
+-        assert_eq!(frame.get("seq").and_then(|v| v.as_u64()), Some(3));
+-
++        ws.send(Message::Text(r#"{"type":"config","pacing":"ack","maxFps":1}"#.to_string())).await.unwrap();
++        for seq in [1, 2] {
++            server.broadcast_frame(&format!(r#"{{"type":"frame","seq":{seq},"data":"fixture"}}"#));
++            let frame = next_frame(&mut ws).await;
++            assert_eq!(frame.get("seq").and_then(Value::as_u64), Some(seq));
++        }
+         server.shutdown().await;
+     }
+ 
+@@ -1132,7 +1114,7 @@
+     /// watermark only moves forward, so a premature high ack would swallow every
+     /// later ack and the writer would wait on a notification that never comes.
+     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+-    async fn test_ack_ahead_of_the_stream_does_not_wedge_the_writer() {
++    async fn radhouse_ignored_ack_and_config_cannot_wedge_the_writer() {
+         let (server, _slot) = StreamServer::start_without_client(
+             0,
+             "t9".to_string(),
+@@ -1170,39 +1152,17 @@
+     /// Returning to push pacing must release a frame that is still waiting on
+     /// an acknowledgement the client will now never send.
+     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+-    async fn test_leaving_ack_pacing_releases_the_held_frame() {
+-        let (server, _slot) = StreamServer::start_without_client(
+-            0,
+-            "t6".to_string(),
+-            true,
+-            Arc::new(IdleActivity::new()),
+-        )
+-        .await
+-        .expect("server start");
+-
+-        let mut ws = connect_client(server.port()).await;
+-        ws.send(Message::Text(
+-            r#"{"type":"config","pacing":"ack"}"#.to_string(),
+-        ))
+-        .await
+-        .expect("send config");
+-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+-
+-        server.broadcast_frame(r#"{"type":"frame","seq":1,"data":"one"}"#);
+-        let frame = next_frame(&mut ws).await;
+-        assert_eq!(frame.get("seq").and_then(|v| v.as_u64()), Some(1));
+-
+-        server.broadcast_frame(r#"{"type":"frame","seq":2,"data":"two"}"#);
+-        expect_no_frame(&mut ws, 200).await;
+-
+-        ws.send(Message::Text(
+-            r#"{"type":"config","pacing":"push"}"#.to_string(),
+-        ))
+-        .await
+-        .expect("send config");
+-        let frame = next_frame(&mut ws).await;
+-        assert_eq!(frame.get("seq").and_then(|v| v.as_u64()), Some(2));
+-
++    async fn radhouse_client_config_cannot_hold_the_stream() {
++        let (server, _slot) = StreamServer::start_without_client(
++            0, "view-only-flow".to_string(), true, Arc::new(IdleActivity::new()),
++        ).await.expect("server");
++        let mut ws = connect_client_to(server.port(), "/?pacing=ack").await;
++        ws.send(Message::Text(r#"{"type":"config","pacing":"ack","maxFps":1}"#.to_string())).await.unwrap();
++        for seq in [1, 2] {
++            server.broadcast_frame(&format!(r#"{{"type":"frame","seq":{seq},"data":"fixture"}}"#));
++            let frame = next_frame(&mut ws).await;
++            assert_eq!(frame.get("seq").and_then(Value::as_u64), Some(seq));
++        }
+         server.shutdown().await;
+     }
+ 
+@@ -1260,7 +1220,7 @@
+     /// channel: a read guard held across `send_replace` silences the connection
+     /// from the first config message onward.
+     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+-    async fn test_repeated_config_messages_keep_the_connection_live() {
++    async fn radhouse_ignored_repeated_config_keeps_the_connection_live() {
+         let (server, _slot) = StreamServer::start_without_client(
+             0,
+             "t7".to_string(),
+@@ -1326,7 +1286,7 @@
+     /// Loosening a cap mid-stream takes effect immediately, rather than leaving
+     /// the writer asleep on the deadline the old, slower rate computed.
+     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+-    async fn test_loosening_cap_midstream_takes_effect_immediately() {
++    async fn radhouse_ignored_config_does_not_throttle_the_stream() {
+         let (server, _slot) = StreamServer::start_without_client(
+             0,
+             "t4".to_string(),
+@@ -1376,4 +1336,83 @@
+ 
+         server.shutdown().await;
+     }
+-}
++
++    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
++    async fn radhouse_every_browser_origin_is_rejected_but_private_relay_receives_frames() {
++        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
++        use tokio_tungstenite::tungstenite::http::{HeaderValue, StatusCode};
++        let (server, _slot) = StreamServer::start_without_client(
++            0, "origin-denial".to_string(), true, Arc::new(IdleActivity::new()),
++        ).await.expect("server");
++        let url = format!("ws://127.0.0.1:{}", server.port());
++        for origin in ["https://public.example", "http://192.168.50.1:8080", "http://localhost:8080", "http://127.0.0.1:8080", "http://[::1]:8080", "file:///fixture", "null", ""] {
++            let mut request = url.clone().into_client_request().unwrap();
++            request.headers_mut().insert("Origin", HeaderValue::from_str(origin).unwrap());
++            let error = tokio_tungstenite::connect_async(request).await.expect_err("browser Origin must fail");
++            match error {
++                tokio_tungstenite::tungstenite::Error::Http(response) => assert_eq!(response.status(), StatusCode::FORBIDDEN),
++                other => panic!("unexpected denial: {other}"),
++            }
++        }
++        let mut ws = connect_client(server.port()).await;
++        server.broadcast_frame(r#"{"type":"frame","seq":1,"data":"one"}"#);
++        assert_eq!(next_frame(&mut ws).await.get("seq").and_then(Value::as_u64), Some(1));
++        ws.send(Message::Ping(vec![7])).await.unwrap();
++        loop {
++            let msg = tokio::time::timeout(std::time::Duration::from_secs(2), ws.next()).await.expect("stationary-page Pong").expect("open stream").unwrap();
++            if let Message::Pong(value) = msg { assert_eq!(value, vec![7]); break; }
++        }
++        server.broadcast_frame(r#"{"type":"frame","seq":2,"data":"two"}"#);
++        assert_eq!(next_frame(&mut ws).await.get("seq").and_then(Value::as_u64), Some(2));
++        server.shutdown().await;
++    }
++
++    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
++    async fn radhouse_session_waits_for_fragmented_and_large_origin_headers() {
++        use tokio::io::{AsyncReadExt, AsyncWriteExt};
++        let (server, _slot) = StreamServer::start_without_client(
++            0, "header-boundary".to_string(), true, Arc::new(IdleActivity::new()),
++        ).await.expect("server");
++        for padding in [0usize, 9000usize] {
++            for path in ["/api/status", "/api/sessions"] {
++                let mut client = tokio::net::TcpStream::connect(("127.0.0.1", server.port())).await.unwrap();
++                let prefix = format!("GET {path} HTTP/1.1\r\nHost: localhost:7777\r\nX-Padding: {}\r\n", "a".repeat(padding));
++                client.write_all(prefix.as_bytes()).await.unwrap();
++                let mut unexpected = [0u8; 1];
++                assert!(tokio::time::timeout(std::time::Duration::from_millis(50), client.peek(&mut unexpected)).await.is_err(), "partial headers were dispatched");
++                client.write_all(b"Origin: http://localhost:7777\r\n\r\n").await.unwrap();
++                client.shutdown().await.unwrap();
++                let mut response = Vec::new();
++                client.read_to_end(&mut response).await.unwrap();
++                let response = String::from_utf8(response).unwrap();
++                assert!(response.starts_with("HTTP/1.1 403 Forbidden"));
++                assert!(!response.contains("Access-Control-Allow-Origin"));
++            }
++        }
++        server.shutdown().await;
++    }
++
++    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++    async fn radhouse_header_parser_fails_closed_on_incomplete_oversized_or_malformed_headers() {
++        use tokio::io::AsyncWriteExt;
++        for request in [
++            "GET / HTTP/1.1\r\nHost: local\r\n".to_string(),
++            format!("GET / HTTP/1.1\r\nHost: local\r\nX-Padding: {}\r\n\r\n", "a".repeat(17000)),
++            "GET / HTTP/1.1\r\nHost: local\r\nHost: other\r\n\r\n".to_string(),
++            "GET / HTTP/1.1\r\nHost: local\r\n Folded: bad\r\n\r\n".to_string(),
++            "GET / HTTP/1.1\r\nBad Header: bad\r\nHost: local\r\n\r\n".to_string(),
++            "GET /bad\0target HTTP/1.1\r\nHost: local\r\n\r\n".to_string(),
++        ] {
++            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++            let address = listener.local_addr().unwrap();
++            let handler = tokio::spawn(async move {
++                let (stream, _) = listener.accept().await.unwrap();
++                peek_request_headers(&stream).await
++            });
++            let mut client = tokio::net::TcpStream::connect(address).await.unwrap();
++            client.write_all(request.as_bytes()).await.unwrap();
++            client.shutdown().await.unwrap();
++            assert!(handler.await.unwrap().is_none());
++        }
++    }
++}
+--- a/cli/src/flags.rs
++++ b/cli/src/flags.rs
+@@ -318,6 +318,7 @@
+     ];
+     let mut i = 0;
+     while i < args.len() {
++        if args[i] == "--" { break; }
+         if args[i] == "--config" {
+             return Some(args.get(i + 1).cloned());
+         }
+@@ -692,6 +693,7 @@
+             seen_command = true;
+         }
+         match arg {
++            "--" => break,
+             s if s.starts_with("--restore=") => {
+                 flags.cli_restore = true;
+                 let value = s.trim_start_matches("--restore=");
+@@ -1216,6 +1218,12 @@
+             i += 1;
+             continue;
+         }
++        if arg == "--" {
++            // The fixed command was admitted above; following model arguments
++            // are literal command data, never native global configuration.
++            result.extend_from_slice(&args[i + 1..]);
++            break;
++        }
+         if arg.starts_with("--restore=") {
+             i += 1;
+             continue;
+@@ -2225,4 +2233,32 @@
+         assert_eq!(flags.input_mode, "instant");
+         assert!(!flags.cli_input_mode);
+     }
++
++    #[test]
++    fn radhouse_literal_boundary_stops_early_config_discovery() {
++        assert_eq!(extract_config_path(&args("fill -- @e1 --config /untrusted.json")), None);
++        assert_eq!(extract_config_path(&args("--config /trusted.json fill -- @e1 --config /untrusted.json")), Some(Some("/trusted.json".to_string())));
++    }
++
++    #[test]
++    fn radhouse_literal_flag_text_cannot_override_native_globals() {
++        let guard = EnvGuard::new(&["AGENT_BROWSER_CDP", "AGENT_BROWSER_PROFILE", "AGENT_BROWSER_SESSION"]);
++        for name in ["AGENT_BROWSER_CDP", "AGENT_BROWSER_PROFILE", "AGENT_BROWSER_SESSION"] { guard.remove(name); }
++        let config = tempfile::NamedTempFile::new().unwrap();
++        std::fs::write(config.path(), "{}").unwrap();
++        for text in ["--cdp", "--profile", "--config", "--session", "--args", "--extension", "--json", "--", "--cdp 9222 --profile /personal --config /untrusted.json"] {
++            let input = vec!["--config".to_string(), config.path().to_str().unwrap().to_string(),
++                "--session".to_string(), "trusted-session".to_string(), "--json".to_string(),
++                "fill".to_string(), "--".to_string(), "@e1".to_string(), text.to_string()];
++            let flags = parse_flags(&input);
++            assert_eq!(flags.session, "trusted-session");
++            assert!(flags.cdp.is_none() && flags.profile.is_none());
++            assert!(!flags.cli_profile && !flags.cli_extensions);
++            assert_eq!(clean_args(&input), vec!["fill", "@e1", text]);
++            let command = crate::commands::parse_command(&clean_args(&input), &flags).unwrap();
++            assert_eq!(command["action"], "fill");
++            assert_eq!(command["selector"], "@e1");
++            assert_eq!(command["value"], text);
++        }
++    }
+ }
+--- a/cli/src/main.rs
++++ b/cli/src/main.rs
+@@ -1328,6 +1328,11 @@
+     }
+ }
+ 
++fn has_global_switch(args: &[String], names: &[&str]) -> bool {
++    args.iter().take_while(|arg| arg.as_str() != "--")
++        .any(|arg| names.contains(&arg.as_str()))
++}
++
+ fn main() {
+     // Rust ignores SIGPIPE by default, causing println! to panic on broken pipes.
+     // Reset to SIG_DFL so the OS terminates the process cleanly instead.
+@@ -1378,8 +1383,8 @@
+     }
+     let clean = clean_args(&args);
+ 
+-    let has_help = args.iter().any(|a| a == "--help" || a == "-h");
+-    let has_version = args.iter().any(|a| a == "--version" || a == "-V");
++    let has_help = has_global_switch(&args, &["--help", "-h"]);
++    let has_version = has_global_switch(&args, &["--version", "-V"]);
+ 
+     if has_help {
+         if let Some(cmd) = clean.first() {
+@@ -2985,4 +2990,16 @@
+         assert_eq!(prompt.description, "plugin:stealth:launch.mutate");
+         assert_eq!(prompt.confirmation_id, "original-command");
+     }
+-}
++
++    #[test]
++    fn radhouse_help_and_version_after_boundary_remain_page_text() {
++        for text in ["--help", "-h", "--version", "-V"] {
++            let args = vec!["fill".to_string(), "--".to_string(), "@e1".to_string(), text.to_string()];
++            assert!(!super::has_global_switch(&args, &["--help", "-h"]));
++            assert!(!super::has_global_switch(&args, &["--version", "-V"]));
++            assert_eq!(crate::flags::clean_args(&args), vec!["fill", "@e1", text]);
++            let globals = vec![text.to_string(), "fill".to_string(), "--".to_string(), "@e1".to_string()];
++            assert!(super::has_global_switch(&globals, &["--help", "-h", "--version", "-V"]));
++        }
++    }
++}
