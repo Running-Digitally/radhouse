@@ -1,0 +1,58 @@
+from __future__ import annotations
+
+def _get_session_info(task_id: Optional[str] = None) -> Dict[str, Any]:
+    """Get or create session info for a session key (thread-safe); also starts the
+    inactivity thread and touches activity. A ``::local`` key forces local Chromium
+    even with a cloud provider configured."""
+    if task_id is None:
+        task_id = "default"
+
+    _lifecycle._start_browser_cleanup_thread()
+    _lifecycle._update_session_activity(task_id)
+
+    with _bt._cleanup_lock:
+        existing_session = _bt._active_sessions.get(task_id)
+
+    def _replacement_after_teardown() -> Optional[Dict[str, Any]]:
+        # Teardown removes the activity entry; re-touch so the reaper tracks the
+        # replacement. Another thread may already have re-created it — reuse that.
+        _lifecycle._update_session_activity(task_id)
+        with _bt._cleanup_lock:
+            replacement = _bt._active_sessions.get(task_id)
+        return replacement if replacement is not None and replacement is not existing_session else None
+
+    if existing_session is not None:
+        # Suspect recycle: a command timeout marked this session; the expensive recycle
+        # lives here at next use, not on the timeout path (mark must stay cheap).
+        if not _bt._browser_session_backend(task_id).ensure_healthy():
+            replacement = _replacement_after_teardown()
+            if replacement is not None:
+                return replacement
+            existing_session = None
+        elif not _lifecycle._session_has_expired(existing_session) and not _local_backend_process_dead(existing_session):
+            return existing_session
+        else:
+            _bt.logger.info("Replacing expired or dead browser session for task %s", task_id)
+            _lifecycle._cleanup_single_browser_session(task_id)
+            replacement = _replacement_after_teardown()
+            if replacement is not None:
+                return replacement
+
+    force_local = _bt._is_local_sidecar_key(task_id)
+    session_info = _create_session_for_key(task_id, force_local)
+
+    with _bt._cleanup_lock:
+        if task_id in _bt._active_sessions:  # created concurrently during the network call — don't leak ours
+            return _bt._active_sessions[task_id]
+        session_info = dict(session_info)
+        session_info.setdefault("session_key", task_id)
+        session_info.setdefault("owner_task_id", _bt._bare_task_id_for_session_key(task_id))
+        _bt._active_sessions[task_id] = session_info
+        _bt._suspect_browser_sessions.pop(task_id, None)  # brand-new session is healthy by definition
+
+    # Lazy-start the CDP supervisor (idempotent). Skip local sidecars (no CDP URL) and
+    # Lightpanda sessions (Browser Use mode hides the tools that consume supervisor state).
+    if not force_local and not (session_info.get("features") or {}).get("lightpanda"):
+        _cdp._ensure_cdp_supervisor(task_id)
+
+    return session_info
