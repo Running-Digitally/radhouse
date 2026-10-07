@@ -482,6 +482,52 @@ def test_chrome_control_endpoint_is_only_resolved_from_owned_daemon_descendants(
         bootstrap.owned_chrome_endpoint(10, chrome)
 
 
+@pytest.mark.parametrize("layout", ["argv", "title"])
+@pytest.mark.parametrize("condition", ["valid", "no_sandbox", "setuid", "seccomp_flag", "namespace_flag",
+    "renderer_substring", "wrong_executable", "wrong_uid", "seccomp_disabled", "new_privileges", "same_namespace"])
+def test_renderer_sandbox_evidence_handles_linux_process_titles(tmp_path, monkeypatch, layout, condition):
+    import os
+    bootstrap = load("radhouse_browser_bootstrap_renderer_title_test", RUNTIME / "bootstrap.py")
+    proc, chrome = tmp_path / "proc", tmp_path / "pinned-chrome"
+    daemon, renderer = proc / "10", proc / "11"
+    for root, child, namespace in ((daemon, "11", "pid:[1]"), (renderer, "", "pid:[2]")):
+        (root / "task" / root.name).mkdir(parents=True)
+        (root / "task" / root.name / "children").write_text(child)
+        (root / "ns").mkdir()
+        (root / "ns/pid").symlink_to(namespace)
+        (root / "status").write_text(f"Uid:\t{os.geteuid()}\nSeccomp:\t2\nNoNewPrivs:\t1\n")
+    (daemon / "cmdline").write_bytes(b"native\0")
+    (renderer / "exe").symlink_to(chrome if condition != "wrong_executable" else tmp_path / "unrelated-chrome")
+    arguments = [bytes(chrome), b"--type=renderer"]
+    forbidden = {"no_sandbox": b"--no-sandbox", "setuid": b"--disable-setuid-sandbox",
+        "seccomp_flag": b"--disable-seccomp-filter-sandbox", "namespace_flag": b"--disable-namespace-sandbox"}
+    if condition in forbidden:
+        arguments.append(forbidden[condition])
+    if condition == "renderer_substring":
+        arguments[1] = b"--type=renderer-extra"
+    (renderer / "cmdline").write_bytes((b"\0" if layout == "argv" else b" ").join(arguments) + b"\0\0")
+    if condition == "wrong_uid":
+        (renderer / "status").write_text(f"Uid:\t{os.geteuid() + 1}\nSeccomp:\t2\nNoNewPrivs:\t1\n")
+    if condition == "seccomp_disabled":
+        (renderer / "status").write_text(f"Uid:\t{os.geteuid()}\nSeccomp:\t0\nNoNewPrivs:\t1\n")
+    if condition == "new_privileges":
+        (renderer / "status").write_text(f"Uid:\t{os.geteuid()}\nSeccomp:\t2\nNoNewPrivs:\t0\n")
+    if condition == "same_namespace":
+        (renderer / "ns/pid").unlink()
+        (renderer / "ns/pid").symlink_to("pid:[1]")
+    monkeypatch.setattr(bootstrap, "_PROC_ROOT", proc)
+    monkeypatch.setattr(bootstrap.sys, "platform", "linux")
+    assert bootstrap.sandbox_evidence(10, chrome) is (condition == "valid")
+
+
+def test_process_title_normalizer_preserves_spaces_in_normal_nul_arguments():
+    bootstrap = load("radhouse_browser_bootstrap_normal_arguments_test", RUNTIME / "bootstrap.py")
+    arguments = [b"/pinned/chrome", b"--user-agent=contains --type=renderer --no-sandbox", b"--type=renderer"]
+    assert bootstrap.process_command_tokens(b"\0".join(arguments) + b"\0") == arguments
+    assert b"--no-sandbox" not in bootstrap.process_command_tokens(b"\0".join(arguments) + b"\0")
+    assert bootstrap.process_command_tokens(b"\0".join(arguments[:-1]) + b"\0") == arguments[:-1]
+
+
 def test_owned_process_children_stops_at_thread_and_process_bounds(tmp_path):
     bootstrap = load("radhouse_browser_bootstrap_child_bounds_test", RUNTIME / "bootstrap.py")
     tasks = tmp_path / "task"
