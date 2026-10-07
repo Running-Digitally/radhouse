@@ -525,11 +525,86 @@ def test_bootstrap_verify_runs_bot_canary_after_package_or_reboot_changes(monkey
     monkeypatch.setattr(bootstrap.os, "geteuid", lambda: 0)
     monkeypatch.setattr(bootstrap, "current_receipt", lambda: selected)
     monkeypatch.setattr(bootstrap, "candidate", lambda item, policy: (Path("fixed"), {}))
-    def execute(argv, **kwargs):
-        calls.append((argv, json.loads(kwargs["input"])))
-        return SimpleNamespace(returncode=0, stdout=b'{"state":"qualified","sandbox_enabled":true}')
-    monkeypatch.setattr(bootstrap.subprocess, "run", execute)
+    def execute(argv, payload):
+        calls.append((argv, json.loads(payload)))
+        return b'{"state":"qualified","sandbox_enabled":true}'
+    monkeypatch.setattr(bootstrap, "qualification_output", execute)
     result = bootstrap.verify({}, {"runtime_sha256": "e" * 64, "hermes_python": "/pinned/venv/python"})
     assert result["state"] == "verified"
     assert calls[0][0][:4] == ["/usr/sbin/runuser", "-u", "radhousebot", "--"]
     assert "maintenance-qualify" in calls[0][0] and calls[0][1] == {"candidate": selected}
+
+
+def test_qualification_observation_timeout_waits_for_child_finally(tmp_path):
+    bootstrap = load("radhouse_browser_qualification_cleanup_test", RUNTIME / "bootstrap.py")
+    marker = tmp_path / "finally-finished"
+    script = ("import pathlib,time\ntry:\n time.sleep(0.06)\n"
+              "finally:\n pathlib.Path(__import__('sys').argv[1]).write_text('cleaned')\n")
+    with pytest.raises(ValueError, match="browser_qualification_observation_interrupted"):
+        bootstrap.qualification_output([sys.executable, "-I", "-c", script, str(marker)], b"{}", timeout=0.001)
+    assert marker.read_text() == "cleaned"
+
+
+def test_qualification_repeated_termination_is_deferred_until_native_exit(monkeypatch):
+    bootstrap = load("radhouse_browser_qualification_signal_test", RUNTIME / "bootstrap.py")
+    handlers, originals, waits = {}, {}, []
+    def install(sig, handler):
+        before = handlers.get(sig, "original")
+        if sig not in originals:
+            originals[sig] = before
+        handlers[sig] = handler
+        return before
+    class Canary:
+        returncode = None
+        pid = 123
+        def wait(self, timeout):
+            waits.append(timeout)
+            for sig in (bootstrap.signal.SIGTERM, bootstrap.signal.SIGINT):
+                handlers[sig](sig, None)
+            raise bootstrap.subprocess.TimeoutExpired("fixed-canary", timeout)
+        def poll(self):
+            pytest.fail("fallback must not depend on Popen polling")
+        def kill(self):
+            pytest.fail("canary must not be killed")
+        def terminate(self):
+            pytest.fail("canary must not be terminated")
+    child = Canary()
+    def reap(pid, options):
+        assert (pid, options) == (123, 0)
+        waits.append("native-reap")
+        for sig in (bootstrap.signal.SIGTERM, bootstrap.signal.SIGINT):
+            handlers[sig](sig, None)
+        if len(waits) < 3:
+            raise OSError("failed observation")
+        return pid, 0
+    monkeypatch.setattr(bootstrap.signal, "signal", install)
+    monkeypatch.setattr(bootstrap.subprocess, "Popen", lambda *args, **kwargs: child)
+    monkeypatch.setattr(bootstrap.os, "waitpid", reap)
+    with pytest.raises(ValueError, match="browser_qualification_observation_interrupted"):
+        bootstrap.qualification_output(["fixed-canary"], b"{}", timeout=0.01)
+    assert child.returncode == 0 and len(waits) == 3
+    assert handlers == originals
+
+
+def test_qualification_failed_wait_still_reaps_real_child_cleanup(tmp_path, monkeypatch):
+    bootstrap = load("radhouse_browser_qualification_wait_failure_test", RUNTIME / "bootstrap.py")
+    marker = tmp_path / "finally-finished"
+    real_process = bootstrap.subprocess.Popen
+    class BrokenObserver(real_process):
+        def wait(self, timeout=None):
+            raise RuntimeError("diagnostic wait failed")
+        def poll(self):
+            pytest.fail("fallback must not depend on Popen polling")
+    monkeypatch.setattr(bootstrap.subprocess, "Popen", BrokenObserver)
+    script = ("import pathlib,time\ntry:\n time.sleep(0.04)\n"
+              "finally:\n pathlib.Path(__import__('sys').argv[1]).write_text('cleaned')\n")
+    with pytest.raises(ValueError, match="browser_qualification_observation_interrupted"):
+        bootstrap.qualification_output([sys.executable, "-I", "-c", script, str(marker)], b"{}")
+    assert marker.read_text() == "cleaned"
+
+
+@pytest.mark.parametrize("script", ["import sys;sys.stdout.buffer.write(b'x'*65537)", "raise SystemExit(1)"])
+def test_qualification_output_rejects_failure_and_oversized_result(script):
+    bootstrap = load("radhouse_browser_qualification_result_test", RUNTIME / "bootstrap.py")
+    with pytest.raises(ValueError, match="browser_current_qualification_failed"):
+        bootstrap.qualification_output([sys.executable, "-I", "-c", script], b"{}")

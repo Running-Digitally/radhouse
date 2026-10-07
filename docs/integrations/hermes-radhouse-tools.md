@@ -175,6 +175,11 @@ fields and atomically changes `/opt/radhouse-browser/current`. Verification reru
 real bot canary after native package changes or reboot; old receipt metadata alone
 cannot release maintenance. Rollback switches to a retained qualified release.
 
+The root verifier owns the bot canary through its native exit and browser cleanup.
+An observation deadline, termination request or failed process-wait diagnostic
+does not kill the qualifier. It waits for cleanup and reports an uncertain result,
+so the maintenance hold remains in place until reconciliation and a fresh pass.
+
 `runtime_files_sha256` is an exact installed source map. `runtime_sha256` is SHA256 of
 its sorted compact JSON (`sort_keys=True,separators=(",",":")`). The helper checks
 every mapped installed file. The private root policy also pins helper/orchestrator
