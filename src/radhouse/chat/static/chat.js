@@ -36,6 +36,7 @@ const explanations = {
 };
 let session=null, turns=new Map(), outbox=null, busy=false, polling=false, filesLoading=false;
 let olderBefore=null, olderLoaded=false, openingHistory=false, followingLatest=true;
+let pendingLookup=null;
 const emptyDraft = () => ({text:"",attachments:[]});
 let draft=emptyDraft(), noticeCode=null, noticeAction=null, draftSignature="";
 const turnNodes=new Map(), previewUrls=new Map();
@@ -101,7 +102,7 @@ function releaseFile(file) { const url=previewUrls.get(file.file_id); if (url) U
 function releasePreviews() { for (const url of previewUrls.values()) URL.revokeObjectURL(url); previewUrls.clear(); }
 function showLogin(expired=false) {
   if (session) $("username").value=session.username;
-  session=null; releasePreviews(); draft=emptyDraft(); outbox=null; turns.clear(); turnNodes.clear(); draftSignature="";
+  session=null; pendingLookup=null; releasePreviews(); draft=emptyDraft(); outbox=null; turns.clear(); turnNodes.clear(); draftSignature="";
   $("messages").replaceChildren(); $("draft-files").replaceChildren(); $("message").value="";
   $("chat-view").hidden=true; $("logout").hidden=true; $("login-view").hidden=false; $("loading").hidden=true;
   clearNotice(); if (expired) tell("authentication_required");
@@ -120,16 +121,30 @@ async function api(path,body,initial=false) {
   return response.status===204 ? null : response.json();
 }
 function pendingTurn() { return [...turns.values()].find(turn => !terminal.has(turn.status)); }
+function rememberTurn(turn) {
+  turns.set(turn.seq,turn);
+  if (outbox?.request_id===turn.request_id) { outbox.attachments.forEach(releaseFile); outbox=null; persist(); }
+}
+async function reconcilePending(data) {
+  const pending=pendingTurn();
+  if (!session || !pending || pendingLookup || !data.turns.some(turn => turn.seq>pending.seq) ||
+      data.turns.some(turn => turn.request_id===pending.request_id)) return;
+  const lookup={request_id:pending.request_id,session}; pendingLookup=lookup;
+  try {
+    const receipt=await api("/chat/messages/"+encodeURIComponent(lookup.request_id));
+    if (session!==lookup.session) return;
+    rememberTurn(receipt.turn); render();
+  } catch (error) { if (session===lookup.session) tell(error.message,refreshHistory); }
+  finally { if (pendingLookup===lookup) pendingLookup=null; }
+}
 function accept(data,older=false,latest=false) {
   if (outbox && outbox.request_id===data.accepted_request_id) { outbox.attachments.forEach(releaseFile); outbox=null; persist(); }
-  for (const turn of data.turns) {
-    turns.set(turn.seq,turn);
-    if (outbox?.request_id===turn.request_id) { outbox.attachments.forEach(releaseFile); outbox=null; persist(); }
-  }
+  for (const turn of data.turns) rememberTurn(turn);
   if (older || !olderLoaded) olderBefore=data.older_before;
   if (older) olderLoaded=true;
   if (["network_error","conversation_unavailable","assistant_unavailable"].includes(noticeCode)) clearNotice();
   render({older,latest});
+  if (!older) reconcilePending(data);
 }
 function fileKind(file) {
   const extension=file.name.split(".").pop().toLowerCase();

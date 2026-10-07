@@ -143,6 +143,13 @@ def create_app(auth, service):
         principal = owner(request)
         return service.send(principal, body.request_id, body.text, tuple(service.store.upload(principal, file_id) for file_id in body.attachments))
 
+    @app.get("/chat/messages/{request_id}")
+    def message_receipt(request_id: str, request: Request):
+        principal = owner(request)
+        turn = service.store.find(principal, request_id)
+        if turn is None: raise Rejected("message_not_found", 404)
+        return {"turn": service.store.history(principal, before=turn["seq"] + 1, limit=1)["turns"][0]}
+
     def file_receipt(attachment):
         return {"file_id":attachment.file_id, "name":attachment.name, "size":attachment.size,
                 "sha256":attachment.sha256, "media_type":attachment.media_type, "kind":attachment.kind}

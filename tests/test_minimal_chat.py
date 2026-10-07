@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import datetime, timezone
 import json
+import sqlite3
 from pathlib import Path
 from uuid import uuid4
 
@@ -27,13 +28,14 @@ class SyntheticHermes:
         self.status = "running"
         self.output = "A synthetic reply."
         self.offline = False
+        self.retention_seconds = 3600
         self.client = HermesRunsClient("http://127.0.0.1", "synthetic-only", transport=httpx.MockTransport(self.respond))
 
     def respond(self, request):
         if self.offline:
             raise httpx.ConnectError("synthetic failure", request=request)
         if request.url.path == "/v1/capabilities":
-            return httpx.Response(200, json={"features": {"runs_idempotency": {"supported": True, "durable": True, "retention_seconds": 3600}, "runs_disable_tools": {"supported": self.disable_tools}}})
+            return httpx.Response(200, json={"features": {"runs_idempotency": {"supported": True, "durable": True, "retention_seconds": self.retention_seconds}, "runs_disable_tools": {"supported": self.disable_tools}}})
         if request.method == "POST":
             body = json.loads(request.content)
             key = request.headers["Idempotency-Key"]
@@ -138,6 +140,49 @@ def test_old_retry_acknowledges_exact_request_outside_latest_history_page(chat):
     assert len(response["turns"]) == 50
     assert all(turn["request_id"] != first for turn in response["turns"])
     assert len(hermes.runs) == 51
+    auth = SyntheticAuth()
+    with TestClient(create_app(auth, service), base_url="http://127.0.0.1") as client:
+        path = f"/chat/messages/{first}"
+        assert client.get(path).status_code == 401
+        client.cookies.set(auth.cookie_name, "synthetic-cookie")
+        receipt = client.get(path).json()["turn"]
+        assert receipt["request_id"] == first and receipt["status"] == "completed"
+        assert receipt["output"] == "A synthetic reply."
+        assert client.get(f"/chat/messages/{uuid4()}").status_code == 404
+        auth.principal = "bob"
+        assert client.get(path).status_code == 403
+    assert len(hermes.requests) == 51
+
+
+def test_never_attempted_reservation_can_prepare_after_restart(chat):
+    service, hermes = chat
+    request_id = str(uuid4())
+    service.store.reserve("alice", request_id, "Still unsent", 1000, 3540)
+    reopened = ChatService(ChatStore(service.store.path), hermes.client, owner_id="alice", clock=lambda: 6000)
+    reopened.retry("alice", request_id)
+    receipt = reopened.store.find("alice", request_id)
+    assert receipt["created_at"] == 1000
+    assert receipt["first_dispatch_at"] == 6000 and receipt["retry_until"] == 9540
+    assert len(hermes.requests) == 1
+
+
+@pytest.mark.parametrize("now,expired", [(1001, False), (4000, True)])
+def test_schema_three_unknown_submission_keeps_conservative_deadline(chat, now, expired):
+    service, hermes = chat
+    request_id = str(uuid4())
+    service.store.reserve("alice", request_id, "Legacy uncertain submission", 1000, 3000)
+    with sqlite3.connect(service.store.path) as db:
+        db.execute("ALTER TABLE turns DROP COLUMN first_dispatch_at")
+        db.execute("UPDATE turns SET retry_until=4000")
+    reopened = ChatService(ChatStore(service.store.path), hermes.client, owner_id="alice", clock=lambda: now)
+    if expired:
+        with pytest.raises(Rejected, match="reply_recovery_required"): reopened.retry("alice", request_id)
+    else:
+        reopened.retry("alice", request_id)
+    receipt = reopened.store.find("alice", request_id)
+    assert receipt["first_dispatch_at"] == 1000 and receipt["retry_until"] == 4000
+    with reopened.store.connection() as db: assert db.execute("PRAGMA user_version").fetchone()[0] == 3
+    assert len(hermes.requests) == (0 if expired else 1)
 
 
 def test_expired_unknown_dispatch_never_sends_again(chat):

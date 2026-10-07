@@ -184,6 +184,33 @@ def test_audio_is_transcribed_once_then_frozen_across_lost_ack(chat):
     assert service.store.history("alice")["turns"][0]["attachments"][0]["transcript"].startswith("Start")
 
 
+def test_slow_preparation_starts_recovery_window_at_first_post_and_keeps_it_across_restart(chat):
+    service, hermes = chat
+    now = [1000]
+    service.clock = lambda: now[0]
+    hermes.retention_seconds = 120
+    calls = []
+    class Speech:
+        def transcribe(self, attachment):
+            calls.append(attachment.data); now[0] += 61
+            return "Prepared beyond the old reservation deadline."
+    service.transcriber = Speech()
+    key = str(uuid4()); hermes.lose_ack = True
+    with pytest.raises(Rejected, match="assistant_unavailable"):
+        service.send("alice", key, "", decode_uploads([upload("note.wav", wav())]))
+    receipt = service.store.find("alice", key)
+    assert receipt["created_at"] == 1000 and receipt["first_dispatch_at"] == 1061
+    assert receipt["retry_until"] == 1121 and len(hermes.requests) == 1
+    now[0] = 1080; hermes.lose_ack = True
+    restarted = ChatService(ChatStore(service.store.path), hermes.client, owner_id="alice", clock=lambda: now[0])
+    with pytest.raises(Rejected, match="assistant_unavailable"): restarted.retry("alice", key)
+    assert hermes.requests[0] == hermes.requests[1] and len(hermes.runs) == len(calls) == 1
+    assert restarted.store.find("alice", key)["first_dispatch_at"] == 1061
+    now[0] = 1121
+    with pytest.raises(Rejected, match="reply_recovery_required"): restarted.retry("alice", key)
+    assert len(hermes.requests) == 2
+
+
 def test_audio_unavailability_preserves_original_and_frozen_not_read_outcome(chat):
     service,hermes = chat; key = str(uuid4()); calls = []
     class Speech:
@@ -444,6 +471,8 @@ def test_schema_two_upgrade_retains_blob_and_frozen_unacknowledged_input(tmp_pat
     hermes = SyntheticHermes()
     try:
         service = ChatService(ChatStore(path),hermes.client,owner_id="alice",clock=lambda:1001)
+        assert service.store.find("alice","old-request")["first_dispatch_at"] == 1000
+        assert service.store.find("alice","old-request")["retry_until"] == 4000
         service.retry("alice","old-request")
         assert hermes.requests[0][1]["input"] == "Frozen existing input"
         assert service.store.attachment("alice","old-request",0).data == wav()
