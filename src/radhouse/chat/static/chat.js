@@ -32,6 +32,7 @@ const explanations = {
   attachment_not_found:"A saved file couldn’t be found. Your message is kept; reconnect and try again.",
   file_storage_unavailable:"The upload couldn’t be saved. Your original file and message are kept here for retry.",
   draft_storage_unavailable:"Your browser couldn’t save this draft. Keep this tab open and retry saving it.",
+  draft_recovery_in_tab:"You’re signed out. Keep this tab open and sign in here to recover the draft your browser couldn’t save.",
   original_unavailable:"This browser no longer has the unsent original. Edit this message and attach the file again.",
 };
 let session=null, turns=new Map(), outbox=null, busy=false, polling=false, filesLoading=false;
@@ -146,7 +147,7 @@ async function reconcilePending(data) {
   } catch (error) { if (session===lookup.session) tell(error.message,refreshHistory); }
   finally { if (pendingLookup===lookup) pendingLookup=null; }
 }
-function accept(data,older=false,latest=false) {
+function accept(data,older=false,latest=false,requestedBefore=olderBefore) {
   const cachedLatest=[...turns.keys()].reduce((max,seq) => Math.max(max,seq),0);
   const disjointLatest=!older && cachedLatest && data.turns.length && data.turns[0].seq>cachedLatest &&
     !data.turns.some(turn => turns.has(turn.seq));
@@ -154,7 +155,7 @@ function accept(data,older=false,latest=false) {
   for (const turn of data.turns) rememberTurn(turn);
   // A new latest page can be separated from an already-loaded older range.
   // Reopen pagination at that page so every intervening message stays reachable.
-  if (older || !olderLoaded || disjointLatest) olderBefore=data.older_before;
+  if (older ? requestedBefore===olderBefore : !olderLoaded || disjointLatest) olderBefore=data.older_before;
   if (older) olderLoaded=true;
   if (["network_error","conversation_unavailable","assistant_unavailable"].includes(noticeCode)) clearNotice();
   render({older,latest});
@@ -234,7 +235,7 @@ function makeTurn(turn) {
     block.append(status);
     if (turn.local && turn.phase==="uploading") { const progress=document.createElement("p"); progress.className="sending-files"; progress.dataset.uploadProgress=""; block.append(progress); }
     if (turn.local && turn.error) {
-      const retry=document.createElement("button"); retry.className="retry"; retry.textContent="Retry message"; retry.addEventListener("click",retryOutgoing); block.append(retry);
+      const retry=document.createElement("button"); retry.className="retry"; retry.dataset.outgoing="true"; retry.textContent="Retry message"; retry.addEventListener("click",retryOutgoing); block.append(retry);
       if (!turn.transmitted) { const edit=document.createElement("button"); edit.className="retry"; edit.textContent="Edit message"; edit.addEventListener("click",editOutgoing); block.append(edit); }
     } else if (!turn.local && turn.status==="awaiting_dispatch" && turn.error!=="reply_recovery_required") {
       const retry=document.createElement("button"); retry.className="retry"; retry.textContent="Retry message"; retry.addEventListener("click",() => retrySaved(turn.request_id)); block.append(retry);
@@ -288,7 +289,7 @@ function controls() {
   $("attach").disabled=filesLoading || openingHistory; $("attach-text").disabled=filesLoading || openingHistory; $("long-text").hidden=!tooLong;
   $("send").textContent=busy ? "Sending…" : "Send ↗";
   $("reply-status").textContent=filesLoading ? "Adding files…" : busy ? (outbox?.phase==="uploading" ? "Uploading…" : "Sending…") : pending ? "Radhouse is replying…" : "";
-  document.querySelectorAll(".retry,#notice-action").forEach(button => { button.disabled=busy || openingHistory; });
+  document.querySelectorAll(".retry,#notice-action").forEach(button => { button.disabled=busy || openingHistory || button.dataset.outgoing==="true" && !!pending; });
   resizeMessage();
 }
 function render(options) { renderHistory(options); renderDraft(); controls(); }
@@ -413,7 +414,7 @@ async function transmit(box) {
   } catch (error) {
     if (session===sendingSession && outbox===box) {
       box.phase="failed"; box.error=error.message;
-      if ([413,422].includes(error.status)) box.transmitted=false;
+      if ([413,422].includes(error.status) || error.message==="reply_pending") box.transmitted=false;
       await persist();
       if (["csrf_denied","request_origin_denied"].includes(error.message)) tell(error.message,refreshHistory);
       try { const data=await api("/chat/history"); if (session===sendingSession) accept(data); } catch (_) {}
@@ -483,8 +484,8 @@ $("history-pane").addEventListener("scroll",() => { const pane=$("history-pane")
 $("latest").addEventListener("click",() => { followingLatest=true; $("history-pane").scrollTop=$("history-pane").scrollHeight; updateLatest(); });
 new ResizeObserver(entries => { $("chat-view").style.setProperty("--composer-height",entries[0].target.offsetHeight+14+"px"); if (followingLatest) $("history-pane").scrollTop=$("history-pane").scrollHeight; updateLatest(); }).observe($("compose"));
 $("older").addEventListener("click",async () => {
-  const readingSession=session;
-  try { const data=await api("/chat/history?before="+olderBefore); if (session===readingSession) accept(data,true); }
+  const readingSession=session, requestedBefore=olderBefore;
+  try { const data=await api("/chat/history?before="+requestedBefore); if (session===readingSession) accept(data,true,false,requestedBefore); }
   catch (error) { if (session===readingSession) tell(error.message,refreshHistory); }
 });
 $("login-form").addEventListener("submit",async event => {
@@ -497,8 +498,10 @@ $("login-form").addEventListener("submit",async event => {
   catch (error) { if (session===signingInSession) tell(error.message); } finally { button.disabled=false; }
 });
 $("logout").addEventListener("click",async () => {
-  const signingOutSession=session;
-  try { await saveState(); if (session!==signingOutSession) return; await api("/auth/logout",{}); if (session===signingOutSession) showLogin(); }
+  const signingOutSession=session; let saved=true;
+  try { await saveState(); } catch (_) { saved=false; }
+  if (session!==signingOutSession) return;
+  try { await api("/auth/logout",{}); if (session===signingOutSession) { showLogin(); if (!saved) tell("draft_recovery_in_tab"); } }
   catch (error) { if (session===signingOutSession) tell(error.message); }
 });
 setInterval(async () => {
