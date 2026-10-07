@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 import pwd
 import re
+import signal
 import shutil
 import ssl
 import stat
@@ -593,6 +594,66 @@ def promote(record, value):
     return {"state": "promoted", "runtime_sha256": value["runtime_sha256"], "previous": previous, "current": receipt(directory)}
 
 
+def qualification_output(command, payload, timeout=180):
+    """Observe a bot canary without interrupting its native browser cleanup.
+
+    A missed deadline or termination request makes qualification uncertain. Keep
+    owning the child until it finishes its finally block, then report failure so
+    maintenance remains fenced. Never kill runuser or its browser descendants.
+    """
+    interrupted = False
+    expired = False
+    handlers = {}
+    child = None
+
+    def interrupt(_signum, _frame):
+        nonlocal interrupted
+        interrupted = True
+
+    with tempfile.TemporaryFile() as stdin, tempfile.TemporaryFile() as stdout:
+        stdin.write(payload)
+        stdin.seek(0)
+        try:
+            if threading.current_thread() is threading.main_thread():
+                for sig in (signal.SIGINT, signal.SIGTERM):
+                    handlers[sig] = signal.signal(sig, interrupt)
+            child = subprocess.Popen(command, stdin=stdin, stdout=stdout, stderr=subprocess.DEVNULL)
+            try:
+                child.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                expired = True
+            except BaseException:
+                interrupted = True
+            finally:
+                # Reap directly: failed Popen polling/wait diagnostics must not
+                # abandon the qualifier or its still-owned browser descendants.
+                while child.returncode is None:
+                    try:
+                        pid, status = os.waitpid(child.pid, 0)
+                        if pid:
+                            child.returncode = os.waitstatus_to_exitcode(status)
+                    except ChildProcessError:
+                        break  # Externally reaped: completion outcome is unknown.
+                    except BaseException:
+                        interrupted = True
+                        with suppress(BaseException):
+                            time.sleep(0.01)
+            if expired or interrupted:
+                raise ValueError("browser_qualification_observation_interrupted")
+            stdout.seek(0)
+            data = stdout.read(64 * 1024 + 1)
+            if child.returncode != 0 or len(data) > 64 * 1024:
+                raise ValueError("browser_current_qualification_failed")
+        finally:
+            for sig, handler in handlers.items():
+                signal.signal(sig, handler)
+        # Signals can arrive while reading stdout or restoring the remaining
+        # temporary handlers. Decide success only after all handlers are restored.
+        if interrupted:
+            raise ValueError("browser_qualification_observation_interrupted")
+        return data
+
+
 def verify(record, value):
     if os.geteuid() != 0:
         raise ValueError("maintenance_root_required")
@@ -603,10 +664,7 @@ def verify(record, value):
     # A real bot-identity canary is rerun after native package changes/reboot.
     command = ["/usr/sbin/runuser", "-u", "radhousebot", "--", value["hermes_python"], "-B", "-I", str(ROOT / "bootstrap.py"),
                "maintenance-qualify", "--policy", str(POLICY)]
-    completed = subprocess.run(command, input=canonical({"candidate": current}), capture_output=True, timeout=180, check=False)
-    if completed.returncode or len(completed.stdout) > 64 * 1024:
-        raise ValueError("browser_current_qualification_failed")
-    proof = json.loads(completed.stdout)
+    proof = json.loads(qualification_output(command, canonical({"candidate": current})))
     if proof.get("state") != "qualified" or proof.get("sandbox_enabled") is not True:
         raise ValueError("browser_current_qualification_failed")
     return {"state": "verified", "runtime_sha256": value["runtime_sha256"], "current": current,
