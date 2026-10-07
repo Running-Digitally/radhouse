@@ -599,7 +599,8 @@ async def _native_frame(port, *, want_frame, session_id, generation):
 async def handle_browser(adapter, request, *, frame=False, api_server):
     from aiohttp import web
     from gateway.platforms.api_server_runs import _load_owned_run
-    run_id, status, _, _, error = _load_owned_run(adapter, request, _api_server=api_server, permission="status")
+    run_id, status, _, _, error = _load_owned_run(adapter, request, _api_server=api_server,
+                                               permission="status", active_fallback=False)
     if error is not None:
         return error
     session_id = status.get("session_id")
@@ -616,7 +617,8 @@ async def handle_browser(adapter, request, *, frame=False, api_server):
         result = await _native_frame(port, want_frame=frame, session_id=session_id, generation=generation)
         if _session_stream(session_id) != stream:
             raise ValueError("browser_generation_changed")
-        _, after, _, _, error = _load_owned_run(adapter, request, _api_server=api_server, permission="status")
+        _, after, _, _, error = _load_owned_run(adapter, request, _api_server=api_server,
+                                              permission="status", active_fallback=False)
         if (error is not None or after.get("session_id") != session_id or after.get("allowed_tools") != names
                 or after.get("dispatch_key") != status.get("dispatch_key")
                 or after.get("status") not in {"queued", "running", "waiting_for_approval", "stopping"}):
