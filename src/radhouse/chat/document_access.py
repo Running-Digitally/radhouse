@@ -133,7 +133,7 @@ class DocumentAccess:
                             or type(resume["has_text"]) is not bool
                             or not 0 <= position - resume["index"] <= 1):
                         raise ValueError()
-            except (ValueError, TypeError, UnicodeDecodeError, RecursionError):
+            except (ValueError, TypeError, RecursionError):
                 raise Rejected("document_cursor_invalid", 422) from None
         request = {"operation": operation, "query": query, "locator": locator, "position": position, "resume": resume,
                    "sha256": attachment.sha256,

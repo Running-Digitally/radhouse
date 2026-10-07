@@ -108,7 +108,7 @@ class HermesBrowserClient:
             raise HermesGatewayError("browser_response_invalid")
         try:
             jpeg = base64.b64decode(encoded, validate=True)
-        except (ValueError, binascii.Error):
+        except ValueError:
             raise HermesGatewayError("browser_response_invalid") from None
         if (not 4 <= len(jpeg) <= MAX_FRAME_BYTES or not jpeg.startswith(b"\xff\xd8\xff")
                 or not jpeg.endswith(b"\xff\xd9")):

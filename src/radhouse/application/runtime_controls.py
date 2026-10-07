@@ -283,7 +283,6 @@ def control(service, actor, task_id, expected, envelope, *, text=None, request_i
         state = "accepted" if accepted else "rejected"
     except RuntimeFailure:
         runtime_receipt = None
-        pass
     with service.store.transaction() as tx:
         current = service._task(tx, task_id)
         entry = next(item for item in current.guidance if item["id"] == key)

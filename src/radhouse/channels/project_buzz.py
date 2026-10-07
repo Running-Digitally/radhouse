@@ -676,7 +676,7 @@ class ProjectBuzzConversationCycle:
             ).validate()
             response = updated.status_note
         elif action == "resume":
-            controlled = self.service.resume(
+            self.service.resume(
                 actor, task.task_id, task.state_revision, envelope=envelope
             )
             role = bots[task.bot_id].role_name.casefold()

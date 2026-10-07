@@ -69,5 +69,5 @@ def nip98(header: str, url: str, method: str, body: bytes, now: int) -> tuple[di
                 or tags.get("payload") != sha256(body) or not 16 <= len(tags.get("nonce", "")) <= 200):
             raise ValueError()
         return event, tags
-    except (ValueError, TypeError, binascii.Error, UnicodeError):
+    except (ValueError, TypeError):
         raise Rejected("buzz_signature_denied", 401) from None

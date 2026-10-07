@@ -105,6 +105,7 @@ def main(arguments: list[str] | None = None) -> int:
             output = _summary(config)
         elif args.command == "preflight":
             with compose_controller(config):
+                # Construct and close every configured adapter as the offline check.
                 pass
             output = {**_summary(config), "result": "offline_ready"}
         elif args.command == "serve":

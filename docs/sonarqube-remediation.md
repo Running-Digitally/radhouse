@@ -52,3 +52,40 @@ loopback, public endpoints, explicit RFC1918 admission, redirects and proxies.
 S5332 addresses interception of cleartext network traffic. Both reported
 listeners are fixed to loopback; no runtime deployment claim is inferred from
 source alone. No production service is modified or deployed by this work.
+
+## Bounded parsing and baseline readability
+
+The complete sanitized issue inventory is `sonarqube-baseline.json`. Each issue
+keeps its original ID, rule, source location and current source/disposition status.
+A source correction is not a claim that a later main scan has closed the issue.
+
+The chat formatter now walks delimiters with bounded lookups rather than a
+backtracking expression. It preserves text-only HTML handling, safe HTTP(S)
+links, emphasis, lists and copyable code. Node checks cover those contracts and
+100,000-character unmatched/whitespace inputs. Heading cleanup also uses bounded
+string operations. Document locators use small independent checks; explicit
+ASCII flags preserve the original numeric scope, including rejection of Unicode
+digits and noncanonical zero-prefixed positions. Byte encoders now use code-point
+APIs on their existing byte-only inputs. The attachment picker has an accessible
+label and the attach button has visible text.
+
+The 173 composite test assertions are separated without dropping conditions.
+The 77 exception checks isolate the tested operation from fixture construction;
+rollback and privilege tests keep their entire transaction inside a named action.
+Four composition tests restore mutated class state with `monkeypatch`. Fourteen
+redundant exception subclasses were removed while preserving their superclass
+handling. Explicit comments document intentional preflight/preview empty bodies.
+
+Validation so far: 609 Python tests passed without a PostgreSQL fixture (194
+appropriately skipped); 192 focused parser/attachment/integration tests passed
+(one fixture-dependent skip); the web build and nine unit tests passed. Owned
+PostgreSQL and browser verification is in progress. The local SonarJS linter
+confirms the formatter's two complexity findings are removed; it does not
+replace the required main-only server analysis.
+
+Three S1110 findings propose removing necessary grouping from upgrade rollback,
+service status and error reporting. Their source expressions rely on Python
+precedence; retain them as proposed false positives. S3415 already compares the
+observed receipt IDs on the left with expected admitted IDs on the right; its
+literal-set heuristic misidentifies the actual side. These dispositions remain
+reviewable and have not changed SonarQube.

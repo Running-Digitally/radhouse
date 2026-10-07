@@ -1,67 +1,163 @@
 "use strict";
 // A deliberately small DOM formatter: source HTML is always text, never markup.
 window.RadhouseFormat = (() => {
+  function nextPositions(text, matches) {
+    const positions = new Uint32Array(text.length + 1);
+    let next = text.length;
+    positions[text.length] = next;
+    for (let i = text.length - 1; i >= 0; i--) {
+      if (matches(text[i])) next = i;
+      positions[i] = next;
+    }
+    return positions;
+  }
+  function delimiters(text) {
+    return {
+      tick: nextPositions(text, c => c === "`"),
+      star: nextPositions(text, c => c === "*"),
+      bracket: nextPositions(text, c => c === "]"),
+      newline: nextPositions(text, c => c === "\n"),
+      linkEnd: nextPositions(text, c => c === ")" || /\s/.test(c)),
+      urlEnd: nextPositions(text, c => c === "<" || c === ">" || /\s/.test(c)),
+    };
+  }
+  function markedToken(text, start, positions, marker, tag) {
+    const body = start + marker.length;
+    const end = positions[body];
+    if (end <= body || end >= text.length || !text.startsWith(marker, end)) return null;
+    return { start, end: end + marker.length, tag, label: text.slice(body, end) };
+  }
+  function markdownToken(text, start, positions) {
+    const close = positions.bracket[start + 1];
+    if (close <= start + 1 || close >= positions.newline[start + 1] || text[close + 1] !== "(") return null;
+    const end = positions.linkEnd[close + 2];
+    if (end <= close + 2 || text[end] !== ")") return null;
+    return { start, end: end + 1, tag: "a", label: text.slice(start + 1, close), url: text.slice(close + 2, end) };
+  }
+  function urlToken(text, start, positions) {
+    let length = 0;
+    if (text.startsWith("https://", start)) length = 8;
+    else if (text.startsWith("http://", start)) length = 7;
+    if (!length) return null;
+    const end = positions.urlEnd[start + length];
+    if (end <= start + length) return null;
+    const url = text.slice(start, end);
+    return { start, end, tag: "a", label: url, url };
+  }
+  function inlineToken(text, start, positions) {
+    if (text[start] === "`") return markedToken(text, start, positions.tick, "`", "code");
+    if (text[start] === "*") {
+      if (text[start + 1] === "*") return markedToken(text, start, positions.star, "**", "strong");
+      return markedToken(text, start, positions.star, "*", "em");
+    }
+    if (text[start] === "[") return markdownToken(text, start, positions);
+    if (text[start] === "h") return urlToken(text, start, positions);
+    return null;
+  }
+  function tokenElement(token, text) {
+    const original = text.slice(token.start, token.end);
+    let url;
+    if (token.tag === "a") {
+      try { url = new URL(token.url); }
+      catch { return document.createTextNode(original); }
+      if (!["https:", "http:"].includes(url.protocol)) return document.createTextNode(original);
+    }
+    const element = document.createElement(token.tag);
+    element.textContent = token.label;
+    if (url) {
+      element.href = url.href;
+      element.target = "_blank";
+      element.rel = "noopener noreferrer";
+    }
+    return element;
+  }
   function inline(parent, text) {
-    const pattern = /(`[^`\n]+`|\*\*[^*\n]+\*\*|\*[^*\n]+\*|\[[^\]\n]+\]\([^\s)]+\)|https?:\/\/[^\s<>]+)/g;
+    const positions = delimiters(text);
     let offset = 0;
-    for (const match of text.matchAll(pattern)) {
-      parent.append(document.createTextNode(text.slice(offset, match.index)));
-      const token = match[0]; let element;
-      if (token.startsWith("`")) { element = document.createElement("code"); element.textContent = token.slice(1,-1); }
-      else if (token.startsWith("**")) { element = document.createElement("strong"); element.textContent = token.slice(2,-2); }
-      else if (token.startsWith("*")) { element = document.createElement("em"); element.textContent = token.slice(1,-1); }
-      else {
-        const link = token.match(/^\[([^\]]+)\]\((.+)\)$/), label = link ? link[1] : token;
-        let url;
-        try { url = new URL(link ? link[2] : token); } catch (_) {}
-        if (url && ["https:","http:"].includes(url.protocol)) {
-          element = document.createElement("a"); element.href = url.href; element.target = "_blank"; element.rel = "noopener noreferrer"; element.textContent = label;
-        } else { element = document.createTextNode(token); }
-      }
-      parent.append(element); offset = match.index + token.length;
+    for (let index = 0; index < text.length;) {
+      const token = inlineToken(text, index, positions);
+      if (!token || positions.newline[index] < token.end) { index++; continue; }
+      parent.append(document.createTextNode(text.slice(offset, index)), tokenElement(token, text));
+      index = token.end;
+      offset = index;
     }
     parent.append(document.createTextNode(text.slice(offset)));
   }
+  function headingText(line) {
+    const text = line, marker = text.match(/^#{1,6}\s/);
+    if (!marker) return null;
+    return text.slice(marker[0].length).trimStart() || null;
+  }
+  function listItem(line) {
+    const text = line.trimStart(), marker = text.match(/^([-*+]|\d+[.)])\s/);
+    if (!marker) return null;
+    const label = text.slice(marker[0].length).trimStart();
+    if (!label) return null;
+    return { label, ordered: /^\d/.test(marker[1]), start: Number.parseInt(marker[1], 10) };
+  }
+  function fenceLabel(line) {
+    const text = line.trimStart();
+    if (!text.startsWith("```") || text.slice(3).includes("`")) return null;
+    return text.slice(3).trim();
+  }
+  function codeBlock(lines, start, language) {
+    const code = [];
+    let next = start + 1;
+    while (next < lines.length && lines[next].trim() !== "```") code.push(lines[next++]);
+    if (next < lines.length) next++;
+    const block = document.createElement("div"); block.className = "code-block";
+    const header = document.createElement("div"); header.className = "code-header";
+    const label = document.createElement("span"); label.textContent = language || "Code";
+    const copy = document.createElement("button"); copy.type = "button"; copy.textContent = "Copy code";
+    const content = code.join("\n");
+    copy.addEventListener("click", () => copyText(content, copy)); header.append(label, copy);
+    const pre = document.createElement("pre"), body = document.createElement("code"); body.textContent = content;
+    pre.append(body); block.append(header, pre);
+    return { node: block, next };
+  }
+  function listBlock(lines, start, first) {
+    const node = document.createElement(first.ordered ? "ol" : "ul");
+    if (first.ordered) node.start = first.start;
+    let next = start;
+    while (next < lines.length) {
+      const item = listItem(lines[next]);
+      if (!item || item.ordered !== first.ordered) break;
+      const li = document.createElement("li"); inline(li, item.label); node.append(li); next++;
+    }
+    return { node, next };
+  }
+  function startsBlock(line) {
+    return /^(?:```|#{1,6}\s|[-*+]\s|\d+[.)]\s)/.test(line.trimStart());
+  }
+  function paragraphBlock(lines, start) {
+    const node = document.createElement("p");
+    inline(node, lines[start]);
+    let next = start + 1;
+    while (next < lines.length && lines[next].trim() && !startsBlock(lines[next])) {
+      node.append(document.createElement("br")); inline(node, lines[next++]);
+    }
+    return { node, next };
+  }
   function render(text) {
     const result = document.createDocumentFragment(), lines = text.split(/\r?\n/);
-    for (let i=0; i<lines.length;) {
+    for (let i = 0; i < lines.length;) {
       if (!lines[i].trim()) { i++; continue; }
-      const fence = lines[i].match(/^\s*```([^`]*)$/);
-      if (fence) {
-        const code = []; i++;
-        while (i<lines.length && !/^\s*```\s*$/.test(lines[i])) code.push(lines[i++]);
-        if (i<lines.length) i++;
-        const block = document.createElement("div"); block.className = "code-block";
-        const header = document.createElement("div"); header.className = "code-header";
-        const label = document.createElement("span"); label.textContent = fence[1].trim() || "Code";
-        const copy = document.createElement("button"); copy.type = "button"; copy.textContent = "Copy code";
-        copy.addEventListener("click",() => copyText(code.join("\n"),copy)); header.append(label,copy);
-        const pre = document.createElement("pre"), content = document.createElement("code"); content.textContent = code.join("\n"); pre.append(content); block.append(header,pre); result.append(block); continue;
+      const language = fenceLabel(lines[i]);
+      if (language !== null) {
+        const block = codeBlock(lines, i, language); result.append(block.node); i = block.next; continue;
       }
-      const heading = lines[i].match(/^#{1,6}\s+(.+)$/);
-      if (heading) { const element = document.createElement("h3"); inline(element,heading[1]); result.append(element); i++; continue; }
-      const list = lines[i].match(/^\s*(?:([-*+])|\d+[.)])\s+(.+)$/);
-      if (list) {
-        const ordered = !list[1], element = document.createElement(ordered ? "ol" : "ul");
-        if (ordered) element.start = parseInt(lines[i].trim(),10);
-        while (i<lines.length) {
-          const item = lines[i].match(/^\s*(?:([-*+])|\d+[.)])\s+(.+)$/);
-          if (!item || !!item[1] === ordered) break;
-          const li = document.createElement("li"); inline(li,item[2]); element.append(li); i++;
-        }
-        result.append(element); continue;
-      }
-      const paragraph = [lines[i++]];
-      while (i<lines.length && lines[i].trim() && !/^\s*(?:```|#{1,6}\s|[-*+]\s|\d+[.)]\s)/.test(lines[i])) paragraph.push(lines[i++]);
-      const element = document.createElement("p");
-      paragraph.forEach((line,index) => { if (index) element.append(document.createElement("br")); inline(element,line); }); result.append(element);
+      const heading = headingText(lines[i]);
+      if (heading) { const node = document.createElement("h3"); inline(node, heading); result.append(node); i++; continue; }
+      const item = listItem(lines[i]);
+      if (item) { const block = listBlock(lines, i, item); result.append(block.node); i = block.next; continue; }
+      const block = paragraphBlock(lines, i); result.append(block.node); i = block.next;
     }
     return result;
   }
   async function copyText(text, button) {
     try { await navigator.clipboard.writeText(text); button.textContent = "Copied"; }
-    catch (_) { button.textContent = "Copy unavailable"; button.title = "Select the text to copy it."; }
-    setTimeout(() => { button.textContent = button.dataset.label || "Copy code"; },2000);
+    catch { button.textContent = "Copy unavailable"; button.title = "Select the text to copy it."; }
+    setTimeout(() => { button.textContent = button.dataset.label || "Copy code"; }, 2000);
   }
-  return {render,copyText};
+  return { render, copyText };
 })();

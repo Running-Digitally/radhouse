@@ -121,7 +121,7 @@ class BuzzRelay:
                         raise Rejected(BUZZ_THREAD_ANCESTRY_REJECTED, 503)
                     raise Rejected("buzz_relay_unavailable", 503)
             return json.loads(data)
-        except httpx.HTTPError, ValueError, UnicodeError:
+        except httpx.HTTPError, ValueError:
             raise Rejected("buzz_relay_unavailable", 503) from None
 
     def query(self, filters):
