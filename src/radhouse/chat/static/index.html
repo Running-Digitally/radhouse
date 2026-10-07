@@ -21,7 +21,7 @@
       </form>
     </section>
     <section id="chat-view" hidden aria-label="Your conversation">
-      <div id="history-pane" tabindex="0" aria-label="Conversation history">
+      <div id="history-pane" role="region" tabindex="0" aria-label="Conversation history">
         <button id="older" hidden>Show earlier messages</button>
         <div id="messages" role="log" aria-label="Conversation" aria-live="off"></div>
         <section id="assistant-browser" aria-label="Assistant browser" hidden></section>
@@ -37,12 +37,12 @@
         <div id="notice" role="alert" hidden><span id="notice-text"></span><button id="notice-action" type="button" hidden>Retry</button></div>
         <div class="compose-footer">
           <button id="attach" type="button" aria-label="Attach files" title="Attach files, or paste or drop them here"><span aria-hidden="true">＋</span> Attach</button>
-          <span id="reply-status" role="status" aria-live="polite"></span>
+          <output id="reply-status" aria-live="polite"></output>
           <button class="primary" id="send" type="submit" title="Send · Enter on desktop, Shift+Enter for a new line">Send ↗</button>
         </div>
       </form>
     </section>
-    <div id="loading" role="status">Opening your conversation…</div>
+    <output id="loading">Opening your conversation…</output>
   </main>
 </div>
 </body></html>

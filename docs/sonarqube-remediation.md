@@ -72,14 +72,15 @@ label and the attach button has visible text.
 The 173 composite test assertions are separated without dropping conditions.
 The 77 exception checks isolate the tested operation from fixture construction;
 rollback and privilege tests keep their entire transaction inside a named action.
-Four composition tests restore mutated class state with `monkeypatch`. Fourteen
+Four composition class-state mutations are restored with `monkeypatch`. Fourteen
 redundant exception subclasses were removed while preserving their superclass
 handling. Explicit comments document intentional preflight/preview empty bodies.
 
 Validation so far: 609 Python tests passed without a PostgreSQL fixture (194
 appropriately skipped); 192 focused parser/attachment/integration tests passed
-(one fixture-dependent skip); the web build and nine unit tests passed. Owned
-PostgreSQL and browser verification is in progress. The local SonarJS linter
+(one fixture-dependent skip); the web build and nine unit tests passed. The first owned full gate ran 837 tests with no skips and two browser failures.
+Both failures passed on an isolated rerun (three tests, including parameterization);
+no reproducible cause is established. A later owned gate is required at closeout. The local SonarJS linter
 confirms the formatter's two complexity findings are removed; it does not
 replace the required main-only server analysis.
 
@@ -89,3 +90,38 @@ precedence; retain them as proposed false positives. S3415 already compares the
 observed receipt IDs on the left with expected admitted IDs on the right; its
 literal-set heuristic misidentifies the actual side. These dispositions remain
 reviewable and have not changed SonarQube.
+
+## Routing, composition and client refactors
+
+Conversation routing separates addressed text, reply authority, focused task
+selection and route effects. Guidance reconciliation keeps revision monotonicity,
+identity verification, terminal uncertainty and operation writes inside the same
+transaction. Provider construction, Buzz authority validation, client ownership
+and TOTP matching use smaller named helpers. Removed parameters were private or
+internal helpers with verified repository call sites; the runtime retry window
+still begins in `begin_dispatch`, rather than reserving an unsent message.
+
+The chat client separates card rendering, pending replies, retained draft restore,
+upload preparation and error recovery. Its opening cleanup is awaited from
+`finally`, preserving pending errors and current-session repaint checks. Explicit
+blocks clarify previously ambiguous adjacent statements. Failure handlers either
+show their existing fallback or explain retained retry state; none logs content or
+credentials. Public analytics uses top-level await in its existing ES module;
+classic chat/admin scripts retain their startup loading contract. Conversation
+panel actions are grouped internally, and pure DOM/time helpers leave the mount
+closure. Attachment budgets and exact byte digests remain unchanged.
+
+Five status regions now use native `output` elements. The CSS/SVG illustration
+retains its composite image role, consistent with [WAI-ARIA 1.2](https://www.w3.org/TR/wai-aria-1.2/#img).
+The history pane remains keyboard-focusable and is explicitly a named region,
+consistent with [scroll-container accessibility guidance](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/overflow#accessibility).
+These two contextual findings remain open for review.
+
+The latest owned targeted fixture passed 98 tests, including authentication,
+enrollment, conversation routing, guidance and the real chat walkthrough; cleanup
+completed. Focused provider/configuration/composition/chat checks passed 157
+tests. Web compilation and nine unit tests pass, as do the chat client/formatter
+regressions. Local SonarJS checks have removed the baseline JavaScript complexity,
+nested-conditional and ambiguous-block findings. A local Python approximation
+matches 51 of the 55 baseline complexity values exactly and is only an iteration
+aid; the authoritative verification remains the later main analysis.

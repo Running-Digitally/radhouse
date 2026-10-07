@@ -97,7 +97,7 @@ class ChatService:
                     raise Rejected("document_capability_unavailable", 503)
                 if self.browser_enabled and not (capabilities.allowed_tools and capabilities.browser_view):
                     raise Rejected("browser_capability_unavailable", 503)
-                turn = self.store.reserve(owner, request_id, text, self.clock(), capabilities.idempotency_retention_seconds - 60, attachments)
+                turn = self.store.reserve(owner, request_id, text, self.clock(), attachments)
             from .browser import BROWSER_TOOLS
             chosen = (("document_search", "document_read") if self.document_access else ()) + (
                 BROWSER_TOOLS if self.browser_enabled else ())

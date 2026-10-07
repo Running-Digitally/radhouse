@@ -359,6 +359,19 @@ class LocalAuthService:
         # accepted as CSRF proof.
         return self._keyed_digest("csrf:" + token)
 
+    def _totp_counter(self, credential, totp_code, now):
+        try:
+            secret = self._fernet.decrypt(bytes(credential["totp_secret_ciphertext"]))
+            totp = pyotp.TOTP(secret.decode("ascii"))
+            current = int(now.timestamp()) // totp.interval
+            last = credential["last_totp_counter"]
+            matches = [candidate for candidate in range(current - 1, current + 2)
+                       if (last is None or candidate > last)
+                       and hmac.compare_digest(totp.at(candidate * totp.interval), totp_code)]
+            return max(matches) if matches else None
+        except (InvalidToken, ValueError):
+            return None
+
     def _verify_credentials(self, connection, username, password, totp_code, source, now):
         try:
             normalized = _username(username)
@@ -390,17 +403,7 @@ class LocalAuthService:
             pass
         counter = None
         if credential and credential["active"] and password_ok:
-            try:
-                secret = self._fernet.decrypt(bytes(credential["totp_secret_ciphertext"]))
-                totp = pyotp.TOTP(secret.decode("ascii"))
-                current = int(now.timestamp()) // totp.interval
-                last = credential["last_totp_counter"]
-                matches = [candidate for candidate in range(current - 1, current + 2)
-                           if (last is None or candidate > last)
-                           and hmac.compare_digest(totp.at(candidate * totp.interval), totp_code)]
-                counter = max(matches) if matches else None
-            except (InvalidToken, ValueError):
-                pass
+            counter = self._totp_counter(credential, totp_code, now)
         if not credential or not credential["active"] or not password_ok or counter is None:
             self._record_failure(connection, username_hash, source_hash, throttle, now)
             connection.commit()  # Authentication failures must retain their throttle.

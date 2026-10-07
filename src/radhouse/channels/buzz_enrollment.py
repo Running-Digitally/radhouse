@@ -76,7 +76,7 @@ class BuzzEnrollment:
         self.service = service
         self.candidates = candidates
 
-    def _authorize(self, tx, actor, envelope, candidate, *, assure=False):
+    def _authorize(self, tx, actor, envelope, candidate):
         if (
             not candidate.active
             or actor.channel != "buzz"
@@ -148,7 +148,7 @@ class BuzzEnrollment:
             raise Rejected("buzz_agent_channel_denied", 422) from None
         with self.service.store.transaction() as tx:
             bot = configured.profile(
-                self._authorize(tx, actor, envelope, candidate, assure=True)
+                self._authorize(tx, actor, envelope, candidate)
             )
             previous = tx.conversation_link(link_id)
             saved = tx.conversation_enrollment(link_id)
@@ -222,7 +222,7 @@ class BuzzEnrollment:
         ):
             raise Rejected("buzz_agent_directory_denied", 403)
         with self.service.store.transaction() as tx:
-            self._authorize(tx, actor, envelope, candidate, assure=True)
+            self._authorize(tx, actor, envelope, candidate)
             tx.save_conversation_link(link)
             saved = tx.conversation_enrollment(link_id)
             if saved is None:
@@ -237,7 +237,7 @@ class BuzzEnrollment:
             relay.publish(event)
         relay.verify_conversation(link)
         with self.service.store.transaction() as tx:
-            self._authorize(tx, actor, envelope, candidate, assure=True)
+            self._authorize(tx, actor, envelope, candidate)
             tx.save_conversation_enrollment(link_id, {**saved, "ready": True})
         return {
             "link_id": link_id,

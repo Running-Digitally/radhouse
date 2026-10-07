@@ -76,3 +76,12 @@ test("history cleanup completes the current session after saving its draft", asy
   assert.equal(vm.runInContext("retainedSnapshots.has('alice')", context), false);
   assert.equal(vm.runInContext("openingHistory", context), false);
 });
+
+
+test("message limits count Unicode characters and stop at the accepted boundary", async () => {
+  const context = await client();
+  assert.equal(vm.runInContext("messageFits('💡'.repeat(16000))", context), true);
+  assert.equal(vm.runInContext("messageFits('💡'.repeat(16001))", context), false);
+  assert.equal(vm.runInContext("messageFits('x'.repeat(16000))", context), true);
+  assert.equal(vm.runInContext("messageFits('x'.repeat(100000))", context), false);
+});
