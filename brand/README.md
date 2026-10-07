@@ -8,12 +8,16 @@ cannot reach across the repo to a sibling top-level directory at runtime).
 ## Files
 
 - `favicon.svg` (64x64) — browser tab icon. Rounded square, cream background,
-  house silhouette, three orbiting terracotta agent nodes around a warm center.
+  house silhouette, terracotta ring, and a warm center.
 - `radhouse-mark.svg` (128x128) — the symbol alone, no text. Used wherever a
   compact square mark is needed (in-app header, social avatar).
-- `radhouse-logo.svg` (620x160) — full lockup: the mark plus the wordmark
-  "Radhouse" and the strapline "A HOME FOR YOUR AGENTS". Used in the README
-  banner and the public site header.
+- `radhouse-logo.svg` (500x128) — full lockup: the mark plus the wordmark
+  "Radhouse". Used in the README banner and the public site header. The tight
+  viewBox and single-line wordmark keep the identity legible at header sizes.
+
+The house is mirrored around x=64 in its 128-unit grid. The ring and hearth
+share the center (64, 77), with radii of 28 and 10. All three assets use the
+same geometry; the favicon scales it by one half within a cream tile.
 
 ## Where copies live
 
@@ -32,7 +36,7 @@ both `web/assets/` and `site/public/` and rerun the tests.
 | --- | --- | --- |
 | Green | `#315d4b` | Primary mark color, ink accents, theme-color |
 | Green dark | `#244638` | Hover/pressed states |
-| Terracotta | `#d9783f` | Signal accent — the orbiting nodes and connecting lines |
+| Terracotta | `#d9783f` | Protective ring around the central hearth |
 | Amber | `#b86635` | Interactive accent (links, focus rings) |
 | Cream paper | `#fffdf7` | Card backgrounds |
 | Cream highlight | `#fff8e5` | Mark interior, radial highlight |
@@ -50,5 +54,5 @@ identity: warm, light, and domestic rather than a dark control-plane aesthetic.
 - UI: `Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`
 
 Both are system/OS-provided stacks. No webfont is loaded from any external
-source for either the app or the public site — this keeps both surfaces free
-of third-party network requests.
+source for either the app or the public site. Public-site analytics use the
+separately approved Personal PostHog host; typography adds no network requests.
