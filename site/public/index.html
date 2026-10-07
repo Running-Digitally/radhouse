@@ -1,121 +1,109 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="color-scheme" content="light">
-    <meta name="theme-color" content="#315d4b">
-    <title>Radhouse — A home for your agents. On your infrastructure.</title>
-    <meta name="description" content="Radhouse is a self-hosted platform for persistent AI agents: isolated workspaces, retained context, and permissions you control. Early development.">
-    <link rel="canonical" href="https://radhouse.runningdigitally.com/">
-    <meta property="og:type" content="website">
-    <meta property="og:url" content="https://radhouse.runningdigitally.com/">
-    <meta property="og:site_name" content="Radhouse">
-    <meta property="og:title" content="Radhouse — A home for your agents. On your infrastructure.">
-    <meta property="og:description" content="A self-hosted platform for persistent AI agents: isolated workspaces, retained context, and permissions you control. Early development.">
-    <meta name="twitter:card" content="summary">
-    <meta name="twitter:title" content="Radhouse — A home for your agents. On your infrastructure.">
-    <meta name="twitter:description" content="A self-hosted platform for persistent AI agents: isolated workspaces, retained context, and permissions you control. Early development.">
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/styles.css">
-  </head>
-  <body>
-    <main class="shell">
-      <header>
-        <a class="brand" href="/" aria-label="Radhouse home">
-          <img class="brand__logo" src="/radhouse-logo.svg" alt="Radhouse — a home for your agents">
-        </a>
-      </header>
-
-      <section aria-labelledby="page-title">
-        <p class="status-pill">Early development</p>
-        <h1 id="page-title" class="page-title">A home for your agents.<br>On your infrastructure.</h1>
-        <p class="lede">
-          Radhouse is a self-hosted platform being built for persistent AI agents:
-          agents that retain their workspaces, work on useful assignments, and
-          collaborate within permissions you control.
-        </p>
-      </section>
-
-      <section aria-labelledby="status-title">
-        <h2 id="status-title" class="section-title">Where it actually is</h2>
-        <p>
-          Durable Hermes execution and the everyday operator workflow are
-          implemented. Researcher has an owner-attested standard Buzz identity
-          and private conversation. OIDC composition, administrator
-          invitation/recovery UX, and a qualified fleet release remain
-          incomplete.
-        </p>
-        <p class="muted">
-          This page is not a claim that Radhouse V1 is released. The project is
-          in pre-release implementation and qualification.
-        </p>
-      </section>
-
-      <section aria-labelledby="what-title">
-        <h2 id="what-title" class="section-title">What it is</h2>
-        <p>
-          Running an agent in a dedicated VM is a useful beginning. Managing
-          several agents introduces more questions: who can use them, what they
-          can access, how they share work, which tasks need attention, and how
-          to keep their environments useful between assignments.
-        </p>
-        <p>
-          Radhouse aims to make that everyday experience obvious while giving
-          the person running the infrastructure explicit, inspectable controls.
-          The name combines <strong>RAD</strong> — Running Agents Digitally —
-          with a welcoming home for your agents. Say RAD-house.
-        </p>
-      </section>
-
-      <section aria-labelledby="who-title">
-        <h2 id="who-title" class="section-title">Who it's for</h2>
-        <p>
-          Tinkerers, self-hosting enthusiasts, homelab operators, and people
-          who care about security. The people using assigned agents should not
-          need infrastructure expertise — administrators manage infrastructure
-          and access; operators work with assigned agents day to day.
-        </p>
-      </section>
-
-      <section aria-labelledby="direction-title">
-        <h2 id="direction-title" class="section-title">Flexible by design. Opinionated by default.</h2>
-        <ul class="direction-list">
-          <li><strong>Persistent agents:</strong> a Linux VM for each agent, with retained files, tools, and workspace; Hermes as the first supported agent runtime.</li>
-          <li><strong>Two deployment paths:</strong> guided Proxmox provisioning and installation into suitably isolated Linux VMs supplied by the operator.</li>
-          <li><strong>An approachable control plane:</strong> administrator, operator, and viewer roles, with a simple operator work home for assigned agents and current work.</li>
-          <li><strong>Private and shared work:</strong> private agents by default, explicit sharing, disclosed supervision, and human-reviewed publication.</li>
-          <li><strong>Understandable boundaries:</strong> visible work context, audience, and bot access at the point of use.</li>
-          <li><strong>Security and maintenance oversight:</strong> scoped security findings, update checks, and automatic weekly OS updates with advance notice and work preservation.</li>
-        </ul>
-        <p class="direction-note">
-          These are release requirements. Runtime compatibility, isolation,
-          recovery, network profiles, and shared-service integrations still
-          need qualification.
-        </p>
-      </section>
-
-      <section aria-labelledby="read-more-title">
-        <h2 id="read-more-title" class="section-title">Read more</h2>
-        <ul class="read-more-list">
-          <li><a href="https://github.com/Running-Digitally/radhouse">GitHub repository</a></li>
-          <li><a href="https://github.com/Running-Digitally/radhouse/blob/main/README.md">README — full project overview</a></li>
-          <li><a href="https://github.com/Running-Digitally/radhouse/blob/main/ROADMAP.md">ROADMAP.md — version 1.0 direction</a></li>
-          <li><a href="https://github.com/Running-Digitally/radhouse/blob/main/PRINCIPLES.md">PRINCIPLES.md — product and security principles</a></li>
-          <li><a href="https://github.com/Running-Digitally/radhouse/blob/main/LICENSE">License — Apache-2.0</a></li>
-        </ul>
-      </section>
-
-      <footer class="site-footer">
-        <p>
-          Radhouse is a project by
-          <a href="https://runningdigitally.com/">Running Digitally</a>.
-        </p>
-        <p>
-          Feedback and design proposals are welcome through the repository's
-          issues and pull requests.
-        </p>
-      </footer>
-    </main>
-  </body>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#315d4b">
+  <title>Radhouse | A private agent. A place of your own.</title>
+  <meta name="description" content="Building a private, always-on, open-source agent on your infrastructure. Security and privacy first, with clear boundaries you control.">
+  <link rel="canonical" href="https://radhouse.runningdigitally.com/">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://radhouse.runningdigitally.com/">
+  <meta property="og:site_name" content="Radhouse">
+  <meta property="og:title" content="Radhouse | A private agent. A place of your own.">
+  <meta property="og:description" content="Building a private, always-on, open-source agent. Your infrastructure, your context and clear permissions. In early development.">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Radhouse | A private agent. A place of your own.">
+  <meta name="twitter:description" content="Building a private, always-on, open-source agent. Your infrastructure, your context and clear permissions. In early development.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/journey.js" defer></script>
+  <script src="/analytics.js" type="module"></script>
+</head>
+<body data-public-site>
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <header class="site-header wrap" id="top">
+    <a class="brand" href="#top" aria-label="Radhouse home"><img src="/radhouse-logo.svg" alt="Radhouse" width="500" height="128"></a>
+    <nav aria-label="Main navigation"><a href="#vision">The vision</a><a href="#progress">The build</a><a href="https://github.com/Running-Digitally/radhouse/tree/codex/radhouse-minimal-web" target="_blank" rel="noopener noreferrer">GitHub <span aria-hidden="true">↗</span></a></nav>
+  </header>
+  <main id="main-content" tabindex="-1">
+    <section class="opening wrap" aria-labelledby="page-title">
+      <div class="opening-copy">
+        <p class="eyebrow status"><span aria-hidden="true"></span> Early development · Private web pilot</p>
+        <h1 id="page-title">A home for <br><em>your assistant.</em></h1>
+        <p class="infrastructure">On your infrastructure.</p>
+        <p class="lede">I'm building Radhouse around one private web conversation with your assistant. Close the browser, come back later and pick up where you left off.</p>
+        <div class="opening-actions"><a class="primary" href="#conversation-example">See the conversation <span aria-hidden="true">↓</span></a><a class="text-link" href="https://github.com/Running-Digitally/radhouse/blob/2e7abde5b074ddeb1b71ba2466485c8006d94710/README.md" target="_blank" rel="noopener noreferrer">Read the current build <span aria-hidden="true">↗</span></a></div>
+        <p class="byline">By <a href="https://sati.sh/" target="_blank" rel="noopener noreferrer">Satish Surath</a> · Running Agents Digitally</p>
+      </div>
+      <div class="conversation-journey" id="conversation-example" data-step="0" tabindex="-1" aria-label="An illustrated conversation over time">
+        <div class="journey-heading"><span>One conversation, over time</span><span class="illustration-label">Try it below ↙</span></div>
+        <div class="journey-drawing" role="img" aria-labelledby="journey-art-title journey-art-desc">
+          <span id="journey-art-title" class="sr-only">A conversation you can return to.</span>
+          <span id="journey-art-desc" class="sr-only">A notebook holds your question about a small garden. The day begins, and your private conversation has a place to stay.</span>
+          <div class="conversation-scene" aria-hidden="true">
+            <div class="day-disc"><span class="sun"></span><span class="moon"></span><span class="star star-one">+</span><span class="star star-two">·</span><span class="star star-three">+</span></div>
+            <svg class="time-ring" viewBox="0 0 500 440" fill="none"><ellipse cx="250" cy="219" rx="211" ry="186" stroke="currentColor" stroke-dasharray="1 15"/><path d="M250 21v14M250 403v14M25 219h14M461 219h14" stroke="currentColor"/><g class="time-hand"><circle cx="250" cy="32" r="5" fill="currentColor"/></g></svg>
+            <span class="time-label time-morning">A thought today.</span><span class="time-label time-later">Still here tomorrow.</span>
+            <div class="notebook">
+              <div class="notebook-cover"></div><div class="page-edge edge-one"></div><div class="page-edge edge-two"></div>
+              <div class="notebook-page">
+                <div class="binding"></div><span class="book-kicker">A conversation worth keeping</span>
+                <span class="book-title">A small garden.</span>
+                <div class="journal-entry question-entry"><span>You</span><p>Help me plan<br>a small garden.</p></div>
+                <div class="journal-entry reply-entry"><span>Your assistant</span><p>Start with sunlight<br>and space.</p></div>
+                <svg class="garden-sketch" viewBox="0 0 90 95" fill="none"><path d="M47 85V31m0 24C24 56 17 44 20 28c19 0 29 11 27 27Zm1-14c-3-20 4-28 22-31 4 19-6 29-22 31Zm0 29c19 1 29-7 31-23-16-3-30 7-31 23ZM23 86h49" stroke="currentColor" stroke-width="1.6"/><path d="m8 64 7-1m-4-3 1 7m64 15 7-1m-4-3 1 7" stroke="currentColor"/></svg>
+                <div class="book-footer"><span class="keeper-dot"></span><span>Kept in your space</span><span>01</span></div>
+              </div>
+              <span class="ribbon"></span>
+            </div>
+            <div class="away-note"><span>Back tomorrow.</span><svg viewBox="0 0 80 25" fill="none"><path d="M4 10c19 12 42 12 65-4m-10-1 12-1-3 11" stroke="currentColor" stroke-width="1.5"/></svg></div>
+            <div class="return-note"><span>Picking up the thread…</span><p>What about<br>a shady corner?</p></div>
+            <span class="scene-signature">Yours to come back to.</span>
+          </div>
+        </div>
+        <div class="journey-controls" hidden>
+          <div class="journey-tabs" role="tablist" aria-label="Stages of an illustrated conversation">
+            <button id="journey-talk" type="button" role="tab" data-step-name="talk" aria-selected="true" aria-controls="journey-panel-talk" tabindex="0"><span>01</span> Talk</button>
+            <button id="journey-reply" type="button" role="tab" data-step-name="reply" aria-selected="false" aria-controls="journey-panel-reply" tabindex="-1"><span>02</span> Reply</button>
+            <button id="journey-away" type="button" role="tab" data-step-name="away" aria-selected="false" aria-controls="journey-panel-away" tabindex="-1"><span>03</span> Away</button>
+            <button id="journey-return" type="button" role="tab" data-step-name="return" aria-selected="false" aria-controls="journey-panel-return" tabindex="-1"><span>04</span> Return</button>
+          </div>
+        </div>
+        <div class="journey-reading">
+          <section id="journey-panel-talk" role="tabpanel" aria-labelledby="journey-talk" tabindex="0"><h2>A simple place to begin.</h2><p>Open the private web app and ask your assistant a question. One conversation, with room to think.</p></section>
+          <section id="journey-panel-reply" role="tabpanel" aria-labelledby="journey-reply" tabindex="0" hidden><h2>The reply joins the conversation.</h2><p>Your message and the assistant's reply stay together, ready for you to pick up again.</p></section>
+          <section id="journey-panel-away" role="tabpanel" aria-labelledby="journey-away" tabindex="0" hidden><h2>You can step away.</h2><p>Close the browser. Your earlier messages and the assistant's context are kept.</p></section>
+          <section id="journey-panel-return" role="tabpanel" aria-labelledby="journey-return" tabindex="0" hidden><h2>Pick up the same conversation.</h2><p>Sign in again when needed and continue where you left off, with the same assistant and earlier context.</p></section>
+        </div>
+        <div class="journey-action"><button class="journey-next" type="button" aria-controls="conversation-example" hidden><span class="action-label">See the reply</span><span aria-hidden="true">→</span></button></div>
+        <p class="journey-caption">An interactive illustration. No message is sent.</p>
+        <p class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p>
+        <noscript><p class="no-script-note">Radhouse is a private web conversation with one Hermes assistant. Your messages and the assistant's context are kept when you close the browser, so you can return and continue later.</p></noscript>
+      </div>
+    </section>
+    <section class="vision wrap" id="vision" aria-labelledby="vision-title">
+      <div class="vision-intro">
+        <div><p class="eyebrow">What I'm building toward</p><h2 id="vision-title">Always there.<br><em>Still yours.</em></h2></div>
+        <div class="vision-copy"><p class="vision-lede">A private, always-on agent that gets to know you, carries useful work forward and lives on infrastructure you control.</p><p>Personal agents like <a href="https://x.ai/bot" target="_blank" rel="noopener noreferrer">Grok Bot</a>, <a href="https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/" target="_blank" rel="noopener noreferrer">Meta's Muse</a> and <a href="https://help.openai.com/en/articles/20001529-dots-privacy-security-and-safety-faqs" target="_blank" rel="noopener noreferrer">OpenAI's Dots</a> point toward this kind of relationship with AI. Radhouse is my open-source take on that idea, built around security, privacy and explicit boundaries.</p></div>
+      </div>
+      <div class="principles" aria-label="The principles shaping Radhouse">
+        <article class="principle"><div class="principle-mark" aria-hidden="true"><span>01</span><svg viewBox="0 0 64 64" fill="none"><path d="M12 29 32 12l20 17v25H12V29Z"/><path d="M25 54V35h14v19M7 30l25-22 25 22"/><circle cx="32" cy="26" r="3"/></svg></div><h3>A space of your own.</h3><p>Private by design. Your conversations, files and memory in an environment you control, with a clear view of what stays there and what leaves.</p><span class="principle-foot">Privacy begins with ownership.</span></article>
+        <article class="principle"><div class="principle-mark" aria-hidden="true"><span>02</span><svg viewBox="0 0 64 64" fill="none"><path d="M10 22V10h12m20 0h12v12M10 42v12h12m20 0h12V42M9 32h17m12 0h17"/><rect x="26" y="23" width="12" height="18" rx="3"/><path d="M30 31h4"/></svg></div><h3>Power, with clear limits.</h3><p>A separate space for the agent, with limits on files, tools and network access enforced outside its prompts. Clear approval for consequential actions. Permissions you can inspect and revoke.</p><span class="principle-foot">Security is part of the design.</span></article>
+        <article class="principle"><div class="principle-mark" aria-hidden="true"><span>03</span><svg viewBox="0 0 64 64" fill="none"><path d="m22 18-14 14 14 14m20-28 14 14-14 14M37 12 27 52"/><path d="M8 55h48"/></svg></div><h3>Open to make your own.</h3><p>Open-source code to inspect, run and adapt. Room to choose models and tools, understand how they connect and shape an agent around your life.</p><a class="principle-foot" href="https://github.com/Running-Digitally/radhouse" target="_blank" rel="noopener noreferrer">Built in the open <span aria-hidden="true">↗</span></a></article>
+      </div>
+      <p class="vision-note">The ambition: useful work can continue while you step away, within the access you've chosen. These are the principles guiding the build.</p>
+    </section>
+    <section class="build-section wrap" id="progress" aria-label="The current development">
+      <div class="build-note beginning-note"><p class="eyebrow">A smaller beginning</p><h2>One good conversation.</h2><p>I'm starting with one assistant and one private web conversation you can return to. Everyday use will help decide what deserves to grow from there.</p><span class="margin-mark" aria-hidden="true">Start here ↗</span></div>
+      <div class="build-note current-note"><p class="eyebrow">The build, as it stands</p><h2><span class="pilot-dot" aria-hidden="true"></span> A private pilot.</h2><p>Deployed on 5 October. Real replies and remembered context passed a restart check. Wider capabilities are still being developed and tested.</p><details id="pilot-details"><summary>Pilot notes &amp; what's next <span aria-hidden="true">+</span></summary><div><p>The recorded check covers two real Hermes replies, including recall after the web app restarted. It establishes a small private text conversation, rather than a general release.</p><p>The current connection has tools disabled. Selective access to saved originals, live image, document and audio paths, and streaming with a reliable Stop action remain to qualify. Saving an attachment doesn't mean the assistant has read it.</p><p>Hosting Radhouse and choosing a model are separate decisions. Data sent to a connected model follows that provider's handling; making those connections and permissions clear is part of the vision.</p><a class="text-link" href="https://github.com/Running-Digitally/radhouse/blob/2e7abde5b074ddeb1b71ba2466485c8006d94710/README.md" target="_blank" rel="noopener noreferrer">Read the current build <span aria-hidden="true">↗</span></a><a class="text-link" href="https://github.com/Running-Digitally/radhouse/blob/2e7abde5b074ddeb1b71ba2466485c8006d94710/ROADMAP.md" target="_blank" rel="noopener noreferrer">Roadmap <span aria-hidden="true">↗</span></a></div></details></div>
+    </section>
+    <section class="invitation wrap" aria-labelledby="invitation-title">
+      <div><p class="eyebrow">Built in the open</p><h2 id="invitation-title">Help shape <br>the next version.</h2></div>
+      <div class="invitation-copy"><p>What would you want an agent to remember, take care of or ask you before doing? Those are the questions I want to build around.</p><p>If you're exploring the same questions, follow the build or bring an idea to the repository.</p><a class="primary" href="https://github.com/Running-Digitally/radhouse/tree/codex/radhouse-minimal-web" target="_blank" rel="noopener noreferrer">Explore the current build <span aria-hidden="true">↗</span></a><a class="text-link" href="https://github.com/Running-Digitally/radhouse/issues" target="_blank" rel="noopener noreferrer">Share an idea <span aria-hidden="true">↗</span></a></div>
+    </section>
+  </main>
+  <footer class="site-footer wrap"><p>A project by <a href="https://runningdigitally.com/" target="_blank" rel="noopener noreferrer">Running Digitally <span aria-hidden="true">↗</span></a></p><p>Say RAD-house. <a href="https://github.com/Running-Digitally/radhouse/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">Apache-2.0</a></p></footer>
+</body>
 </html>
