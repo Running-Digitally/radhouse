@@ -137,6 +137,19 @@ try {
   await page.locator("#file-picker").setInputFiles(fixtures+"/notes.txt");
   await expect(page.locator("#draft-files")).toContainText("notes.txt");
   await page.locator("#message").fill("Older draft with a retained original.");
+  await page.evaluate(async () => { await draftWrites; });
+  const staleTab=await context.newPage();
+  await staleTab.goto(process.env.RADHOUSE_BROWSER_ORIGIN);
+  await expect(staleTab.locator("#message")).toHaveValue("Older draft with a retained original.");
+  await page.locator("#message").fill("Newer draft written in the active tab.");
+  await page.evaluate(async () => { await draftWrites; });
+  // Isolate the browser's sign-out saving behavior from server revocation.
+  await staleTab.route("**/auth/logout",route => route.fulfill({status:204}));
+  await staleTab.locator("#logout").click();
+  await expect(staleTab.locator("#login-view")).toBeVisible();
+  await staleTab.close();
+  await page.reload();
+  await expect(page.locator("#message")).toHaveValue("Newer draft written in the active tab.");
   await page.evaluate(async () => { await draftWrites; window.originalDraftOperation=draftOperation;
     draftOperation=(storageKey,value) => value===undefined ? window.originalDraftOperation(storageKey) : Promise.reject(new Error("draft_storage_unavailable")); });
   await page.locator("#message").fill("Newer draft survives the failed storage write.");
@@ -160,6 +173,27 @@ try {
   if (await page.evaluate(() => outbox.attachments[0].blob.text())!=="A simple plan") throw new Error("Outgoing fallback lost the retained original");
   await page.getByRole("button",{name:"Edit message",exact:true}).click();
   await page.getByRole("button",{name:"Remove notes.txt",exact:true}).click();
+  // A changed shared cookie can make one cached token stale. Retry refreshes
+  // it, and an explicit acknowledgement clears an outbox outside this page.
+  let credentialReads=0, recoveredPosts=0;
+  const currentCredentials=route => route.fulfill({status:200,contentType:"application/json",
+    body:JSON.stringify({username:"alice",csrf_token:++credentialReads===1 ? "stale-csrf" : "current-csrf"})});
+  const recoveredPost=route => {
+    const current=route.request().headers()["x-radhouse-csrf"]==="current-csrf";
+    recoveredPosts++;
+    return route.fulfill({status:current ? 200 : 403,contentType:"application/json",
+      body:JSON.stringify(current ? {turns:[],older_before:null,accepted_request_id:route.request().postDataJSON().request_id} : {error:"csrf_denied"})});
+  };
+  await page.route("**/auth/session",currentCredentials);
+  await page.route("**/chat/messages",recoveredPost);
+  await page.locator("#message").fill("A retained request with a stale credential.");
+  await page.locator("#send").click();
+  await expect(page.getByRole("button",{name:"Reconnect",exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"Retry message",exact:true}).click();
+  await expect.poll(() => page.evaluate(() => outbox===null)).toBe(true);
+  if (credentialReads!==2 || recoveredPosts!==2) throw new Error("Retry did not refresh the stale credential exactly once");
+  await page.unroute("**/auth/session",currentCredentials);
+  await page.unroute("**/chat/messages",recoveredPost);
   // Long text is preserved verbatim, and conversion is an explicit owner action.
   const longText="A long pasted line — 😀\n".repeat(1100);
   await page.locator("#message").fill(longText);

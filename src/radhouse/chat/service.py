@@ -44,7 +44,7 @@ class ChatService:
         if turn:
             self.store.match(turn, text, attachments)
             if turn["run_id"] or turn["status"] in TERMINAL:
-                return self.store.history(owner)
+                return {**self.store.history(owner), "accepted_request_id": request_id}
         try:
             capabilities = self.hermes.capabilities()
             if not capabilities.disable_tools or capabilities.idempotency_retention_seconds <= 60:
@@ -73,7 +73,7 @@ class ChatService:
             if turn:
                 self.store.note_error(turn, "reply_dispatch_uncertain")
             raise Rejected("assistant_unavailable", 503) from None
-        return self.store.history(owner)
+        return {**self.store.history(owner), "accepted_request_id": request_id}
 
     @staticmethod
     def _inline_images(attachments):
