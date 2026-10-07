@@ -381,6 +381,92 @@ def test_browser_resolver_denies_before_stream_and_never_falls_back_to_active_ag
     assert calls == ["status"]
 
 
+def pinned_browser_preflight(monkeypatch, cached_chromium):
+    """Run the exact Hermes preflight and install functions with absent ambient Chrome."""
+    lock = json.loads((RUNTIME / "source-lock.json").read_text())
+    source = {}
+    for name in ("browser_tool_install", "browser_tool_session"):
+        raw = (RUNTIME / "fixtures" / (name + ".snapshot")).read_bytes()
+        assert hashlib.sha256(raw).hexdigest() == lock["files"]["tools/" + name + ".py"]["snapshot_sha256"]
+        source[name] = raw.decode()
+    calls = []
+    origin = SimpleNamespace(_cached_chromium_installed=cached_chromium,
+        _agent_browser_resolved=True, _cached_agent_browser="/ambient/browser")
+    def absent(name):
+        calls.append("ambient_lookup")
+        return False
+    install = {"_origin": lambda: origin,
+        "os": SimpleNamespace(environ={}, path=SimpleNamespace(isfile=absent, isdir=absent)),
+        "shutil": SimpleNamespace(which=absent), "_chromium_search_roots": lambda: ["/absent/cache"],
+        "_has_chromium_build": lambda root: pytest.fail("absent cache was read")}
+    exec(compile(overlay.patch_browser_install(source["browser_tool_install"]), "pinned_browser_install", "exec"), install)
+    def lazy_install():
+        calls.append("lazy_install")
+        return False
+    dependency = SimpleNamespace(_find_agent_browser=install["_find_agent_browser"],
+        _chromium_installed=install["_chromium_installed"], _maybe_autoinstall_chromium=lazy_install,
+        _requires_real_termux_browser_install=lambda cmd: False, _running_in_docker=lambda: False)
+    interrupt = ModuleType("tools.interrupt")
+    interrupt.is_interrupted = lambda: False
+    monkeypatch.setitem(sys.modules, "tools.interrupt", interrupt)
+    namespace = {"Dict": Dict, "Any": Any, "_install": dependency, "_cloud": SimpleNamespace(_is_local_mode=lambda: True,
+        _get_browser_engine=lambda: "chrome"), "_bt": SimpleNamespace(logger=SimpleNamespace(warning=lambda *args: None)),
+        "_CHROMIUM_MISSING_HINT": "missing Chromium", "_CHROMIUM_MISSING_DOCKER_HINT": "missing container Chromium"}
+    exec(compile(source["browser_tool_session"], "pinned_browser_session", "exec"), namespace)
+    return namespace["_browser_command_preflight"], origin, calls, interrupt
+
+
+@pytest.mark.parametrize("cached_chromium", [None, False])
+def test_scoped_pinned_chromium_preflight_ignores_absent_ambient_browser_and_stale_cache(monkeypatch, cached_chromium):
+    preflight, origin, calls, _ = pinned_browser_preflight(monkeypatch, cached_chromium)
+    monkeypatch.setattr(bridge, "_browser_configuration", {"agent_browser_path": "/qualified/native",
+        "empty_config_path": "/qualified/empty.json", "chromium_path": "/qualified/chrome"})
+    token = bridge.bind_run_context("run1", "chat1", "dispatch1", None)
+    try:
+        assert preflight() == {"browser_cmd": "/qualified/native"}
+        assert calls == []  # No ambient lookup or lazy installation; the pinned pair was qualified at startup.
+        assert origin._cached_chromium_installed is cached_chromium
+    finally:
+        bridge.reset_run_context(token)
+
+
+def test_scoped_browser_preflight_without_qualified_configuration_fails_before_install(monkeypatch):
+    preflight, _, calls, _ = pinned_browser_preflight(monkeypatch, False)
+    token = bridge.bind_run_context("run1", "chat1", "dispatch1", None)
+    try:
+        with pytest.raises(ValueError, match="browser_installation_unverified"):
+            preflight()
+        assert calls == []
+    finally:
+        bridge.reset_run_context(token)
+
+
+@pytest.mark.parametrize("cached_chromium", [None, False, True])
+def test_unscoped_preflight_preserves_upstream_missing_cached_and_ready_behavior(monkeypatch, cached_chromium):
+    preflight, _, calls, _ = pinned_browser_preflight(monkeypatch, cached_chromium)
+    # A configured Radhouse pair alone cannot replace another run's upstream lookup.
+    monkeypatch.setattr(bridge, "_browser_configuration", {"agent_browser_path": "/qualified/native"})
+    result = preflight()
+    if cached_chromium:
+        assert result == {"browser_cmd": "/ambient/browser"} and calls == []
+    else:
+        assert result == {"success": False, "error": "missing Chromium"}
+        assert calls.count("lazy_install") == 1
+        assert ("ambient_lookup" in calls) is (cached_chromium is None)
+
+
+def test_scoped_pinned_preflight_keeps_upstream_interrupt_check(monkeypatch):
+    preflight, _, calls, interrupt = pinned_browser_preflight(monkeypatch, False)
+    interrupt.is_interrupted = lambda: True
+    monkeypatch.setattr(bridge, "_browser_configuration", {"agent_browser_path": "/qualified/native",
+        "empty_config_path": "/qualified/empty.json", "chromium_path": "/qualified/chrome"})
+    token = bridge.bind_run_context("run1", "chat1", "dispatch1", None)
+    try:
+        assert preflight() == {"success": False, "error": "Interrupted"} and calls == []
+    finally:
+        bridge.reset_run_context(token)
+
+
 def test_stationary_native_relay_retains_frame_with_unknown_capture_time(monkeypatch):
     async def idle(self):
         await asyncio.Event().wait()
