@@ -301,3 +301,24 @@ def _run_agent_sync(self, run: _RunLaunch, agent, approval_notify, *, _api_serve
                     with suppress(Exception):
                         reset(token)
         return r, {key: getattr(agent, attr, 0) or 0 for key, attr in _USAGE_FIELDS}
+
+
+def _load_owned_run(self, request, *, _api_server, permission: Optional[str], active_fallback: bool):
+    """Authenticate (*permission* -> room-grant aware; ``None`` -> API key only) and resolve
+    ``(run_id, status, agent, task, error)``; *active_fallback* reports a live in-process run
+    without pollable status as ``running`` instead of 404."""
+    auth_err = self._check_run_auth(request, permission=permission) if permission else self._check_auth(request)
+    if auth_err:
+        return None, None, None, None, auth_err
+    _openai_error = _api_server._openai_error
+    run_id = request.match_info["run_id"]
+    if not self._request_owns_run(request, run_id):
+        return run_id, None, None, None, _run_not_found(_openai_error, run_id)
+    agent = self._active_run_agents.get(run_id)
+    task = self._active_run_tasks.get(run_id)
+    status = self._durable_run_status(request, run_id)
+    if status is None and active_fallback and (agent is not None or task is not None):
+        status = self._set_run_status(run_id, "running")
+    if status is None:
+        return run_id, None, agent, task, _run_not_found(_openai_error, run_id)
+    return run_id, status, agent, task, None

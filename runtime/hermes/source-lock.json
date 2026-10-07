@@ -17,7 +17,7 @@
     },
     "gateway/platforms/api_server_runs.py": {
       "before_sha256": "fd82223daba8867b4b8112729e9a9e7f76bd419284aa78421c3572ad3cd4d596",
-      "snapshot_sha256": "f5e75ad6c97fcb446b45d8d31e3b84afbedc2953a7efa2f052acd9c261787609"
+      "snapshot_sha256": "d2d9bb3957e5959123ad9b9c6fb3915e15f9f45834e00836772a7e5eb7086e8c"
     },
     "tools/browser_tool.py": {
       "before_sha256": "664c0a5658f7f16ee3cef1069177ac3bfb70b8204751147b1707de26d227b506"

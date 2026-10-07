@@ -88,6 +88,7 @@ def native_namespace(monkeypatch):
         _room_retention_until=lambda request: 0,
         _resolve_conversation_history=lambda *args, **kwargs: ([], None, None, None),
         _runtime_contract=SimpleNamespace(fresh_admission_error=lambda *args, **kwargs: None),
+        _run_not_found=lambda factory, run_id: Response({"error": "run_not_found"}, 404),
         resolve_profile_request_limit=lambda value: value,
         _configured_run_tools=lambda *args: None,
         _USAGE_FIELDS=(("input_tokens", "session_prompt_tokens"),))
@@ -313,6 +314,71 @@ def test_browser_arguments_cannot_override_native_options_and_text_remains_liter
         assert result == "literal-text" and seen == []
     finally:
         bridge.reset_run_context(token)
+
+
+def owned_browser_status_adapter(monkeypatch):
+    native = native_namespace(monkeypatch)
+    monkeypatch.setitem(sys.modules, "gateway.platforms.api_server_runs", native)
+    # Response transport is small; the resolver itself is the pinned source.
+    monkeypatch.setitem(sys.modules, "aiohttp", SimpleNamespace(web=SimpleNamespace(json_response=Response)))
+    state = {"run": {"status": "running", "session_id": "chat1", "dispatch_key": "dispatch1",
+        "allowed_tools": list((*bridge.DOCUMENT_TOOLS, *bridge.BROWSER_TOOLS))}, "auth_error": None, "owns": True}
+    calls = []
+    def auth(request, *, permission):
+        calls.append(permission)
+        return state["auth_error"]
+    adapter = SimpleNamespace(_check_run_auth=auth, _request_owns_run=lambda request, run_id: state["owns"],
+        _active_run_agents={"run1": object()}, _active_run_tasks={},
+        _durable_run_status=lambda request, run_id: state["run"],
+        _set_run_status=lambda *args, **kwargs: pytest.fail("browser observation invented nondurable run state"))
+    monkeypatch.setattr(bridge, "_browser_configuration", {})
+    return adapter, SimpleNamespace(match_info={"run_id": "run1"}), SimpleNamespace(_openai_error=None), state, calls
+
+
+def test_active_document_run_before_browser_start_uses_pinned_owned_resolver(monkeypatch):
+    adapter, request, api, state, calls = owned_browser_status_adapter(monkeypatch)
+    monkeypatch.setattr(bridge, "_session_stream", lambda session: None)
+    result = asyncio.run(bridge.handle_browser(adapter, request, api_server=api))
+    assert result.status == 200 and result.value == {
+        "run_id": "run1", "session_id": "chat1", "state": "idle", "generation": None, "url": None}
+    assert calls == ["status"]
+
+
+@pytest.mark.parametrize("frame", [False, True])
+@pytest.mark.parametrize("changed", [False, True])
+def test_browser_reauthorizes_durable_run_after_stream_with_pinned_resolver(monkeypatch, frame, changed):
+    adapter, request, api, state, calls = owned_browser_status_adapter(monkeypatch)
+    monkeypatch.setattr(bridge, "_session_stream", lambda session: (8123, "generation1"))
+    async def native_frame(*args, **kwargs):
+        if changed:
+            state["run"] = {**state["run"], "status": "completed"}
+        return {"url": "https://example.com/", "jpeg": "actual-frame", "received_at": 1,
+                "captured_at": None, "frame_id": "frame1"}
+    monkeypatch.setattr(bridge, "_native_frame", native_frame)
+    result = asyncio.run(bridge.handle_browser(adapter, request, frame=frame, api_server=api))
+    assert calls == ["status", "status"]
+    if changed:
+        assert result.value["state"] == "unavailable" and "jpeg" not in result.value
+        assert result.status == (409 if frame else 200)
+    elif frame:
+        assert result.status == 200 and result.value["jpeg"] == "actual-frame"
+    else:
+        assert result.status == 200 and result.value["state"] == "live"
+
+
+@pytest.mark.parametrize("denial", ["auth", "foreign", "missing_durable"])
+def test_browser_resolver_denies_before_stream_and_never_falls_back_to_active_agent(monkeypatch, denial):
+    adapter, request, api, state, calls = owned_browser_status_adapter(monkeypatch)
+    if denial == "auth":
+        state["auth_error"] = Response({"error": "unauthorized"}, 401)
+    elif denial == "foreign":
+        state["owns"] = False
+    else:
+        state["run"] = None  # An active agent alone cannot establish durable scope.
+    monkeypatch.setattr(bridge, "_session_stream", lambda session: pytest.fail("denied observation reached native stream"))
+    result = asyncio.run(bridge.handle_browser(adapter, request, api_server=api))
+    assert result.status == (401 if denial == "auth" else 404) and "jpeg" not in result.value
+    assert calls == ["status"]
 
 
 def test_stationary_native_relay_retains_frame_with_unknown_capture_time(monkeypatch):
