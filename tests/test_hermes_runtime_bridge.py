@@ -898,3 +898,153 @@ def test_qualification_output_rejects_failure_and_oversized_result(script):
     bootstrap = load("radhouse_browser_qualification_result_test", RUNTIME / "bootstrap.py")
     with pytest.raises(ValueError, match="browser_current_qualification_failed"):
         bootstrap.qualification_output([sys.executable, "-I", "-c", script], b"{}")
+
+
+def pinned_browser_turn_cleanup(monkeypatch, tmp_path):
+    """Actual finalizer/helper and unchanged lifecycle, with a disposable native directory."""
+    import os
+    import shutil
+    lock = json.loads((RUNTIME / 'source-lock.json').read_text())
+    sources = {}
+    for name, declaration in [('chat_completion_helpers', lock['files']['agent/chat_completion_helpers.py']),
+            ('turn_finalizer', lock['contract_fixtures']['agent/turn_finalizer.py']),
+            ('browser_tool_lifecycle', lock['contract_fixtures']['tools/browser_tool_lifecycle.py']),
+            ('browser_tool_session_record', lock['contract_fixtures']['tools/browser_tool_session.py'])]:
+        raw = (RUNTIME / 'fixtures' / (name + '.snapshot')).read_bytes()
+        assert hashlib.sha256(raw).hexdigest() == declaration['snapshot_sha256']
+        sources[name] = raw.decode()
+    browser = ModuleType('tools.browser_tool')
+    log = SimpleNamespace(**{name: lambda *a, **kw: None for name in ('info', 'warning', 'error', 'debug')})
+    browser.__dict__.update(_cleanup_lock=threading.RLock(), _active_sessions={}, _session_last_activity={},
+        _session_owner_homes={}, _cleanup_failures={}, _recording_sessions=set(), _last_active_session_key={}, _suspect_browser_sessions={},
+        _LOCAL_SUFFIX='::local', BROWSER_SESSION_INACTIVITY_TIMEOUT=120, MAX_INACTIVITY_CLEANUP_FAILURES=3,
+        _socket_safe_tmpdir=lambda: str(tmp_path), _bare_task_id_for_session_key=lambda key: key.split('::')[0],
+        _is_local_sidecar_key=lambda key: key.endswith('::local'), _is_camofox_mode=lambda: False,
+        _maybe_stop_recording=lambda key: None, logger=log)
+    tools = ModuleType('tools'); tools.browser_tool = browser
+    cloud = ModuleType('tools.browser_tool_cloud'); cloud._is_headed_mode = lambda: False
+    for name, module in [('tools', tools), ('tools.browser_tool', browser), ('tools.browser_tool_cloud', cloud)]:
+        monkeypatch.setitem(sys.modules, name, module)
+    calls = {'close': [], 'vm': []}; clock = [20]
+    lightpanda = ModuleType('tools.browser_lightpanda')
+    lightpanda.stop_lightpanda = lambda name: calls['close'].append(next(
+        task for task, record in browser._active_sessions.items() if record.get('session_name') == name))
+    monkeypatch.setitem(sys.modules, 'tools.browser_lightpanda', lightpanda)
+    lifecycle = {'_bt': browser, 'time': SimpleNamespace(time=lambda: clock[0]), 'os': os, 'shutil': shutil,
+        '_session_owner_scope': lambda task: nullcontext(), '_session_has_expired': lambda record: False,
+        '_cloud': SimpleNamespace(_get_cloud_provider=lambda: None),
+        '_install': SimpleNamespace(_discover_homebrew_node_dirs=SimpleNamespace(cache_clear=lambda: None)),
+        '_cdp': SimpleNamespace(_stop_cdp_supervisor=lambda task: None),
+        '_session': SimpleNamespace(_run_browser_command=lambda task, command, args, timeout: calls['close'].append(task)),
+        '_kill_verified_daemon': lambda directory, name: False}
+    exec(compile(sources['browser_tool_lifecycle'], 'pinned_browser_lifecycle', 'exec'), lifecycle)
+    helper = {'_ra': lambda: SimpleNamespace(cleanup_vm=lambda task: calls['vm'].append(task),
+        cleanup_browser=lifecycle['cleanup_browser']), 'is_persistent_env': lambda task: False,
+        'os': os, 'logging': log}
+    exec(compile(overlay.patch_chat_completion_helpers(sources['chat_completion_helpers']), 'pinned_turn_cleanup', 'exec'), helper)
+    conversation = ModuleType('agent.conversation_loop'); conversation.logger = log
+    monkeypatch.setitem(sys.modules, 'agent', ModuleType('agent'))
+    monkeypatch.setitem(sys.modules, 'agent.conversation_loop', conversation)
+    finalizer = {'_resolve_budget_fallback': lambda agent, **kw: (kw['final_response'], kw['_turn_exit_reason'], False),
+        '_rollback_interrupted_preflight_display': lambda *a: None, '_summarize_user_message_for_log': str}
+    exec(compile(sources['turn_finalizer'], 'pinned_turn_finalizer', 'exec'), finalizer)
+    class CleanupReached(Exception):
+        pass
+    actual_guard = finalizer['_guarded_cleanup']
+    def stop_after_cleanup(label, function, errors, logger):
+        actual_guard(label, function, errors, logger)
+        assert not errors
+        if label == 'cleanup_task_resources': raise CleanupReached()
+    finalizer['_guarded_cleanup'] = stop_after_cleanup
+    agent = SimpleNamespace(max_iterations=10, verbose_logging=False, _save_trajectory=lambda *a: None)
+    agent._cleanup_task_resources = lambda task: helper['cleanup_task_resources'](agent, task)
+    def finish(task):
+        # Execute the real finalizer through cleanup; persistence is outside this contract.
+        with pytest.raises(CleanupReached):
+            finalizer['finalize_turn'](agent, final_response='done', api_call_count=1, interrupted=False,
+                failed=False, messages=[], conversation_history=[], effective_task_id=task, turn_id='turn',
+                user_message='read page', original_user_message='read page', _should_review_memory=False,
+                _turn_exit_reason='text_response(stop)')
+    def create(task='session'):
+        name = 'h_0123456789'; directory = tmp_path / ('agent-browser-' + name)
+        directory.mkdir(mode=0o700)
+        stream = directory / (name + '.stream'); stream.write_text('23000'); stream.chmod(0o600)
+        record = {'session_name': name, 'features': {'local': True, 'radhouse_owned': True}, 'bb_session_id': None, 'cdp_url': None}
+        # The real native lookup creates the session_key/owner_task_id used by retention.
+        lookup = {'_bt': browser, '_create_session_for_key': lambda *a: record,
+            '_lifecycle': SimpleNamespace(_start_browser_cleanup_thread=lambda: None,
+                _update_session_activity=lambda key: browser._session_last_activity.update({key: 10})),
+            '_cdp': SimpleNamespace(_ensure_cdp_supervisor=lambda key: None)}
+        exec(compile(sources['browser_tool_session_record'], 'pinned_session_record', 'exec'), lookup)
+        result = lookup['_get_session_info'](task)
+        assert result['session_key'] == task and result['owner_task_id'] == task
+        return directory
+    return SimpleNamespace(browser=browser, lifecycle=lifecycle, calls=calls, clock=clock, finish=finish, create=create, cloud=cloud)
+
+
+@pytest.mark.parametrize('teardown', ['explicit', 'idle', 'shutdown'])
+def test_actual_headless_finalizer_retains_two_turns_but_direct_lifecycle_closes(monkeypatch, tmp_path, teardown):
+    native = native_namespace(monkeypatch)
+    worker_dependencies(monkeypatch)
+    value, api = adapter(native), api_dependencies()
+    f = pinned_browser_turn_cleanup(monkeypatch, tmp_path)
+    monkeypatch.setattr(bridge, '_browser_configuration', {'qualified': True})
+    directory = f.create(); original_stream = bridge._session_stream('session')
+    class Agent:
+        def run_conversation(self, **kwargs):
+            assert bridge.current_run_context(task_id=kwargs['task_id']).session_id == 'session'
+            f.finish(kwargs['task_id'])
+            return 'done'
+    for run in ('first-run', 'second-run'):
+        launch = native._RunLaunch(value, run, None, 'session', None, False, 'read page', [],
+            {'allowed_tools': list(bridge.BROWSER_TOOLS), 'room_dispatch': None}, None, None, None, run + '-dispatch', None)
+        native._run_agent_sync(value, launch, Agent(), None, _api_server=api)
+        assert bridge._context.get() is None
+        assert directory.is_dir() and bridge._session_stream('session') == original_stream
+    assert f.calls == {'close': [], 'vm': ['session', 'session']}
+    assert f.browser._session_last_activity == {'session': 10}
+    token = bridge.bind_run_context('still-scoped', 'session', 'dispatch', None)
+    try:
+        if teardown == 'idle':
+            f.lifecycle['_cleanup_inactive_browser_sessions'](); assert directory.is_dir()
+            f.clock[0] = 131; f.lifecycle['_cleanup_inactive_browser_sessions']()
+        elif teardown == 'shutdown': f.lifecycle['cleanup_all_browsers']()
+        else: f.lifecycle['cleanup_browser']('session')
+    finally: bridge.reset_run_context(token)
+    assert f.calls['close'] == ['session'] and not directory.exists()
+    assert not f.browser._active_sessions
+
+
+@pytest.mark.parametrize('denial', ['unscoped', 'unqualified', 'other-context', 'nonowned', 'owner', 'key', 'cdp', 'cloud', 'real-profile', 'lightpanda', 'name', 'malformed'])
+def test_turn_retention_never_applies_to_unqualified_or_foreign_session(monkeypatch, tmp_path, denial):
+    f = pinned_browser_turn_cleanup(monkeypatch, tmp_path)
+    monkeypatch.setattr(bridge, '_browser_configuration', None if denial == 'unqualified' else {'qualified': True})
+    directory = f.create(); record = f.browser._active_sessions['session']
+    if denial == 'nonowned': record['features']['radhouse_owned'] = False
+    elif denial == 'owner': record['owner_task_id'] = 'foreign'
+    elif denial == 'key': record['session_key'] = 'foreign'
+    elif denial == 'cdp': record['cdp_url'] = 'ws://foreign'
+    elif denial == 'cloud': record['bb_session_id'] = 'foreign'
+    elif denial == 'real-profile': record['features']['real_profile'] = True
+    elif denial == 'lightpanda': record['features']['lightpanda'] = True
+    elif denial == 'name': record['session_name'] = 'personal'
+    elif denial == 'malformed': record['features'] = None
+    token = None if denial == 'unscoped' else bridge.bind_run_context('run', 'foreign' if denial == 'other-context' else 'session', 'dispatch', None)
+    try:
+        assert bridge.retain_browser_after_turn('session') is False
+        # Verify denied records above, then keep the lifecycle fixture on its local native branch.
+        if denial == 'malformed': record['features'] = {}
+        f.browser._active_sessions['unrelated'] = {'session_name': 'h_abcdef0123'}
+        f.finish('session')
+    finally:
+        if token is not None: bridge.reset_run_context(token)
+    assert f.calls['close'] == ['session'] and 'session' not in f.browser._active_sessions
+    assert 'unrelated' in f.browser._active_sessions
+    if denial != 'name': assert not directory.exists()
+
+
+def test_existing_headed_skip_and_nonradhouse_vm_cleanup_are_preserved(monkeypatch, tmp_path):
+    f = pinned_browser_turn_cleanup(monkeypatch, tmp_path); directory = f.create()
+    f.cloud._is_headed_mode = lambda: True
+    f.finish('session')
+    assert directory.is_dir() and f.calls == {'close': [], 'vm': ['session']}

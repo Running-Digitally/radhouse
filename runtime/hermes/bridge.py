@@ -429,6 +429,31 @@ def browser_available(name):
     return name in BROWSER_TOOLS and _browser_configuration is not None
 
 
+def retain_browser_after_turn(task_id):
+    """Only the normal turn finalizer may retain this qualified, owned session.
+
+    Idle, shutdown and explicit teardown call the native lifecycle directly.
+    Reading this predicate never creates a session or refreshes its idle timer.
+    """
+    context = _context.get()
+    if context is None or context.session_id != task_id or _browser_configuration is None:
+        return False
+    try:
+        from tools import browser_tool as browser
+        with browser._cleanup_lock:
+            record = browser._active_sessions.get(task_id)
+            if not record:
+                return False
+            features = record.get("features", {})
+            return (record.get("session_key") == task_id and record.get("owner_task_id") == task_id
+                    and features.get("local") is True and features.get("radhouse_owned") is True
+                    and not features.get("real_profile") and not features.get("lightpanda")
+                    and not record.get("cdp_url") and not record.get("bb_session_id")
+                    and re.fullmatch(r"h_[a-f0-9]{10}", record.get("session_name", "")) is not None)
+    except (AttributeError, TypeError):
+        return False
+
+
 def browser_argv():
     if not bridge_run_active():
         return None

@@ -33,7 +33,25 @@
     "tools/thread_context.py": {
       "before_sha256": "30b868f14013ec6bc741c5e5a1937e405024d0e7344a92bac903f1de3d0e38e2",
       "snapshot_sha256": "30b868f14013ec6bc741c5e5a1937e405024d0e7344a92bac903f1de3d0e38e2"
+    },
+    "agent/chat_completion_helpers.py": {
+      "before_sha256": "cd40a9b1235a6f72368fc2bbcd9b64d56b6df33c68343a1b90609b5bf058b5fa",
+      "snapshot_sha256": "d337b891966a113fdd83084fed232eb25efad895ede7232b047123791093eff9"
     }
   },
-  "upstream_license_sha256": "821556e6336796450ab852d375117b48a4887e71d255794fd6318d99982a5ab6"
+  "upstream_license_sha256": "821556e6336796450ab852d375117b48a4887e71d255794fd6318d99982a5ab6",
+  "contract_fixtures": {
+    "agent/turn_finalizer.py": {
+      "before_sha256": "afa672fc7c5cf5aa2b4739eef1cb46fb81c5ece4d6df75933a7f19a070325aca",
+      "snapshot_sha256": "dc9d8bdfc720761d62d94a4dc38d4509cd6d96815317b8829f53afb8940d7cbc"
+    },
+    "tools/browser_tool_lifecycle.py": {
+      "before_sha256": "d43e9a5de195b9081462fd9a7806dbd995ccb53f29b5a9a8973d8b921c7b645c",
+      "snapshot_sha256": "09fdbce45f84dac2b711c18bba71b6f34caedd319d51d45fc852df62743b92f9"
+    },
+    "tools/browser_tool_session.py": {
+      "before_sha256": "ca96d518d51119ab9d63ba5bb117d4a4049503667fab87735b2c4181a79e3cc3",
+      "snapshot_sha256": "b9492b25050f941204fd643d4accad396bc7aed55f1d8bddc737d8a59b4143d0"
+    }
+  }
 }
