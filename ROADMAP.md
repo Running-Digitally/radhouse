@@ -1,248 +1,35 @@
-# Version 1.0 roadmap
+# Radhouse roadmap
 
-**Current stage: pre-release implementation and qualification.** No milestone
-below is marked complete by repository contents alone, and there is no tagged or
-fully qualified V1 release yet. The supplied-Linux-VM controller now has a
-repeatable release lifecycle; fresh-install, integration and recovery evidence
-still determine whether that deployment path is release-ready.
+## First release: one private web conversation
 
-Version 1.0 must deliver a usable fleet that people can assign work to,
-observe, and continue using across assignments, including useful GitHub-based
-software engineering. A documentation-only release or a single-agent demo does
-not meet that definition.
+Acceptance: **I open Radhouse, talk to my assistant, close the browser, and return
+later to the same conversation.**
 
-## Intended release boundary
+1. Implement the small `radhouse.chat` app: existing password/TOTP sign-in, one
+   stable Hermes session, readable history, streamed original attachments without
+   application size/count caps, optional bounded readings, pending
+   reply recovery and clear errors.
+2. Verify the browser journey, auth boundary and retry behavior locally with
+   synthetic Hermes and an owned disposable authentication database. The local UI
+   now includes a persistent composer, separate outgoing/next drafts, compact
+   files, long-paste preservation, upload progress, formatted answers and recovery.
+3. Qualify two real turns and restart continuity against the exact existing
+   Hermes runtime, beginning with text-only conversation and tools disabled. Then
+   prove image understanding, extracted-document answers and the existing STT
+   connection with bounded reading examples. Original-file transfer is independent
+   of those readings; selective file access needs its own runtime handoff contract.
+   Qualify incremental reply streaming and a trustworthy Stop action against that
+   runtime before exposing either in the UI; current replies arrive on completion.
+4. Activate behind the existing private Warp access after the bounded live
+   decision, then retire unused infrastructure using verified dependencies and
+   explicit data disposition.
 
-| Area | Version 1.0 direction |
-| --- | --- |
-| Agent runtime | Hermes first, behind an adapter suitable for later runtime additions. |
-| Agent environment | Persistent Linux VM per agent; terminal, files, and browser access within the agent's boundary. |
-| Idle lifecycle | Keep bot VMs running by default until an authorized human stops them. No automatic idle standby by default; accepted weekly maintenance and deterministic resource limits still apply. |
-| Deployment | Guided Proxmox provisioning plus an installation path for operator-supplied, suitably isolated Linux VMs. |
-| Core management | Two shared VMs: control/UI/work coordination and bounded service/infrastructure operations, plus a persistent VM per bot. Optional-service hosts and CI workers have separate placement/qualification; two is the core management count. |
-| Inference | Self-hosted compatible APIs; explicit provider selection; qualification for required tools, model attribution, and interruption recovery. |
-| Human access | Administrator, operator, and viewer roles; local accounts plus optional bundled SSO or connection to an existing provider. |
-| Human MFA | Required for administrators everywhere and all remote human users, across local accounts and supported SSO. Local non-admin operators/viewers may opt in; unproven local exceptions cannot bypass MFA. |
-| Project ownership | Operators create private projects and explicitly share projects they own with existing users and eligible bots. Content-sharing permissions still apply; administrators retain user accounts, bot allocation, and service grants. |
-| Operator starting screen | A simple work home with assigned agents, current work, and a prominent Start a task action; conversations and project details remain available within Radhouse. |
-| GitHub | Mediated access by default; explicit advanced direct scoped tokens; authorized branch and pull-request work with human merge approval. |
-| CI setup | Administrator onboarding defaults new CI setups to GitHub-hosted checks; offer local hosting after capacity and suitability preflight, then enable only after isolation/lifecycle qualification. Preserve existing repository CI; preferences can change through an explicit reviewed setup. |
-| Privacy | Private by default; explicit sharing or disclosed supervision per agent; shared projects and human-reviewed publication. |
-| Oversight | Security-event warnings; optional scoped private review; central supervisor warnings and recommendations, with human intervention. |
-| Maintenance | Automatic weekly OS updates and planned guest restarts by default, under a disclosed administrator-managed policy; advance notice, work preservation, and verified recovery. Security takes precedence: stop unready bot runs after bounded preparation/grace and proceed. Other component changes retain separate review. |
-| Observability | Built-in work/health/event views; local-by-default telemetry, logs, and analytics; scoped audit and maintenance receipts; visible coverage and resource limits. |
-| Backup and restore | Hybrid: managed portable application/data backups plus optional qualified infrastructure protection for complete bot computers; Proxmox/NAS-backed workflows first, with a supplied-VM path and explicit coverage/recovery evidence. |
-| Recovery priority | Tiered work-data RPO targets: Standard ~1 hour, Important ~15 minutes, Disposable ~1 day, conditional on deterministic support preflights. Retain the latest 3 validated work-data recovery points; historical archives are off by default. Prioritize recent recovery and finite storage budgets. |
-| Recovery keys | Built-in key management for unattended backups, with a guided administrator-held recovery kit saved outside the installation and verified through recovery. Worker bots receive no backup keys. |
-| Restore authority | Operators recover currently authorized files into a separate recovery folder, with current permissions and privacy preserved; no automatic overwrite or bot activation. Administrators handle whole-bot and platform recovery. |
-| Work model and naming | Persistent bots, project workspaces, finite tasks, role/project/task starters, optional scoped Chief of Staff; four changeable naming presets and individual overrides. |
-| Private-data egress | Restricted default profile; explicit administrator grant for broader browsing; documented and tested limits for supported combinations. |
-| Collaboration | Delegation to existing project agents; owner-influenced or self-organized reporting lines; leads coordinate work within shared budgets. |
-| Routines | On-demand tasks and human-configured schedules with explicit timing, targets, and limits. |
-| Proactive assistance | Human-enabled standing assignments use Guardian Angel and Cognitive Amplifier behaviors to judge relevance and prepare useful briefings/local drafts. Optional bot mail and authorized work/status events may wake bounded runs; humans retain new follow-up and wider-effect decisions. |
-| Optional shared services | Buzz as an optional full operator work surface, including native protected reviews/approvals; receive-only bot mail and SSO, with documented installation and isolation contracts. |
-| Account-security mail | Human-controlled by default, with tested integrations for explicitly approved verification/sign-in flows on named bot-owned accounts. Password reset and security-setting changes remain human-controlled. |
-| Optional remote access | Limited guided Cloudflare Access and Tunnel setup for the application, with local use available independently. |
+The unmerged durable-work PR stack is preserved. It is not on the critical path
+for this first release. Buzz integration is removed from the product direction.
 
-## Operator work home
+## After the first release
 
-The version 1.0 operator starts on a simple work home showing assigned agents,
-current work, and a prominent **Start a task** action. Opening a task or project
-keeps its conversation, progress, files, results, and permission requests within
-Radhouse. When enabled, Buzz is an alternative operator work surface for the same
-linked conversations and tasks, including native protected reviews and approvals.
-Infrastructure administration remains in Radhouse. Both use the same authority,
-task and publication contracts; Buzz is optional to install, while its accepted
-integration is part of V1 release qualification.
-
-The home should make working, waiting, finished, and needs-help states easy to
-understand. An operator with no assigned agents sees a clear way to request one
-from an administrator. Show only information and actions permitted by the
-person's role and scope; a viewer's read-only experience does not offer task
-submission. Server-side authorization must enforce the same boundaries.
-
-The accepted [work model](docs/work-model.md) connects persistent bots, project
-workspaces, finite tasks, and reusable role/project/task starters through several
-entry points into one brief. An optional Chief of Staff coordinates within
-explicit information scope. It does not gain automatic assignment authority or
-additional access from its title.
-
-Make context, audience, and bot access visible using the
-[boundary experience](docs/boundary-experience.md). Offer four changeable
-[naming presets](docs/naming-preferences.md) with individual overrides, preserving
-stable identity and permissions across renames. Detailed interactions remain
-proposed until implemented and qualified.
-
-Qualification includes an unfamiliar operator starting useful work, finding its
-result, and understanding a blocked action without a terminal, external manual,
-or administrator coaching. The work-home requirement is accepted; a working
-interface and usability evidence remain to be delivered.
-
-## Proposed component boundaries
-
-- **Control plane:** human roles, agent assignments, project membership, work
-  admission, progress, schedules, and explicit grants.
-- **Deployment adapter:** provision and manage an agent VM using only the
-  capabilities qualified for that deployment path. A supplied VM does not
-  automatically give Radhouse access to its hypervisor.
-- **Agent runtime adapter:** start, observe, interrupt, and recover an
-  assignment while preserving identity and reporting actual capabilities.
-- **Service-access boundary:** enforce granted operations and resource scopes,
-  including the selected GitHub credential mode and revocation contract.
-- **Inference route:** retain operator-selected provider identity, enforce
-  admission policy, and attribute work to the model actually served.
-- **Shared services:** integrate chat, mail, and identity through explicit
-  contracts rather than giving agent VMs administrative access to those services.
-- **Security and maintenance:** correlate scoped findings and maintain component
-  inventory; execute only admitted maintenance plans through bounded adapters.
-  The [supervisor design](docs/security-supervisor.md) separates model proposals
-  from enforced authority and defines the weekly OS default with bounded
-  preparation and mandatory maintenance despite unready bot work.
-
-These are responsibilities to design and qualify, not a requirement to create
-one independently deployed service per responsibility. Choose the least complex
-implementation that adequately enforces each boundary.
-
-[Observability](docs/observability.md) spans these components from the first
-useful task. Correlate work, security, and maintenance through scoped structured
-evidence; keep sensitive content out of routine telemetry. Qualify missing-signal,
-denial, retention, and resource-pressure behavior as each slice is delivered.
-
-## Proposed delivery sequence
-
-The [architecture and first-slice packet](docs/architecture-review.md) is the
-current review entry point. Its VS0-A subset is implemented and locally verified:
-111 tests and both simulated channel crash/recovery demonstrations passed.
-[Run the proof](docs/vs0-demo.md); broader contracts and integrations remain to qualify.
-
-The accepted [earlier usability pilot](docs/architecture-review.md#earlier-usability-pilot--accepted-delivery-refinement)
-brings a thin operator work home and nontechnical usability proof into the first
-live single-bot milestone, after the offline foundation. That early pilot now
-also includes a thin real Buzz conversation and native protected review. The
-offline foundation exercises both simulated channels first. Retain all accepted
-V1 requirements and the applicable identity, scope and isolation checks before
-live access.
-
-The [VS1-B implementation packet](docs/vs1b-pilot.md) divides that milestone into
-durable Hermes task execution, the TypeScript operator work home, and real Buzz
-parity. The order keeps one authority and recovery path while allowing the core
-product to remain useful when Buzz is disabled.
-
-Prepared VM and component work feeds the
-[handoff into the live pilot](docs/architecture-review.md#prepared-infrastructure-and-the-path-into-the-live-pilot).
-The public [reference foundation](docs/deployment/reference-foundation.md) and
-[Hermes](docs/integrations/hermes.md), [Authentik](docs/integrations/authentik.md),
-and [Buzz](docs/integrations/buzz.md) profiles retain the reusable contracts from
-that work without carrying private deployment topology or receipts.
-Keep VS0-A independent of infrastructure provisioning. Refine the next milestone
-into VS1-A (qualify the selected prepared services) and VS1-B (the useful task
-through both real interfaces). Before retained workloads, replace empty-guest
-maintenance with work-aware updates/recovery and verify storage, backup and
-network admission. The final release milestone broadens this evidence; it does
-not postpone these protections until after the pilot.
-
-| Milestone | Evidence needed before moving on |
-| --- | --- |
-| 1. Contracts and configuration | The offline VS0-A subset passes against PostgreSQL: durable tasks, protected decisions, simulated Radhouse/Buzz channels, and synthetic configuration boundaries. Extend and qualify contracts as the live adapters are introduced; this is not full V1 configuration support. |
-| 2. One persistent agent and a useful operator journey | After the offline foundation, an unfamiliar nontechnical operator uses the thin Radhouse and Buzz interfaces to assign bounded research, continue the same task across surfaces, find its cited artifact and complete a native protected review. Prove current authority, audience, persistence, model attribution and recovery; qualify both deployment paths before claiming release support. |
-| 3. Collaboration and admission | Two agents complete shared work without gaining private access; queued background work respects interactive priority and shared limits. |
-| 4. Software engineering | Builder, Reviewer and Deployer use explicit, correlated handoffs: a scoped repository task produces a branch and pull request, independent findings return for a bounded revision, and an immutable reviewed revision reaches one configured release target after a protected human decision. Credential custody, denial, revocation and human merge boundaries hold in both supported GitHub modes. Guided CI setup preserves existing workflows; GitHub-hosted defaults and conditional local runners pass the [setup and preflight contract](docs/ci-and-runner-setup.md). |
-| 5. Expanded human roles and privacy | Extend the early usability proof to administrator/operator/viewer journeys, sharing review, supervision and private-data egress. Full cross-user and disclosure checks complement the identity and scope enforcement already required for the single-bot pilot. |
-| 6. Optional shared services | Complete the Buzz profile beyond its early operator proof, plus receive-only mail and SSO, without widening agent grants; remote Access/Tunnel setup qualifies separately. |
-| 7. Delegation, routines, and proactive assistance | Existing project agents complete bounded subtasks; standing assignments prepare useful briefings from authorized events. Cycles, duplicate delivery, budgets, cancellation, schedules, quiet hours, privacy, and model/restart failures obey admitted work and current grants. |
-| 8. Maintenance and release qualification | Component inventory, update checks, approved-plan execution under the selected policy, running-version checks, failure/recovery proof, reproducible installation, configuration tests, useful fleet work, and published evidence for supported profiles. |
-
-Development should proceed through small end-to-end slices. The sequence is a
-planning proposal, not a schedule or a promise to implement all components in
-parallel.
-
-## Capacity and recovery
-
-Publish capacity evidence for a declared host and inference configuration.
-Concurrent active assignments and simultaneous model generations are different
-measurements. Resource priority, queueing, browser workload, model context, and
-memory pressure must be visible in the results.
-
-Size the default fleet for running guests even when assignments are idle.
-Include guest/service memory and CPU overhead before admitting additional bots;
-do not assume idle shutdown will supply headroom. A running VM does not imply
-continuous model generation or unlimited work. Manual stop, failure, and planned
-maintenance need distinct visible states and qualified recovery behavior.
-
-Recovery must distinguish resuming agent reasoning from replaying external
-actions. Restoring a workspace must not revive an expired grant or silently
-repeat a publication, pull-request operation, or scheduled task.
-
-The accepted [hybrid backup model](docs/backup-and-restore.md) provides portable
-application/data protection and an additional complete-computer lane through
-existing infrastructure. Prioritize the Proxmox/Linux-guest/NAS reference pattern;
-retain generic configuration and the supplied-VM path. Show actual coverage and
-restore evidence instead of assuming every new bot inherits existing backup jobs.
-
-## Decisions still to resolve
-
-- Maintenance implementation: supported package profiles, checkpoint contracts,
-  preparation/grace timing, forced-stop behavior, pending-action reconciliation,
-  and recovery adapters. Weekly OS updates/restarts and security precedence over
-  unready work are accepted; other component changes retain separately reviewed plans.
-- Concrete project membership/sharing contracts, starter contents, naming-preference
-  precedence, cross-project grants, retained memory, and usable boundary displays
-  within the accepted work model.
-- Human and bot service identities, credential lifecycles, and the concrete
-  mediation mechanism for each allowed GitHub operation.
-- Optional mail delivery and attachment behavior, including how receive-only
-  restrictions are enforced outside the agent runtime, and provider qualification
-  for the accepted [account-security contract](docs/mail-and-account-security.md).
-- Proactive-assignment schemas, event/delivery adapters, attention defaults,
-  numerical budgets, feedback behavior, and evaluation thresholds within the
-  accepted [prepared-assistance contract](docs/proactive-assistance.md).
-- Qualify the Authentik SSO candidate, including MFA methods/assurance,
-  enrollment and recovery, session rules, ingress classification, and tested
-  account-linking behavior. Local accounts remain supported.
-- Runtime checkpoint capabilities, inference conformance, and behavior when an
-  operator changes the model behind a service-following alias.
-- Packaging and installation/upgrade contracts for the remaining deployment
-  profiles. Exact application dependencies, configuration schema and the
-  supplied-Linux-VM controller lifecycle are implemented; the
-  [Python controller, TypeScript interface, PostgreSQL store/queue and Compose
-  direction](docs/architecture-review.md#chunk-5a-implementation-stack--accepted-direction)
-  still require full release qualification.
-- Telemetry schemas/backend, retention defaults, export boundaries, metric
-  definitions, and resource budgets for a small installation.
-- Hybrid backup engine, exact schedules and rotation mechanics,
-  storage onboarding, recovery-kit implementation, consistent capture, and
-  concrete restore authorization/extraction contracts; tiered targets, the
-  three-point lean default, built-in recovery kits, and scoped self-service are accepted,
-  while capacity/performance gates and optional retention policies need
-  design/qualification. Complete-computer and controller recovery require qualification.
-- Exact CI onboarding/configuration contracts, workload-based capacity thresholds,
-  local runner lifecycle and isolation, and the privileged integration-test path.
-  The [GitHub-hosted default and conditional local option](docs/ci-and-runner-setup.md)
-  are accepted; local execution must pass qualification before activation. Public
-  contribution jobs must not inherit private infrastructure credentials or caches.
-
-## Deferred from version 1.0
-
-Additional agent runtimes, automated provisioning on other hypervisors, dedicated
-cloud-inference integrations, private-agent question exchange with automatic
-answers, and automatic supervisor incident intervention are deferred. Maintenance
-execution includes the accepted weekly OS policy and security-precedence deadline.
-Broad personal
-inbox/calendar access, outbound bot email, unattended merge/deploy, and agents
-expanding their own grants are outside the accepted release boundary.
-
-Extensive historical snapshot browsing and automatic long-term backup archives
-are not version 1 baseline requirements. Retain the hybrid infrastructure recovery
-path and a small usable fallback set; adding historical retention needs an
-explicit capacity-qualified policy.
-
-## Working in public
-
-Keep product contracts, public configuration examples, tests, and installation
-code reusable. Keep deployment-specific inventories, hostnames, credentials,
-private conversations, and local integration overlays in separately managed
-private locations. Do not import a private infrastructure repository's history.
-
-Original Radhouse work uses [Apache-2.0](LICENSE). Assess upstream versions,
-interfaces, and licenses before packaging them; no upstream integration is
-qualified merely because it appears in this roadmap.
+Use the assistant and identify one concrete missing capability at a time. Memory
+correction, useful tools, routines, delegation and software delivery are possible
+later slices. None is required to release the basic conversation, and no standing
+fleet or new service is assumed for them.
