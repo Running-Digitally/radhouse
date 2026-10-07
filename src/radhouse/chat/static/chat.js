@@ -40,6 +40,7 @@ let pendingLookup=null;
 const emptyDraft = () => ({text:"",attachments:[]});
 let draft=emptyDraft(), noticeCode=null, noticeAction=null, draftSignature="";
 const turnNodes=new Map(), previewUrls=new Map();
+const retainedSnapshots=new Map();
 function messageFits(text) { let count=0; for (const _ of text) if (++count>16000) return false; return true; }
 function tell(code, action=null) {
   noticeCode=code; noticeAction=action;
@@ -97,17 +98,25 @@ function saveState() {
   });
   return draftWrites;
 }
-function persist() { return saveState().catch(() => tell("draft_storage_unavailable",persist)); }
+function persist() { const savingSession=session; return saveState().catch(() => { if (session===savingSession) tell("draft_storage_unavailable",persist); }); }
 function releaseFile(file) { const url=previewUrls.get(file.file_id); if (url) URL.revokeObjectURL(url); previewUrls.delete(file.file_id); }
 function releasePreviews() { for (const url of previewUrls.values()) URL.revokeObjectURL(url); previewUrls.clear(); }
 function showLogin(expired=false) {
-  if (session) $("username").value=session.username;
+  if (session) {
+    $("username").value=session.username;
+    // Keep the only original in this tab when browser storage is unavailable.
+    // The signed-out UI is cleared; restoration uses the exact owner's key.
+    if (!openingHistory) retainedSnapshots.set(session.username,
+      structuredClone({...draft,text:$("message").value,outbox,version:2,revision:draftRevision}));
+  }
   session=null; pendingLookup=null; releasePreviews(); draft=emptyDraft(); outbox=null; turns.clear(); turnNodes.clear(); draftSignature="";
+  busy=false; polling=false; filesLoading=false; openingHistory=false;
   $("messages").replaceChildren(); $("draft-files").replaceChildren(); $("message").value="";
   $("chat-view").hidden=true; $("logout").hidden=true; $("login-view").hidden=false; $("loading").hidden=true;
   clearNotice(); if (expired) tell("authentication_required");
 }
 async function api(path,body,initial=false) {
+  const requestingSession=session;
   const headers={};
   if (body!==undefined) { headers["Content-Type"]="application/json"; if (session) headers["X-Radhouse-CSRF"]=session.csrf_token; }
   let response;
@@ -115,7 +124,7 @@ async function api(path,body,initial=false) {
   catch (_) { throw new Error("network_error"); }
   if (!response.ok) {
     let value; try { value=await response.json(); } catch (_) { value={}; }
-    if (response.status===401) showLogin(!initial);
+    if (response.status===401 && session===requestingSession) showLogin(!initial);
     const error=new Error(value.error || "service_unavailable"); error.status=response.status; throw error;
   }
   return response.status===204 ? null : response.json();
@@ -138,9 +147,14 @@ async function reconcilePending(data) {
   finally { if (pendingLookup===lookup) pendingLookup=null; }
 }
 function accept(data,older=false,latest=false) {
+  const cachedLatest=[...turns.keys()].reduce((max,seq) => Math.max(max,seq),0);
+  const disjointLatest=!older && cachedLatest && data.turns.length && data.turns[0].seq>cachedLatest &&
+    !data.turns.some(turn => turns.has(turn.seq));
   if (outbox && outbox.request_id===data.accepted_request_id) { outbox.attachments.forEach(releaseFile); outbox=null; persist(); }
   for (const turn of data.turns) rememberTurn(turn);
-  if (older || !olderLoaded) olderBefore=data.older_before;
+  // A new latest page can be separated from an already-loaded older range.
+  // Reopen pagination at that page so every intervening message stays reachable.
+  if (older || !olderLoaded || disjointLatest) olderBefore=data.older_before;
   if (older) olderLoaded=true;
   if (["network_error","conversation_unavailable","assistant_unavailable"].includes(noticeCode)) clearNotice();
   render({older,latest});
@@ -287,24 +301,28 @@ function migrateFile(file) {
 function recoveredSnapshot(stored,fallback) {
   const revision=value => Number.isSafeInteger(value?.revision) && value.revision>=0 ? value.revision : 0;
   draftRevision=Math.max(draftRevision,revision(stored),revision(fallback));
-  if (!fallback || stored && revision(stored)>=revision(fallback)) return stored;
-  // The fallback owns newer text/request state; IndexedDB may still hold the
-  // same immutable originals after a failed write. Never restore removed files.
-  const originals=new Map([...(stored?.attachments || []),...(stored?.outbox?.attachments || [])]
+  if (!fallback) return stored;
+  const chosen=stored && revision(stored)>=revision(fallback) ? stored : fallback;
+  // The newest snapshot owns text/request state. Either store or this tab may
+  // retain its immutable originals after a failed write; never restore removals.
+  const originals=new Map([...(stored?.attachments || []),...(stored?.outbox?.attachments || []),
+    ...(fallback.attachments || []),...(fallback.outbox?.attachments || [])]
     .filter(file => file.file_id && file.blob instanceof Blob).map(file => [file.file_id,file.blob]));
-  const files=values => (values || []).map(file => originals.has(file.file_id) ? {...file,blob:originals.get(file.file_id)} : file);
-  return {...fallback,attachments:files(fallback.attachments),
-    outbox:fallback.outbox ? {...fallback.outbox,attachments:files(fallback.outbox.attachments)} : null};
+  const files=values => (values || []).map(file => !(file.blob instanceof Blob) && originals.has(file.file_id) ? {...file,blob:originals.get(file.file_id)} : file);
+  return {...chosen,attachments:files(chosen.attachments),
+    outbox:chosen.outbox ? {...chosen.outbox,attachments:files(chosen.outbox.attachments)} : null};
 }
 async function openConversation() {
   const openingSession=session; openingHistory=true; followingLatest=true; olderLoaded=false; olderBefore=null;
   turns.clear(); turnNodes.clear(); $("messages").replaceChildren(); draftSignature=""; draft=emptyDraft(); outbox=null;
   $("login-view").hidden=true; $("chat-view").hidden=false; $("logout").hidden=false; $("loading").hidden=true;
   controls();
-  let stored, fallback;
-  try { stored=await draftOperation(key()); } catch (_) {}
-  try { fallback=JSON.parse(localStorage.getItem(key()) || "null"); } catch (_) {}
-  const saved=recoveredSnapshot(stored,fallback);
+  const storageKey=key(); let stored, fallback;
+  try { stored=await draftOperation(storageKey); } catch (_) {}
+  if (session!==openingSession) return;
+  try { fallback=JSON.parse(localStorage.getItem(storageKey) || "null"); } catch (_) {}
+  const retained=retainedSnapshots.get(openingSession.username);
+  const saved=recoveredSnapshot(recoveredSnapshot(stored,fallback),retained);
   if (saved?.has_files && [...(saved.attachments || []),...(saved.outbox?.attachments || [])].some(file => !(file.blob instanceof Blob))) tell("draft_storage_unavailable",persist);
   if (session!==openingSession) return;
   if (saved && typeof saved.text==="string") {
@@ -317,7 +335,7 @@ async function openConversation() {
       outbox.attachments=outbox.attachments.map(migrateFile); outbox.phase="checking"; outbox.error=null;
     }
   }
-  savedSignature=snapshotSignature({...draft,outbox}); draftWriteFailed=false;
+  savedSignature=snapshotSignature({...draft,outbox}); draftWriteFailed=!!retained;
   $("message").value=draft.text; render({latest:true});
   try { const data=await api("/chat/history"); if (session===openingSession) accept(data,false,true); }
   catch (error) { if (session===openingSession) tell(error.message,refreshHistory); }
@@ -325,7 +343,10 @@ async function openConversation() {
     if (session===openingSession) {
       openingHistory=false;
       if (outbox) { outbox.phase="failed"; outbox.error="network_error"; }
-      await persist(); render(); if (!matchMedia("(pointer:coarse)").matches) $("message").focus();
+      await persist();
+      if (session!==openingSession) return;
+      if (!draftWriteFailed) retainedSnapshots.delete(openingSession.username);
+      render(); if (!matchMedia("(pointer:coarse)").matches) $("message").focus();
     }
   }
 }
@@ -339,7 +360,8 @@ async function refreshHistory() {
     const data=await api("/chat/history"); if (session===readingSession) accept(data);
   } catch (error) { if (session===readingSession) tell(error.message,refreshHistory); }
 }
-function progress(file,loaded,total) {
+function progress(file,loaded,total,sendingSession) {
+  if (session!==sendingSession) return;
   const box=outbox; if (!box) return;
   const target=document.querySelector("[data-upload-progress]");
   if (target) target.textContent=file.name+" · "+(total ? Math.round(loaded/total*100)+"% transferred" : sizeLabel(loaded)+" transferred");
@@ -353,14 +375,14 @@ async function uploadOriginal(file, sendingSession) {
   if (!receipt) receipt=await new Promise((resolve,reject) => {
     const request=new XMLHttpRequest(); request.open("PUT","/chat/files/"+file.file_id+"?name="+encodeURIComponent(file.name));
     request.setRequestHeader("Content-Type","application/octet-stream"); request.setRequestHeader("X-Radhouse-CSRF",sendingSession.csrf_token);
-    request.upload.onprogress=event => progress(file,event.loaded,event.lengthComputable ? event.total : 0);
+    request.upload.onprogress=event => progress(file,event.loaded,event.lengthComputable ? event.total : 0,sendingSession);
     request.onerror=request.onabort=() => reject(new Error("network_error"));
     request.onload=() => {
       let value; try { value=JSON.parse(request.responseText); } catch (_) { value={}; }
       if (request.status>=200 && request.status<300) resolve(value);
-      else { if (request.status===401) showLogin(true); const error=new Error(value.error || "file_storage_unavailable"); error.status=request.status; reject(error); }
+      else { if (request.status===401 && session===sendingSession) showLogin(true); const error=new Error(value.error || "file_storage_unavailable"); error.status=request.status; reject(error); }
     };
-    progress(file,0,file.size); request.send(file.blob);
+    progress(file,0,file.size,sendingSession); request.send(file.blob);
   });
   if (receipt.name!==file.name || receipt.size!==file.size) throw new Error("attachment_conflict");
   file.uploaded=true;
@@ -396,7 +418,7 @@ async function transmit(box) {
       if (["csrf_denied","request_origin_denied"].includes(error.message)) tell(error.message,refreshHistory);
       try { const data=await api("/chat/history"); if (session===sendingSession) accept(data); } catch (_) {}
     }
-  } finally { busy=false; if (session===sendingSession) render(); }
+  } finally { if (session===sendingSession) { busy=false; render(); } }
 }
 function retryOutgoing() { if (outbox && !pendingTurn()) transmit(outbox); }
 async function retrySaved(requestId) {
@@ -409,7 +431,7 @@ async function retrySaved(requestId) {
     const data=await api("/chat/messages/"+requestId+"/retry",{}); if (session===sendingSession) accept(data);
   }
   catch (error) { if (session===sendingSession) tell(error.message,refreshHistory); }
-  finally { busy=false; if (session===sendingSession) render(); }
+  finally { if (session===sendingSession) { busy=false; render(); } }
 }
 function editOutgoing() {
   if (!outbox || outbox.transmitted || busy) return;
@@ -425,20 +447,22 @@ async function addFiles(fileList) {
     draft.attachments.push(...[...fileList].map(file => ({name:file.name,blob:file,file_id:crypto.randomUUID(),kind:fileKind(file),type:file.type,size:file.size})));
     await saveState();
   } catch (error) { if (session===addingSession) tell(error.message,persist); }
-  finally { filesLoading=false; if (session===addingSession) render(); }
+  finally { if (session===addingSession) { filesLoading=false; render(); } }
 }
 $("attach").addEventListener("click",() => $("file-picker").click());
 $("file-picker").addEventListener("change",event => { addFiles(event.target.files); event.target.value=""; });
 $("attach-text").addEventListener("click",async () => {
-  const text=$("message").value;
+  const text=$("message").value, convertingSession=session;
   await addFiles([new File([text],"pasted-text.txt",{type:"text/plain"})]);
+  if (session!==convertingSession) return;
   // Only clear after the file draft was successfully written.
   try {
     await saveState();
+    if (session!==convertingSession) return;
     if ($("message").value===text) { draft.text=""; $("message").value=""; }
-    await saveState(); render(); $("message").focus();
+    await saveState(); if (session===convertingSession) { render(); $("message").focus(); }
   }
-  catch (_) { tell("draft_storage_unavailable",persist); }
+  catch (_) { if (session===convertingSession) tell("draft_storage_unavailable",persist); }
 });
 $("compose").addEventListener("paste",event => { const files=[...(event.clipboardData?.files || [])]; if (files.length) { event.preventDefault(); addFiles(files); } });
 $("chat-view").addEventListener("dragover",event => { if ([...event.dataTransfer.types].includes("Files")) { event.preventDefault(); $("compose").classList.add("dragging"); } });
@@ -464,19 +488,28 @@ $("older").addEventListener("click",async () => {
   catch (error) { if (session===readingSession) tell(error.message,refreshHistory); }
 });
 $("login-form").addEventListener("submit",async event => {
-  event.preventDefault(); clearNotice(); const button=event.submitter; button.disabled=true;
-  try { session=await api("/auth/login",{username:$("username").value,password:$("password").value,totp_code:$("totp").value,remember_browser:$("remember").checked}); $("password").value=""; $("totp").value=""; await openConversation(); }
-  catch (error) { tell(error.message); } finally { button.disabled=false; }
+  event.preventDefault(); clearNotice(); const button=event.submitter, signingInSession=session; button.disabled=true;
+  try {
+    const credentials=await api("/auth/login",{username:$("username").value,password:$("password").value,totp_code:$("totp").value,remember_browser:$("remember").checked});
+    if (session!==signingInSession) return;
+    session=credentials; $("password").value=""; $("totp").value=""; await openConversation();
+  }
+  catch (error) { if (session===signingInSession) tell(error.message); } finally { button.disabled=false; }
 });
-$("logout").addEventListener("click",async () => { try { await saveState(); await api("/auth/logout",{}); showLogin(); } catch (error) { tell(error.message); } });
+$("logout").addEventListener("click",async () => {
+  const signingOutSession=session;
+  try { await saveState(); if (session!==signingOutSession) return; await api("/auth/logout",{}); if (session===signingOutSession) showLogin(); }
+  catch (error) { if (session===signingOutSession) tell(error.message); }
+});
 setInterval(async () => {
   if (!session || !pendingTurn() || busy || polling) return;
   polling=true; const readingSession=session;
   try { const data=await api("/chat/reply"); if (session===readingSession) accept(data); }
   catch (error) { if (session===readingSession) tell(error.message,refreshHistory); }
-  finally { polling=false; }
+  finally { if (session===readingSession) polling=false; }
 },2000);
 (async () => {
-  try { session=await api("/auth/session",undefined,true); await openConversation(); }
-  catch (error) { if (error.status!==401) { showLogin(); tell(error.message); } }
+  const startingSession=session;
+  try { const credentials=await api("/auth/session",undefined,true); if (session!==startingSession) return; session=credentials; await openConversation(); }
+  catch (error) { if (session===startingSession && error.status!==401) { showLogin(); tell(error.message); } }
 })();
