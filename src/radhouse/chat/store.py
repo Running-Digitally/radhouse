@@ -81,6 +81,14 @@ class ChatStore:
                     PRAGMA user_version=3;
                     COMMIT;
                 """)
+            # Additive metadata keeps schema-3 readers usable for rollback.
+            # Legacy positive deadlines may represent an uncertain submission;
+            # preserve their original window rather than granting a fresh one.
+            db.execute("BEGIN IMMEDIATE")
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(turns)")}
+            if "first_dispatch_at" not in columns:
+                db.execute("ALTER TABLE turns ADD COLUMN first_dispatch_at REAL")
+            db.execute("UPDATE turns SET first_dispatch_at=created_at WHERE first_dispatch_at IS NULL AND retry_until>0")
         self.files_path = self.path.with_name(self.path.name + ".files")
         self.files_path.mkdir(mode=0o700, exist_ok=True)
         info = self.files_path.lstat()
@@ -150,7 +158,7 @@ class ChatStore:
                 raise Rejected("reply_pending", 409)
             db.execute("INSERT OR IGNORE INTO conversations VALUES (?,?)", (owner, "chat:" + uuid4().hex))
             db.execute("INSERT INTO turns(owner,request_id,text,dispatch_key,created_at,retry_until,status) VALUES(?,?,?,?,?,?,?)",
-                       (owner, request_id, text, "chat:" + uuid4().hex, now, now + retention, "awaiting_dispatch"))
+                       (owner, request_id, text, "chat:" + uuid4().hex, now, 0, "awaiting_dispatch"))
             row = db.execute("SELECT * FROM turns WHERE owner=? AND request_id=?", (owner, request_id)).fetchone()
             for i, attachment in enumerate(attachments):
                 db.execute("INSERT INTO attachments VALUES(?,?,?,?,?,?,?,?,?,?,?)",
@@ -158,6 +166,15 @@ class ChatStore:
                      attachment.sha256, b"" if attachment.file_id else attachment.data, attachment.reference_text,
                      attachment.file_id, attachment.reading_state, attachment.reading_error))
             return dict(row)
+
+    def begin_dispatch(self, turn, now, retention):
+        with self.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            # Zero is reserved for a positively known, never-attempted turn.
+            # Persist before the POST so a lost response cannot renew its window.
+            db.execute("UPDATE turns SET first_dispatch_at=?,retry_until=? WHERE seq=? AND first_dispatch_at IS NULL AND retry_until=0",
+                       (now, now + retention, turn["seq"]))
+            return dict(db.execute("SELECT * FROM turns WHERE seq=?", (turn["seq"],)).fetchone())
 
     @staticmethod
     def _match(db, row, text, attachments):

@@ -51,22 +51,20 @@ class ChatService:
                 raise Rejected("chat_capability_unavailable", 503)
             if turn is None:
                 turn = self.store.reserve(owner, request_id, text, self.clock(), capabilities.idempotency_retention_seconds - 60, attachments)
-            retry_until = min(turn["retry_until"], turn["created_at"] + capabilities.idempotency_retention_seconds - 60)
-            if self.clock() >= retry_until:
-                self.store.note_error(turn, "reply_recovery_required")
-                raise Rejected("reply_recovery_required", 409)
+            retention = capabilities.idempotency_retention_seconds - 60
+            self._check_retry_window(turn, retention)
             attachments = self.store.attachments(owner, request_id)
             if turn["input_text"] is None:
                 self._prepare(turn, owner, request_id, text)
                 turn["input_text"] = self.store.find(owner, request_id)["input_text"]
                 attachments = self.store.attachments(owner, request_id)
-            if self.clock() >= retry_until:
-                self.store.note_error(turn, "reply_recovery_required")
-                raise Rejected("reply_recovery_required", 409)
+            images = tuple(a.image() for a in self._inline_images(attachments))
+            session_id = self.store.session_id(owner)
+            turn = self.store.begin_dispatch(turn, self.clock(), retention)
+            self._check_retry_window(turn, retention)
             dispatch = self.hermes.start_or_attach(input_text=turn["input_text"],
-                images=tuple(a.image() for a in self._inline_images(attachments)),
-                session_id=self.store.session_id(owner), dispatch_key=turn["dispatch_key"], disable_tools=True)
-            if dispatch.session_id != self.store.session_id(owner):
+                images=images, session_id=session_id, dispatch_key=turn["dispatch_key"], disable_tools=True)
+            if dispatch.session_id != session_id:
                 raise Rejected("runtime_identity_changed", 503)
             self.store.attach(turn, dispatch.run_id, "queued" if dispatch.status in TERMINAL else dispatch.status)
         except HermesGatewayError:
@@ -74,6 +72,14 @@ class ChatService:
                 self.store.note_error(turn, "reply_dispatch_uncertain")
             raise Rejected("assistant_unavailable", 503) from None
         return {**self.store.history(owner), "accepted_request_id": request_id}
+
+    def _check_retry_window(self, turn, retention):
+        if turn["first_dispatch_at"] is None and turn["retry_until"] == 0:
+            return
+        started = turn["first_dispatch_at"] if turn["first_dispatch_at"] is not None else turn["created_at"]
+        if self.clock() >= min(turn["retry_until"], started + retention):
+            self.store.note_error(turn, "reply_recovery_required")
+            raise Rejected("reply_recovery_required", 409)
 
     @staticmethod
     def _inline_images(attachments):

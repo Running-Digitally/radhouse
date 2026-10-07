@@ -320,6 +320,17 @@ try {
     const before=new URL(route.request().url()).searchParams.get("before");
     return route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({turns:before ? fixtureTurns.slice(0,20) : fixtureTurns.slice(20),older_before:before ? null : 21})});
   });
+  // A suspended tab's pending turn can finish outside the latest history page.
+  const cached={...fixtureTurns[0],request_id:"cached-pending-fixture",status:"running",output:null};
+  await page.route("**/chat/messages/cached-pending-fixture",route => route.fulfill({status:200,contentType:"application/json",
+    body:JSON.stringify({turn:{...cached,status:"completed",output:"Recovered completed reply"}})}));
+  await page.evaluate(turn => { turns.clear(); turns.set(turn.seq,turn); render(); },cached);
+  await expect(page.locator("#send")).toBeDisabled();
+  await page.evaluate(() => refreshHistory());
+  await expect(page.locator('[data-request-id="cached-pending-fixture"]')).toContainText("Recovered completed reply");
+  await expect(page.locator("#send")).toBeEnabled();
+  if (await page.evaluate(() => olderBefore)!==21) throw new Error("Exact message reconciliation changed the history cursor");
+  await page.unroute("**/chat/messages/cached-pending-fixture");
   await page.reload();
   await expect(page.locator(".turn")).toHaveCount(50);
   const pane=page.locator("#history-pane");
