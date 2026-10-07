@@ -603,6 +603,38 @@ def test_qualification_failed_wait_still_reaps_real_child_cleanup(tmp_path, monk
     assert marker.read_text() == "cleaned"
 
 
+@pytest.mark.parametrize("arrives_during", ["stdout_read", "handler_restore"])
+def test_qualification_rejects_signals_after_native_exit(monkeypatch, arrives_during):
+    import io
+    bootstrap = load("radhouse_browser_qualification_late_signal_test", RUNTIME / "bootstrap.py")
+    handlers = {}
+    files = []
+    class Output(io.BytesIO):
+        def read(self, *args):
+            if self is files[1] and arrives_during == "stdout_read":
+                handlers[bootstrap.signal.SIGTERM](bootstrap.signal.SIGTERM, None)
+            return super().read(*args)
+    def temporary_file():
+        stream = Output()
+        files.append(stream)
+        return stream
+    def install(sig, handler):
+        previous = handlers.get(sig, "original")
+        if handler == "original" and sig == bootstrap.signal.SIGINT and arrives_during == "handler_restore":
+            handlers[bootstrap.signal.SIGTERM](bootstrap.signal.SIGTERM, None)
+        handlers[sig] = handler
+        return previous
+    def completed(argv, **kwargs):
+        kwargs["stdout"].write(b'{"state":"qualified","sandbox_enabled":true}')
+        return SimpleNamespace(returncode=0, wait=lambda **kwargs: None)
+    monkeypatch.setattr(bootstrap.tempfile, "TemporaryFile", temporary_file)
+    monkeypatch.setattr(bootstrap.signal, "signal", install)
+    monkeypatch.setattr(bootstrap.subprocess, "Popen", completed)
+    with pytest.raises(ValueError, match="browser_qualification_observation_interrupted"):
+        bootstrap.qualification_output(["fixed-canary"], b"{}")
+    assert set(handlers.values()) == {"original"}
+
+
 @pytest.mark.parametrize("script", ["import sys;sys.stdout.buffer.write(b'x'*65537)", "raise SystemExit(1)"])
 def test_qualification_output_rejects_failure_and_oversized_result(script):
     bootstrap = load("radhouse_browser_qualification_result_test", RUNTIME / "bootstrap.py")

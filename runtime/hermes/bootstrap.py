@@ -644,10 +644,14 @@ def qualification_output(command, payload, timeout=180):
             data = stdout.read(64 * 1024 + 1)
             if child.returncode != 0 or len(data) > 64 * 1024:
                 raise ValueError("browser_current_qualification_failed")
-            return data
         finally:
             for sig, handler in handlers.items():
                 signal.signal(sig, handler)
+        # Signals can arrive while reading stdout or restoring the remaining
+        # temporary handlers. Decide success only after all handlers are restored.
+        if interrupted:
+            raise ValueError("browser_qualification_observation_interrupted")
+        return data
 
 
 def verify(record, value):
