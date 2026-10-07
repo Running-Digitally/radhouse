@@ -61,8 +61,10 @@ def observer():
 @pytest.mark.parametrize("operation", ["status", "frame"])
 def test_foreign_owner_denied_before_store_or_network(observer, operation):
     service, store, relay = observer
+    action = service.status if operation == "status" else service.frame
+    arguments = ("mallory",) if operation == "status" else ("mallory", "run-1")
     with pytest.raises(Rejected, match="owner_access_required") as error:
-        service.status("mallory") if operation == "status" else service.frame("mallory", "run-1")
+        action(*arguments)
     assert error.value.status == 403
     assert store.owners == relay.calls == []
 
@@ -196,7 +198,9 @@ def test_transport_uses_fixed_private_relay_and_bounded_wire():
     client = client_for(payload(), requests)
     try:
         frame = client.browser_frame("run-1")
-        assert frame.jpeg == JPEG and frame.received_at == 1000.0 and frame.captured_at is None
+        assert frame.jpeg == JPEG
+        assert frame.received_at == 1000.0
+        assert frame.captured_at is None
         assert str(requests[0].url) == "http://127.0.0.1:8642/v1/runs/run-1/browser-frame"
         assert requests[0].method == "GET"
         assert requests[0].headers["authorization"] == "Bearer synthetic-only"

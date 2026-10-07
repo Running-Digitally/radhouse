@@ -22,10 +22,12 @@ def test_operator_home_lists_assigned_agents_and_only_owned_project_tasks(
         alice, envelope=envelope(project_id="project-shared")
     )
 
-    assert home.principal_id == "alice" and home.role == "operator"
+    assert home.principal_id == 'alice'
+    assert home.role == 'operator'
     assert home.project_id == "project-shared"
     assert home.project_name == "Shared research"
-    assert home.start.enabled and home.start.reason is None
+    assert home.start.enabled
+    assert home.start.reason is None
     assert [(agent.display_name, agent.role_name) for agent in home.agents] == [
         ("Atlas", "Researcher"), ("Beacon", "Researcher"),
     ]
@@ -62,7 +64,8 @@ def test_viewer_home_is_read_only_and_does_not_disclose_another_owners_tasks(
     )
 
     assert home.role == "viewer"
-    assert not home.start.enabled and home.start.reason == "read_only_role"
+    assert not home.start.enabled
+    assert home.start.reason == 'read_only_role'
     assert [agent.bot_id for agent in home.agents] == ["bot-alpha"]
     assert next(project for project in service.projects(viewer)
                 if project.project_id == "project-shared").bot_ids == ("bot-alpha",)
@@ -111,5 +114,7 @@ def test_completed_task_exposes_review_without_reauthentication(
     home = service.work_home(replace(alice, assurance_until=None), envelope=envelope())
 
     card = next(card for card in home.tasks if card.task.task_id == completed.task_id)
-    assert not card.cancel.enabled and card.cancel.reason == "task_closed"
-    assert card.review.enabled and card.review.reason is None
+    assert not card.cancel.enabled
+    assert card.cancel.reason == 'task_closed'
+    assert card.review.enabled
+    assert card.review.reason is None

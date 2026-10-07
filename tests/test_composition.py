@@ -101,8 +101,8 @@ bots:
     return load_config(config)
 
 
-def test_composition_builds_routes_without_contacting_external_services(tmp_path: Path):
-    Client.created = []
+def test_composition_builds_routes_without_contacting_external_services(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(Client, "created", [])
     provider = Provider()
     clock = lambda: datetime(2026, 9, 12, tzinfo=timezone.utc)
 
@@ -130,21 +130,22 @@ def test_composition_builds_routes_without_contacting_external_services(tmp_path
     assert all(item.closed for item in Client.created)
 
 
-def test_partial_composition_closes_created_clients_on_secret_refusal(tmp_path: Path):
-    Client.created = []
+def test_partial_composition_closes_created_clients_on_secret_refusal(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(Client, "created", [])
     missing = tmp_path / "missing-second-token"
     config = configuration(tmp_path, second_token=missing)
 
+    prepared_argument_2 = Provider()
     with pytest.raises(SecretFileError, match="secret_file_unreadable"):
-        compose_controller(config, Provider(), client_factory=Client)
+        compose_controller(config, prepared_argument_2, client_factory=Client)
 
     assert len(Client.created) == 1
     assert Client.created[0].closed is True
 
 
-def test_composition_can_build_and_own_configured_provider_routes(tmp_path: Path):
-    Client.created = []
-    ProviderClient.created = []
+def test_composition_can_build_and_own_configured_provider_routes(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(Client, "created", [])
+    monkeypatch.setattr(ProviderClient, "created", [])
 
     composition = compose_controller(
         configuration(tmp_path),

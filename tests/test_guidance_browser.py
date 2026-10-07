@@ -58,11 +58,13 @@ def test_guidance_focus_outcomes_and_reconnect(local_client, service, fake_work,
             "RADHOUSE_BROWSER_ORIGIN": origin, "RADHOUSE_TEST_PASSWORD": password,
             "RADHOUSE_TEST_TOTP": totp.at(clock())}, capture_output=True, text=True, timeout=60)
         assert result.returncode == 0, result.stdout + result.stderr
-        assert len(values) == 1 and fake_work.start_count == 1
+        assert len(values) == 1
+        assert fake_work.start_count == 1
         with service.store.transaction() as tx:
             done = tx.task(task.task_id)
             assert done.guidance[0]["application_state"] == "applied"
-            assert not done.disable_tools and tx.publication(task.task_id) is None
+            assert not done.disable_tools
+            assert tx.publication(task.task_id) is None
     finally:
         server.should_exit = True
         thread.join(timeout=5)

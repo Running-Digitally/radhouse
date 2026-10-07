@@ -82,7 +82,8 @@ def test_path_replacement_cannot_redirect_opened_verified_original(tmp_path, mon
         return run(*args, **kwargs)
     monkeypatch.setattr(subprocess, "run", replace_before_child)
     result = reader.read(file_id)
-    assert result.complete and result.sha256 == hashlib.sha256(expected).hexdigest()
+    assert result.complete
+    assert result.sha256 == hashlib.sha256(expected).hexdigest()
     assert result.passages[0].text == expected.decode()
     assert len(observed_fds) == 1
     with pytest.raises(OSError):
@@ -104,9 +105,9 @@ def test_in_place_mutation_while_parsing_rejects_passages_even_when_size_is_unch
         return operate(data, request)
     monkeypatch.setattr(document_parser, "_operate", mutate_then_parse)
     with path.open("rb") as source:
+        prepared_argument_1 = {**parser_read(None), 'extension': '.txt', 'source_fd': source.fileno(), 'sha256': hashlib.sha256(original).hexdigest()}
         with pytest.raises(ValueError, match="document_source_changed"):
-            document_parser._verified_operate({**parser_read(None), "extension": ".txt",
-                "source_fd": source.fileno(), "sha256": hashlib.sha256(original).hexdigest()})
+            document_parser._verified_operate(prepared_argument_1)
 
 
 def test_mutation_during_verification_is_denied_before_parser(tmp_path, monkeypatch):
@@ -121,9 +122,9 @@ def test_mutation_during_verification_is_denied_before_parser(tmp_path, monkeypa
     monkeypatch.setattr(hashlib, "file_digest", mutate_after_hash)
     monkeypatch.setattr(document_parser, "_operate", lambda *a, **kw: pytest.fail("changed source reached parser"))
     with path.open("rb") as source:
+        prepared_argument_1_2 = {**parser_read(None), 'extension': '.txt', 'source_fd': source.fileno(), 'sha256': hashlib.sha256(original).hexdigest()}
         with pytest.raises(ValueError, match="document_source_changed"):
-            document_parser._verified_operate({**parser_read(None), "extension": ".txt",
-                "source_fd": source.fileno(), "sha256": hashlib.sha256(original).hexdigest()})
+            document_parser._verified_operate(prepared_argument_1_2)
 
 
 def test_memory_backed_originals_are_verified_too(tmp_path):
@@ -150,7 +151,9 @@ def test_slow_verification_stays_inside_child_deadline_and_releases_source(tmp_p
             "p.hashlib.file_digest = lambda *a: time.sleep(30); p._main()"], **kwargs)
     monkeypatch.setattr(subprocess, "run", stalled_hash)
     result = reader.read(file_id)
-    assert result.error == "document_operation_exhausted" and not result.complete and not result.passages
+    assert result.error == 'document_operation_exhausted'
+    assert not result.complete
+    assert not result.passages
     with pytest.raises(OSError):
         os.fstat(descriptors[0])
     monkeypatch.setattr(subprocess, "run", run)
@@ -177,12 +180,15 @@ def test_pdf_fact_on_page121_is_searchable_and_selectively_readable(tmp_path):
     reader, files, _ = access(tmp_path, [("long-report.pdf", original)])
     file_id = next(iter(files))
     result = reader.search(file_id, "allocation")
-    assert result.complete and not result.error and result.next_cursor is None
+    assert result.complete
+    assert not result.error
+    assert result.next_cursor is None
     assert len(result.passages) == 1
     assert result.passages[0].locator == "pdf:page:121:offset:0"
     assert "7349" in result.passages[0].text
     read = reader.read(file_id, "pdf:page:121")
-    assert read.complete and read.passages[0].text == "Final allocation is 7349"
+    assert read.complete
+    assert read.passages[0].text == 'Final allocation is 7349'
     assert files[file_id].data.read_bytes() == original
 
 
@@ -208,7 +214,8 @@ def test_selected_pdf_extracts_only_requested_page_even_if_neighbor_fails(monkey
     monkeypatch.setattr(pypdf, "PdfReader", lambda *a, **kw: Reader())
     result = document_parser._operate(b"synthetic pdf source", parser_read("pdf:page:2"))
     assert extractions == [2]
-    assert result["complete"] and result["passages"][0]["text"] == "Page 2 contents"
+    assert result['complete']
+    assert result['passages'][0]['text'] == 'Page 2 contents'
 
 
 @pytest.mark.parametrize("failing_neighbor", [1, 3, None])
@@ -232,7 +239,8 @@ def test_selected_slide_reads_only_requested_xml_even_if_neighbor_malformed(monk
     request = {**parser_read("slide:2"), "extension": ".pptx"}
     result = document_parser._operate(archive_files(files), request)
     assert reads == ["ppt/slides/slide2.xml"]
-    assert result["complete"] and result["passages"][0]["text"] == "Slide 2 contents"
+    assert result['complete']
+    assert result['passages'][0]['text'] == 'Slide 2 contents'
 
 
 def test_large_text_past_existing_excerpt_and_compare_files(tmp_path):
@@ -252,11 +260,16 @@ def test_search_budget_requires_continuation_before_absence_can_be_concluded(tmp
     reader, files, _ = access(tmp_path, [("distant.txt", body)])
     file_id = next(iter(files))
     first = reader.search(file_id, "distant answer")
-    assert not first.complete and first.next_cursor and not first.passages and not first.error
+    assert not first.complete
+    assert first.next_cursor
+    assert not first.passages
+    assert not first.error
     final = reader.search(file_id, "distant answer", first.next_cursor)
-    assert final.complete and "distant answer" in final.passages[0].text
+    assert final.complete
+    assert 'distant answer' in final.passages[0].text
     checkpoint = json.loads(base64.urlsafe_b64decode(first.next_cursor))["body"]["resume"]
-    assert checkpoint["cookie"] > 0 and checkpoint["index"] == document_parser.MAX_SCAN_UNITS - 1
+    assert checkpoint['cookie'] > 0
+    assert checkpoint['index'] == document_parser.MAX_SCAN_UNITS - 1
 
 
 def test_text_checkpoint_survives_new_access_instance_and_utf8_bom_crlf(tmp_path):
@@ -267,7 +280,8 @@ def test_text_checkpoint_survives_new_access_instance_and_utf8_bom_crlf(tmp_path
     assert first.next_cursor
     fresh = DocumentAccess(reader._resolve, owner="alice", file_ids=frozenset(files), cursor_key=CURSOR_KEY)
     second = fresh.read(file_id, cursor=first.next_cursor)
-    assert second.complete and not second.error
+    assert second.complete
+    assert not second.error
     assert "".join(p.text for p in first.passages + second.passages) == text.replace("\r\n", "\n")
 
 
@@ -275,7 +289,9 @@ def test_unicode_query_matches_across_reader_chunk_boundary(tmp_path):
     body = ("α" * (document_parser.CHUNK_CHARS - 3) + "Straße😀 end").encode()
     reader, files, _ = access(tmp_path, [("unicode.txt", body)])
     result = reader.search(next(iter(files)), "STRASSE😀")
-    assert result.complete and len(result.passages) == 1 and "Straße😀" in result.passages[0].text
+    assert result.complete
+    assert len(result.passages) == 1
+    assert 'Straße😀' in result.passages[0].text
     locator = result.passages[0].locator
     read = reader.read(next(iter(files)), locator)
     assert "Straße😀" in "".join(p.text for p in read.passages)
@@ -287,7 +303,8 @@ def test_casefold_expansion_uses_enough_overlap_for_long_boundary_match(tmp_path
     body = "x" * (document_parser.CHUNK_CHARS - 600) + matching_text + " tail"
     reader, files, _ = access(tmp_path, [("expanded.txt", body.encode())])
     result = reader.search(next(iter(files)), needle)
-    assert result.complete and len(result.passages) == 1
+    assert result.complete
+    assert len(result.passages) == 1
     assert matching_text in result.passages[0].text
 
 
@@ -295,7 +312,8 @@ def test_search_does_not_lose_new_hit_when_prior_chunk_overlap_also_matches(tmp_
     first = "x" * (document_parser.CHUNK_CHARS - 20) + "answer old" + "x" * 10
     reader, files, _ = access(tmp_path, [("repeated.txt", (first + "new answer").encode())])
     result = reader.search(next(iter(files)), "answer")
-    assert result.complete and len(result.passages) == 2
+    assert result.complete
+    assert len(result.passages) == 2
     assert "new answer" in result.passages[-1].text
 
 
@@ -306,7 +324,8 @@ def test_long_single_line_reads_are_bounded_and_continuations_preserve_all_text(
     parts, cursor = [], None
     for _ in range(50):
         result = reader.read(file_id, cursor=cursor)
-        assert not result.error and len(result.passages) <= 8
+        assert not result.error
+        assert len(result.passages) <= 8
         assert len(json.dumps(result.__dict__, default=lambda p: p.__dict__, ensure_ascii=False).encode()) < MAX_RESULT_BYTES
         parts.extend(p.text for p in result.passages)
         if result.complete:
@@ -344,7 +363,8 @@ def test_word_current_revisions_paragraph_refs_and_long_paragraph(tmp_path):
     file_id = next(iter(files))
     assert reader.read(file_id, "word:paragraph:1").passages[0].text == "Price: 200"
     found = reader.search(file_id, "final paragraph answer")
-    assert found.complete and found.passages[0].locator.startswith("word:paragraph:2:offset:")
+    assert found.complete
+    assert found.passages[0].locator.startswith('word:paragraph:2:offset:')
     assert not reader.search(file_id, "Obsolete").passages
 
 
@@ -360,7 +380,8 @@ def test_workbook_named_unicode_sheet_cells_and_cached_formula(tmp_path):
     result = reader.search(file_id, "7200")
     passage = result.passages[0]
     assert passage.locator == "sheet:Budget%3A%20%CE%B1:cell:D42:offset:0"
-    assert passage.label == "Budget: α!D42" and "cached value; formula: SUM(A1:A9)" in passage.text
+    assert passage.label == 'Budget: α!D42'
+    assert 'cached value; formula: SUM(A1:A9)' in passage.text
     assert reader.read(file_id, passage.locator).passages[0] == passage
     assert reader.search(file_id, "Annual budget").passages[0].locator.endswith("cell:A1:offset:0")
 
@@ -374,7 +395,8 @@ def test_workbook_with_chart_sheet_still_reads_worksheet_cells(tmp_path):
     })
     reader, files, _ = access(tmp_path, [("with-chart.xlsx", body)])
     result = reader.search(next(iter(files)), "7200")
-    assert result.complete and not result.error
+    assert result.complete
+    assert not result.error
     assert result.passages[0].locator == "sheet:Budget:cell:D42:offset:0"
 
 
@@ -389,7 +411,8 @@ def test_unknown_or_broken_worksheet_relationships_still_fail(tmp_path, relation
     })
     reader, files, _ = access(tmp_path, [("broken.xlsx", body)])
     result = reader.search(next(iter(files)), "7200")
-    assert result.error == "document_unreadable" and not result.complete
+    assert result.error == 'document_unreadable'
+    assert not result.complete
 
 
 def test_slide_locators_follow_presentation_order_not_zip_filename_order(tmp_path):
@@ -404,7 +427,8 @@ def test_slide_locators_follow_presentation_order_not_zip_filename_order(tmp_pat
     file_id = next(iter(files))
     assert reader.search(file_id, "Opening").passages[0].locator == "slide:1:offset:0"
     assert reader.read(file_id, "slide:2").passages[0].text == "Closing result"
-    assert reader.search(file_id, "Orphan").complete and not reader.search(file_id, "Orphan").passages
+    assert reader.search(file_id, 'Orphan').complete
+    assert not reader.search(file_id, 'Orphan').passages
 
 
 def test_unattached_or_other_owner_file_denied_before_parser_or_resolver(tmp_path, monkeypatch):
@@ -414,8 +438,9 @@ def test_unattached_or_other_owner_file_denied_before_parser_or_resolver(tmp_pat
         reader.read(str(uuid4()))
     assert not calls
     wrong_owner = DocumentAccess(reader._resolve, owner="bob", file_ids=frozenset(files), cursor_key=CURSOR_KEY)
+    prepared_argument_1_3 = next(iter(files))
     with pytest.raises(Rejected, match="attachment_not_found"):
-        wrong_owner.search(next(iter(files)), "private")
+        wrong_owner.search(prepared_argument_1_3, 'private')
 
 
 @pytest.mark.parametrize("change", ["query", "operation", "file", "sha256", "malformed"])
@@ -424,15 +449,22 @@ def test_continuations_are_bound_to_source_and_operation(tmp_path, change):
     first, second = tuple(files)
     cursor = reader.search(first, "answer").next_cursor
     assert cursor
+    action = reader.search
+    arguments = (first, "answer")
+    if change == "query":
+        arguments = (first, "different")
+    elif change == "operation":
+        action, arguments = reader.read, (first,)
+    elif change == "file":
+        arguments = (second, "answer")
+    elif change == "sha256":
+        value = json.loads(base64.urlsafe_b64decode(cursor))
+        value["body"]["binding"]["sha256"] = "0" * 64
+        cursor = base64.urlsafe_b64encode(json.dumps(value).encode()).decode()
+    else:
+        cursor = "invalid!"
     with pytest.raises(Rejected, match="document_cursor_invalid"):
-        if change == "query": reader.search(first, "different", cursor)
-        elif change == "operation": reader.read(first, cursor=cursor)
-        elif change == "file": reader.search(second, "answer", cursor)
-        elif change == "sha256":
-            value = json.loads(base64.urlsafe_b64decode(cursor))
-            value["body"]["binding"]["sha256"] = "0" * 64
-            reader.search(first, "answer", base64.urlsafe_b64encode(json.dumps(value).encode()).decode())
-        else: reader.search(first, "answer", "invalid!")
+        action(*arguments, cursor=cursor)
 
 
 def test_cursor_authentication_rejects_fabricated_source_locators_before_parser(tmp_path, monkeypatch):
@@ -458,10 +490,12 @@ def test_cursor_key_is_required_and_scoped_across_fresh_instances(tmp_path):
     wrong_scope = DocumentAccess(reader._resolve, owner="alice", file_ids=frozenset(files), cursor_key=b"z" * 32)
     with pytest.raises(Rejected, match="document_cursor_invalid"):
         wrong_scope.read(file_id, cursor=cursor)
+    prepared_file_ids = frozenset(files)
     with pytest.raises(ValueError, match="invalid_document_scope"):
-        DocumentAccess(reader._resolve, owner="alice", file_ids=frozenset(files), cursor_key=b"z" * 31)
+        DocumentAccess(reader._resolve, owner='alice', file_ids=prepared_file_ids, cursor_key=b'z' * 31)
+    prepared_file_ids_2 = frozenset(files)
     with pytest.raises(TypeError):
-        DocumentAccess(reader._resolve, owner="alice", file_ids=frozenset(files))
+        DocumentAccess(reader._resolve, owner='alice', file_ids=prepared_file_ids_2)
 
 
 def test_selected_pdf_continuation_only_reextracts_target_page(monkeypatch):
@@ -487,7 +521,8 @@ def test_selected_pdf_continuation_only_reextracts_target_page(monkeypatch):
         if result["complete"]:
             break
         position = result["next_position"]
-    assert "".join(pieces) == text and all(number == 2 for number in extractions)
+    assert ''.join(pieces) == text
+    assert all((number == 2 for number in extractions))
 
 
 @pytest.mark.parametrize("body,error", [(pdf_pages(["secret"], encrypted=True), "document_encrypted"),
@@ -496,7 +531,9 @@ def test_reader_failure_is_honest_and_keeps_original(tmp_path, body, error):
     reader, files, _ = access(tmp_path, [("unreadable.pdf", body)])
     file_id = next(iter(files))
     result = reader.search(file_id, "secret")
-    assert result.error == error and not result.complete and not result.passages
+    assert result.error == error
+    assert not result.complete
+    assert not result.passages
     assert files[file_id].data.read_bytes() == body
 
 
@@ -506,7 +543,8 @@ def test_office_entities_cannot_read_files_or_expand(tmp_path, xml):
     body = archive_files({"word/document.xml": xml})
     reader, files, _ = access(tmp_path, [("entity.docx", body)])
     result = reader.read(next(iter(files)))
-    assert result.error == "document_unreadable" and not result.passages
+    assert result.error == 'document_unreadable'
+    assert not result.passages
 
 
 def test_subprocess_timeout_errors_are_redacted_and_release_slot(tmp_path, monkeypatch):
@@ -517,7 +555,8 @@ def test_subprocess_timeout_errors_are_redacted_and_release_slot(tmp_path, monke
         raise subprocess.TimeoutExpired("private path or text", 15)
     monkeypatch.setattr(subprocess, "run", timeout)
     result = reader.read(file_id)
-    assert result.error == "document_operation_exhausted" and "private" not in str(result)
+    assert result.error == 'document_operation_exhausted'
+    assert 'private' not in str(result)
     monkeypatch.setattr(subprocess, "run", real)
     assert reader.read(file_id).passages[0].text == "normal text"
 
@@ -525,7 +564,8 @@ def test_subprocess_timeout_errors_are_redacted_and_release_slot(tmp_path, monke
 def test_catalog_contains_immutable_metadata_and_no_paths(tmp_path):
     reader, files, _ = access(tmp_path, [("report.txt", b"text")])
     metadata = reader.catalog()[0]
-    assert metadata["file_id"] in files and metadata["sha256"] == hashlib.sha256(b"text").hexdigest()
+    assert metadata['file_id'] in files
+    assert metadata['sha256'] == hashlib.sha256(b'text').hexdigest()
     assert metadata["locator_kind"] == "line"
     assert str(tmp_path) not in json.dumps(metadata)
 
@@ -543,9 +583,12 @@ def test_blank_tail_after_search_continuation_is_a_complete_zero_match(tmp_path)
     reader, files, _ = access(tmp_path, [("trailing.txt", body)])
     file_id = next(iter(files))
     first = reader.search(file_id, "answer")
-    assert not first.complete and first.next_cursor
+    assert not first.complete
+    assert first.next_cursor
     final = reader.search(file_id, "answer", first.next_cursor)
-    assert final.complete and not final.error and not final.passages
+    assert final.complete
+    assert not final.error
+    assert not final.passages
 
 
 def test_one_active_parser_child_and_busy_response_has_no_standing_queue(tmp_path):
@@ -554,7 +597,8 @@ def test_one_active_parser_child_and_busy_response_has_no_standing_queue(tmp_pat
     assert _PARSER_SLOT.acquire(blocking=False)
     try:
         result = reader.read(next(iter(files)))
-        assert result.error == "document_reader_busy" and not result.complete
+        assert result.error == 'document_reader_busy'
+        assert not result.complete
     finally:
         _PARSER_SLOT.release()
 
@@ -562,3 +606,13 @@ def test_one_active_parser_child_and_busy_response_has_no_standing_queue(tmp_pat
 def test_document_catalog_reports_unsupported_content(tmp_path):
     reader, _, _ = access(tmp_path, [("report.pdf", pdf_pages(["text"]))])
     assert "scanned text require OCR" in reader.catalog()[0]["reader_scope"]
+
+
+@pytest.mark.parametrize("locator", [
+    "text:line:١", "pdf:page:1:offset:١", "sheet:Budget:cell:A١",
+    "text:line:01", "slide:0", "sheet:Budget:cell:A12345678",
+    "text:line:1:offset:01", "text:line:1:offset:1:offset:2",
+])
+def test_document_locators_preserve_ascii_and_canonical_number_contract(locator):
+    with pytest.raises(ValueError, match="document_locator_not_found"):
+        document_parser._selection(locator)
