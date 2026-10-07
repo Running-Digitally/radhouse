@@ -1,0 +1,303 @@
+def _http_routes(self) -> list[tuple[str, str, Any]]:
+    return [
+        ("POST", "/v1/runs", self._handle_runs), ("GET", "/v1/runs/{run_id}", self._handle_get_run),
+        ("GET", "/v1/runs/{run_id}/events", self._handle_run_events),
+        ("POST", "/v1/runs/{run_id}/approval", self._handle_run_approval),
+        ("POST", "/v1/runs/{run_id}/steer", self._handle_steer_run),
+        ("POST", "/v1/runs/{run_id}/stop", self._handle_stop_run)]
+
+def _set_run_status(self, run_id: str, status: str, **fields: Any) -> Dict[str, Any]:
+    """Update pollable run status without exposing private agent objects."""
+    now = time.time()
+    current = self._run_statuses.get(run_id, {})
+    previous_status = str(current.get("status") or "")
+    field_names = set(fields)
+    current.update({"object": "hermes.run", "run_id": run_id, "status": status, "updated_at": now})
+    current.setdefault("created_at", fields.pop("created_at", now))
+    current.update(fields)
+    if status != "waiting_for_approval":
+        current.pop("approval", None)
+    self._run_statuses[run_id] = current
+    should_persist = (
+        getattr(self, "_runtime_contract_enabled", False)
+        or status != previous_status
+        or status in TERMINAL_STATUSES
+        or bool(field_names & {"output", "error", "usage", "pending_steer", "session_id"}))
+    if run_id in self._run_idempotency_ids and should_persist:
+        try:
+            self._run_idempotency_store.update_status(run_id, current)
+        except Exception:
+            if getattr(self, "_runtime_contract_enabled", False):
+                self._runtime_persistence_failed = True
+            logger.exception("[api_server] failed to persist idempotent run status %s", run_id)
+    return current
+
+def _accepted_response(run_id: str, status: str, gateway_session_key, *, replayed: bool) -> "web.Response":
+    """202 admission response; replays are flagged via ``Idempotency-Replayed``."""
+    headers = {"Idempotency-Replayed": "true"} if replayed else {}
+    if gateway_session_key:
+        headers["X-Hermes-Session-Key"] = gateway_session_key
+    return web.json_response(
+        {"run_id": run_id, "status": status, "replayed": replayed}, status=202, headers=headers)
+
+def _replay_or_conflict(self, request, outcome, record, gateway_session_key, _openai_error) -> "web.Response":
+    """409 for a fingerprint conflict, else a 202 replay of the already-admitted run."""
+    if outcome == "conflict":
+        return _json_error(
+            _openai_error, "Idempotency-Key was already used with a different request payload",
+            code="idempotency_key_conflict", status=409)
+    original_id = str(record["run_id"])
+    status = self._durable_run_status(request, original_id) or record["status"]
+    return _accepted_response(original_id, status.get("status", "queued"), gateway_session_key, replayed=True)
+
+@dataclass(slots=True)
+class _RunLaunch:
+    """State for an admitted run's background task; contextvars are captured here
+    because the task outlives the request (and its middleware profile scope)."""
+
+    owner: Any
+    run_id: str
+    queue: "asyncio.Queue[Optional[Dict]]"
+    session_id: str
+    gateway_session_key: Optional[str]
+    declared_selected: bool
+    user_message: str
+    conversation_history: List[Dict[str, str]]
+    agent_kwargs: dict  # ``_create_agent`` keyword arguments (prompt, model overrides, route, room policy)
+    request_profile: Any
+    browser_control_principal: Any
+    browser_control_transport_family: Any
+
+    @property
+    def approval_session_key(self) -> str:
+        # Isolated per run: session ids are conversation scopes, not authorization namespaces.
+        return self.run_id
+
+    def put_event(self, event: Optional[Dict]) -> None:
+        """Enqueue only while this run still owns live transport state."""
+        if self.owner._run_streams.get(self.run_id) is self.queue:
+            self.queue.put_nowait(event)
+
+async def _handle_runs(self, request: "web.Request", *, _api_server) -> "web.Response":
+    """POST /v1/runs — start an agent run, return run_id immediately."""
+    _openai_error = _api_server._openai_error
+    # Long-term memory scope header (see chat_completions for details).
+    gateway_session_key, key_err = self._parse_session_key_header(request)
+    if key_err is not None:
+        return key_err
+    try:
+        body = await request.json()
+    except Exception:
+        return _json_error(_openai_error, "Invalid JSON", status=400)
+    body, room_error = await self._normalize_room_dispatch(request, body)
+    if room_error is not None:
+        return room_error
+    if not isinstance(body, dict):
+        return _json_error(_openai_error, "Request body must be a JSON object", status=400)
+    disable_tools = body.get("disable_tools", False)
+    if type(disable_tools) is not bool:
+        return _json_error(
+            _openai_error, "'disable_tools' must be a boolean",
+            code="invalid_disable_tools", status=400)
+    allowed_tools = body.get("allowed_tools")
+    if "allowed_tools" in body:
+        if (not isinstance(allowed_tools, list) or not 1 <= len(allowed_tools) <= 32
+                or any(not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", name)
+                       for name in allowed_tools)
+                or len(set(allowed_tools)) != len(allowed_tools)):
+            return _json_error(_openai_error, "'allowed_tools' must contain 1-32 unique exact tool names",
+                               code="invalid_allowed_tools", status=400)
+        if disable_tools:
+            return _json_error(_openai_error, "Use either disable_tools or allowed_tools",
+                               code="conflicting_tool_restrictions", status=400)
+    max_provider_requests = body.get("max_provider_requests")
+    if "max_provider_requests" in body and (
+            type(max_provider_requests) is not int or not 1 <= max_provider_requests <= 16):
+        return _json_error(_openai_error,
+                           "'max_provider_requests' must be an integer from 1 through 16",
+                           code="invalid_max_provider_requests", status=400)
+    room_dispatch, room_execution_policy = (
+        v if isinstance(v, dict) else None for v in (
+            (body.get("hosted_room_dispatch"), body.get("_room_execution_policy"))
+            if isinstance(body, dict) else (None, None)))
+    idempotency_key = request.headers.get("Idempotency-Key", "").strip()
+    if len(idempotency_key) > 255 or any(ord(ch) < 33 or ord(ch) > 126 for ch in idempotency_key):
+        return _json_error(
+            _openai_error, "Idempotency-Key must be 1-255 visible ASCII characters",
+            code="invalid_idempotency_key", status=400)
+    idempotency_scope = idempotency_fingerprint = ""
+    if idempotency_key:
+        idempotency_scope = self._run_idempotency_scope(request)
+        idempotency_fingerprint = hashlib.sha256(json.dumps(
+            {"body": body, "gateway_session_key": gateway_session_key or ""},
+            sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        ).encode()).hexdigest()
+    raw_input = body.get("input")
+    if not raw_input:
+        return _json_error(_openai_error, "Missing 'input' field", status=400)
+    if isinstance(raw_input, str):
+        user_message = raw_input
+    else:
+        user_message = raw_input[-1].get("content", "") if isinstance(raw_input, list) else ""
+    if not user_message:
+        return _json_error(_openai_error, "No user message found in input", status=400)
+    conversation_history, instructions, stored_session_id, history_err = (
+        _resolve_conversation_history(self, body, raw_input, _openai_error=_openai_error))
+    if history_err is not None:
+        return history_err
+    previous_response_id = body.get("previous_response_id")
+    session_id = body.get("session_id") or stored_session_id
+    route = self._resolve_route(body.get("model"))
+    agent_overrides = _api_server._request_agent_overrides(body, virtual_model=self._model_name)
+    selection_error = self._request_route_conflict_error(
+        session_id=session_id, gateway_session_key=gateway_session_key,
+        requested_model=agent_overrides.get("requested_model"),
+        requested_provider=agent_overrides.get("requested_provider"), route=route)
+    if selection_error:
+        return _json_error(_openai_error, selection_error, status=400)
+    # A lost-acceptance replay must resolve even while the original run holds the last
+    # concurrency slot; this read reserves nothing (the atomic reserve below closes the race).
+    if idempotency_key:
+        outcome, record = self._run_idempotency_store.lookup(
+            idempotency_scope, idempotency_key, idempotency_fingerprint,
+            retention_until=_room_retention_until(request))
+        if outcome == "conflict" or (outcome == "reused" and record is not None):
+            return _replay_or_conflict(self, request, outcome, record, gateway_session_key, _openai_error)
+    if getattr(self, "_runtime_contract_enabled", False):
+        # Draining rejects fresh work, but cannot hide an already committed start key.
+        draining = self._draining_response()
+        if draining is not None:
+            return draining
+    runtime_error = _runtime_contract.fresh_admission_error(
+        self, idempotency_key=idempotency_key, request_profile=_api_server._api_request_profile.get())
+    if runtime_error:
+        return _json_error(_openai_error, runtime_error, code=runtime_error, status=503)
+    # Resolve only for fresh work. Recovery uses the admitted limit even if the
+    # profile changed or became unavailable after the original reservation.
+    try:
+        max_provider_requests = resolve_profile_request_limit(max_provider_requests)
+    except ValueError as exc:
+        code = str(exc)
+        return _json_error(_openai_error, code, code=code,
+                           status=400 if code.endswith("exceeds_profile_limit") else 503)
+    if max_provider_requests is not None and (
+            not idempotency_key or not self._run_idempotency_store.durable):
+        return _json_error(_openai_error, "Provider request cap requires durable keyed admission",
+                           code="provider_request_budget_requires_idempotency", status=400)
+    if allowed_tools is not None:
+        if not idempotency_key or not self._run_idempotency_store.durable:
+            return _json_error(_openai_error, "Exact tool restriction requires durable keyed admission",
+                               code="allowed_tools_requires_idempotency", status=400)
+        try:
+            await asyncio.to_thread(_configured_run_tools, allowed_tools, room_execution_policy)
+        except ValueError:
+            return _json_error(_openai_error, "Requested tools are outside the configured API surface",
+                               code="allowed_tools_not_configured", status=400)
+    # Enforce concurrency only for a genuinely new run.
+    limited = self._concurrency_limited_response()
+    if limited is not None:
+        return limited
+    if not conversation_history and session_id and not previous_response_id:
+        conversation_history = await self._conversation_history_for_session(str(session_id))
+    run_id = f"run_{uuid.uuid4().hex}"
+    self._run_owners[run_id] = self._run_idempotency_scope(request)
+    # Same precedence as /v1/responses: body session_id > response chain > X-Hermes-Session-Key
+    # conversation > run_id (which would otherwise re-key every affinity surface per run).
+    # An explicit or chained session owns its routing key and is never rebound to the header.
+    _declared_selected = not session_id and bool(gateway_session_key)
+    session_id = session_id or self._declared_conversation_session(gateway_session_key) or run_id
+    q = self._run_streams[run_id] = asyncio.Queue()
+    created_at = self._run_streams_created[run_id] = time.time()
+    self._run_approval_sessions[run_id] = run_id  # approval session key (see _RunLaunch)
+    initial_status = self._set_run_status(
+        run_id, "queued", created_at=created_at, session_id=session_id, model=body.get("model", self._model_name))
+    if allowed_tools is not None:
+        initial_status["allowed_tools"] = list(allowed_tools)
+    if max_provider_requests is not None:
+        initial_status["provider_request_budget"] = {
+            "limit": max_provider_requests, "reserved_attempts": None, "exhausted": None,
+            "request_token_limits": None}
+    if idempotency_key:
+        outcome, record = self._run_idempotency_store.reserve(
+            idempotency_scope, idempotency_key, idempotency_fingerprint, run_id, initial_status,
+            owner_pid=self._run_owner_pid, owner_started=self._run_owner_started,
+            retention_until=_room_retention_until(request))
+        if outcome != "created":
+            _forget_run(
+                self, run_id, self._run_streams, self._run_streams_created, self._run_approval_sessions,
+                self._run_statuses, self._run_owners)
+            return _replay_or_conflict(self, request, outcome, record, gateway_session_key, _openai_error)
+        self._run_idempotency_ids.add(run_id)
+    launch = _RunLaunch(
+        self, run_id, q, session_id, gateway_session_key, _declared_selected, user_message,
+        conversation_history,
+        agent_kwargs=dict(
+            ephemeral_system_prompt=instructions, session_id=session_id, gateway_session_key=gateway_session_key,
+            route=route, room_dispatch=room_dispatch, room_execution_policy=room_execution_policy,
+            disable_tools=disable_tools,
+            **({"allowed_tools": allowed_tools} if allowed_tools is not None else {}),
+            **{k: agent_overrides.get(k) for k in ("requested_model", "requested_provider", "model_options")}),
+        request_profile=_api_server._api_request_profile.get(),
+        browser_control_principal=_api_server._api_request_browser_control_principal.get(),
+        browser_control_transport_family=_api_server._api_request_browser_control_transport_family.get())
+    self._activate_admitted_request()
+    task = self._active_run_tasks[run_id] = asyncio.create_task(_execute_run(self, launch, _api_server=_api_server))
+    with suppress(TypeError):
+        self._background_tasks.add(task)  # tracked for shutdown drain
+    if hasattr(task, "add_done_callback"):
+        task.add_done_callback(self._background_tasks.discard)
+    return _accepted_response(run_id, "started", gateway_session_key, replayed=False)
+
+def _run_agent_sync(self, run: _RunLaunch, agent, approval_notify, *, _api_server):
+    """Executor-thread body of one run; returns ``(result, usage)``."""
+    from gateway.session_context import clear_session_vars
+    from gateway.hosted_room_execution_policy import (
+        RoomExecutionPolicy, bind_room_execution_policy, reset_room_execution_policy)
+    # No eager slash-worker pre-warm: slash.exec spawns one on demand (its error path already relies on that
+    # respawn to recover from a dead worker). Each worker child runs its own MCP discovery (#61891), so
+    # pre-warming one per session forks the full stdio MCP fleet — ~20 OS processes per retained session on
+    # a config with a few stdio servers — even for sessions that never run a worker-routed command. Sessions
+    # held by a live transport are never reaped, so with the desktop app open for days those fleets
+    # accumulate until the OS refuses new process spawns.
+    from tools.approval import register_gateway_notify, unregister_gateway_notify
+    from tools.approval_context import reset_current_session_key, set_current_session_key
+    session_id = run.session_id
+    effective_task_id = session_id or run.run_id
+    # (token, reset) pairs unwound in the finally block; bound only once each step succeeds.
+    resets: list[tuple[Any, Callable]] = []
+    with self._profile_scope(run.request_profile):
+        try:
+            # Contextvars, not process env: concurrent runs must not share identity.
+            resets.append((set_current_session_key(run.approval_session_key), reset_current_session_key))
+            # chat_id carries the raw session id like _run_agent() does; without it
+            # tools.async_delegation sees no HERMES_SESSION_CHAT_ID and forces delegations sync.
+            session_tokens = self._bind_api_server_session(
+                chat_id=session_id or "", session_key=run.approval_session_key, session_id=session_id or "",
+                browser_control_principal=run.browser_control_principal,
+                browser_control_transport_family=run.browser_control_transport_family)
+            if session_tokens:
+                resets.append((session_tokens, clear_session_vars))
+            if run.agent_kwargs["room_dispatch"] is not None:
+                policy = RoomExecutionPolicy.from_mapping(run.agent_kwargs["room_execution_policy"] or {})
+                resets.append((bind_room_execution_policy(policy), reset_room_execution_policy))
+            register_gateway_notify(run.approval_session_key, approval_notify)
+            # /v1/runs owns its agent lifecycle (no TurnRunner): record process ownership
+            # so stop/cancel reaps only the background processes this run created.
+            _api_server._publish_turn_process_ownership(agent, effective_task_id)
+            r = agent.run_conversation(
+                user_message=run.user_message, conversation_history=run.conversation_history,
+                task_id=effective_task_id)
+        finally:
+            # Clear ownership now so a later stop can't reap work this run left running.
+            _api_server._clear_turn_process_ownership(agent)
+            # Declared-conversation binding, same precedence gate as _run_agent.
+            if run.declared_selected:
+                self._bind_declared_conversation(
+                    getattr(agent, "session_id", None) or session_id, run.gateway_session_key)
+            try:
+                unregister_gateway_notify(run.approval_session_key)
+            finally:
+                for token, reset in resets:
+                    with suppress(Exception):
+                        reset(token)
+        return r, {key: getattr(agent, attr, 0) or 0 for key, attr in _USAGE_FIELDS}

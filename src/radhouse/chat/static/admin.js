@@ -37,6 +37,7 @@ function renderSettings(data) {
       ["Original files", "Retained with your conversation"], ["Document formats", "Text, PDF, Word, Excel and PowerPoint"],
       ["Audio transcription", data.files.audio_transcription_enabled ? "Connected" : "Not connected"],
       ["Selective document reads", data.documents.selective_access_enabled ? "Enabled; check Infrastructure for current availability" : "Not connected"],
+      ["Agent browser", data.browser?.enabled ? "Enabled with a live view in Chat" : "Not connected"],
       ["Message text", `${data.messages.character_limit.toLocaleString()} characters`]]),
     element("p", "These are the current app settings. Settings are read only in this version.", "admin-note"));
 }
@@ -53,6 +54,15 @@ function renderInfrastructure(data) {
       node.append(list);
     } else if (component.version) node.append(element("p", `Version ${component.version}`, "versions"));
     $("content").append(node);
+  }
+  const policy = data.browser_network_policy;
+  if (policy) {
+    $("content").append(section("Browser network", [["Policy evidence", policy.verified ? "Verified snapshot" : "Unverified"],
+      ["Source", policy.source || "Unavailable"],
+      ["Verified", policy.verified_at ? new Date(policy.verified_at).toLocaleString() : "Unavailable"],
+      ["Permitted", policy.allowed.length ? policy.allowed.join("; ") : "No verified summary"],
+      ["Blocked", policy.denied.length ? policy.denied.join("; ") : "No verified summary"]]),
+      element("p", "Browsing follows the VM network policy. A reachable application still needs your permission before the agent changes it.", "admin-note"));
   }
   const build = section("Versions", [["Deployed source", data.versions.release_commit || "Unverified"],
     ["App package", data.versions.package || "Unverified"], ["Python", data.versions.python || "Unverified"]]);

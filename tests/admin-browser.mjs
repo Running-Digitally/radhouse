@@ -48,7 +48,7 @@ await context.route(`${origin}/**`, async route => {
     catch (_) { /* An intentional logout aborts the held request. */ }
     return;
   }
-  const filename = {"/": "index.html", "/settings": "admin.html", "/infrastructure": "admin.html", "/admin.js": "admin.js", "/admin.css": "admin.css", "/chat.css": "chat.css", "/chat.js": "chat.js", "/format.js": "format.js"}[path];
+  const filename = {"/": "index.html", "/settings": "admin.html", "/infrastructure": "admin.html", "/admin.js": "admin.js", "/admin.css": "admin.css", "/chat.css": "chat.css", "/chat.js": "chat.js", "/format.js": "format.js", "/browser-view.js": "browser-view.js", "/browser-view.css": "browser-view.css"}[path];
   if (!filename) { await route.fulfill({status: 200, contentType: "text/html", body: "<title>Chat</title><p>Return to Chat</p>"}); return; }
   await route.fulfill({status: 200, contentType: filename.endsWith(".js") ? "text/javascript" : filename.endsWith(".css") ? "text/css" : "text/html",
     headers: {"Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'", "Cache-Control": "no-store"},

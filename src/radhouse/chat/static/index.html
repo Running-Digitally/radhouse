@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Radhouse</title><link rel="stylesheet" href="/chat.css">
-  <script src="/format.js" defer></script><script src="/chat.js" defer></script>
+  <title>Radhouse</title><link rel="stylesheet" href="/chat.css"><link rel="stylesheet" href="/browser-view.css">
+  <script src="/format.js" defer></script><script src="/browser-view.js" defer></script><script src="/chat.js" defer></script>
 </head>
 <body>
 <div class="shell">
@@ -24,6 +24,7 @@
       <div id="history-pane" tabindex="0" aria-label="Conversation history">
         <button id="older" hidden>Show earlier messages</button>
         <div id="messages" role="log" aria-label="Conversation" aria-live="off"></div>
+        <section id="assistant-browser" aria-label="Assistant browser" hidden></section>
         <div id="empty" hidden><h1>What’s on your mind?</h1><p>Ask a question or attach something to work through.</p></div>
       </div>
       <button id="latest" hidden>Latest ↓</button>
