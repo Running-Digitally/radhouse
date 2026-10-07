@@ -541,6 +541,8 @@ def qualify_pair(manifest, *, bridge_path=None, require_sandbox=True, require_or
 def qualify(record, value):
     if os.geteuid() != pwd.getpwnam("radhousebot").pw_uid:
         raise ValueError("maintenance_bot_required")
+    # runuser/PAM may reset the caller's mask before this bot process starts.
+    os.umask(0o077)
     selected = staged_candidate(record)
     _, manifest = candidate(selected, value)
     proof = qualify_pair(manifest, bridge_path=Path(value["hermes_root"]) / "radhouse_hermes_bridge.py")
