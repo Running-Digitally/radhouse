@@ -193,6 +193,76 @@ try {
   if (await page.evaluate(() => outbox.attachments[0].blob.text())!=="A simple plan") throw new Error("Slow restoration lost the original");
   await page.getByRole("button",{name:"Edit message",exact:true}).click();
   await page.getByRole("button",{name:"Remove notes.txt",exact:true}).click();
+  // A new original rejected by IndexedDB must survive expiry in this same tab.
+  const credentials=(await (await context.request.get(process.env.RADHOUSE_BROWSER_ORIGIN+"/auth/session")).json());
+  const mockLogin=route => route.fulfill({status:200,contentType:"application/json",body:JSON.stringify(credentials)});
+  await page.route("**/auth/login",mockLogin); // Isolate client reauthentication from TOTP replay policy.
+  const signInAgain=async () => {
+    await page.locator("#password").fill(process.env.RADHOUSE_TEST_PASSWORD);
+    await page.locator("#totp").fill("123456");
+    await page.getByRole("button",{name:"Sign in",exact:true}).click();
+    await expect(page.locator("#chat-view")).toBeVisible();
+    await expect(page.locator("#message")).toBeEnabled();
+  };
+  await page.evaluate(async () => { await draftWrites; window.originalDraftOperation=draftOperation;
+    draftOperation=(storageKey,value) => value===undefined ? window.originalDraftOperation(storageKey) : Promise.reject(new Error("draft_storage_unavailable")); });
+  const unsavedOriginal="Original never written to IndexedDB";
+  await page.locator("#file-picker").setInputFiles({name:"memory-original.txt",mimeType:"text/plain",buffer:Buffer.from(unsavedOriginal)});
+  await expect(page.locator("#notice")).toContainText("couldn’t save this draft");
+  const unsavedId=await page.evaluate(() => draft.attachments[0].file_id);
+  const expire=route => route.fulfill({status:401,contentType:"application/json",body:JSON.stringify({error:"authentication_required"})});
+  await page.route("**/chat/quota-expiry",expire);
+  await page.evaluate(async () => { try { await api("/chat/quota-expiry"); } catch (_) {} });
+  await expect(page.locator("#login-view")).toBeVisible();
+  await expect(page.locator("#draft-files .attachment")).toHaveCount(0);
+  await signInAgain();
+  await expect(page.locator("#draft-files")).toContainText("memory-original.txt");
+  if (await page.evaluate(() => draft.attachments[0].blob.text())!==unsavedOriginal ||
+      await page.evaluate(() => draft.attachments[0].file_id)!==unsavedId) throw new Error("Expiry lost the unsaved original");
+  const memoryRequest=await page.evaluate(async () => {
+    outbox={request_id:crypto.randomUUID(),text:"Retain this unsaved outgoing original",attachments:draft.attachments,transmitted:false};
+    draft=emptyDraft(); $("message").value="A retained next draft";
+    try { await saveState(); } catch (_) {}
+    return outbox.request_id;
+  });
+  await page.evaluate(async () => { try { await api("/chat/quota-expiry"); } catch (_) {} });
+  await signInAgain();
+  if (await page.evaluate(() => outbox.request_id)!==memoryRequest ||
+      await page.evaluate(() => outbox.attachments[0].blob.text())!==unsavedOriginal) throw new Error("Expiry lost the outgoing original or identity");
+  await expect(page.locator("#message")).toHaveValue("A retained next draft");
+  await page.evaluate(async () => { draftOperation=window.originalDraftOperation; await persist(); });
+  await page.getByRole("button",{name:"Edit message",exact:true}).click();
+  await page.getByRole("button",{name:"Remove memory-original.txt",exact:true}).click();
+  await page.unroute("**/chat/quota-expiry",expire);
+  // Delayed fetch and upload 401s from the old session cannot expire a new login.
+  let releaseOldFetch, releaseOldUpload;
+  const staleFetch=async route => { await new Promise(resolve => { releaseOldFetch=resolve; }); return expire(route); };
+  const staleUpload=async route => {
+    if (route.request().method()==="PUT" && new URL(route.request().url()).searchParams.get("name")==="stale-upload.txt") {
+      await new Promise(resolve => { releaseOldUpload=resolve; }); return expire(route);
+    }
+    return route.continue();
+  };
+  await page.route("**/chat/stale-request",staleFetch);
+  await page.route("**/chat/files/**",staleUpload);
+  await page.evaluate(() => {
+    window.staleFetch=api("/chat/stale-request").catch(() => {});
+    window.staleUpload=uploadOriginal({file_id:crypto.randomUUID(),name:"stale-upload.txt",size:1,
+      blob:new Blob(["x"],{type:"text/plain"})},session).catch(() => {});
+  });
+  await expect.poll(() => !!(releaseOldFetch && releaseOldUpload)).toBe(true);
+  await page.evaluate(() => showLogin());
+  await signInAgain();
+  await page.evaluate(() => { window.newSession=session; });
+  releaseOldFetch(); releaseOldUpload();
+  await page.evaluate(async () => {
+    await Promise.all([window.staleFetch,window.staleUpload]);
+    if (session!==window.newSession) throw new Error("A superseded request expired the new login");
+  });
+  await expect(page.locator("#chat-view")).toBeVisible();
+  await page.unroute("**/chat/stale-request",staleFetch);
+  await page.unroute("**/chat/files/**",staleUpload);
+  await page.unroute("**/auth/login",mockLogin);
   // A changed shared cookie can make one cached token stale. Retry refreshes
   // it, and an explicit acknowledgement clears an outbox outside this page.
   let credentialReads=0, recoveredPosts=0;
@@ -346,6 +416,25 @@ try {
   if (Math.abs(await anchor.evaluate(e => e.getBoundingClientRect().top)-originalTop)>2) throw new Error("Typing lost reading position");
   await page.locator("#latest").click();
   await expect.poll(() => pane.evaluate(e => e.scrollHeight-e.scrollTop-e.clientHeight)).toBeLessThan(80);
+  await page.unroute("**/chat/history*");
+  // Later activity elsewhere must reopen a cursor for gaps beyond cached pages.
+  const extendedTurns=Array.from({length:200},(_,i) => ({...fixtureTurns[0],request_id:"history-fixture-"+i,seq:i+1,text:"History fixture "+i}));
+  await page.route("**/chat/history*",route => {
+    const before=Number(new URL(route.request().url()).searchParams.get("before") || 201);
+    const available=extendedTurns.filter(turn => turn.seq<before), selected=available.slice(-50);
+    return route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({turns:selected,
+      older_before:available.length>50 ? selected[0].seq : null})});
+  });
+  await pane.evaluate(e => { e.scrollTop=0; });
+  await expect(page.locator("#latest")).toBeVisible();
+  await page.evaluate(() => refreshHistory());
+  await expect(page.locator(".turn")).toHaveCount(120);
+  await expect(page.locator("#older")).toBeVisible();
+  await page.locator("#older").click();
+  await expect(page.locator(".turn")).toHaveCount(170);
+  await page.locator("#older").click();
+  await expect(page.locator(".turn")).toHaveCount(200);
+  await expect(page.locator('[data-request-id="history-fixture-100"]')).toContainText("History fixture 100");
   await page.unroute("**/chat/history*");
   await page.reload();
   await expect(page.locator(".assistant")).toHaveCount(8);
