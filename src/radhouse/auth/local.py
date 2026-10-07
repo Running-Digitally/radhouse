@@ -324,6 +324,35 @@ class LocalAuthService:
         except (psycopg.Error, ApplicationStorageError, LocalAuthError):
             raise Rejected("service_unavailable", 503) from None
 
+    def session_limits(self) -> dict[str, int]:
+        """Expose only the effective, non-secret session lifetimes."""
+        return {"idle_timeout_seconds": int(self._idle_ttl.total_seconds()),
+                "maximum_session_seconds": int(self._absolute_ttl.total_seconds()),
+                "remembered_session_seconds": int(self._remembered_ttl.total_seconds())}
+
+    def management_role(self, session: LocalSession) -> str:
+        """Read the current actor role; never trust a role saved in the browser."""
+        now = self._clock()
+        try:
+            with self._connection() as connection:
+                _verified_connection(connection, self._deployment_id, self._database)
+                row = connection.execute(
+                    "SELECT a.role FROM public.actors a JOIN public.local_sessions s "
+                    "USING(principal_id) WHERE s.token_hash=%s AND s.principal_id=%s "
+                    "AND a.active AND s.revoked_at IS NULL "
+                    "AND s.idle_expires_at>%s AND s.absolute_expires_at>%s",
+                    (_digest(session.token), session.principal_id, now, now),
+                ).fetchone()
+                if row is None:
+                    raise Rejected("authentication_required", 401)
+                if row["role"] not in {"admin", "operator", "viewer"}:
+                    raise Rejected("management_access_required", 403)
+                return row["role"]
+        except Rejected:
+            raise
+        except (psycopg.Error, ApplicationStorageError, LocalAuthError):
+            raise Rejected("authentication_unavailable", 503) from None
+
     def _csrf(self, token: str) -> str:
         # Stable for this session, so opening another tab does not invalidate
         # an in-flight command in the original tab. The cookie alone is never

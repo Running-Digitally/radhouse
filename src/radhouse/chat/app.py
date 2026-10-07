@@ -36,7 +36,7 @@ class Message(BaseModel):
     attachments: list[Annotated[str, Field(pattern=FILE_ID.pattern)]] = Field(default_factory=list)
 
 
-def create_app(auth, service):
+def create_app(auth, service, *, admin=None):
     @asynccontextmanager
     async def lifespan(_app):
         stop = asyncio.Event()
@@ -85,10 +85,29 @@ def create_app(auth, service):
 
     def session_payload(session):
         service.authorize(session)
-        return {"username": session.username, "csrf_token": session.csrf_token}
+        payload = {"username": session.username, "csrf_token": session.csrf_token}
+        if admin is not None:
+            try:
+                can_read = auth.management_role(session) in {"admin", "operator"}
+            except Rejected:
+                can_read = False  # Management availability must not block chat.
+            payload["management"] = {"read": can_read, "write": False}
+        return payload
 
     def owner(request):
         return service.authorize(auth.session(request))
+
+    if admin is not None:
+        from .admin import create_admin_router
+
+        def management_session(request):
+            session = auth.session(request)
+            service.authorize(session)
+            if auth.management_role(session) not in {"admin", "operator"}:
+                raise Rejected("management_access_required", 403)
+            return session
+
+        app.include_router(create_admin_router(admin, management_session))
 
     @app.get("/")
     def index():

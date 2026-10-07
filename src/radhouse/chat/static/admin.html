@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Radhouse</title><link rel="stylesheet" href="/chat.css"><link rel="stylesheet" href="/admin.css">
+  <script src="/admin.js" defer></script>
+</head>
+<body>
+<div class="admin-shell">
+  <header><a href="/" class="brand">Radhouse</a><button id="logout" hidden>Sign out</button></header>
+  <nav aria-label="Main navigation"><a href="/">Chat</a><a href="/settings" id="settings-link">Settings</a><a href="/infrastructure" id="infrastructure-link">Infrastructure</a></nav>
+  <main>
+    <div class="page-heading"><div><h1 id="page-title">Opening Radhouse…</h1><p id="page-intro" class="intro"></p></div><button id="refresh" hidden>Refresh</button></div>
+    <p id="loading" role="status">Checking your access…</p>
+    <div id="notice" role="alert" hidden><span id="notice-text"></span><a href="/" id="return-chat">Return to Chat</a></div>
+    <div id="content" hidden></div>
+    <p id="checked-at" class="checked-at" role="status" aria-live="polite"></p>
+  </main>
+</div>
+</body></html>
