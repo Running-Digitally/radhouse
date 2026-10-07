@@ -32,40 +32,52 @@ function hex(data: ArrayBuffer): string {
   return Array.from(new Uint8Array(data), value => value.toString(16).padStart(2, "0")).join("");
 }
 
+function validateFileName(file: File): void {
+  if (!file.name || file.name.length > 200 || /[\\/\0\r\n]/.test(file.name)) {
+    throw new ApiError("invalid_input_files", 422);
+  }
+}
+
+async function imageAttachment(file: File, bytes: Uint8Array<ArrayBuffer>, imageBytes: number): Promise<AttachedFile> {
+  if (bytes.byteLength > 4 * 1024 * 1024 || imageBytes > 8 * 1024 * 1024) {
+    throw new ApiError("invalid_input_files", 422);
+  }
+  const digest = hex(await crypto.subtle.digest("SHA-256", bytes));
+  return {
+    name: file.name, content: base64(bytes), media_type: file.type,
+    encoding: "base64", sha256: digest,
+  };
+}
+
+function textAttachment(file: File, bytes: Uint8Array<ArrayBuffer>, mediaType: string): AttachedFile {
+  let content: string;
+  try { content = new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
+  catch { throw new ApiError("invalid_input_files", 422); }
+  if (content.includes("\0")) throw new ApiError("invalid_input_files", 422);
+  return {
+    name: file.name, content, media_type: mediaType,
+    encoding: "utf-8", sha256: null,
+  };
+}
+
 export async function loadAttachments(files: File[]): Promise<AttachedFile[]> {
   if (files.length > 4) throw new ApiError("invalid_input_files", 422);
   let textBytes = 0;
   let imageBytes = 0;
   const result: AttachedFile[] = [];
   for (const file of files) {
-    if (!file.name || file.name.length > 200 || /[\\/\0\r\n]/.test(file.name)) {
-      throw new ApiError("invalid_input_files", 422);
-    }
+    validateFileName(file);
     const bytes = new Uint8Array(await file.arrayBuffer());
     if (IMAGE_TYPES.has(file.type)) {
       imageBytes += bytes.byteLength;
-      if (bytes.byteLength > 4 * 1024 * 1024 || imageBytes > 8 * 1024 * 1024) {
-        throw new ApiError("invalid_input_files", 422);
-      }
-      const digest = hex(await crypto.subtle.digest("SHA-256", bytes));
-      result.push({
-        name: file.name, content: base64(bytes), media_type: file.type,
-        encoding: "base64", sha256: digest,
-      });
+      result.push(await imageAttachment(file, bytes, imageBytes));
       continue;
     }
     const mediaType = TEXT_TYPES.get(extension(file.name));
     if (!mediaType) throw new ApiError("invalid_input_files", 422);
     textBytes += bytes.byteLength;
     if (textBytes > 65536) throw new ApiError("invalid_input_files", 422);
-    let content: string;
-    try { content = new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
-    catch { throw new ApiError("invalid_input_files", 422); }
-    if (content.includes("\0")) throw new ApiError("invalid_input_files", 422);
-    result.push({
-      name: file.name, content, media_type: mediaType,
-      encoding: "utf-8", sha256: null,
-    });
+    result.push(textAttachment(file, bytes, mediaType));
   }
   return result;
 }

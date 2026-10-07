@@ -150,7 +150,7 @@ def test_recreated_service_observes_same_saved_run_without_starting_browser(obse
 
 def test_restart_uses_durable_browser_tool_policy_and_session(tmp_path):
     store = ChatStore(tmp_path / "chat.sqlite3")
-    turn = store.reserve("alice", "request-1", "Use the browser", 1000, 3600)
+    turn = store.reserve("alice", "request-1", "Use the browser", 1000)
     store.select_tools(turn, BROWSER_TOOLS)
     with store.connection() as db:
         db.execute("UPDATE turns SET run_id='run-1',status='running' WHERE request_id='request-1'")

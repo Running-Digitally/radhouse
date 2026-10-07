@@ -255,6 +255,41 @@ class BuzzConversationConfig(StrictModel):
         return self
 
 
+def _validate_agent_authorities(agents, conversations):
+    identities = {}
+    for item in agents:
+        identities.setdefault(item.agent_pubkey, set()).add(
+            (item.bot_id, item.coordinator)
+        )
+    if any(len(authorities) != 1 for authorities in identities.values()):
+        raise ValueError("Buzz identity requires one execution authority")
+    for agent in agents:
+        if agent.owner_pubkey == agent.agent_pubkey:
+            raise ValueError("Buzz agent cannot use its owner's identity")
+        if not any((agent.channel_id is None or c.channel_id==agent.channel_id)
+                   and c.conversation_id==agent.conversation_id for c in conversations):
+            raise ValueError("Buzz agent needs its exact admitted conversation")
+
+
+def _validate_shared_channel(group):
+    if len(group) == 1:
+        return
+    scope = {
+        (item.conversation_id, item.principal_id, item.owner_pubkey, item.project_id)
+        for item in group
+    }
+    if len(scope) != 1:
+        raise ValueError("shared Buzz channel must have one project authority")
+    coordinators = [item for item in group if item.coordinator]
+    if coordinators:
+        if len(coordinators) != 1 or not coordinators[0].default_in_channel:
+            raise ValueError("project Buzz channel needs one default coordinator")
+        if any(item.default_in_channel for item in group if not item.coordinator):
+            raise ValueError("project Buzz specialists cannot be default agents")
+    elif sum(item.default_in_channel for item in group) != 1:
+        raise ValueError("shared Buzz channel needs one default agent")
+
+
 class BuzzConfig(StrictModel):
     relay_origin: str
     relay_pubkey: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
@@ -278,40 +313,13 @@ class BuzzConfig(StrictModel):
             {(item.channel_id, item.agent_pubkey) for item in self.agents}
         ) != len(self.agents):
             raise ValueError("duplicate Buzz agent identity in channel")
-        identities = {}
-        for item in self.agents:
-            identities.setdefault(item.agent_pubkey, set()).add(
-                (item.bot_id, item.coordinator)
-            )
-        if any(len(authorities) != 1 for authorities in identities.values()):
-            raise ValueError("Buzz identity requires one execution authority")
-        for agent in self.agents:
-            if agent.owner_pubkey == agent.agent_pubkey:
-                raise ValueError("Buzz agent cannot use its owner's identity")
-            if not any((agent.channel_id is None or c.channel_id==agent.channel_id)
-                       and c.conversation_id==agent.conversation_id for c in self.conversations):
-                raise ValueError("Buzz agent needs its exact admitted conversation")
+        _validate_agent_authorities(self.agents, self.conversations)
         groups = {}
         for agent in self.agents:
             if agent.channel_id is not None:
                 groups.setdefault(agent.channel_id, []).append(agent)
         for group in groups.values():
-            if len(group) == 1:
-                continue
-            scope = {
-                (item.conversation_id, item.principal_id, item.owner_pubkey, item.project_id)
-                for item in group
-            }
-            if len(scope) != 1:
-                raise ValueError("shared Buzz channel must have one project authority")
-            coordinators = [item for item in group if item.coordinator]
-            if coordinators:
-                if len(coordinators) != 1 or not coordinators[0].default_in_channel:
-                    raise ValueError("project Buzz channel needs one default coordinator")
-                if any(item.default_in_channel for item in group if not item.coordinator):
-                    raise ValueError("project Buzz specialists cannot be default agents")
-            elif sum(item.default_in_channel for item in group) != 1:
-                raise ValueError("shared Buzz channel needs one default agent")
+            _validate_shared_channel(group)
         return self
 
 

@@ -81,7 +81,7 @@ class Conversations:
                 "error_code": status["error_code"],
             }
 
-    def _route(self, tx, link, message):
+    def _addressed_content(self, tx, link, message):
         content = message.content
         if message.addressed:
             bot = next(
@@ -91,6 +91,62 @@ class Conversations:
             if bot is None:
                 raise Rejected("bot_unavailable", 409)
             content = _without_agent_prefix(content, bot.display_name)
+        return content
+
+    def _reply_target(self, tx, link, message):
+        reply = tx.conversation_reply(link.link_id, message.reply_to)
+        if reply is None and len(link.member_pubkeys) > 1:
+            reply = tx.conversation_reply_in_channel(
+                link.channel_id, message.reply_to
+            )
+        if reply is None:
+            return None, MessageRoute("clarify")
+        parent_link = tx.conversation_link(reply["message"].link_id)
+        if (
+            parent_link is None
+            or parent_link.channel_id != link.channel_id
+            or parent_link.principal_id != link.principal_id
+            or parent_link.project_id != link.project_id
+            or parent_link.conversation_id != link.conversation_id
+        ):
+            return None, MessageRoute("clarify")
+        target = (
+            tx.task(reply["message"].task_id) if reply["message"].task_id else None
+        )
+        if target is not None and target.bot_id != link.bot_id:
+            if target.phase == "closed" and target.result:
+                return None, MessageRoute("start", follows_task_id=target.task_id)
+            return None, MessageRoute("clarify")
+        return target, None
+
+    def _focus_target(self, tx, link, message, content, tasks, target):
+        active = [t for t in tasks if t.phase != "closed"]
+        if target is None and not message.reply_to:
+            if len(active) > 1 and not _NEW.match(content):
+                return None, MessageRoute("clarify")
+            target = active[0] if active else tx.task(tx.conversation_focus(link))
+        return target, None
+
+    @staticmethod
+    def _task_route(target, content, files, tasks):
+        if _STATUS.fullmatch(content.strip()):
+            return MessageRoute("status", target.task_id if target else None)
+        if _NEW.match(content):
+            return MessageRoute("start")
+        if files and target is not None and target.phase != "closed":
+            return MessageRoute("clarify")
+        if target is not None:
+            if target.phase == "closed":
+                return MessageRoute(
+                    "start", follows_task_id=target.task_id if target.result else None
+                )
+            return MessageRoute("guide", target.task_id, target.state_revision)
+        if len(tasks) > 1:
+            return MessageRoute("clarify")
+        return MessageRoute("start")
+
+    def _route(self, tx, link, message):
+        content = self._addressed_content(tx, link, message)
         explicit_start = (
             message.addressed
             and not message.reply_to
@@ -106,53 +162,17 @@ class Conversations:
             return MessageRoute("clarify")
         target = None
         if message.reply_to:
-            reply = tx.conversation_reply(link.link_id, message.reply_to)
-            if reply is None and len(link.member_pubkeys) > 1:
-                reply = tx.conversation_reply_in_channel(
-                    link.channel_id, message.reply_to
-                )
-            if reply is None:
-                return MessageRoute("clarify")
-            parent_link = tx.conversation_link(reply["message"].link_id)
-            if (
-                parent_link is None
-                or parent_link.channel_id != link.channel_id
-                or parent_link.principal_id != link.principal_id
-                or parent_link.project_id != link.project_id
-                or parent_link.conversation_id != link.conversation_id
-            ):
-                return MessageRoute("clarify")
-            target = (
-                tx.task(reply["message"].task_id) if reply["message"].task_id else None
-            )
-            if target is not None and target.bot_id != link.bot_id:
-                if target.phase == "closed" and target.result:
-                    return MessageRoute("start", follows_task_id=target.task_id)
-                return MessageRoute("clarify")
+            target, reply_route = self._reply_target(tx, link, message)
+            if reply_route is not None:
+                return reply_route
         tasks = [
             tx.task(task_id) for task_id in tx.conversation_task_messages(link.link_id)
         ]
         tasks = [t for t in tasks if t is not None]
-        active = [t for t in tasks if t.phase != "closed"]
-        if target is None and not message.reply_to:
-            if len(active) > 1 and not _NEW.match(content):
-                return MessageRoute("clarify")
-            target = active[0] if active else tx.task(tx.conversation_focus(link))
-        if _STATUS.fullmatch(content.strip()):
-            return MessageRoute("status", target.task_id if target else None)
-        if _NEW.match(content):
-            return MessageRoute("start")
-        if message.files and target is not None and target.phase != "closed":
-            return MessageRoute("clarify")
-        if target is not None:
-            if target.phase == "closed":
-                return MessageRoute(
-                    "start", follows_task_id=target.task_id if target.result else None
-                )
-            return MessageRoute("guide", target.task_id, target.state_revision)
-        if len(tasks) > 1:
-            return MessageRoute("clarify")
-        return MessageRoute("start")
+        target, focus_route = self._focus_target(tx, link, message, content, tasks, target)
+        if focus_route is not None:
+            return focus_route
+        return self._task_route(target, content, message.files, tasks)
 
     def receive(self, link, message, *, event=None):
         if (
@@ -189,6 +209,82 @@ class Conversations:
             tx.save_conversation_message(message, route=route, event=event)
             return tx.conversation_message(message.message_id)
 
+    def _start_message(self, actor, envelope, link, message, bot, route):
+        brief = message.content
+        if message.addressed:
+            brief = _without_agent_prefix(brief, bot.display_name)
+        task = self.service.admit(
+            actor,
+            envelope,
+            StartTask(
+                link.bot_id,
+                link.project_id,
+                _NEW.sub("", brief, count=1),
+                bot.provider_binding,
+                files=message.files,
+                follows_task_id=route.follows_task_id,
+            ),
+        )
+        reply = "I have your assignment. I’ll keep its progress and result in this conversation."
+        if task.disable_tools:
+            reply += " Tools are disabled for this task."
+        elif task.allowed_tools:
+            reply += " This task is restricted to: " + ", ".join(task.allowed_tools) + "."
+        return task, reply
+
+    def _guide_message(self, actor, envelope, message, route, response_id):
+        try:
+            task = self.service.guide(
+                actor,
+                route.task_id,
+                route.expected_revision,
+                message.content,
+                envelope=envelope,
+            )
+            control_id = "control:" + fingerprint(
+                [actor.principal_id, envelope.command_key]
+            )
+            receipt = next(
+                (g for g in task.guidance if g.get("id") == control_id), None
+            )
+            from radhouse.application.guidance import TERMINAL, outcome_message_id, outcome_text
+            reply = outcome_text(receipt or {})
+            if receipt and receipt.get("application_state") in TERMINAL:
+                response_id = outcome_message_id(task.task_id, receipt)
+        except Rejected as error:
+            if error.code not in {
+                "stale_state",
+                "task_not_accepting_control",
+                "control_outcome_unknown",
+                "permission_response_required",
+                "task_control_limit",
+                "runtime_guidance_receipts_unavailable",
+            }:
+                raise
+            task = self.service.get(actor, route.task_id, envelope=envelope)
+            reply = "Your message is saved. This task cannot accept that update right now; check its current state before trying again."
+        return task, reply, response_id
+
+    def _status_message(self, actor, envelope, link, route, bot):
+        task = (
+            self.service.get(actor, route.task_id, envelope=envelope)
+            if route.task_id
+            else None
+        )
+        reply = (
+            self.describe(task, bot.display_name)
+            if task
+            else "There is no active task in this conversation. Reply to a task message to ask about that work."
+        )
+        if task and task.result and self.service.review_links is not None:
+            with self.store.transaction() as tx:
+                publication = tx.publication(task.task_id)
+                if publication is not None:
+                    reply += "\n\nReview status · Approved and published to the approved audience."
+                else:
+                    reply += "\n\nReview required · Sign in to Radhouse:\n" + self.service.review_links.issue(tx, link, task)
+        return task, reply
+
     def process(self, link, message_id):
         with self.store.transaction() as tx:
             actor = self.authorize(tx, link, write=True)
@@ -210,75 +306,11 @@ class Conversations:
         task = None
         response_id = "reply:" + message_id
         if route.action == "start":
-            brief = message.content
-            if message.addressed:
-                brief = _without_agent_prefix(brief, bot.display_name)
-            task = self.service.admit(
-                actor,
-                envelope,
-                StartTask(
-                    link.bot_id,
-                    link.project_id,
-                    _NEW.sub("", brief, count=1),
-                    bot.provider_binding,
-                    files=message.files,
-                    follows_task_id=route.follows_task_id,
-                ),
-            )
-            reply = "I have your assignment. I’ll keep its progress and result in this conversation."
-            if task.disable_tools:
-                reply += " Tools are disabled for this task."
-            elif task.allowed_tools:
-                reply += " This task is restricted to: " + ", ".join(task.allowed_tools) + "."
+            task, reply = self._start_message(actor, envelope, link, message, bot, route)
         elif route.action == "guide":
-            try:
-                task = self.service.guide(
-                    actor,
-                    route.task_id,
-                    route.expected_revision,
-                    message.content,
-                    envelope=envelope,
-                )
-                control_id = "control:" + fingerprint(
-                    [actor.principal_id, envelope.command_key]
-                )
-                receipt = next(
-                    (g for g in task.guidance if g.get("id") == control_id), None
-                )
-                from radhouse.application.guidance import TERMINAL, outcome_message_id, outcome_text
-                reply = outcome_text(receipt or {})
-                if receipt and receipt.get("application_state") in TERMINAL:
-                    response_id = outcome_message_id(task.task_id, receipt)
-            except Rejected as error:
-                if error.code not in {
-                    "stale_state",
-                    "task_not_accepting_control",
-                    "control_outcome_unknown",
-                    "permission_response_required",
-                    "task_control_limit",
-                    "runtime_guidance_receipts_unavailable",
-                }:
-                    raise
-                task = self.service.get(actor, route.task_id, envelope=envelope)
-                reply = "Your message is saved. This task cannot accept that update right now; check its current state before trying again."
+            task, reply, response_id = self._guide_message(actor, envelope, message, route, response_id)
         elif route.action == "status":
-            task = (
-                self.service.get(actor, route.task_id, envelope=envelope)
-                if route.task_id
-                else None
-            )
-            reply = (
-                self.describe(task, bot.display_name)
-                if task
-                else "There is no active task in this conversation. Reply to a task message to ask about that work."
-            )
-            if task and task.result and self.service.review_links is not None:
-                with self.store.transaction() as tx:
-                    publication = tx.publication(task.task_id)
-                    if publication is not None:
-                        reply += "\n\nReview status · Approved and published to the approved audience."
-                    else:
-                        reply += "\n\nReview required · Sign in to Radhouse:\n" + self.service.review_links.issue(tx, link, task)
+            task, reply = self._status_message(actor, envelope, link, route, bot)
         else:
             reply = "Which task do you mean? Reply to its message so I can keep your instruction with the right work."
         completed = replace(

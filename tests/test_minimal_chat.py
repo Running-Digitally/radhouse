@@ -158,7 +158,7 @@ def test_old_retry_acknowledges_exact_request_outside_latest_history_page(chat):
 def test_never_attempted_reservation_can_prepare_after_restart(chat):
     service, hermes = chat
     request_id = str(uuid4())
-    service.store.reserve("alice", request_id, "Still unsent", 1000, 3540)
+    service.store.reserve("alice", request_id, "Still unsent", 1000)
     reopened = ChatService(ChatStore(service.store.path), hermes.client, owner_id="alice", clock=lambda: 6000)
     reopened.retry("alice", request_id)
     receipt = reopened.store.find("alice", request_id)
@@ -172,7 +172,7 @@ def test_never_attempted_reservation_can_prepare_after_restart(chat):
 def test_schema_three_unknown_submission_keeps_conservative_deadline(chat, now, expired):
     service, hermes = chat
     request_id = str(uuid4())
-    service.store.reserve("alice", request_id, "Legacy uncertain submission", 1000, 3000)
+    service.store.reserve("alice", request_id, "Legacy uncertain submission", 1000)
     with sqlite3.connect(service.store.path) as db:
         db.execute("ALTER TABLE turns DROP COLUMN first_dispatch_at")
         db.execute("UPDATE turns SET retry_until=4000")
@@ -267,7 +267,7 @@ def test_owner_is_server_bound_and_history_is_paged(chat):
     service, _hermes = chat
     with pytest.raises(Rejected, match="owner_access_required"): service.send("bob", str(uuid4()), "Secret")
     for i in range(55):
-        turn = service.store.reserve("alice", str(uuid4()), str(i), 1000, 3600)
+        turn = service.store.reserve("alice", str(uuid4()), str(i), 1000)
         service.store.attach(turn, "run_" + str(i), "running")
         service.store.observe(service.store.pending("alice"), "completed", output="reply")
     latest = service.store.history("alice")

@@ -189,7 +189,7 @@ def test_failed_chat_write_with_readonly_database_parent_is_reported_without_pro
     parent.chmod(0o500)
     try:
         with pytest.raises(sqlite3.OperationalError, match="readonly"):
-            admin.store.reserve("alice", "parent-readonly-proof", "disposable write", 1000, 3600)
+            admin.store.reserve("alice", "parent-readonly-proof", "disposable write", 1000)
         storage = client.get("/admin/infrastructure").json()["components"][-1]
         assert storage['state'] == 'unavailable'
         assert 'read only' in storage['detail']

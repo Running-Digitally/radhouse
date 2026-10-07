@@ -8,6 +8,17 @@ import { resultViewer } from "./markdown.js";
 import { acceptPastedOrDroppedFiles, loadAttachments } from "./files.js";
 import type { AttachedFile } from "./files.js";
 
+function element<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+function activityTime(seconds: number | undefined): string {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds <= 0) return "";
+  return ` · ${new Date(seconds * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+}
+
 export function mountWorkHome(page: HTMLElement, client = operatorClient()): () => void {
 let reviewToken = new URLSearchParams(window.location.hash.slice(1)).get("review");
 let reviewTarget: { task_id: string; project_id: string; conversation_id: string; binding_revision: number } | null = null;
@@ -43,12 +54,6 @@ let conversationLinks: ConversationLink[] = [];
 let conversationHistory: ConversationHistory | null = null;
 let selectedConversation = "";
 
-function element<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
-}
 function brand(): HTMLElement {
   const lockup = element("div", "brand");
   const mark = element("img", "brand__mark");
@@ -248,10 +253,6 @@ function latestActivity(data: TaskEvents | undefined): { label: string; occurred
   return typeof label === "string" && label.length > 0 && label.length <= 160
     ? { label, occurred_at: activity?.data?.occurred_at } : null;
 }
-function activityTime(seconds: number | undefined): string {
-  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds <= 0) return "";
-  return ` · ${new Date(seconds * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
-}
 function historyPanel(card: TaskCard): HTMLElement {
   const panel = element("section", "history-panel");
   panel.append(element("h4", "section-title", "Task progress"));
@@ -343,7 +344,7 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
     const list = element("ul", "blockers"); blockers.forEach((text) => { list.append(element("li", "blockers__item", text)); }); article.append(list);
   }
   if (task.result !== null) {
-    const summary = task.result.replace(/[#*_`>\[\]]/g, "").replace(/\s+/g, " ").trim();
+    const summary = task.result.replace(/[#*_`>[\]]/g, "").replace(/\s+/g, " ").trim();
     if (summary !== card.title.title) article.append(element("p", "result-summary",
       summary.length > 220 ? `${summary.slice(0, 219).trim()}…` : summary));
     if (openResults.has(task.task_id)) article.append(resultViewer(task.result));
@@ -358,7 +359,8 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
   }
   for (const receipt of task.guidance) {
     const status = guidanceStatus(receipt);
-    article.append(notice(`${receipt.text ?? `Permission response: ${receipt.choice}`} — ${status}`));
+    const instruction = receipt.text ?? `Permission response: ${receipt.choice}`;
+    article.append(notice(`${instruction} — ${status}`));
   }
   if (home.role !== "viewer" && task.phase === "active" && task.blockers.length === 0) {
     if (task.permission_request) {
@@ -495,7 +497,7 @@ function startPanel(home: WorkHome): HTMLElement {
       fileStatus.textContent = draft.files.map(file => file.name).join(", ");
     });
   });
-  form.insertBefore(fileLabel, submit); form.insertBefore(fileStatus, submit);
+  submit.before(fileLabel, fileStatus);
   if (draft.followsTaskId) form.insertBefore(notice("The previous result is included as reference material."), submit);
   if (!home.start.enabled) panel.append(notice(actionReason(home.start) ?? "No agent is available."));
   form.addEventListener("submit", (event) => {
@@ -658,12 +660,12 @@ function render(home: WorkHome, message?: string): void {
   if (!reviewTarget && conversation && conversationHistory && api && signedIn) {
     const draft = conversationDrafts.get(conversation.link_id) ?? { content: "", reply: null, files: [] };
     conversationDrafts.set(conversation.link_id, draft);
-    const conversationSection = conversationPanel(api, conversation, conversationHistory, draft, signedIn.principal_id,
-      async () => load(), taskId => {
+    const conversationSection = conversationPanel(api, conversation, conversationHistory, draft, { owner: signedIn.principal_id,
+      refresh: async () => load(), review: taskId => {
         const card = Array.from(page.querySelectorAll<HTMLElement>("[data-task-id]")).find(node => node.dataset.taskId === taskId);
         card?.scrollIntoView({ block: "start", behavior: "smooth" });
         card?.querySelector<HTMLButtonElement>("button")?.focus();
-      }, action, open => { filePickerOpen = open; if (open) loadGeneration++; });
+      }, run: action, filePicker: open => { filePickerOpen = open; if (open) loadGeneration++; } });
     conversationSection.id = "conversation-section";
     page.append(conversationSection);
   } else if (!reviewTarget) {
@@ -716,7 +718,7 @@ function render(home: WorkHome, message?: string): void {
     }
   }
   const conversationOrStart = page.querySelector("#conversation-section, #start-section");
-  if (conversationOrStart) page.insertBefore(work, conversationOrStart);
+  if (conversationOrStart) conversationOrStart.before(work);
   else page.append(work);
   const manage = page.querySelector(".manage-details");
   if (manage) page.append(manage);

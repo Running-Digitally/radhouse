@@ -115,7 +115,8 @@
         this.frameUrl = objectUrl; this.pendingUrls.delete(objectUrl); objectUrl = null;
         this.image.src = this.frameUrl; this.image.hidden = false; this.viewport.hidden = false;
         this._label(labels.live);
-      } catch (_) {
+      } catch {
+        // A failed or undecodable frame clears the image and displays unavailable.
         if (epoch === this.epoch) { this._clearImage(); this._label(labels.unavailable); }
       } finally {
         clearTimeout(timeout);

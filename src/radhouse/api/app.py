@@ -81,7 +81,7 @@ def create_app(
     install_conversation_routes(app,service,authenticated)
     errors = {status: {"model": ErrorResponse} for status in (401, 403, 404, 409, 422)}
 
-    def session_response(session: "LocalSession", request: Request) -> AuthSessionResponse:
+    def session_response(session: "LocalSession") -> AuthSessionResponse:
         return AuthSessionResponse(
             principal_id=session.principal_id,
             username=session.username,
@@ -113,12 +113,12 @@ def create_app(
                 path="/",
             )
             response.headers["Cache-Control"] = "no-store"
-            return session_response(session, request)
+            return session_response(session)
 
         @app.get("/auth/session", response_model=AuthSessionResponse, responses=errors)
         def current_session(request: Request, response: Response):
             response.headers["Cache-Control"] = "no-store"
-            return session_response(local_auth.refresh(request), request)
+            return session_response(local_auth.refresh(request))
 
         @app.post("/auth/logout", status_code=204, responses=errors)
         def logout(request: Request, response: Response):
@@ -133,7 +133,7 @@ def create_app(
 
         @app.post("/auth/reauthenticate", response_model=AuthSessionResponse, responses=errors)
         def reauthenticate(body: ReauthenticateRequest, request: Request):
-            return session_response(local_auth.reauthenticate(request, body.password, body.totp_code), request)
+            return session_response(local_auth.reauthenticate(request, body.password, body.totp_code))
 
     def read_envelope(actor: AuthContext, conversation: str, revision: int) -> Envelope:
         # Reads check the same current binding, without adding a delivery receipt.

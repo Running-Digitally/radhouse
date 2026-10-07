@@ -157,7 +157,7 @@ class ChatStore:
             row = db.execute("SELECT * FROM turns WHERE owner=? AND request_id=?", (owner, request_id)).fetchone()
             return dict(row) if row else None
 
-    def reserve(self, owner, request_id, text, now, retention, attachments=()):
+    def reserve(self, owner, request_id, text, now, attachments=()):
         with self.connection() as db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute("SELECT * FROM turns WHERE owner=? AND request_id=?", (owner, request_id)).fetchone()

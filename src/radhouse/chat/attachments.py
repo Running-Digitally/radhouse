@@ -26,6 +26,13 @@ def validate_name(name):
         raise Rejected("attachment_invalid", 422)
 
 
+def _valid_audio(extension, prefix):
+    return ((extension == ".wav" and prefix[:4] == b"RIFF" and prefix[8:12] == b"WAVE")
+        or (extension == ".mp3" and (prefix.startswith(b"ID3") or len(prefix) >= 2 and prefix[0] == 255 and prefix[1] & 224 == 224))
+        or (extension == ".m4a" and prefix[4:8] == b"ftyp") or (extension == ".ogg" and prefix.startswith(b"OggS"))
+        or (extension == ".flac" and prefix.startswith(b"fLaC")) or (extension == ".webm" and prefix.startswith(b"\x1aE\xdf\xa3")))
+
+
 def classify(name, prefix):
     """Sniff only a small prefix. Unrecognized originals remain downloadable."""
     validate_name(name)
@@ -35,10 +42,7 @@ def classify(name, prefix):
     if prefix[:4] == b"RIFF" and prefix[8:12] == b"WEBP": return "image/webp", "image"
     if extension == ".pdf" and prefix.startswith(b"%PDF-"): return "application/pdf", "document"
     if extension in OFFICE and prefix.startswith(b"PK\x03\x04"): return OFFICE[extension], "document"
-    valid_audio = ((extension == ".wav" and prefix[:4] == b"RIFF" and prefix[8:12] == b"WAVE")
-        or (extension == ".mp3" and (prefix.startswith(b"ID3") or len(prefix) >= 2 and prefix[0] == 255 and prefix[1] & 224 == 224))
-        or (extension == ".m4a" and prefix[4:8] == b"ftyp") or (extension == ".ogg" and prefix.startswith(b"OggS"))
-        or (extension == ".flac" and prefix.startswith(b"fLaC")) or (extension == ".webm" and prefix.startswith(b"\x1aE\xdf\xa3")))
+    valid_audio = _valid_audio(extension, prefix)
     if valid_audio: return AUDIO[extension], "audio"
     if extension in (*OFFICE, *AUDIO, ".pdf", ".doc", ".xls", ".ppt", ".docm", ".xlsm", ".pptm", ".svg", ".gif", ".heic"):
         return "application/octet-stream", "file"
