@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path, PurePath
 import re
+import stat
 import subprocess
 import sys
 from threading import BoundedSemaphore
@@ -23,7 +24,7 @@ PARSER_VERSION = 1
 MAX_RESULT_BYTES = 32 * 1024
 _PARSER_SLOT = BoundedSemaphore(1)
 _ERRORS = frozenset({"document_unreadable", "document_encrypted", "document_needs_ocr",
-                     "document_operation_exhausted", "document_locator_not_found"})
+                     "document_operation_exhausted", "document_locator_not_found", "document_source_changed"})
 _COVERAGE = {".pdf": "PDF text layer; images and scanned text require OCR",
              ".docx": "Current main-body paragraphs and tables; excludes headers, footers, notes and images",
              ".xlsx": "Stored worksheet cells and cached formula values; no formula execution or formatting inference",
@@ -72,7 +73,7 @@ class DocumentAccess:
         return attachment
 
     def catalog(self):
-        """Metadata for the exact persisted conversation scope; no local paths."""
+        """Upload receipts in the saved scope; no file reads or current-byte assertion."""
         result = []
         for file_id in sorted(self._file_ids):
             attachment = self._resolve(self._owner, file_id)
@@ -81,6 +82,7 @@ class DocumentAccess:
             extension = PurePath(attachment.name).suffix.lower()
             result.append({"file_id": file_id, "name": attachment.name,
                            "media_type": attachment.media_type, "sha256": attachment.sha256,
+                           "sha256_basis": "upload_receipt",
                            "size": attachment.size,
                            "reader_scope": _COVERAGE.get(extension, "UTF-8 text" if attachment.kind == "text" else None),
                            "locator_kind": {".pdf": "page", ".docx": "paragraph",
@@ -134,23 +136,34 @@ class DocumentAccess:
             except (ValueError, TypeError, UnicodeDecodeError, RecursionError):
                 raise Rejected("document_cursor_invalid", 422) from None
         request = {"operation": operation, "query": query, "locator": locator, "position": position, "resume": resume,
+                   "sha256": attachment.sha256,
                    "extension": ".txt" if attachment.kind == "text" else PurePath(attachment.name).suffix.lower()}
-        if isinstance(attachment.data, Path):
-            request["path"] = str(attachment.data)
-        else:
-            request["data"] = base64.b64encode(attachment.data).decode()
         if not _PARSER_SLOT.acquire(blocking=False):
             return DocumentResult(file_id, attachment.sha256, error="document_reader_busy")
+        source_fd = None
         try:
             try:
+                if isinstance(attachment.data, Path):
+                    # A replaced FIFO must not block before the child's deadline. Hold
+                    # one regular inode through verification and parsing, never reopen
+                    # the retained pathname after checking its content.
+                    source_fd = os.open(attachment.data, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                    if not stat.S_ISREG(os.fstat(source_fd).st_mode):
+                        raise Rejected("document_source_changed", 409)
+                    request["source_fd"] = source_fd
+                else:
+                    request["data"] = base64.b64encode(attachment.data).decode()
                 result = subprocess.run([sys.executable, "-m", "radhouse.chat.document_parser"],
                     input=json.dumps(request), text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                    timeout=15, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+                    timeout=15, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+                    pass_fds=(source_fd,) if source_fd is not None else ())
                 if result.returncode or len(result.stdout.encode()) > MAX_RESULT_BYTES:
                     return DocumentResult(file_id, attachment.sha256, error="document_operation_exhausted")
                 value = json.loads(result.stdout)
                 if "error" in value:
                     code = value["error"] if value["error"] in _ERRORS else "document_unreadable"
+                    if code == "document_source_changed":
+                        raise Rejected(code, 409)
                     return DocumentResult(file_id, attachment.sha256, error=code)
                 passages = tuple(Passage(**entry) for entry in value["passages"])
                 if (type(value["complete"]) is not bool or len(passages) > 8
@@ -173,4 +186,6 @@ class DocumentAccess:
             except (OSError, ValueError, KeyError, TypeError):
                 return DocumentResult(file_id, attachment.sha256, error="document_unreadable")
         finally:
+            if source_fd is not None:
+                os.close(source_fd)
             _PARSER_SLOT.release()

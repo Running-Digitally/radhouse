@@ -81,6 +81,15 @@ upload size/count ceiling is introduced. PDF page, Word paragraph/table, workshe
 cell and slide locators remain stable. Parser coverage and failures are explicit;
 OCR, images, speaker notes and computed workbook recalculation are not implied.
 
+Catalog `sha256` is the expected upload digest, labeled
+`sha256_basis:"upload_receipt"`; discovery does not read every original or assert
+that its current bytes have been verified. Passage operations hash the retained
+regular file inside the existing bounded parser child and parse that same opened
+descriptor. A digest mismatch or in-place mutation before parsing finishes denies
+the result with `document_source_changed` (409), releasing no passages or cursor.
+Full-file verification consumes the operation's existing CPU/wall budget; exhausting
+that budget reports `document_operation_exhausted`, without imposing an upload limit.
+
 Native plugin configuration provides `callback_base_url`, `callback_ca_file` and
 `callback_tls_server_name`. TCP uses the existing loopback SSH forward. TLS uses the
 independently pinned existing web identity `192.168.50.65`, whose certificate SAN

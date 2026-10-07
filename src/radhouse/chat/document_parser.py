@@ -3,10 +3,13 @@ import base64
 from bisect import bisect_left, bisect_right
 from dataclasses import dataclass
 from io import BytesIO, TextIOWrapper
+import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import resource
+import stat
 import sys
 from urllib.parse import quote, unquote
 from xml.etree import ElementTree as ET
@@ -183,7 +186,10 @@ def _slides(archive, selected=None):
 
 def _fragments(data, extension, resume=None, selected=None):
     if extension == ".txt":
-        with (data.open("rb") if isinstance(data, Path) else BytesIO(data)) as raw:
+        # Duplicate an already verified descriptor so TextIOWrapper can close its
+        # own stream without losing the source identity used by the final check.
+        with (data.open("rb") if isinstance(data, Path) else BytesIO(data) if isinstance(data, bytes)
+              else os.fdopen(os.dup(data.fileno()), "rb")) as raw:
             with TextIOWrapper(raw, encoding="utf-8-sig", errors="strict", newline=None) as stream:
                 line, offset, index = 1, 0, 0
                 if resume is not None:
@@ -207,7 +213,7 @@ def _fragments(data, extension, resume=None, selected=None):
         if selected is not None and not selected.startswith("pdf:page:"):
             raise ValueError("document_locator_not_found")
         from pypdf import PdfReader
-        reader = PdfReader(data if isinstance(data, Path) else BytesIO(data), strict=True)
+        reader = PdfReader(BytesIO(data) if isinstance(data, bytes) else data, strict=True)
         if reader.is_encrypted:
             raise ValueError("document_encrypted")
         if selected is not None:
@@ -222,7 +228,7 @@ def _fragments(data, extension, resume=None, selected=None):
         return
     if extension not in {".docx", ".xlsx", ".pptx"}:
         raise ValueError("document_unreadable")
-    with ZipFile(data if isinstance(data, Path) else BytesIO(data)) as archive:
+    with ZipFile(BytesIO(data) if isinstance(data, bytes) else data) as archive:
         names = archive.namelist()
         if len(names) != len(set(names)) or any("vbaproject" in n.lower() for n in names):
             raise ValueError("document_unreadable")
@@ -337,6 +343,35 @@ def _operate(data, request):
     return {"passages": passages, "next_position": None, "complete": True}
 
 
+def _source_identity(source):
+    state = os.fstat(source.fileno())
+    if not stat.S_ISREG(state.st_mode):
+        raise ValueError("document_source_changed")
+    return state.st_dev, state.st_ino, state.st_size, state.st_mtime_ns, state.st_ctime_ns
+
+
+def _verified_operate(request):
+    """Verify and consume the same source under the child's existing budgets."""
+    expected = request["sha256"]
+    if "source_fd" not in request:
+        data = base64.b64decode(request["data"], validate=True)
+        if hashlib.sha256(data).hexdigest() != expected:
+            raise ValueError("document_source_changed")
+        return _operate(data, request)
+    with os.fdopen(os.dup(request["source_fd"]), "rb") as source:
+        identity = _source_identity(source)
+        if hashlib.file_digest(source, "sha256").hexdigest() != expected or _source_identity(source) != identity:
+            raise ValueError("document_source_changed")
+        source.seek(0)
+        value = _operate(source, request)
+        # Replacing the pathname cannot redirect this descriptor. In-place writes
+        # during hashing/parsing invalidate every passage, including same-size
+        # writes with a restored mtime (ctime still changes).
+        if _source_identity(source) != identity:
+            raise ValueError("document_source_changed")
+        return value
+
+
 def _main():
     resource.setrlimit(resource.RLIMIT_CPU, (10, 10))
     if sys.platform.startswith("linux"):
@@ -344,8 +379,7 @@ def _main():
     resource.setrlimit(resource.RLIMIT_FSIZE, (0, 0))
     try:
         request = json.load(sys.stdin)
-        data = Path(request["path"]) if "path" in request else base64.b64decode(request["data"], validate=True)
-        value = _operate(data, request)
+        value = _verified_operate(request)
         encoded = json.dumps(value, ensure_ascii=False)
         if len(encoded.encode()) > 32 * 1024:
             raise ValueError("document_operation_exhausted")

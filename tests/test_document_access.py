@@ -1,8 +1,10 @@
 """Whole-original access, meaningful source locators and scope enforcement."""
 import base64
+from dataclasses import replace
 import hashlib
 from io import BytesIO
 import json
+import os
 from pathlib import Path
 import subprocess
 from uuid import uuid4
@@ -64,6 +66,110 @@ def archive_files(files):
         for name, text in files.items():
             archive.writestr(name, text)
     return output.getvalue()
+
+
+def test_path_replacement_cannot_redirect_opened_verified_original(tmp_path, monkeypatch):
+    expected = b"Verified original answer.\n"
+    reader, files, _ = access(tmp_path, [("report.txt", expected)])
+    file_id, attachment = next(iter(files.items()))
+    replacement = tmp_path / "replacement"
+    replacement.write_bytes(b"Unverified replacement answer.\n")
+    run = subprocess.run
+    observed_fds = []
+    def replace_before_child(*args, **kwargs):
+        observed_fds.extend(kwargs.get("pass_fds", ()))
+        replacement.replace(attachment.data)
+        return run(*args, **kwargs)
+    monkeypatch.setattr(subprocess, "run", replace_before_child)
+    result = reader.read(file_id)
+    assert result.complete and result.sha256 == hashlib.sha256(expected).hexdigest()
+    assert result.passages[0].text == expected.decode()
+    assert len(observed_fds) == 1
+    with pytest.raises(OSError):
+        os.fstat(observed_fds[0])
+    monkeypatch.setattr(subprocess, "run", run)
+    with pytest.raises(Rejected, match="document_source_changed"):
+        reader.read(file_id)
+
+
+def test_in_place_mutation_while_parsing_rejects_passages_even_when_size_is_unchanged(tmp_path, monkeypatch):
+    path = tmp_path / "source.txt"
+    original = b"Expected answer.\n"
+    path.write_bytes(original)
+    before = path.stat()
+    operate = document_parser._operate
+    def mutate_then_parse(data, request):
+        path.write_bytes(b"Replaced answer.\n")
+        os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+        return operate(data, request)
+    monkeypatch.setattr(document_parser, "_operate", mutate_then_parse)
+    with path.open("rb") as source:
+        with pytest.raises(ValueError, match="document_source_changed"):
+            document_parser._verified_operate({**parser_read(None), "extension": ".txt",
+                "source_fd": source.fileno(), "sha256": hashlib.sha256(original).hexdigest()})
+
+
+def test_mutation_during_verification_is_denied_before_parser(tmp_path, monkeypatch):
+    path = tmp_path / "source.txt"
+    original = b"Expected answer.\n"
+    path.write_bytes(original)
+    digest = hashlib.file_digest
+    def mutate_after_hash(source, algorithm):
+        result = digest(source, algorithm)
+        path.write_bytes(b"Replaced answer.\n")
+        return result
+    monkeypatch.setattr(hashlib, "file_digest", mutate_after_hash)
+    monkeypatch.setattr(document_parser, "_operate", lambda *a, **kw: pytest.fail("changed source reached parser"))
+    with path.open("rb") as source:
+        with pytest.raises(ValueError, match="document_source_changed"):
+            document_parser._verified_operate({**parser_read(None), "extension": ".txt",
+                "source_fd": source.fileno(), "sha256": hashlib.sha256(original).hexdigest()})
+
+
+def test_memory_backed_originals_are_verified_too(tmp_path):
+    original = b"Expected answer.\n"
+    reader, files, _ = access(tmp_path, [("report.txt", original)])
+    file_id = next(iter(files))
+    files[file_id] = replace(files[file_id], data=original)
+    assert reader.read(file_id).passages[0].text == original.decode()
+    files[file_id] = replace(files[file_id], data=b"Replaced answer.\n")
+    with pytest.raises(Rejected, match="document_source_changed"):
+        reader.read(file_id)
+
+
+def test_slow_verification_stays_inside_child_deadline_and_releases_source(tmp_path, monkeypatch):
+    reader, files, _ = access(tmp_path, [("report.txt", b"Expected answer.\n")])
+    file_id = next(iter(files))
+    run = subprocess.run
+    descriptors = []
+    def stalled_hash(args, **kwargs):
+        assert kwargs["timeout"] == 15
+        descriptors.extend(kwargs["pass_fds"])
+        kwargs["timeout"] = 0.2  # Exercise a real killed child without waiting fifteen seconds.
+        return run([args[0], "-c", "import time; from radhouse.chat import document_parser as p; "
+            "p.hashlib.file_digest = lambda *a: time.sleep(30); p._main()"], **kwargs)
+    monkeypatch.setattr(subprocess, "run", stalled_hash)
+    result = reader.read(file_id)
+    assert result.error == "document_operation_exhausted" and not result.complete and not result.passages
+    with pytest.raises(OSError):
+        os.fstat(descriptors[0])
+    monkeypatch.setattr(subprocess, "run", run)
+    assert reader.read(file_id).complete
+
+
+def test_nonregular_retained_original_is_denied_without_blocking_or_launching_parser(tmp_path, monkeypatch):
+    reader, files, _ = access(tmp_path, [("report.txt", b"Original content")])
+    file_id, attachment = next(iter(files.items()))
+    attachment.data.unlink()
+    os.mkfifo(attachment.data)
+    open_file = os.open
+    def nonblocking_open(path, flags):
+        assert flags & os.O_NONBLOCK
+        return open_file(path, flags)
+    monkeypatch.setattr(os, "open", nonblocking_open)
+    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: pytest.fail("nonregular source reached parser"))
+    with pytest.raises(Rejected, match="document_source_changed"):
+        reader.read(file_id)
 
 
 def test_pdf_fact_on_page121_is_searchable_and_selectively_readable(tmp_path):

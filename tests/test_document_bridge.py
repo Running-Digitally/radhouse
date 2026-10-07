@@ -93,6 +93,34 @@ def complete(service, runtime):
     service.poll("alice")
 
 
+@pytest.mark.parametrize("operation", ["read", "search"])
+def test_changed_original_denied_even_when_upload_and_grant_digests_agree(stack, operation):
+    service, runtime, bridge, _ = stack
+    attachment = original(service.store, b"Expected answer: 100.\n")
+    service.send("alice", "Read the answer", "changed-original", (attachment,))
+    attachment.data.write_bytes(b"Replaced answer: 900.\n")
+    scope = bridge.grant(token(runtime))
+    assert service.store.upload("alice", attachment.file_id).sha256 == scope["files"][attachment.file_id]
+    call = context(runtime, file_id=attachment.file_id, **({"query": "answer"} if operation == "search" else {}))
+    with pytest.raises(Rejected, match="document_source_changed") as denial:
+        bridge.execute(token(runtime), call, operation)
+    assert denial.value.status == 409
+
+
+def test_catalog_is_upload_metadata_without_reading_or_claiming_current_bytes(stack, monkeypatch):
+    service, runtime, bridge, _ = stack
+    attachment = original(service.store, b"Expected original.\n")
+    service.send("alice", "Inspect the files", "catalog-receipt", (attachment,))
+    attachment.data.write_bytes(b"Changed on disk.\n")
+    import os
+    import subprocess
+    monkeypatch.setattr(os, "open", lambda *a, **kw: pytest.fail("catalog opened original"))
+    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: pytest.fail("catalog launched parser"))
+    result = bridge.execute(token(runtime), context(runtime), "read")
+    assert result["files"][0]["sha256"] == attachment.sha256
+    assert result["files"][0]["sha256_basis"] == "upload_receipt"
+
+
 def test_large_original_is_read_on_demand_before_dispatch_acknowledgment(stack):
     service, runtime, bridge, _ = stack
     text = b"Ordinary text.\n" * 20000 + b"Final total is 73129.\n"
