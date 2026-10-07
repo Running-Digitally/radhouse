@@ -22,6 +22,49 @@ def _xml(archive, name):
     return ET.fromstring(data)
 
 
+def _local_name(node):
+    return node.tag.rsplit("}", 1)[-1]
+
+
+def _word_text(node):
+    name = _local_name(node)
+    if name in {"del", "moveFrom"}: return ""
+    if name == "t": return node.text or ""
+    if name == "tab": return "\t"
+    if name in {"br", "cr"}: return "\n"
+    return "".join(_word_text(child) for child in node)
+
+
+def _word_paragraphs(node):
+    if _local_name(node) in {"del", "moveFrom"}: return []
+    if _local_name(node) == "p": return [_word_text(node)]
+    return [text for child in node for text in _word_paragraphs(child)]
+
+
+def _presentation_slides(archive):
+    import re
+    presentation = _xml(archive, "ppt/presentation.xml")
+    relationships = _xml(archive, "ppt/_rels/presentation.xml.rels")
+    targets = {}
+    for relationship in relationships:
+        identity = relationship.attrib["Id"]
+        if identity in targets: raise ValueError("document_unreadable")
+        targets[identity] = relationship.attrib
+    slides = []
+    for slide in presentation.iter():
+        if _local_name(slide) != "sldId": continue
+        identity = next((value for key,value in slide.attrib.items() if key.endswith("}id")), None)
+        relationship = targets.get(identity, {})
+        if relationship.get("TargetMode") == "External" or not relationship.get("Type", "").endswith("/slide"):
+            raise ValueError("document_unreadable")
+        target = relationship.get("Target", "")
+        target = target.lstrip("/") if target.startswith("/ppt/") else "ppt/" + target
+        if not re.fullmatch(r"ppt/slides/[^/\\?#]+\.xml", target) or ".." in target:
+            raise ValueError("document_unreadable")
+        slides.append(target)
+    return slides
+
+
 def _extract(data, extension):
     if extension == ".pdf":
         from pypdf import PdfReader
@@ -52,10 +95,9 @@ def _extract(data, extension):
                 raise ValueError("document_unreadable")
             if extension == ".docx":
                 xml = _xml(archive, "word/document.xml")
-                text = "\n".join("".join(n.itertext()) for n in xml.iter() if n.tag.endswith("}p"))
+                text = "\n".join(_word_paragraphs(xml))
             elif extension == ".pptx":
-                import re
-                slides = sorted((n for n in names if re.fullmatch(r"ppt/slides/slide\d+\.xml", n)), key=lambda n:int(re.search(r"(\d+)\.xml", n)[1]))
+                slides = _presentation_slides(archive)
                 text = "\n\n".join(f"Slide {i+1}\n" + "\n".join(n.text or "" for n in _xml(archive, name).iter() if n.tag.endswith("}t")) for i,name in enumerate(slides))
             else:
                 strings = []
