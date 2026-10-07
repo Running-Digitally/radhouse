@@ -75,7 +75,7 @@ function snapshotSignature(value) {
       attachments:value.outbox.attachments.map(file => ({...file,blob:undefined}))} : null});
 }
 function saveState() {
-  if (!session) return Promise.resolve();
+  if (!session || openingHistory) return Promise.resolve();
   draft.text=$("message").value;
   const saved=structuredClone({...draft,outbox}), signature=snapshotSignature(saved);
   // Merely checking history or signing out in an unchanged tab must not give
@@ -254,8 +254,9 @@ function renderDraft() {
 function resizeMessage() { const input=$("message"); input.style.height="auto"; input.style.height=Math.min(input.scrollHeight,Math.min(180,innerHeight*.24))+"px"; }
 function controls() {
   const pending=pendingTurn(), tooLong=!messageFits($("message").value), hasContent=!!($("message").value.trim() || draft.attachments.length);
+  $("message").disabled=openingHistory;
   $("send").disabled=busy || filesLoading || !!pending || !!outbox || tooLong || !hasContent || openingHistory;
-  $("attach").disabled=filesLoading; $("attach-text").disabled=filesLoading; $("long-text").hidden=!tooLong;
+  $("attach").disabled=filesLoading || openingHistory; $("attach-text").disabled=filesLoading || openingHistory; $("long-text").hidden=!tooLong;
   $("send").textContent=busy ? "Sending…" : "Send ↗";
   $("reply-status").textContent=filesLoading ? "Adding files…" : busy ? (outbox?.phase==="uploading" ? "Uploading…" : "Sending…") : pending ? "Radhouse is replying…" : "";
   document.querySelectorAll(".retry,#notice-action").forEach(button => { button.disabled=busy || openingHistory; });
@@ -284,6 +285,7 @@ async function openConversation() {
   const openingSession=session; openingHistory=true; followingLatest=true; olderLoaded=false; olderBefore=null;
   turns.clear(); turnNodes.clear(); $("messages").replaceChildren(); draftSignature=""; draft=emptyDraft(); outbox=null;
   $("login-view").hidden=true; $("chat-view").hidden=false; $("logout").hidden=false; $("loading").hidden=true;
+  controls();
   let stored, fallback;
   try { stored=await draftOperation(key()); } catch (_) {}
   try { fallback=JSON.parse(localStorage.getItem(key()) || "null"); } catch (_) {}
@@ -314,10 +316,13 @@ async function openConversation() {
 }
 async function refreshHistory() {
   if (busy || !session) return;
+  const readingSession=session;
   try {
-    const fresh=await api("/auth/session"); session=fresh; clearNotice();
-    const data=await api("/chat/history"); accept(data);
-  } catch (error) { if (session) tell(error.message,refreshHistory); }
+    const fresh=await api("/auth/session");
+    if (session!==readingSession) return;
+    Object.assign(readingSession,fresh); clearNotice();
+    const data=await api("/chat/history"); if (session===readingSession) accept(data);
+  } catch (error) { if (session===readingSession) tell(error.message,refreshHistory); }
 }
 function progress(file,loaded,total) {
   const box=outbox; if (!box) return;
@@ -399,7 +404,7 @@ function editOutgoing() {
   $("message").value=draft.text; persist(); render(); if (missingFiles) tell("original_unavailable"); $("message").focus();
 }
 async function addFiles(fileList) {
-  if (!session || filesLoading) return;
+  if (!session || filesLoading || openingHistory) return;
   const addingSession=session; filesLoading=true; clearNotice(); controls();
   try {
     draft.attachments.push(...[...fileList].map(file => ({name:file.name,blob:file,file_id:crypto.randomUUID(),kind:fileKind(file),type:file.type,size:file.size})));
