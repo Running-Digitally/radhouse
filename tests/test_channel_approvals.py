@@ -58,10 +58,12 @@ class BoundaryService:
 
 @pytest.mark.parametrize("adapter", [None, False, "fixture-auth"])
 def test_factory_requires_explicit_callable_authentication(adapter):
+    prepared_argument_1 = BoundaryService()
     with pytest.raises(TypeError):
-        create_app(BoundaryService(), adapter)
+        create_app(prepared_argument_1, adapter)
+    prepared_argument_1_2 = BoundaryService()
     with pytest.raises(TypeError):
-        create_app(BoundaryService())
+        create_app(prepared_argument_1_2)
 
 
 def test_invalid_authentication_result_fails_closed():
@@ -197,8 +199,9 @@ def test_internal_worker_controls_have_no_operator_route():
 def test_mapping_rejects_every_mismatched_current_binding_dimension(change):
     actor, envelope = _identity(), _envelope()
     binding = Binding(actor.channel, actor.subject, envelope.conversation_id, actor.principal_id, "personal-alice", 1)
+    prepared_argument_3 = replace(binding, **change)
     with pytest.raises(Rejected, match="binding_denied"):
-        verify_envelope(actor, envelope, replace(binding, **change), "personal-alice")
+        verify_envelope(actor, envelope, prepared_argument_3, 'personal-alice')
 
 
 def test_mapping_requires_binding_and_rejects_mirrors_and_forged_channel():
@@ -207,10 +210,12 @@ def test_mapping_requires_binding_and_rejects_mirrors_and_forged_channel():
     verify_envelope(actor, envelope, binding, "personal-alice")
     with pytest.raises(Rejected, match="binding_denied"):
         verify_envelope(actor, envelope, None, "personal-alice")
+    prepared_argument_2 = replace(envelope, channel='buzz')
     with pytest.raises(Rejected, match="binding_denied"):
-        verify_envelope(actor, replace(envelope, channel="buzz"), binding, "personal-alice")
+        verify_envelope(actor, prepared_argument_2, binding, 'personal-alice')
+    prepared_argument_2_2 = replace(envelope, mirrored=True)
     with pytest.raises(Rejected, match="mirrored_event"):
-        verify_envelope(actor, replace(envelope, mirrored=True), binding, "personal-alice")
+        verify_envelope(actor, prepared_argument_2_2, binding, 'personal-alice')
 
 
 @contextmanager

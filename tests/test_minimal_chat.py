@@ -146,7 +146,8 @@ def test_old_retry_acknowledges_exact_request_outside_latest_history_page(chat):
         assert client.get(path).status_code == 401
         client.cookies.set(auth.cookie_name, "synthetic-cookie")
         receipt = client.get(path).json()["turn"]
-        assert receipt["request_id"] == first and receipt["status"] == "completed"
+        assert receipt['request_id'] == first
+        assert receipt['status'] == 'completed'
         assert receipt["output"] == "A synthetic reply."
         assert client.get(f"/chat/messages/{uuid4()}").status_code == 404
         auth.principal = "bob"
@@ -162,7 +163,8 @@ def test_never_attempted_reservation_can_prepare_after_restart(chat):
     reopened.retry("alice", request_id)
     receipt = reopened.store.find("alice", request_id)
     assert receipt["created_at"] == 1000
-    assert receipt["first_dispatch_at"] == 6000 and receipt["retry_until"] == 9540
+    assert receipt['first_dispatch_at'] == 6000
+    assert receipt['retry_until'] == 9540
     assert len(hermes.requests) == 1
 
 
@@ -180,7 +182,8 @@ def test_schema_three_unknown_submission_keeps_conservative_deadline(chat, now, 
     else:
         reopened.retry("alice", request_id)
     receipt = reopened.store.find("alice", request_id)
-    assert receipt["first_dispatch_at"] == 1000 and receipt["retry_until"] == 4000
+    assert receipt['first_dispatch_at'] == 1000
+    assert receipt['retry_until'] == 4000
     with reopened.store.connection() as db: assert db.execute("PRAGMA user_version").fetchone()[0] == 3
     assert len(hermes.requests) == (0 if expired else 1)
 
@@ -235,7 +238,8 @@ def test_terminal_failure_is_honest_and_allows_next_turn(chat, state, output, er
     service.send("alice", str(uuid4()), "Question")
     hermes.status, hermes.output = state, output
     turn = service.poll("alice")["turns"][0]
-    assert turn["error"] == error and turn["output"] is None
+    assert turn['error'] == error
+    assert turn['output'] is None
     assert service.store.pending("alice") is None
 
 
@@ -267,7 +271,8 @@ def test_owner_is_server_bound_and_history_is_paged(chat):
         service.store.attach(turn, "run_" + str(i), "running")
         service.store.observe(service.store.pending("alice"), "completed", output="reply")
     latest = service.store.history("alice")
-    assert len(latest["turns"]) == 50 and latest["turns"][0]["text"] == "5"
+    assert len(latest['turns']) == 50
+    assert latest['turns'][0]['text'] == '5'
     earlier = service.store.history("alice", latest["older_before"])
     assert [t["text"] for t in earlier["turns"]] == [str(i) for i in range(5)]
     assert earlier["older_before"] is None
@@ -281,14 +286,16 @@ def test_authentication_origin_csrf_and_public_contract(chat):
         login = {"username": "alice", "password": "synthetic-password", "totp_code": "123456"}
         assert client.post("/auth/login", json=login).status_code == 403
         response = client.post("/auth/login", json=login, headers={"Origin": "http://127.0.0.1"})
-        assert response.status_code == 200 and "HttpOnly" in response.headers["set-cookie"]
+        assert response.status_code == 200
+        assert 'HttpOnly' in response.headers['set-cookie']
         assert response.headers["cache-control"] == "no-store"
         headers = {"Origin": "http://127.0.0.1", "X-Radhouse-CSRF": response.json()["csrf_token"]}
         body = {"request_id": str(uuid4()), "text": "Hello"}
         assert client.post("/chat/messages", json=body).status_code == 403
         assert client.post("/chat/messages", json=body, headers={**headers, "Origin": "https://evil.test"}).status_code == 403
         invalid = client.post("/chat/messages", json={**body, "session_id": "chosen"}, headers=headers)
-        assert invalid.status_code == 422 and "Hello" not in invalid.text
+        assert invalid.status_code == 422
+        assert 'Hello' not in invalid.text
         assert client.post("/chat/messages", json=body, headers=headers).status_code == 200
         assert "session_id" not in client.get("/chat/history").text
         auth.principal = "bob"

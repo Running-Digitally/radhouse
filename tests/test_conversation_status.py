@@ -21,12 +21,14 @@ def test_queued_provider_outage_explains_saved_work_and_automatic_recheck():
     assert "assignment is saved" in Conversations.describe(waiting)
     assert "check availability again automatically" in Conversations.describe(waiting)
     assert waiting.blockers == ("provider_unavailable",)
-    assert waiting.attempt_id is None and waiting.budget_remaining == original.budget_remaining
+    assert waiting.attempt_id is None
+    assert waiting.budget_remaining == original.budget_remaining
 
     blockers, model = Service._provider_state(waiting, ProviderDescription("local", "model"))
     recovered = replace(waiting, blockers=blockers, model_id=model)
     assert Conversations.describe(recovered) == "Your assignment is queued."
-    assert recovered.task_id == waiting.task_id and recovered.attempt_id is None
+    assert recovered.task_id == waiting.task_id
+    assert recovered.attempt_id is None
 
 
 def test_progress_uses_the_assigned_agent_name():

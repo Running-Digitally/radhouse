@@ -81,7 +81,8 @@ def test_absent_runtime_evidence_stays_unknown_across_provider_change(
     recovered_again = service.recover(task.task_id)
 
     assert changed.model_id == "model-B"
-    assert recovered.phase == "recovering" and recovered.outcome is None
+    assert recovered.phase == 'recovering'
+    assert recovered.outcome is None
     assert recovered_again == recovered
     assert "operation_unknown" in recovered.blockers
     assert recovered.budget_remaining == interrupted.budget_remaining
@@ -100,11 +101,13 @@ def test_cancel_stops_only_the_recorded_run_and_reconciles_terminal_state(
     stopping = service.cancel(
         alice, task.task_id, active.state_revision, envelope=envelope()
     )
-    assert stopping.phase == "stopping" and stopping.outcome is None
+    assert stopping.phase == 'stopping'
+    assert stopping.outcome is None
     assert "cancel_requested" in stopping.blockers
     final = service.recover(task.task_id)
 
-    assert final.outcome == "cancelled" and final.phase == "closed"
+    assert final.outcome == 'cancelled'
+    assert final.phase == 'closed'
     assert work.start_count == 1
     assert service.run(task.task_id) == final
     late = Observation(task.task_id, final.attempt_id, final.generation, 100, "running")
@@ -127,7 +130,8 @@ def test_cancel_after_lost_start_reply_reattaches_then_stops_exact_run(
     final = service.recover(task.task_id)
 
     assert final.outcome == "cancelled"
-    assert work.start_count == 1 and work.attach_count == 1
+    assert work.start_count == 1
+    assert work.attach_count == 1
     assert work.state(final.attempt_id) == "cancelled"
 
 
@@ -144,7 +148,8 @@ def test_expired_unknown_dispatch_never_reattaches(
 
     assert still_unknown.phase == "recovering"
     assert "operation_unknown" in still_unknown.blockers
-    assert work.start_count == 1 and work.attach_count == 0
+    assert work.start_count == 1
+    assert work.attach_count == 0
 
 
 def test_independent_running_sibling_survives_exact_cancellation(
@@ -182,7 +187,8 @@ def test_withdrawn_grant_stops_an_already_running_exact_run(
 
     stopped = service.recover(task.task_id)
 
-    assert stopped.phase == "closed" and stopped.outcome == "failed"
+    assert stopped.phase == 'closed'
+    assert stopped.outcome == 'failed'
     assert "grant_withdrawal" in stopped.blockers
     assert work.state(active.attempt_id) == "cancelled"
 
@@ -205,7 +211,8 @@ def test_mismatched_acceptance_retains_exact_run_for_safe_stop(
     assert "operation_unknown" in attention.blockers
     with store.transaction() as tx:
         dispatch = tx.dispatch(attention.attempt_id)
-    assert dispatch.state == "accepted" and dispatch.run_id is not None
+    assert dispatch.state == 'accepted'
+    assert dispatch.run_id is not None
     stopping = service.cancel(
         alice, task.task_id, attention.state_revision, envelope=envelope()
     )
@@ -245,9 +252,11 @@ def test_delivery_gap_resynchronizes_only_authorized_snapshot(
             (task.task_id, events[1].cursor),
         )
     page = service.events(alice, task.task_id, events[0].cursor, envelope=envelope())
-    assert page["resync_required"] and page["task"].task_id == task.task_id
+    assert page['resync_required']
+    assert page['task'].task_id == task.task_id
+    prepared_envelope = envelope(principal='bob')
     with pytest.raises(Rejected):
-        service.events(bob, task.task_id, 0, envelope=envelope(principal="bob"))
+        service.events(bob, task.task_id, 0, envelope=prepared_envelope)
 
 
 def test_separate_controller_process_recovers_after_dispatch_commit(
@@ -272,5 +281,7 @@ def test_separate_controller_process_recovers_after_dispatch_commit(
     with store.transaction() as tx:
         final = tx.task(task.task_id)
     runtime = FakeAgentWork(fake_work.path)
-    assert final.task_id == interrupted.task_id and final.attempt_id == interrupted.attempt_id
-    assert final.outcome == "completed" and runtime.start_count == 1
+    assert final.task_id == interrupted.task_id
+    assert final.attempt_id == interrupted.attempt_id
+    assert final.outcome == 'completed'
+    assert runtime.start_count == 1

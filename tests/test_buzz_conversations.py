@@ -52,7 +52,8 @@ def bridge(service, store, clock):
                 24242,
             )
             digest = request.url.path.split("/")[-1].split(".")[0]
-            assert auth["pubkey"] == pk(agent) and ["x", digest] in auth["tags"]
+            assert auth['pubkey'] == pk(agent)
+            assert ['x', digest] in auth['tags']
             state["reads"] += 1
             extension = request.url.path.rsplit(".", 1)[-1] if "." in request.url.path else ""
             return httpx.Response(
@@ -190,7 +191,8 @@ def test_guidance_outcome_is_one_native_message_across_poll_and_reconnect(
         assert tx.task(task_id).result_digest == done.result_digest
     outcome_event = next(e for e in state["published"].values() if ["radhouse-mirror", outcomes[0].message_id] in e["tags"])
     assert ["e", state["messages"][1]["id"], "", "reply"] in outcome_event["tags"]
-    assert len(values) == 1 and fake_work.start_count == 1
+    assert len(values) == 1
+    assert fake_work.start_count == 1
 
 
 def test_transport_lost_ack_and_restart_reuse_task_and_signed_reply(
@@ -207,7 +209,8 @@ def test_transport_lost_ack_and_restart_reuse_task_and_signed_reply(
     assert restarted.run("egress")["error_code"] is None
     with store.transaction() as tx:
         tasks = tx.tasks()
-        assert len(tasks) == 1 and not tx.conversation_outgoing(cycle.link.link_id)
+        assert len(tasks) == 1
+        assert not tx.conversation_outgoing(cycle.link.link_id)
     assert first_id in state["published"]
     service.run(tasks[0].task_id)
     assert restarted.run("egress")["error_code"] is None
@@ -258,7 +261,8 @@ def test_retained_rejected_reply_does_not_block_new_delivery_or_retry_on_restart
         retained = tx._connection.execute(
             "SELECT * FROM conversation_outbox WHERE delivery_key=%s", (message.message_id,),
         ).fetchone()
-        assert retained["event"] == bad and retained["delivered"] is False
+        assert retained['event'] == bad
+        assert retained['delivered'] is False
         assert retained["error_code"] == "buzz_thread_ancestry_rejected"
         assert not tx.conversation_outgoing(cycle.link.link_id)
         assert len(tx.tasks()) == 2
@@ -299,8 +303,8 @@ def test_official_followup_thread_ancestry_survives_lost_ack_and_reconnect(
     expected_root = original["id"] if "reply" in markers else followup["id"]
     replies = [e for e in state["published"].values()
                if ["radhouse-task", second.task_id] in e["tags"]]
-    assert replies and all(["e", expected_root, "", "root"] in e["tags"]
-                           and ["e", followup["id"], "", "reply"] in e["tags"] for e in replies)
+    assert replies
+    assert all((['e', expected_root, '', 'root'] in e['tags'] and ['e', followup['id'], '', 'reply'] in e['tags'] for e in replies))
     with store.transaction() as tx:
         assert len(tx.tasks()) == 2
         assert not tx.conversation_outgoing(cycle.link.link_id)
@@ -444,9 +448,11 @@ def test_guidance_outcome_waits_for_exact_parent_during_processing_race(bridge, 
         cycle.egress()  # Source route exists, but source processing is unfinished.
         with store.transaction() as tx:
             pending = tx.conversation_message(message.message_id)
-            assert not pending["processed"] and pending["message"].task_id is None
+            assert not pending['processed']
+            assert pending['message'].task_id is None
             outcomes = [r["message"] for r in tx.conversation_history(cycle.link.link_id) if r["message"].state == "guidance"]
-            assert len(outcomes) == 1 and outcomes[0].reply_to == message.message_id
+            assert len(outcomes) == 1
+            assert outcomes[0].reply_to == message.message_id
             if source == "radhouse": assert tx.conversation_event(outcomes[0].message_id) is None
         return result
 
@@ -460,4 +466,5 @@ def test_guidance_outcome_waits_for_exact_parent_during_processing_race(bridge, 
         parent = event if source == "buzz" else tx.conversation_event(message.message_id)
         assert ["e", parent["id"], "", "reply"] in child["tags"]
         assert tx.conversation_outgoing(cycle.link.link_id) == []
-    assert len(posted) == 1 and fake_work.start_count == 1
+    assert len(posted) == 1
+    assert fake_work.start_count == 1

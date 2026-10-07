@@ -44,7 +44,8 @@ def test_identified_guidance_round_trip_preserves_exact_input_and_outcome(state)
     with client(handler) as gateway:
         receipt = gateway.steer("run-1", "  Focus on cost\n", control_id=payload["control_id"])
         assert gateway.status("run-1").guidance_receipts == (receipt,)
-        assert receipt.state == state and receipt.accepted is (state != "too_late")
+        assert receipt.state == state
+        assert receipt.accepted is (state != 'too_late')
     assert [r.method for r in calls] == ["POST", "GET"]
 
 
@@ -158,7 +159,8 @@ def test_start_and_identical_replay_use_the_pinned_runs_contract():
     assert first.run_id == replay.run_id == "run-01"
     assert first.replayed is False
     assert replay.replayed is True
-    assert first.status == "queued" and replay.status == "running"
+    assert first.status == 'queued'
+    assert replay.status == 'running'
     assert len(requests) == 2
     for request in requests:
         assert request.method == "POST"
@@ -251,8 +253,9 @@ def test_exact_allowed_tools_fail_closed_when_runtime_capability_is_missing():
         adapter = HermesAgentWorkAdapter(
             gateway, runtime_revision="hermes-exact-tools", clock=lambda: datetime.now(timezone.utc)
         )
+        prepared_argument_2 = Attempt('attempt-01', task.task_id, 1, 'worker')
         with pytest.raises(HermesGatewayError, match="runtime_exact_tools_restriction_unavailable"):
-            adapter.start_or_attach(task, Attempt("attempt-01", task.task_id, 1, "worker"), "attempt-01")
+            adapter.start_or_attach(task, prepared_argument_2, 'attempt-01')
     assert [request.method for request in requests] == ["GET"]
 
 
@@ -287,7 +290,8 @@ def test_started_ack_is_saved_without_unknown_hold_and_completes_by_get(
             assert request.url.path == "/v1/runs"
             assert json.loads(request.content)["disable_tools"] is True
             return httpx.Response(202, json={"run_id": "run-started", "status": "started", "replayed": False})
-        assert request.method == "GET" and request.url.path == "/v1/runs/run-started"
+        assert request.method == 'GET'
+        assert request.url.path == '/v1/runs/run-started'
         polls += 1
         return httpx.Response(200, json={"run_id": "run-started",
             "status": "running" if polls == 1 else "completed",
@@ -298,22 +302,27 @@ def test_started_ack_is_saved_without_unknown_hold_and_completes_by_get(
         service = service_factory(work=adapter)
         task = service.admit(alice, envelope(), replace(start, brief="Use no tools. Summarize the fixture."))
         active = service.run(task.task_id)
-        assert active.phase == "active" and active.blockers == ()
+        assert active.phase == 'active'
+        assert active.blockers == ()
         with store.transaction() as tx:
             dispatch = tx.dispatch(active.attempt_id)
-            assert dispatch.state == "accepted" and dispatch.run_id == "run-started"
+            assert dispatch.state == 'accepted'
+            assert dispatch.run_id == 'run-started'
             assert tx.attempt(active.attempt_id).generation == 1
             assert "needs_attention" not in {event.kind for event in tx.events(task.task_id, 0)}
         completed = service.recover(task.task_id)
-        assert completed.phase == "closed" and completed.outcome == "completed"
-        assert completed.result == "The synthetic report." and completed.blockers == ()
+        assert completed.phase == 'closed'
+        assert completed.outcome == 'completed'
+        assert completed.result == 'The synthetic report.'
+        assert completed.blockers == ()
         assert completed.attempt_id == active.attempt_id
         assert completed.budget_remaining == start.budget - 1
         with store.transaction() as tx:
             assert tx.dispatch(active.attempt_id).state == "closed"
             assert "needs_attention" not in {event.kind for event in tx.events(task.task_id, 0)}
     posts = [request for request in requests if request.method == "POST"]
-    assert len(posts) == 1 and posts[0].headers["Idempotency-Key"] == active.attempt_id
+    assert len(posts) == 1
+    assert posts[0].headers['Idempotency-Key'] == active.attempt_id
     assert json.loads(posts[0].content)["session_id"] == task.task_id
     assert polls == 2
 
@@ -362,8 +371,9 @@ def test_restricted_assignment_requires_capability_before_any_dispatch(support):
             assert adapter.start_or_attach(task, Attempt("attempt-01", task.task_id, 1, "worker"), "attempt-01").run_id == "run-01"
             assert [request.method for request in requests] == ["GET", "POST"]
         else:
+            prepared_argument_2_2 = Attempt('attempt-01', task.task_id, 1, 'worker')
             with pytest.raises(HermesGatewayError, match="runtime_tools_restriction_unavailable"):
-                adapter.start_or_attach(task, Attempt("attempt-01", task.task_id, 1, "worker"), "attempt-01")
+                adapter.start_or_attach(task, prepared_argument_2_2, 'attempt-01')
             assert [request.method for request in requests] == ["GET"]
 
 
@@ -517,8 +527,9 @@ def test_transport_failure_is_a_bounded_runtime_error():
     ],
 )
 def test_endpoint_must_be_a_plain_http_origin(endpoint):
+    prepared_transport = httpx.MockTransport(lambda _: None)
     with pytest.raises(ValueError, match="invalid_hermes_endpoint"):
-        HermesRunsClient(endpoint, "secret", transport=httpx.MockTransport(lambda _: None))
+        HermesRunsClient(endpoint, 'secret', transport=prepared_transport)
 
 
 def test_https_origin_can_be_supplied_by_the_private_deployment_overlay():
@@ -573,7 +584,8 @@ def test_agent_work_adapter_preserves_task_session_and_provider_binding():
     assert dispatch.runtime_revision == "hermes-0.21.1"
     assert dispatch.submitted_at == now
     assert int((dispatch.retention_until - now).total_seconds()) == 86_400
-    assert result.state == "completed" and result.content == "Cited result"
+    assert result.state == 'completed'
+    assert result.content == 'Cited result'
     assert adapter.stop(task, dispatch)
     assert client.stopped == ["run-01"]
 

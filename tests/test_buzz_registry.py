@@ -23,6 +23,6 @@ def test_binding_is_idempotent_and_rotation_revokes_old_key(store):
 
 
 def test_binding_never_creates_project_access(store):
+    prepared_pubkey = PrivateKey().public_key_xonly.format().hex()
     with pytest.raises(Rejected, match="access_denied"):
-        bind_key(store, pubkey=PrivateKey().public_key_xonly.format().hex(), principal_id="bob",
-                 conversation_id="private-room", project_id="personal-alice")
+        bind_key(store, pubkey=prepared_pubkey, principal_id='bob', conversation_id='private-room', project_id='personal-alice')

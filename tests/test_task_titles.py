@@ -20,6 +20,11 @@ def test_title_helpers_are_bounded_and_reuse_agent_headings():
         normalize_task_title(" \n ")
 
 
+def test_agent_heading_handles_long_whitespace_and_closing_hashes():
+    assert agent_task_title("## Recovery plan" + " " * 100_000 + "###") == "Recovery plan"
+    assert agent_task_title("### " + "#" * 100_000) == "#"
+
+
 @pytest.mark.postgres
 def test_agent_title_and_owner_edit_do_not_change_task_or_review_identity(
     store, service_factory, fake_provider, clock, tmp_path, alice, bob, envelope, start,
@@ -71,12 +76,9 @@ def test_agent_title_and_owner_edit_do_not_change_task_or_review_identity(
     )
     assert publication.digest == completed.result_digest
 
+    prepared_envelope = envelope()
     with pytest.raises(Rejected, match="task_title_revision_conflict"):
-        service.rename_task(
-            alice, completed.task_id, card.title.revision, "Stale edit", envelope=envelope(),
-        )
+        service.rename_task(alice, completed.task_id, card.title.revision, 'Stale edit', envelope=prepared_envelope)
+    prepared_envelope_2 = envelope(principal='bob')
     with pytest.raises(Rejected):
-        service.rename_task(
-            bob, completed.task_id, renamed.revision, "Not Bob's title",
-            envelope=envelope(principal="bob"),
-        )
+        service.rename_task(bob, completed.task_id, renamed.revision, "Not Bob's title", envelope=prepared_envelope_2)

@@ -61,9 +61,7 @@ def test_image_fetch_keeps_the_exact_relay_origin_boundary():
     content = b"synthetic-png-bytes"
     digest = hashlib.sha256(content).hexdigest()
     relay = ImageRelay(content)
+    prepared_argument_2 = image_event(digest, 'https://elsewhere.test/media/' + digest + '.png')
     with pytest.raises(Rejected, match="conversation_attachment_denied"):
-        reference_files(
-            relay,
-            image_event(digest, "https://elsewhere.test/media/" + digest + ".png"),
-        )
+        reference_files(relay, prepared_argument_2)
     relay.client.close()

@@ -73,8 +73,9 @@ def test_runtime_endpoint_rejects_plaintext_remote_or_embedded_secrets(
     tmp_path: Path, endpoint: str,
 ):
     config = BASE.replace("https://agent.example.invalid", endpoint)
+    prepared_argument_1 = write(tmp_path / 'config.yaml', config)
     with pytest.raises(ConfigurationError, match="configuration_invalid"):
-        load_config(write(tmp_path / "config.yaml", config))
+        load_config(prepared_argument_1)
 
 
 def test_literal_loopback_http_is_allowed_for_a_managed_local_tunnel(tmp_path: Path):
@@ -101,16 +102,18 @@ authentication:
     plaintext = BASE.replace(
         "providers:\n", auth.replace("https://radhouse.example:8443", "http://10.0.0.65:8443") + "providers:\n",
     )
+    prepared_argument_1_2 = write(tmp_path / 'plaintext.yaml', plaintext)
     with pytest.raises(ConfigurationError, match="configuration_invalid"):
-        load_config(write(tmp_path / "plaintext.yaml", plaintext))
+        load_config(prepared_argument_1_2)
 
 
 def test_plaintext_provider_requires_literal_loopback_or_explicit_rfc1918_admission(tmp_path: Path):
     remote = BASE.replace(
         "https://inference.example.invalid/v1", "http://192.168.50.9:8000/v1",
     )
+    prepared_argument_1_3 = write(tmp_path / 'refused.yaml', remote)
     with pytest.raises(ConfigurationError, match="configuration_invalid"):
-        load_config(write(tmp_path / "refused.yaml", remote))
+        load_config(prepared_argument_1_3)
 
     admitted = remote.replace(
         "    model: local-chat", "    model: local-chat\n    allow_plaintext_private_network: true",
@@ -133,16 +136,15 @@ def test_provider_can_explicitly_observe_one_physical_catalog_sibling(tmp_path: 
 ])
 def test_unknown_or_inline_secret_fields_fail_closed(tmp_path: Path, change: str):
     config = BASE.replace("  deployment_id: example-home", f"  deployment_id: example-home\n  {change}")
+    prepared_argument_1_4 = write(tmp_path / 'config.yaml', config)
     with pytest.raises(ConfigurationError, match="configuration_invalid"):
-        load_config(write(tmp_path / "config.yaml", config))
+        load_config(prepared_argument_1_4)
 
 
 def test_unsafe_yaml_tags_are_never_constructed(tmp_path: Path):
+    prepared_argument_1_5 = write(tmp_path / 'config.yaml', "!!python/object/apply:os.system ['echo forbidden']\n")
     with pytest.raises(ConfigurationError, match="configuration_unreadable"):
-        load_config(write(
-            tmp_path / "config.yaml",
-            "!!python/object/apply:os.system ['echo forbidden']\n",
-        ))
+        load_config(prepared_argument_1_5)
 
 
 def test_configuration_size_is_bounded_before_yaml_parsing(tmp_path: Path):
@@ -295,5 +297,6 @@ def test_duplicate_bot_identity_or_hermes_home_is_rejected(tmp_path: Path):
     runtime_revision: hermes-0.21.1
     provider_binding: local-chat
 """
+    prepared_argument_1_6 = write(tmp_path / 'config.yaml', duplicate)
     with pytest.raises(ConfigurationError, match="configuration_invalid"):
-        load_config(write(tmp_path / "config.yaml", duplicate))
+        load_config(prepared_argument_1_6)

@@ -151,16 +151,19 @@ def test_preflight_requires_exact_clean_revision_and_pinned_python(tmp_path: Pat
 def test_preflight_requires_lockfile_node_floor_and_source_build_compiler(tmp_path: Path):
     old_node = FakeRunner(node_version="v20.18.3")
     source = source_tree(tmp_path, old_node)
+    prepared_action = DeploymentManager(runner=old_node).preflight
     with pytest.raises(DeploymentError, match="unsupported_node_version"):
-        DeploymentManager(runner=old_node).preflight(source, NEW)
+        prepared_action(source, NEW)
 
     no_compiler = FakeRunner(missing=frozenset({"cc"}))
+    prepared_action_2 = DeploymentManager(runner=no_compiler).preflight
     with pytest.raises(DeploymentError, match="missing_command:cc"):
-        DeploymentManager(runner=no_compiler).preflight(source, NEW)
+        prepared_action_2(source, NEW)
 
     no_pkg_config = FakeRunner(missing=frozenset({"pkg-config"}))
+    prepared_action_3 = DeploymentManager(runner=no_pkg_config).preflight
     with pytest.raises(DeploymentError, match="missing_command:pkg-config"):
-        DeploymentManager(runner=no_pkg_config).preflight(source, NEW)
+        prepared_action_3(source, NEW)
 
 
 def test_layout_assigns_pinned_postgres_bind_mount_identity(tmp_path: Path, monkeypatch):
