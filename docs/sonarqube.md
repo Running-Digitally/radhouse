@@ -5,6 +5,9 @@ reliability, maintainability and duplication issues. Run the scanner on the
 local development laptop after committing and merging changes into GitHub's
 `main` branch. This integration uses no GitHub Actions runner or PR analysis.
 
+The rationale, scope and review triggers are recorded in
+[ADR-0001](decisions/0001-local-post-merge-sonarqube-analysis.md).
+
 Community Build supports analysis of one main branch. The launcher clones only
 `origin/main` into a temporary directory, verifies the merged commit before
 submitting, and records that SHA in SonarQube and a local receipt. Running it
