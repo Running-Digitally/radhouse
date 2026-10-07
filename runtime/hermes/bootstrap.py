@@ -273,6 +273,12 @@ def owned_process_children(root):
     return children
 
 
+def process_command_tokens(raw):
+    """Chromium's Linux setproctitle replaces argv with one space-joined title."""
+    arguments = raw.rstrip(b"\0").split(b"\0")
+    return arguments[0].split() if len(arguments) == 1 else arguments
+
+
 def sandbox_evidence(daemon_pid, chrome_path):
     """Read only bounded descendants of this exact daemon, no host process dump."""
     if sys.platform != "linux" or os.geteuid() == 0:
@@ -288,7 +294,7 @@ def sandbox_evidence(daemon_pid, chrome_path):
             if len(seen) > 64:
                 return False
             root = _PROC_ROOT / str(pid)
-            args = (root / "cmdline").read_bytes().split(b"\0")
+            args = process_command_tokens((root / "cmdline").read_bytes())
             if any(argument in {b"--no-sandbox", b"--disable-setuid-sandbox", b"--disable-seccomp-filter-sandbox", b"--disable-namespace-sandbox"} for argument in args):
                 return False
             status = dict(line.split(":", 1) for line in (root / "status").read_text().splitlines() if ":" in line)
