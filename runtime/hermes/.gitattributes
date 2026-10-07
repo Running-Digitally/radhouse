@@ -1,0 +1,2 @@
+# Unified diff blank context lines contain a required single space.
+native-view-only.patch whitespace=-blank-at-eol

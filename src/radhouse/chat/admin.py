@@ -9,6 +9,7 @@ import re
 import sqlite3
 import stat
 from typing import Callable
+from radhouse.integrations.hermes import browser_network_policy
 
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse
@@ -25,6 +26,7 @@ class EffectiveSettings:
     remembered_session_seconds: int
     transcription_enabled: bool = False
     document_access_enabled: bool = False
+    browser_enabled: bool = False
     message_character_limit: int = 16000
     upload_size_limit_bytes: int | None = None
     upload_count_limit: int | None = None
@@ -63,12 +65,14 @@ class AdminService:
     def __init__(self, store, *, settings: EffectiveSettings,
                  assistant_probe: Callable[[], AssistantSignal] | None = None,
                  document_probe: Callable[[], DocumentSignal] | None = None,
+                 network_policy_probe: Callable[[], dict | None] | None = None,
                  release_commit: str | None = None,
                  clock: Callable[[], datetime] = utc_now):
         self.store = store
         self.effective = settings
         self.assistant_probe = assistant_probe
         self.document_probe = document_probe
+        self.network_policy_probe = network_policy_probe
         self.release_commit = release_commit if isinstance(release_commit, str) and re.fullmatch(r"[a-f0-9]{40}", release_commit) else None
         self.clock = clock
 
@@ -90,7 +94,16 @@ class AdminService:
                 "document_formats": ["text", "pdf", "docx", "xlsx", "pptx"],
                 "audio_transcription_enabled": values.transcription_enabled},
             "documents": {"selective_access_enabled": values.document_access_enabled},
+            "browser": {"enabled": values.browser_enabled, "mode": "view_only"},
         }
+
+    def _network_policy(self):
+        try:
+            policy = browser_network_policy(self.network_policy_probe()) if self.network_policy_probe else None
+        except Exception:
+            policy = None
+        return policy or {"schema": "radhouse.browser-network-policy.v1", "verified": False,
+            "source": None, "verified_at": None, "enforcement": "vm_firewall", "allowed": [], "denied": []}
 
     def _assistant(self):
         if self.assistant_probe is None:
@@ -158,6 +171,7 @@ class AdminService:
     def infrastructure(self):
         return {"checked_at": self._checked_at(), "versions": {
                 "release_commit": self.release_commit, "package": _package_version(), "python": platform.python_version()},
+            "browser_network_policy": self._network_policy(),
             "components": [
                 {"id": "web", "state": "healthy", "detail": "This request reached the web app and verified your management access."},
                 self._assistant(), self._documents(), self._storage()],

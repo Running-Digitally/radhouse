@@ -1,0 +1,37 @@
+{
+  "upstream_commit": "2237be355906fbe6065ce1815711eee52b2d646e",
+  "required_overlays": [
+    "runs-disable-tools-v1",
+    "runs-guidance-v1",
+    "runs-empty-completion-v1",
+    "runs-provider-cap-v1",
+    "runs-response-observation-v1",
+    "runs-prefix-isolation-v1",
+    "runs-allowed-tools-v1",
+    "runs-runtime-contract-v1"
+  ],
+  "files": {
+    "gateway/platforms/api_server.py": {
+      "before_sha256": "f4e95e6273d3e714e04e031e6fa138f3f18ed56f9d89059d8c99c6843270e71b",
+      "snapshot_sha256": "c800a7c134f97268cc91c977a9965651ee58416ad58188ffa1aeb951d6650ff0"
+    },
+    "gateway/platforms/api_server_runs.py": {
+      "before_sha256": "fd82223daba8867b4b8112729e9a9e7f76bd419284aa78421c3572ad3cd4d596",
+      "snapshot_sha256": "f5e75ad6c97fcb446b45d8d31e3b84afbedc2953a7efa2f052acd9c261787609"
+    },
+    "tools/browser_tool.py": {
+      "before_sha256": "664c0a5658f7f16ee3cef1069177ac3bfb70b8204751147b1707de26d227b506"
+    },
+    "tools/browser_tool_session.py": {
+      "before_sha256": "ca96d518d51119ab9d63ba5bb117d4a4049503667fab87735b2c4181a79e3cc3"
+    },
+    "tools/browser_tool_install.py": {
+      "before_sha256": "ac3567f684a7306dac67b0410e2e36e34563b1be4b8f4358e3aa9dc38cf40f90"
+    },
+    "tools/thread_context.py": {
+      "before_sha256": "30b868f14013ec6bc741c5e5a1937e405024d0e7344a92bac903f1de3d0e38e2",
+      "snapshot_sha256": "30b868f14013ec6bc741c5e5a1937e405024d0e7344a92bac903f1de3d0e38e2"
+    }
+  },
+  "upstream_license_sha256": "821556e6336796450ab852d375117b48a4887e71d255794fd6318d99982a5ab6"
+}

@@ -1,0 +1,85 @@
+def _admit_api_agent_request(handler):
+    """Reserve an authenticated API turn before its handler first awaits: drain check +
+    reservation in one non-awaiting block so a request admitted just before shutdown can't go
+    invisible while parsing its body. The mutable reservation releases the slot exactly once."""
+    @wraps(handler)
+    async def _wrapped(self, request, *args, **kwargs):
+        auth_err = (
+            self._check_run_auth(request, permission="dispatch")
+            if _api_runs._uses_room_run_auth(self, request)
+            else self._check_auth(request))
+        if auth_err:
+            return auth_err
+        draining = self._draining_response()
+        recoverable_runs = (getattr(self, "_runtime_contract_enabled", False)
+                            and request.path.endswith("/v1/runs"))
+        if draining is not None and not recoverable_runs:
+            return draining
+        reservation = {"active": True}
+        token = _api_agent_request_reservation.set(reservation)
+        self._pending_agent_requests += 1
+        try:
+            return await handler(self, request, *args, **kwargs)
+        finally:
+            _release_pending_api_work(self, reservation)
+            _api_agent_request_reservation.reset(token)
+    return _wrapped
+
+    @_require_auth
+    async def _handle_capabilities(self, request: "web.Request") -> "web.Response":
+        """GET /v1/capabilities — the stable, machine-readable API surface for external UIs."""
+        return web.json_response({
+            "object": "hermes.api_server.capabilities", "platform": "hermes-agent",
+            "model": self._model_name,
+            "auth": {"type": "bearer", "required": bool(self._api_key)},
+            "runtime": {
+                "mode": "server_agent", "tool_execution": "server", "split_runtime": False,
+                "description": (
+                    "The API server creates a server-side Hermes AIAgent; "
+                    "tools execute on the API-server host unless a future "
+                    "explicit split-runtime mode is enabled.")},
+            "features": {
+                "chat_completions": True, "chat_completions_streaming": True,
+                "responses_api": True, "responses_streaming": True, "run_submission": True,
+                "runs_idempotency": _api_runs._idempotency_capabilities(self, store_type=RunIdempotencyStore),
+                "runs_disable_tools": {"supported": True},
+                "runs_allowed_tools": {"supported": True, "version": 1,
+                                       "mode": "exact_subset_of_profile", "max_names": 32,
+                                       "durable": self._run_idempotency_store.durable},
+                "runs_provider_request_budget": {
+                    "supported": True, "min": 1, "max": 16,
+                    "scope": "primary_openai_http_attempts", "orphan_count": "unknown",
+                    "profile_default_and_ceiling": "agent.max_provider_requests",
+                    "fresh_runs_require_nonempty_config": True},
+                "runs_steering_receipts": {
+                    "supported": True, "durable": self._run_idempotency_store.durable,
+                    "version": 1, "max_receipts": 64, "checkpoint": "after_tool_batch",
+                    "max_extra_model_calls": 0,
+                    "applied_evidence": "completed_provider_response"},
+                **_STATIC_FEATURE_FLAGS,
+                "cors": bool(self._cors_origins),
+                # Always advertised for feature-detection; enabled follows config.
+                "browser_extension_control": {
+                    "enabled": self._browser_control_enabled(),
+                    "protocol_version": _BROWSER_CONTROL_PROTOCOL_VERSION,
+                    "capabilities": sorted(BROWSER_CONTROL_CAPABILITIES),
+                    "artifact_capabilities": sorted(BROWSER_CONTROL_ARTIFACT_CAPABILITIES),
+                    "developer_capabilities": sorted(BROWSER_CONTROL_DEVELOPER_CAPABILITIES),
+                    "developer_mode": self._browser_control_developer_mode(),
+                    "artifact_transport": {
+                        "upload": {"method": "POST", "path": "/v1/artifacts/upload"},
+                        "download": {
+                            "method": "GET", "path": "/v1/artifacts/download/{artifact_id}"},
+                        "max_bytes": DEFAULT_MAX_ARTIFACT_BYTES,
+                        "ttl_seconds": DEFAULT_ARTIFACT_TTL_SECONDS,
+                        "allowed_mime_types": sorted(DEFAULT_ALLOWED_MIME_TYPES)},
+                    "real_browser_actions": True,
+                    "transports": {
+                        "local_vps": "websocket-subprotocol-ticket",
+                        "cloud": "authenticated-gateway-rpc"}}},
+            "endpoints": {name: {"method": m, "path": p} for name, (m, p) in _CAPABILITY_ENDPOINTS},
+        })
+
+    @_admit_api_agent_request
+    async def _handle_runs(self, request: "web.Request") -> "web.Response":
+        return await _api_runs._handle_runs(self, request, _api_server=sys.modules[__name__])

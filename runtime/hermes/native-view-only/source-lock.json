@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "upstream_repository": "https://github.com/vercel-labs/agent-browser",
+  "tag": "v0.38.2",
+  "commit": "39a74c70d7759d5a6de7a22c04570bb626bbd081",
+  "source_archive_url": "https://codeload.github.com/vercel-labs/agent-browser/tar.gz/39a74c70d7759d5a6de7a22c04570bb626bbd081",
+  "source_archive_sha256": "f95f730316f2849fd62f41b2153f06fc6b78c76636270f98495c7e773ef77274",
+  "patch_sha256": "66764271d8dccf5424a17a300bed1cf820103cc84d37bf17624c2ddb681eb85a",
+  "files": {
+    "cli/src/native/stream/http.rs": {
+      "before_sha256": "e22f3a7ce0adeaf9fc225fe63146cf3b502a1ac4333ad962dd949f8db9f42cda",
+      "after_sha256": "31958e2b4cfdf336174b066b4a4c16bb1617b587445fb021a2b5221ae94228f4"
+    },
+    "cli/src/native/stream/dashboard.rs": {
+      "before_sha256": "b59d103ab263e55603452d304cf5c1e26db68a8df0a7c033d02b919c6acf7c5f",
+      "after_sha256": "ea524d60a05e5074c1c1f1009dbdbb57a294911957820d3631012ac4c5eba560"
+    },
+    "cli/src/native/stream/websocket.rs": {
+      "before_sha256": "e064f2c826be4298544b588f08d1ab29b528549ce00b818a821769fa3581294d",
+      "after_sha256": "4e51a9649ae5b9a696a93421d9c5751f15e952a7178c3965903854d9cc57c757"
+    },
+    "cli/src/native/stream/mod.rs": {
+      "before_sha256": "e041ea86da73e13f53235599d1e7062b891cc99b0a9de00eb54fc561d6fc34fd",
+      "after_sha256": "419f32a40c6fc17457b6ffb628a82018f0694b28f63953b8aaa841c2b8ef6da0"
+    },
+    "cli/src/flags.rs": {
+      "before_sha256": "6f13868d333d9fd91a84812862121cb1a6298ec5abbefd5a27d75d20c58748b3",
+      "after_sha256": "e742e8ef0ac1dee63cfe7143a9bbb1511cc01b19ff73f3e01870b8d2f1ce35f1"
+    },
+    "cli/src/main.rs": {
+      "before_sha256": "7eef3485676f62930fd8a11d1c82facf1ea8abb0bf85fcc0e48ea6d2c471545d",
+      "after_sha256": "ae1d728b884267b06b7731bed8ad7c79c641971851989edb1ed9ba69f7127609"
+    }
+  },
+  "cargo_lock_sha256": "f1f1980cf6802f2fe1f6543645c91779f95531156690a452f0342da35e4aa92f",
+  "cargo_toml_sha256": "da3e693570f25a60780176a0cc45533ef97594e2cbb81229dc5f879aacac89d2",
+  "toolchain": {
+    "upstream": "dtolnay/rust-toolchain@stable (moving; no upstream toolchain file)",
+    "candidate": "1.99.0",
+    "qualified": "1.99.0 (local Linux compilation and tests; installed runtime unqualified)",
+    "target": "x86_64-unknown-linux-gnu",
+    "build_profile": "ci",
+    "build_environment": "Pinned official rust:1.99.0-bookworm image; exact image digest belongs to build receipt"
+  },
+  "qualification": "Linux compilation, native regressions and emulated compatibility/control-denial fixture passed; installed executable identity and sandbox pending"
+}

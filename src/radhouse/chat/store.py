@@ -5,6 +5,8 @@ import os
 import sqlite3
 import stat
 import tempfile
+import json
+import secrets
 from uuid import uuid4
 
 from radhouse.domain.tasks import Rejected
@@ -88,7 +90,15 @@ class ChatStore:
             columns = {row["name"] for row in db.execute("PRAGMA table_info(turns)")}
             if "first_dispatch_at" not in columns:
                 db.execute("ALTER TABLE turns ADD COLUMN first_dispatch_at REAL")
+            if "tool_policy" not in columns:
+                db.execute("ALTER TABLE turns ADD COLUMN tool_policy TEXT")
             db.execute("UPDATE turns SET first_dispatch_at=created_at WHERE first_dispatch_at IS NULL AND retry_until>0")
+            db.execute("""CREATE TABLE IF NOT EXISTS document_grants (
+                token TEXT PRIMARY KEY, turn_seq INTEGER UNIQUE NOT NULL REFERENCES turns(seq),
+                expires_at REAL NOT NULL, bound_run_id TEXT)""")
+            db.execute("""CREATE TABLE IF NOT EXISTS document_grant_files (
+                token TEXT NOT NULL REFERENCES document_grants(token), file_id TEXT NOT NULL REFERENCES uploads(file_id),
+                sha256 TEXT NOT NULL, PRIMARY KEY(token,file_id))""")
         self.files_path = self.path.with_name(self.path.name + ".files")
         self.files_path.mkdir(mode=0o700, exist_ok=True)
         info = self.files_path.lstat()
@@ -175,6 +185,78 @@ class ChatStore:
             db.execute("UPDATE turns SET first_dispatch_at=?,retry_until=? WHERE seq=? AND first_dispatch_at IS NULL AND retry_until=0",
                        (now, now + retention, turn["seq"]))
             return dict(db.execute("SELECT * FROM turns WHERE seq=?", (turn["seq"],)).fetchone())
+
+    def select_tools(self, turn, tools):
+        """Freeze exact tool policy once, before any prompt or dispatch is saved."""
+        encoded = json.dumps(list(tools), separators=(",", ":"))
+        with self.connection() as db:
+            db.execute("UPDATE turns SET tool_policy=? WHERE seq=? AND tool_policy IS NULL "
+                       "AND input_text IS NULL AND first_dispatch_at IS NULL", (encoded, turn["seq"]))
+            return dict(db.execute("SELECT * FROM turns WHERE seq=?", (turn["seq"],)).fetchone())
+
+    @staticmethod
+    def tools(turn):
+        # Legacy saved turns retain their original no-tools behavior on retry.
+        return tuple(json.loads(turn["tool_policy"])) if turn.get("tool_policy") is not None else ()
+
+    def browser_run(self, owner):
+        with self.connection() as db:
+            row = db.execute("SELECT t.*,c.session_id FROM turns t JOIN conversations c USING(owner) "
+                "WHERE owner=? AND status NOT IN (?,?,?,?) ORDER BY seq LIMIT 1", (owner, *TERMINAL)).fetchone()
+            if row is None:
+                return None
+            result = dict(row)
+            return {key: result[key] for key in ("request_id", "run_id", "session_id", "status")} | {
+                "allowed_tools": self.tools(result)}
+
+    def document_grant_for_turn(self, turn):
+        """Mint once after the dispatch deadline is durable; scope cannot grow on retry."""
+        with self.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT * FROM document_grants WHERE turn_seq=?", (turn["seq"],)).fetchone()
+            if row is None:
+                saved = dict(db.execute("SELECT * FROM turns WHERE seq=?", (turn["seq"],)).fetchone())
+                if saved["status"] in TERMINAL or saved["retry_until"] <= 0 or (
+                        not {"document_search", "document_read"} <= set(self.tools(saved))):
+                    raise Rejected("document_access_denied", 403)
+                token = secrets.token_urlsafe(32)
+                db.execute("INSERT INTO document_grants VALUES(?,?,?,NULL)",
+                           (token, saved["seq"], saved["retry_until"]))
+                db.execute("""INSERT INTO document_grant_files SELECT DISTINCT ?,u.file_id,u.sha256
+                    FROM uploads u JOIN attachments a ON a.file_id=u.file_id JOIN turns t ON t.seq=a.turn_seq
+                    WHERE t.owner=? AND u.owner=? AND t.seq<=? AND u.kind IN ('text','document')
+                    AND a.sha256=u.sha256""", (token, saved["owner"], saved["owner"], saved["seq"]))
+                row = db.execute("SELECT * FROM document_grants WHERE token=?", (token,)).fetchone()
+            return row["token"]
+
+    def document_grant(self, token, now):
+        with self.connection() as db:
+            row = db.execute("""SELECT g.*,t.owner,t.dispatch_key,t.run_id,t.status,t.tool_policy,c.session_id
+                FROM document_grants g JOIN turns t ON t.seq=g.turn_seq JOIN conversations c ON c.owner=t.owner
+                WHERE g.token=? AND g.expires_at>? AND t.status NOT IN (?,?,?,?)""",
+                (token, now, *TERMINAL)).fetchone()
+            if row is None:
+                raise Rejected("document_access_denied", 403)
+            result = dict(row)
+            result["files"] = {r["file_id"]: r["sha256"] for r in db.execute(
+                "SELECT file_id,sha256 FROM document_grant_files WHERE token=? ORDER BY file_id", (token,))}
+            result["allowed_tools"] = self.tools(result)
+            return result
+
+    def bind_document_grant(self, token, run_id, session_id, dispatch_key, now):
+        with self.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("""SELECT g.*,t.owner,t.dispatch_key,t.run_id,t.status,c.session_id
+                FROM document_grants g JOIN turns t ON t.seq=g.turn_seq JOIN conversations c ON c.owner=t.owner
+                WHERE g.token=? AND g.expires_at>? AND t.status NOT IN (?,?,?,?)""",
+                (token, now, *TERMINAL)).fetchone()
+            if row is None or row["session_id"] != session_id or row["dispatch_key"] != dispatch_key or (
+                    row["bound_run_id"] not in (None, run_id) or row["run_id"] not in (None, run_id)):
+                raise Rejected("document_access_denied", 403)
+            db.execute("UPDATE document_grants SET bound_run_id=? WHERE token=?", (run_id, token))
+            # Live corroboration also recovers a lost acknowledgment, without redispatch.
+            db.execute("UPDATE turns SET run_id=?,status='running' WHERE seq=? AND run_id IS NULL",
+                       (run_id, row["turn_seq"]))
 
     @staticmethod
     def _match(db, row, text, attachments):
