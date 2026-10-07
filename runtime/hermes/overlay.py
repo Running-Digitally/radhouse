@@ -91,6 +91,12 @@ def patch_browser_install(source):
     return _insert_function(source, "_chromium_installed", "    from radhouse_hermes_bridge import browser_argv\n    if browser_argv() is not None:\n        return True  # Scoped runs use the configured, qualified Chrome pair, not ambient caches.\n")
 
 
+def patch_chat_completion_helpers(source):
+    source = _insert_function(source, "cleanup_task_resources", "    from radhouse_hermes_bridge import retain_browser_after_turn\n")
+    return _replace(source, '("browser", lambda _tid: _headed(), "cleanup_browser for headed session",',
+                    '("browser", lambda _tid: _headed() or retain_browser_after_turn(_tid), "cleanup_browser for retained session",')
+
+
 def patch_browser_session(source):
     source = _insert_function(source, "_agent_browser_argv", "    from radhouse_hermes_bridge import browser_argv\n    pinned = browser_argv()\n    if pinned is not None:\n        return pinned\n")
     source = _insert_function(source, "_apply_chromium_sandbox_args", "    from radhouse_hermes_bridge import bridge_run_active\n    if bridge_run_active():\n        return  # Dedicated native browser must retain Chromium's sandbox.\n")
@@ -110,7 +116,8 @@ def patch_browser_session(source):
 
 TRANSFORMS = {"gateway/platforms/api_server.py": patch_api, "gateway/platforms/api_server_runs.py": patch_runs,
               "tools/browser_tool.py": patch_browser, "tools/browser_tool_session.py": patch_browser_session,
-              "tools/browser_tool_install.py": patch_browser_install}
+              "tools/browser_tool_install.py": patch_browser_install,
+              "agent/chat_completion_helpers.py": patch_chat_completion_helpers}
 
 
 def render(root):
