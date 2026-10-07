@@ -97,6 +97,8 @@ class DocumentBridge:
     def _access(self, token, grant, files=None):
         def resolve(owner, file_id):
             original = self.store.upload(owner, file_id)
+            # Bind the upload receipt to this grant. DocumentAccess separately
+            # verifies the opened original before returning consumed passages.
             if original.sha256 != grant["files"][file_id]:
                 raise Rejected("document_source_changed", 409)
             return original
