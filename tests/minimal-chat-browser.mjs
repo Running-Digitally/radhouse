@@ -263,6 +263,27 @@ try {
   await page.unroute("**/chat/stale-request",staleFetch);
   await page.unroute("**/chat/files/**",staleUpload);
   await page.unroute("**/auth/login",mockLogin);
+  // A definitive pre-admission rejection leaves the message editable while
+  // the other browser's accepted reply is still running.
+  const otherPending={seq:999,request_id:"other-tab-pending",text:"Another browser's message",status:"running",output:null,attachments:[]};
+  const pendingHistory=route => route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({turns:[otherPending],older_before:null})});
+  const rejectPending=route => route.fulfill({status:409,contentType:"application/json",body:JSON.stringify({error:"reply_pending"})});
+  await page.route("**/chat/history",pendingHistory);
+  await page.route("**/chat/reply",pendingHistory);
+  await page.route("**/chat/messages",rejectPending);
+  await page.locator("#message").fill("A rejected message I can still edit");
+  await page.locator("#file-picker").setInputFiles(fixtures+"/notes.txt");
+  await page.locator("#send").click();
+  await expect(page.getByRole("button",{name:"Edit message",exact:true})).toBeEnabled();
+  await expect(page.getByRole("button",{name:"Retry message",exact:true})).toBeDisabled();
+  await page.getByRole("button",{name:"Edit message",exact:true}).click();
+  await expect(page.locator("#message")).toHaveValue("A rejected message I can still edit");
+  await expect(page.locator("#draft-files")).toContainText("notes.txt");
+  await page.getByRole("button",{name:"Remove notes.txt",exact:true}).click();
+  await page.evaluate(() => { turns.delete(999); render(); });
+  await page.unroute("**/chat/history",pendingHistory);
+  await page.unroute("**/chat/reply",pendingHistory);
+  await page.unroute("**/chat/messages",rejectPending);
   // A changed shared cookie can make one cached token stale. Retry refreshes
   // it, and an explicit acknowledgement clears an outbox outside this page.
   let credentialReads=0, recoveredPosts=0;
@@ -436,6 +457,29 @@ try {
   await expect(page.locator(".turn")).toHaveCount(200);
   await expect(page.locator('[data-request-id="history-fixture-100"]')).toContainText("History fixture 100");
   await page.unroute("**/chat/history*");
+  // An older request already in flight must not erase a newly reopened gap.
+  let releaseOlder;
+  await page.route("**/chat/history*",async route => {
+    const before=Number(new URL(route.request().url()).searchParams.get("before") || 201);
+    if (before===21) await new Promise(resolve => { releaseOlder=resolve; });
+    const available=extendedTurns.filter(turn => turn.seq<before), selected=available.slice(-50);
+    return route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({turns:selected,
+      older_before:available.length>50 ? selected[0].seq : null})});
+  });
+  await page.evaluate(values => { turns=new Map(values.map(turn => [turn.seq,turn])); olderBefore=21; olderLoaded=false; render(); },fixtureTurns.slice(20));
+  await page.locator("#older").click();
+  await expect.poll(() => typeof releaseOlder).toBe("function");
+  await page.evaluate(() => refreshHistory());
+  if (await page.evaluate(() => olderBefore)!==151) throw new Error("Latest page did not reopen the new gap");
+  releaseOlder();
+  await expect(page.locator(".turn")).toHaveCount(120);
+  await page.evaluate(() => refreshHistory());
+  if (await page.evaluate(() => olderBefore)!==151) throw new Error("Delayed older response erased the gap cursor");
+  await page.locator("#older").click();
+  await expect(page.locator(".turn")).toHaveCount(170);
+  await page.locator("#older").click();
+  await expect(page.locator(".turn")).toHaveCount(200);
+  await page.unroute("**/chat/history*");
   await page.reload();
   await expect(page.locator(".assistant")).toHaveCount(8);
   await screenshot({path:process.env.RADHOUSE_SCREENSHOT, fullPage:true});
@@ -444,10 +488,17 @@ try {
   if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error("Mobile horizontal overflow");
   const bounds=await page.locator("#compose").boundingBox();
   if (bounds.y<0 || bounds.y+bounds.height>844) throw new Error("Mobile composer outside viewport");
+  // Real server revocation must succeed even with an original rejected by IDB.
+  await page.evaluate(async () => { await draftWrites; window.originalDraftOperation=draftOperation;
+    draftOperation=(storageKey,value) => value===undefined ? window.originalDraftOperation(storageKey) : Promise.reject(new Error("draft_storage_unavailable")); });
+  await page.locator("#file-picker").setInputFiles({name:"logout-original.txt",mimeType:"text/plain",buffer:Buffer.from("Kept across real sign-out")});
+  await expect(page.locator("#notice")).toContainText("couldn’t save this draft");
   await page.getByRole("button",{name:"Sign out"}).click();
   await expect(page.locator("#login-view")).toBeVisible();
-  await expect(page.locator("#login-notice")).toBeHidden();
+  await expect(page.locator("#login-notice")).toContainText("You’re signed out");
   await expect(page.locator(".turn")).toHaveCount(0);
+  if ((await context.request.get(process.env.RADHOUSE_BROWSER_ORIGIN+"/chat/history")).status()!==401) throw new Error("Quota failure prevented real session revocation");
+  if (await page.evaluate(() => retainedSnapshots.get("alice").attachments[0].blob.text())!=="Kept across real sign-out") throw new Error("Sign-out lost the only original");
   if (errors.length) throw new Error(errors.join("; "));
   console.log("PASS: real authentication and recovery; safe formatting/copy; long-paste exact download; separate next draft during send and reload; session expiry; pagination/reading anchor/latest; compact files; large transfer acknowledgement recovery; mobile composer and logout");
 } catch (error) { console.log("Browser state", (await page.locator("main").innerText()).slice(-2000)); throw error; } finally { await browser.close(); }
