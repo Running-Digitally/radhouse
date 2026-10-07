@@ -409,9 +409,10 @@ async function openConversation() {
       openingHistory=false;
       if (outbox) { outbox.phase="failed"; outbox.error="network_error"; }
       await persist();
-      if (session!==openingSession) return;
-      if (!draftWriteFailed) retainedSnapshots.delete(openingSession.username);
-      render(); void refreshBrowser(); if (!matchMedia("(pointer:coarse)").matches) $("message").focus();
+      if (session===openingSession) {
+        if (!draftWriteFailed) retainedSnapshots.delete(openingSession.username);
+        render(); void refreshBrowser(); if (!matchMedia("(pointer:coarse)").matches) $("message").focus();
+      }
     }
   }
 }
