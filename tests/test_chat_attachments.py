@@ -7,6 +7,7 @@ import sqlite3
 import hashlib
 import os
 from pathlib import Path
+from threading import Event
 from uuid import uuid4
 import wave
 from zipfile import ZipFile, ZIP_DEFLATED
@@ -47,6 +48,8 @@ def office(extension, text="A small plan"):
         if extension == ".docx":
             archive.writestr("word/document.xml",f'<w:document xmlns:w="urn:word"><w:body><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:body></w:document>')
         elif extension == ".pptx":
+            archive.writestr("ppt/presentation.xml",'<p:presentation xmlns:p="urn:slide" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:sldIdLst><p:sldId id="256" r:id="rId1"/></p:sldIdLst></p:presentation>')
+            archive.writestr("ppt/_rels/presentation.xml.rels",'<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/></Relationships>')
             archive.writestr("ppt/slides/slide1.xml",f'<p:slide xmlns:p="urn:slide" xmlns:a="urn:drawing"><a:t>{text}</a:t></p:slide>')
         else:
             archive.writestr("xl/workbook.xml",'<s:workbook xmlns:s="urn:sheet" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><s:sheets><s:sheet name="Plan" r:id="rId1"/></s:sheets></s:workbook>')
@@ -84,6 +87,68 @@ def test_each_document_format_is_read_and_sent_as_text(chat, extension):
     if extension == ".xlsx": assert "B1: 2 [formula: 1+1]" in hermes.requests[0][1]["input"]
     assert service.store.attachment("alice",key,0).data == data
     assert history["turns"][0]["attachments"][0]["name"] == "plan"+extension
+
+
+def test_docx_excerpt_uses_current_text_instead_of_deleted_revisions():
+    data = BytesIO()
+    with ZipFile(data, "w") as archive:
+        archive.writestr("word/document.xml", '''<w:document xmlns:w="urn:word"><w:body>
+          <w:p><w:r><w:t>Price: </w:t></w:r>
+            <w:del><w:r><w:delText>100</w:delText></w:r></w:del>
+            <w:ins><w:r><w:t>200</w:t></w:r></w:ins></w:p>
+          <w:moveFrom><w:p><w:r><w:t>Old moved text</w:t></w:r></w:p></w:moveFrom>
+          <w:moveTo><w:p><w:r><w:t>Moved here</w:t></w:r></w:p></w:moveTo>
+        </w:body></w:document>''')
+    assert extract_document(decode_uploads([upload("tracked.docx",data.getvalue())])[0]) == "Price: 200\nMoved here"
+
+
+@pytest.mark.parametrize("target,mode",[("/ppt/slides/slide2.xml", "Internal"),
+    ("slides/slide2.xml", "Internal"), ("https://example.test/slide.xml", "External"),
+    ("slides/../slide2.xml", "Internal")])
+def test_pptx_excerpt_follows_presentation_order_and_local_relationships(target, mode):
+    data = BytesIO()
+    with ZipFile(data, "w") as archive:
+        archive.writestr("ppt/presentation.xml", '<p:presentation xmlns:p="urn:slide" xmlns:r="urn:relationships"><p:sldIdLst><p:sldId r:id="second"/><p:sldId r:id="first"/></p:sldIdLst></p:presentation>')
+        archive.writestr("ppt/_rels/presentation.xml.rels", f'<Relationships><Relationship Id="first" Type="urn:relationships/slide" Target="slides/slide1.xml"/><Relationship Id="second" Type="urn:relationships/slide" Target="{target}" TargetMode="{mode}"/></Relationships>')
+        archive.writestr("ppt/slides/slide1.xml", '<a:slide xmlns:a="urn:drawing"><a:t>Closing slide</a:t></a:slide>')
+        archive.writestr("ppt/slides/slide2.xml", '<a:slide xmlns:a="urn:drawing"><a:t>Opening slide</a:t></a:slide>')
+        archive.writestr("ppt/slides/slide3.xml", '<a:slide xmlns:a="urn:drawing"><a:t>Unused orphan slide</a:t></a:slide>')
+    attachment = decode_uploads([upload("reordered.pptx",data.getvalue())])[0]
+    if mode == "External" or ".." in target:
+        with pytest.raises(Rejected, match="document_unreadable"): extract_document(attachment)
+    else:
+        assert extract_document(attachment) == "Slide 1\nOpening slide\n\nSlide 2\nClosing slide"
+
+
+@pytest.mark.parametrize("stage", ["authorization", "storage"])
+def test_blocking_upload_setup_keeps_other_requests_responsive(chat, monkeypatch, stage):
+    service, _ = chat
+    auth = SyntheticAuth()
+    entered, released = Event(), Event()
+    target, attribute = (auth,"session") if stage == "authorization" else (service.store,"begin_upload")
+    original = getattr(target, attribute)
+
+    def blocked(*args, **kwargs):
+        entered.set()
+        if not released.wait(2): raise RuntimeError("upload_setup_blocked_event_loop")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(target, attribute, blocked)
+
+    async def probe():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(auth,service)),
+                base_url="http://127.0.0.1",cookies={auth.cookie_name:"synthetic-cookie"}) as client:
+            transfer = asyncio.create_task(client.put(f"/chat/files/{uuid4()}?name=note.txt",content=b"original",headers=HEADERS))
+            try:
+                assert await asyncio.to_thread(entered.wait, 2)
+                assert not transfer.done()
+                assert (await asyncio.wait_for(client.get("/healthz"), 1)).status_code == 200
+            finally:
+                released.set()
+                response = await transfer
+            assert response.status_code == 200
+
+    asyncio.run(probe())
 
 
 def test_image_and_code_are_preserved_across_restart_and_replay(chat):

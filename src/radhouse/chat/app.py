@@ -149,11 +149,11 @@ def create_app(auth, service):
 
     @app.put("/chat/files/{file_id}")
     async def upload_file(file_id: str, request: Request, name: str):
-        principal = owner(request)  # Cookie, owner, origin and CSRF before body consumption.
+        principal = await asyncio.to_thread(owner, request)  # Authorize before body consumption.
         digest, size, prefix = hashlib.sha256(), 0, bytearray()
         path = None
         try:
-            stream, path = service.store.begin_upload(principal, file_id, name)
+            stream, path = await asyncio.to_thread(service.store.begin_upload, principal, file_id, name)
             with stream:
                 async for chunk in request.stream():
                     # Offload disk writes; never assemble the file in memory.
