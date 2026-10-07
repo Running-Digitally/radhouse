@@ -171,13 +171,38 @@ try {
   await expect(page.locator("#message")).toHaveValue("A separate next draft.");
   if (await page.evaluate(() => outbox.request_id)!==recoveredRequest) throw new Error("Fallback recovery changed the outgoing request");
   if (await page.evaluate(() => outbox.attachments[0].blob.text())!=="A simple plan") throw new Error("Outgoing fallback lost the retained original");
+  // A slow original/draft restore must leave the composer inactive and must
+  // reject even synthetic input/drop persistence until hydration completes.
+  await page.evaluate(async () => {
+    await draftWrites; window.originalDraftOperation=draftOperation;
+    draftOperation=(storageKey,value) => value===undefined ? new Promise(resolve => {
+      window.finishDraftRead=() => window.originalDraftOperation(storageKey).then(resolve);
+    }) : window.originalDraftOperation(storageKey,value);
+    window.delayedOpening=openConversation();
+  });
+  await expect(page.locator("#message")).toBeDisabled();
+  await expect(page.locator("#attach")).toBeDisabled();
+  await page.evaluate(async () => {
+    $("message").value="An input event during restoration"; $("message").dispatchEvent(new Event("input"));
+    await addFiles([new File(["Unexpected drop"],"during-load.txt")]);
+    window.finishDraftRead(); await window.delayedOpening; draftOperation=window.originalDraftOperation;
+  });
+  await expect(page.locator("#message")).toBeEnabled();
+  await expect(page.locator("#message")).toHaveValue("A separate next draft.");
+  if (await page.evaluate(() => outbox.request_id)!==recoveredRequest) throw new Error("Slow restoration lost the outgoing request");
+  if (await page.evaluate(() => outbox.attachments[0].blob.text())!=="A simple plan") throw new Error("Slow restoration lost the original");
   await page.getByRole("button",{name:"Edit message",exact:true}).click();
   await page.getByRole("button",{name:"Remove notes.txt",exact:true}).click();
   // A changed shared cookie can make one cached token stale. Retry refreshes
   // it, and an explicit acknowledgement clears an outbox outside this page.
   let credentialReads=0, recoveredPosts=0;
-  const currentCredentials=route => route.fulfill({status:200,contentType:"application/json",
-    body:JSON.stringify({username:"alice",csrf_token:++credentialReads===1 ? "stale-csrf" : "current-csrf"})});
+  const credentialResolvers=new Map();
+  const currentCredentials=async route => {
+    const read=++credentialReads;
+    if (read>1) await new Promise(resolve => credentialResolvers.set(read,resolve));
+    return route.fulfill({status:200,contentType:"application/json",
+      body:JSON.stringify({username:"alice",csrf_token:read===1 ? "stale-csrf" : "current-csrf"})});
+  };
   const recoveredPost=route => {
     const current=route.request().headers()["x-radhouse-csrf"]==="current-csrf";
     recoveredPosts++;
@@ -189,9 +214,15 @@ try {
   await page.locator("#message").fill("A retained request with a stale credential.");
   await page.locator("#send").click();
   await expect(page.getByRole("button",{name:"Reconnect",exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"Reconnect",exact:true}).click();
+  await expect.poll(() => credentialResolvers.has(2)).toBe(true);
   await page.getByRole("button",{name:"Retry message",exact:true}).click();
+  await expect.poll(() => credentialResolvers.has(3)).toBe(true);
+  credentialResolvers.get(2)();
+  await expect.poll(() => page.evaluate(() => session.csrf_token)).toBe("current-csrf");
+  credentialResolvers.get(3)();
   await expect.poll(() => page.evaluate(() => outbox===null)).toBe(true);
-  if (credentialReads!==2 || recoveredPosts!==2) throw new Error("Retry did not refresh the stale credential exactly once");
+  if (credentialReads!==3 || recoveredPosts!==2) throw new Error("Overlapping reconnect/retry stranded the outgoing request");
   await page.unroute("**/auth/session",currentCredentials);
   await page.unroute("**/chat/messages",recoveredPost);
   // Long text is preserved verbatim, and conversion is an explicit owner action.
