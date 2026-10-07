@@ -63,7 +63,7 @@ def _username(value: str) -> str:
 def _fernet(key: str) -> Fernet:
     try:
         return Fernet(key.encode("ascii"))
-    except (ValueError, UnicodeError):
+    except ValueError:
         raise LocalAuthError("invalid_local_auth_key") from None
 
 
@@ -364,7 +364,7 @@ class LocalAuthService:
             normalized = _username(username)
         except LocalAuthError:
             normalized = "invalid"
-        if len(password) > 1024 or not re.fullmatch(r"[0-9]{6}", totp_code):
+        if len(password) > 1024 or not re.fullmatch(r"\d{6}", totp_code, re.ASCII):
             raise Rejected("invalid_credentials", 401)
         username_hash = self._keyed_digest(normalized)
         source_hash = self._keyed_digest(source)
@@ -399,7 +399,7 @@ class LocalAuthService:
                            if (last is None or candidate > last)
                            and hmac.compare_digest(totp.at(candidate * totp.interval), totp_code)]
                 counter = max(matches) if matches else None
-            except (InvalidToken, UnicodeError, ValueError):
+            except (InvalidToken, ValueError):
                 pass
         if not credential or not credential["active"] or not password_ok or counter is None:
             self._record_failure(connection, username_hash, source_hash, throttle, now)

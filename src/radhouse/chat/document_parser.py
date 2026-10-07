@@ -145,7 +145,7 @@ def _sheets(archive):
                 if _local(cell) != "c":
                     continue
                 reference = cell.attrib.get("r", "")
-                if not re.fullmatch(r"[A-Z]{1,3}[1-9][0-9]{0,6}", reference) or reference in seen:
+                if not re.fullmatch(r"[A-Z]{1,3}[1-9]\d{0,6}", reference, re.ASCII) or reference in seen:
                     raise ValueError("document_unreadable")
                 seen.add(reference)
                 value = next((n.text or "" for n in cell if _local(n) == "v"), "")
@@ -243,10 +243,20 @@ def _fragments(data, extension, resume=None, selected=None):
 def _selection(locator):
     if locator is None:
         return None, 0
-    match = re.fullmatch(r"(text:line:[1-9][0-9]*|pdf:page:[1-9][0-9]*|word:paragraph:[1-9][0-9]*|slide:[1-9][0-9]*|sheet:[^:]+:cell:[A-Z]{1,3}[1-9][0-9]{0,6})(?::offset:(0|[1-9][0-9]*))?", locator)
-    if not match:
+    base, separator, offset_text = locator.rpartition(":offset:")
+    if not separator:
+        base, offset_text = locator, "0"
+    if not re.fullmatch(r"0|[1-9]\d*", offset_text, re.ASCII):
         raise ValueError("document_locator_not_found")
-    base, offset = match.group(1), int(match.group(2) or "0")
+    prefixes = ("text:line:", "pdf:page:", "word:paragraph:", "slide:")
+    prefix = next((item for item in prefixes if base.startswith(item)), None)
+    if prefix is not None:
+        valid = re.fullmatch(r"[1-9]\d*", base[len(prefix):], re.ASCII)
+    else:
+        valid = re.fullmatch(r"sheet:[^:]+:cell:[A-Z]{1,3}[1-9]\d{0,6}", base, re.ASCII)
+    if not valid:
+        raise ValueError("document_locator_not_found")
+    offset = int(offset_text)
     if base.startswith("sheet:"):
         encoded = base.split(":")[1]
         if quote(unquote(encoded), safe="") != encoded:

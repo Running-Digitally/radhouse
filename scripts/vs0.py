@@ -278,6 +278,7 @@ def demonstration(run: Run):
 
     service, work = service_for_environment(run.env)
     with service.store.transaction():
+        # Entering the transaction verifies the owned fixture identity.
         pass
     seed_fixture(run.env["RADHOUSE_VS0_DSN"])
     clock = FixedClock()

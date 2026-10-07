@@ -358,7 +358,7 @@ function render(options) { renderHistory(options); renderDraft(); controls(); }
 function migrateFile(file) {
   if (file.blob instanceof Blob) return {...file,file_id:file.file_id || crypto.randomUUID()};
   if (file.content===undefined) return file; // Text-only recovery preserves immutable file references, never omits them.
-  const bytes=Uint8Array.from(atob(file.content),c => c.charCodeAt(0));
+  const bytes=Uint8Array.from(atob(file.content),c => c.codePointAt(0));
   return {...file,content:undefined,blob:new Blob([bytes],{type:file.type}),file_id:crypto.randomUUID()};
 }
 function recoveredSnapshot(stored,fallback) {

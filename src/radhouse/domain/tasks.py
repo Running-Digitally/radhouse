@@ -55,9 +55,13 @@ def initial_task_title(brief: str) -> str:
 def agent_task_title(result: str) -> str | None:
     """Use the agent's own answer for a title; never request a title-only turn."""
     for line in result.splitlines():
-        match = re.fullmatch(r"\s{0,3}#{1,6}\s+(.+?)\s*#*\s*", line)
+        match = re.match(r"\s{0,3}#{1,6}\s+", line)
         if match:
-            value = re.sub(r"[`*_~]", "", match.group(1))
+            heading = line[match.end():]
+            value = heading.rstrip().rstrip("#").rstrip()
+            if not value and heading.strip():
+                value = heading.strip()[0]
+            value = re.sub(r"[`*_~]", "", value)
             try:
                 return normalize_task_title(value)
             except Rejected:
@@ -92,7 +96,7 @@ class InputFile:
         if self.encoding == "base64":
             try:
                 return base64.b64decode(self.content, validate=True)
-            except (binascii.Error, ValueError):
+            except ValueError:
                 raise Rejected("invalid_input_files", 422) from None
         raise Rejected("invalid_input_files", 422)
 

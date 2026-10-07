@@ -47,7 +47,7 @@ def classify(name, prefix):
         import codecs
         text = codecs.getincrementaldecoder("utf-8-sig")().decode(prefix, final=False)
         if any(ord(c) < 32 and c not in "\n\r\t" for c in text): raise ValueError()
-    except (UnicodeDecodeError, ValueError): return "application/octet-stream", "file"
+    except ValueError: return "application/octet-stream", "file"
     return "text/plain", "text"
 
 
@@ -93,7 +93,7 @@ def decode_uploads(values):
         name = value["name"]
         validate_name(name)
         try: data = base64.b64decode(value["content"], validate=True)
-        except (binascii.Error, ValueError): raise Rejected("attachment_invalid", 422) from None
+        except ValueError: raise Rejected("attachment_invalid", 422) from None
         media, kind = classify(name, data[:4096])
         result.append(Attachment(name, media, kind, data))
     return tuple(result)

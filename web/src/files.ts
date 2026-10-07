@@ -23,7 +23,7 @@ function extension(name: string): string {
 function base64(data: Uint8Array): string {
   let value = "";
   for (let offset = 0; offset < data.length; offset += 0x8000) {
-    value += String.fromCharCode(...data.subarray(offset, offset + 0x8000));
+    value += String.fromCodePoint(...data.subarray(offset, offset + 0x8000));
   }
   return btoa(value);
 }

@@ -54,7 +54,7 @@ class Handler(BaseHTTPRequestHandler):
             parsed = json.loads(body)
             if not isinstance(parsed, dict) or not isinstance(parsed.get("data"), list):
                 raise ValueError("invalid")
-        except (HTTPError, URLError, OSError, UnicodeError, ValueError, json.JSONDecodeError):
+        except (OSError, ValueError):
             self.reply(503, b'{"code":"catalog_unavailable"}')
             return
         self.reply(200, body)
