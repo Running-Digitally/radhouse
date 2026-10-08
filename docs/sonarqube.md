@@ -66,7 +66,9 @@ merged clone, builds web sources with source maps, and runs
 `uv run --frozen python scripts/vs0.py verify --coverage`. That run executes the
 Python suite, real browser walkthroughs and web/Node tests against synthetic
 data and its exclusively owned local PostgreSQL fixture. Python subprocess
-coverage is combined; Chromium and Node execution are converted to LCOV for
+coverage is combined where the process can write a report. The document
+parser keeps its production no-file-write limit; direct parser contract tests
+provide its measured coverage alongside existing isolated subprocess tests. Chromium and Node execution are converted to LCOV for
 the tested first-party JavaScript and original TypeScript.
 
 Only reports from the matching commit, a successful test run with no skips and

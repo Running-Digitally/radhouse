@@ -14,7 +14,7 @@ let latest = null, frameNumber = 0, requests = 0, mode = "normal", generation = 
 let held = [];
 const hash = buffer => createHash("sha256").update(buffer).digest("hex");
 const server = createServer((request, response) => {
-  if (request.url === "/browser-view.js") {response.writeHead(200,{"Content-Type":"text/javascript"});response.end(script);return;}
+  if (request.url === "/browser-view.js") {response.writeHead(200,{"Content-Type":"text/javascript; charset=utf-8"});response.end(script);return;}
   if (request.url === "/browser-view.css") {response.writeHead(200,{"Content-Type":"text/css"});response.end(style);return;}
   if (request.url?.startsWith("/chat/browser/frame?run_id=")) {
     requests++;
@@ -31,7 +31,7 @@ const server = createServer((request, response) => {
     return;
   }
   response.writeHead(200, {"Content-Type":"text/html"});
-  response.end(`<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/browser-view.css"><style>body{margin:16px;font:16px system-ui}</style><div id="browser"></div><script src="/browser-view.js"></script><script>window.viewer=new BrowserView(document.getElementById('browser'));window.authEvents=0;document.addEventListener('browser-auth-required',()=>window.authEvents++);</script>`);
+  response.end(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/browser-view.css"><style>body{margin:16px;font:16px system-ui}</style><div id="browser"></div><script src="/browser-view.js"></script><script>window.viewer=new BrowserView(document.getElementById('browser'));window.authEvents=0;document.addEventListener('browser-auth-required',()=>window.authEvents++);</script>`);
 });
 await new Promise(resolve => server.listen(0,"127.0.0.1",resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
@@ -67,6 +67,8 @@ await cover(page);
   const update = (run="run-1", gen=generation) => page.evaluate(({run,gen}) => window.viewer.update({state:"live",run_id:run,generation:gen,url:"https://example.org/page"}),{run,gen});
   const img = page.locator(".browser-view-viewport img");
   const status = page.locator(".browser-view-status");
+  await page.evaluate(() => window.viewer.update({ state: "starting" }));
+  await expect(status).toHaveText("Opening the assistant’s browser…");
   const displayedHash = () => page.evaluate(async () => {
     const src=document.querySelector('.browser-view-viewport img').getAttribute('src');
     if (!src) return null;

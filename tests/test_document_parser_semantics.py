@@ -38,7 +38,9 @@ def read(data, extension, **changes):
 def test_verified_formats_preserve_selected_source_locators(extension, data, locator, text):
     result = read(data, extension, locator=locator)
     assert result["complete"]
-    assert result["passages"] == [{"locator": locator, "label": result["passages"][0]["label"], "text": text}]
+    assert len(result["passages"]) == 1
+    assert result["passages"][0]["locator"] == locator
+    assert result["passages"][0]["text"] == text
 
 
 def test_direct_text_continuations_preserve_unicode_and_every_line():

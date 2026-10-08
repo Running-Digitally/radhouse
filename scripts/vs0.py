@@ -25,6 +25,8 @@ IMAGE_TAG = "postgres:18.6-bookworm"
 PINNED_IMAGE = IMAGE_TAG + "@sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af"
 LABEL = "org.radhouse.vs0.run-id"
 LIMIT_SECONDS = 900
+COVERAGE_DIRECTORY = "coverage"
+PYTHON_COVERAGE_XML = "python.xml"
 
 
 class FixtureError(Exception):
@@ -401,7 +403,7 @@ def _demonstrate_direction(run, service, work, clock, index, source, destination
 
 
 def _prepare_coverage(run):
-    directory = run.output / "coverage"
+    directory = run.output / COVERAGE_DIRECTORY
     directory.mkdir()
     run.env.update(COVERAGE_FILE=str(directory / ".coverage"),
                    RADHOUSE_COVERAGE_DIR=str(directory / "browser"),
@@ -422,12 +424,12 @@ def _save_measurement(run, measurement):
         return False
     try:
         from coverage import Coverage
-        directory = run.output / "coverage"
+        directory = run.output / COVERAGE_DIRECTORY
         combined = Coverage(data_file=str(directory / ".coverage"))
         combined.load()
         combined.combine()
         combined.save()
-        combined.xml_report(outfile=str(directory / "python.xml"))
+        combined.xml_report(outfile=str(directory / PYTHON_COVERAGE_XML))
         combined.json_report(outfile=str(directory / "python.json"))
         _record_coverage(run)
     except Exception:
@@ -439,7 +441,7 @@ def _save_measurement(run, measurement):
 
 
 def _finish_coverage(run):
-    directory = run.output / "coverage"
+    directory = run.output / COVERAGE_DIRECTORY
     run.command(["node", "--test", *[str(path.relative_to(ROOT)) for path in sorted((ROOT / "web/test").glob("*.test.mjs"))]])
     for script in ("admin-browser.mjs", "browser-view-browser.mjs", "chat-browser-view-browser.mjs"):
         run.command(["node", f"tests/{script}"])
@@ -448,10 +450,10 @@ def _finish_coverage(run):
 
 
 def _record_coverage(run):
-    directory = run.output / "coverage"
+    directory = run.output / COVERAGE_DIRECTORY
     reports = {name: {"path": str((directory / filename).relative_to(ROOT)),
                       "sha256": hashlib.sha256((directory / filename).read_bytes()).hexdigest()}
-               for name, filename in (("python", "python.xml"), ("javascript", "lcov.info"))}
+               for name, filename in (("python", PYTHON_COVERAGE_XML), ("javascript", "lcov.info"))}
     run.manifest["coverage"] = reports
     run.save()
     print("COVERAGE: Python XML (including fixture execution) and JavaScript/TypeScript LCOV generated from this run")

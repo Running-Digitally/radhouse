@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from scripts.sonarqube import ScanError, analyze, qualify, verified_coverage
+from scripts.sonarqube import ScanError, analyze, prerequisites, qualify, verified_coverage
 
 
 class LocalSonarTests(unittest.TestCase):
@@ -82,6 +82,10 @@ class LocalSonarTests(unittest.TestCase):
     def test_dry_run_needs_no_scanner_or_token(self):
         self.assertEqual(self.scan(dry_run=True), 0)
         self.assertFalse((self.root / ".sonarqube").exists())
+
+    def test_analysis_token_requires_https_even_for_loopback(self):
+        with self.assertRaisesRegex(ScanError, "HTTPS"):
+            prerequisites(str(self.scanner), "http://localhost:9000", "synthetic-token")
 
     def test_hosted_ci_is_rejected(self):
         os.environ["GITHUB_ACTIONS"] = "true"
