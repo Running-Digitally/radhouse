@@ -99,6 +99,8 @@ class ChatStore:
                 db.execute("ALTER TABLE turns ADD COLUMN first_dispatch_at REAL")
             if "tool_policy" not in columns:
                 db.execute("ALTER TABLE turns ADD COLUMN tool_policy TEXT")
+            if "browser_context" not in columns:
+                db.execute("ALTER TABLE turns ADD COLUMN browser_context TEXT")
             db.execute("UPDATE turns SET first_dispatch_at=created_at WHERE first_dispatch_at IS NULL AND retry_until>0")
             db.execute("""CREATE TABLE IF NOT EXISTS document_grants (
                 token TEXT PRIMARY KEY, turn_seq INTEGER UNIQUE NOT NULL REFERENCES turns(seq),
@@ -285,6 +287,26 @@ class ChatStore:
             row = db.execute(TURN_BY_REQUEST, (owner, request_id)).fetchone()
             return dict(row) if row else None
 
+    def browser_session(self, owner, *, create=False):
+        """A browser can share the durable agent session before the first message."""
+        with self.connection() as db:
+            if create:
+                db.execute(BEGIN_WRITE)
+                db.execute("INSERT OR IGNORE INTO conversations VALUES (?,?)", (owner, "chat:" + uuid4().hex))
+            row = db.execute("SELECT session_id FROM conversations WHERE owner=?", (owner,)).fetchone()
+            return row["session_id"] if row else None
+
+    def freeze_browser_context(self, turn, value):
+        """Freeze dispatch identity only. Human input and passwords never enter this table."""
+        encoded = json.dumps(value, separators=(",", ":"), sort_keys=True)
+        with self.connection() as db:
+            db.execute("UPDATE turns SET browser_context=? WHERE seq=? AND browser_context IS NULL "
+                "AND input_text IS NULL AND first_dispatch_at IS NULL", (encoded, turn["seq"]))
+            saved = dict(db.execute(TURN_BY_SEQUENCE, (turn["seq"],)).fetchone())
+            if saved["browser_context"] != encoded:
+                raise Rejected("browser_context_changed", 409)
+            return saved
+
     def reserve(self, owner, request_id, text, now, attachments=()):
         with self.connection() as db:
             db.execute(BEGIN_WRITE)
@@ -460,6 +482,12 @@ class ChatStore:
     def note_error(self, turn, error):
         with self.connection() as db:
             db.execute("UPDATE turns SET error=? WHERE seq=? AND status NOT IN (?,?,?,?)", (error, turn["seq"], *TERMINAL))
+
+    def reject_unadmitted(self, turn, error):
+        """Only an explicit gateway proof of no run admission may close an unsent handoff."""
+        with self.connection() as db:
+            db.execute("UPDATE turns SET status='failed',error=? WHERE seq=? AND run_id IS NULL "
+                "AND dispatch_key=? AND status='awaiting_dispatch'", (error, turn["seq"], turn["dispatch_key"]))
 
     def history(self, owner, before=None, limit=50):
         with self.connection() as db:

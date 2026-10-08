@@ -37,7 +37,8 @@ function renderSettings(data) {
       ["Original files", "Retained with your conversation"], ["Document formats", "Text, PDF, Word, Excel and PowerPoint"],
       ["Audio transcription", data.files.audio_transcription_enabled ? "Connected" : "Not connected"],
       ["Selective document reads", data.documents.selective_access_enabled ? "Enabled; check Infrastructure for current availability" : "Not connected"],
-      ["Agent browser", data.browser?.enabled ? "Enabled with a live view in Chat" : "Not connected"],
+      ["Agent browser", data.browser?.enabled ? (data.browser.mode === "owner_session"
+        ? "Open Browser to browse or take control" : "Enabled with a live view in Chat") : "Not connected"],
       ["Message text", `${data.messages.character_limit.toLocaleString()} characters`]]),
     element("p", "These are the current app settings. Settings are read only in this version.", "admin-note"));
 }

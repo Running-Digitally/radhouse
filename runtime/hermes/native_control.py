@@ -4,17 +4,18 @@ The caller supplies existing session/lifecycle identity and reserves ownership
 before submission. This transport is deliberately unwired from Hermes for now.
 """
 import asyncio
-from concurrent.futures import Future, TimeoutError as FutureTimeout
-from dataclasses import dataclass, field
 import json
 import math
 import os
-from pathlib import Path
-from queue import Empty, Full, Queue
 import re
 import socket
 import stat
 import threading
+from concurrent.futures import Future
+from concurrent.futures import TimeoutError as FutureTimeout
+from dataclasses import dataclass, field
+from pathlib import Path
+from queue import Empty, Full, Queue
 from typing import Callable, Literal
 
 
@@ -160,27 +161,52 @@ def legacy_command(command, arguments):
 
 def human_commands(operation, arguments):
     """Complete gestures only; HTTP owns login, lease, frame and viewport validation."""
+    if operation == "navigate":
+        _shape(arguments, {"url"})
+        return [{"action": "navigate", "url": _string(arguments["url"])}]
+    if operation in {"back", "reload"}:
+        _shape(arguments, set())
+        return [{"action": operation}]
     if operation == "text":
         _shape(arguments, {"text"})
-        return [{"action":"inserttext", "text":_string(arguments["text"])}]
+        return [{"action": "inserttext", "text": _string(arguments["text"])}]
     if operation == "press":
         _shape(arguments, {"key"})
-        return [{"action":"press", "key":_identifier(arguments["key"])}]
+        return [{"action": "press", "key": _identifier(arguments["key"])}]
     if type(operation) is not str or operation not in {"click", "scroll"}:
         raise NativeRejected("native_operation_unsupported")
     keys = {"x", "y"} if operation == "click" else {"x", "y", "delta_x", "delta_y"}
     _shape(arguments, keys)
     try:
-        finite = all(type(v) in {int, float} and math.isfinite(v) for v in arguments.values())
+        finite = all(
+            type(v) in {int, float} and math.isfinite(v) for v in arguments.values()
+        )
     except OverflowError:
         finite = False
     if not finite:
         raise NativeRejected("native_arguments_invalid")
     if operation == "click":
-        return [{"action":"input_mouse", "type":kind, "x":arguments["x"], "y":arguments["y"],
-                 "button":"left", "clickCount":1} for kind in ("mousePressed", "mouseReleased")]
-    return [{"action":"input_mouse", "type":"mouseWheel", "x":arguments["x"], "y":arguments["y"],
-             "deltaX":arguments["delta_x"], "deltaY":arguments["delta_y"]}]
+        return [
+            {
+                "action": "input_mouse",
+                "type": kind,
+                "x": arguments["x"],
+                "y": arguments["y"],
+                "button": "left",
+                "clickCount": 1,
+            }
+            for kind in ("mousePressed", "mouseReleased")
+        ]
+    return [
+        {
+            "action": "input_mouse",
+            "type": "mouseWheel",
+            "x": arguments["x"],
+            "y": arguments["y"],
+            "deltaX": arguments["delta_x"],
+            "deltaY": arguments["delta_y"],
+        }
+    ]
 
 
 @dataclass
@@ -249,6 +275,22 @@ class NativeControlChannel:
     def submit_input(self, command_id, operation, arguments):
         return self._submit(command_id, "human", human_commands(operation, arguments))
 
+    def submit_trusted_evaluation(self, command_id, expression):
+        """Private adapter only: no model-facing evaluation tool or CLI payload."""
+        return self._submit(
+            command_id,
+            "trusted",
+            [{"action": "evaluate", "script": _string(expression)}],
+        )
+
+
+    def submit_metadata(self, command_id):
+        return self.submit_trusted_evaluation(
+            command_id,
+            "({url:location.href,title:document.title,width:innerWidth,height:innerHeight})",
+        )
+
+
     def submit_close(self, command_id):
         return self._submit(command_id, "close", [{"action":"close"}])
 
@@ -269,16 +311,31 @@ class NativeControlChannel:
             if self._pending:
                 raise NativeRejected("native_ack_pending")
             if preceding is not None:
-                if (not isinstance(preceding, CommandHandle) or preceding._channel is not self
-                        or preceding.command_id != self._last_completed or not preceding.future.done()):
+                if (
+                    not isinstance(preceding, CommandHandle)
+                    or preceding._channel is not self
+                    or preceding.command_id != self._last_completed
+                    or not preceding.future.done()
+                ):
                     raise NativeRejected("native_fence_order_unavailable")
                 result = preceding.result()
-                if not isinstance(result, (AgentAck, HumanAck)) or not result.completed:
+                completed = (
+                    isinstance(result, (AgentAck, HumanAck))
+                    and result.completed
+                    or isinstance(result, FenceAck)
+                    and result.quiescent
+                    and result.generation == self.generation
+                )
+                if not completed:
                     raise NativeRejected("native_fence_order_unavailable")
             elif self._last_completed is not None:
                 raise NativeRejected("native_fence_order_unavailable")
-            return self._submit(command_id, "fence", [{"action":"stream_status"}],
-                                preceding=preceding.command_id if preceding else None)
+            return self._submit(
+                command_id,
+                "fence",
+                [{"action": "stream_status"}],
+                preceding=preceding.command_id if preceding else None,
+            )
 
     def _submit(self, command_id, kind, commands, *, preceding=None):
         command_id = _identifier(command_id)

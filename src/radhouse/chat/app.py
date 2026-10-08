@@ -32,11 +32,30 @@ class Login(BaseModel):
     remember_browser: bool = False
 
 
+class BrowserContextBody(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    generation: Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")]
+    revision: Annotated[int, Field(gt=0)]
+    lease_id: Annotated[str | None, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")] = None
+
+
 class Message(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     request_id: Annotated[str, Field(pattern=r"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$")]
     text: Annotated[str, Field(max_length=16000)]
     attachments: list[Annotated[str, Field(pattern=FILE_ID.pattern)]] = Field(default_factory=list)
+    browser_context: BrowserContextBody | None = None
+    use_previous_browser: bool = False
+
+
+def _recheck_browser_binding(auth, service, browser, request, before, tab):
+    """Discard stale authentication after native waits, before fresh dispatch."""
+    after = auth.session(request)
+    service.authorize(after)
+    browser.binding(after, tab)
+    names = ("principal_id", "conversation_id", "binding_revision", "token")
+    if any(getattr(before, name) != getattr(after, name) for name in names):
+        raise Rejected("browser_binding_changed", 409)
 
 
 def create_app(auth, service, *, admin=None, documents=None, browser=None):
@@ -48,7 +67,8 @@ def create_app(auth, service, *, admin=None, documents=None, browser=None):
         service.authorize(session)
         payload = {"username": session.username, "csrf_token": session.csrf_token,
             "features": {"documents": getattr(service, "document_access", False) is True,
-                         "browser": getattr(service, "browser_enabled", False) is True}}
+                         "browser": getattr(service, "browser_enabled", False) is True,
+                         "browser_control": getattr(browser, "control_enabled", False) is True}}
         if admin is not None:
             try:
                 can_read = auth.management_role(session) in {"admin", "operator"}
@@ -77,7 +97,7 @@ def create_app(auth, service, *, admin=None, documents=None, browser=None):
         app.include_router(create_admin_router(admin, management_session))
 
     _install_assets(app)
-    _install_browser_routes(app, browser, owner)
+    _install_browser_routes(app, browser, owner, auth, service)
     _install_icon_route(app)
     _install_auth_routes(app, auth, session_payload)
     @app.get("/chat/history")
@@ -86,8 +106,33 @@ def create_app(auth, service, *, admin=None, documents=None, browser=None):
 
     @app.post("/chat/messages")
     def send(body: Message, request: Request):
-        principal = owner(request)
-        return service.send(principal, body.request_id, body.text, tuple(service.store.upload(principal, file_id) for file_id in body.attachments))
+        session = auth.session(request)
+        principal = service.authorize(session)
+        browser_data = None
+        if getattr(browser, "control_enabled", False):
+            existing = service.store.find(principal, body.request_id)
+            if existing and existing.get("browser_context"):
+                import json
+                browser_data = json.loads(existing["browser_context"])
+                saved = browser_data.get("browser_context")
+                expected = {key: saved[key] for key in ("generation", "revision", "lease_id")} if saved else None
+                if (body.browser_context.model_dump() if body.browser_context else None) != expected or bool(browser_data.get("use_previous_browser")) != body.use_previous_browser or browser_data["browser_owner"] != {
+                        "principal_id": session.principal_id, "conversation_id": session.conversation_id}:
+                    raise Rejected("browser_context_changed", 409)
+            else:
+                browser_data = browser.dispatch_data(session, request.headers.get("x-radhouse-browser-tab"),
+                    body.browser_context.model_dump() if body.browser_context else None, use_previous=body.use_previous_browser)
+        elif body.browser_context is not None or body.use_previous_browser:
+            raise Rejected("browser_context_unavailable", 409)
+        if getattr(browser, "control_enabled", False):
+            _recheck_browser_binding(auth, service, browser, request, session,
+                request.headers.get("x-radhouse-browser-tab"))
+        result = service.send(principal, body.request_id, body.text,
+            tuple(service.store.upload(principal, file_id) for file_id in body.attachments), browser_data=browser_data)
+        if getattr(browser, "control_enabled", False):
+            _recheck_browser_binding(auth, service, browser, request, session,
+                request.headers.get("x-radhouse-browser-tab"))
+        return result
 
     @app.get("/chat/messages/{request_id}")
     def message_receipt(request_id: str, request: Request):
@@ -206,7 +251,10 @@ def _install_assets(app):
         return FileResponse(STATIC / "library.js", media_type=JAVASCRIPT_MEDIA_TYPE)
 
 
-def _install_browser_routes(app, browser, owner):
+def _install_browser_routes(app, browser, owner, auth, service):
+    if getattr(browser, "control_enabled", False):
+        _install_controlled_browser_routes(app, browser, auth, service)
+        return
     @app.get("/chat/browser")
     async def browser_status(request: Request):
         principal = await asyncio.to_thread(owner, request)
@@ -330,3 +378,127 @@ def _byte_response(data, media_type, headers, range_header):
         return Response(data[start:end+1],status_code=206,media_type=media_type,headers=headers)
     return Response(data,media_type=media_type,headers=headers)
 
+
+class BrowserControlBody(BrowserContextBody):
+    pass
+
+
+class BrowserTakeBody(BrowserControlBody):
+    request_id: Annotated[str, Field(pattern=r"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$")]
+
+
+class BrowserInputBody(BrowserControlBody):
+    sequence: Annotated[int, Field(gt=0)]
+    frame_id: Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")]
+    viewport: dict[str, int]
+    operation: Annotated[str, Field(pattern=r"^(click|text|press|scroll|navigate|back|reload)$")]
+    arguments: dict
+
+
+class BrowserReturnBody(BrowserControlBody):
+    request_id: Annotated[str, Field(pattern=r"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$")]
+
+
+class BrowserVaultBody(BrowserControlBody):
+    sequence: Annotated[int, Field(gt=0)]
+
+
+class BrowserLoginBody(BrowserVaultBody):
+    label: Annotated[str, Field(min_length=1, max_length=256)]
+    identifier_type: Annotated[str, Field(pattern=r"^(email|phone|username)$")]
+    identifier: Annotated[str, Field(min_length=1, max_length=512)]
+    password: Annotated[str, Field(min_length=1, max_length=16384, repr=False)]
+
+
+def _install_controlled_browser_routes(app, browser, auth, service):
+    def access(request):
+        session = auth.session(request)
+        service.authorize(session)
+        tab = request.headers.get("x-radhouse-browser-tab", "")
+        browser.binding(session, tab)
+        return session, tab
+
+    def recheck(request, before, tab):
+        if request.headers.get("x-radhouse-browser-tab", "") != tab:
+            raise Rejected("browser_binding_changed", 409)
+        _recheck_browser_binding(auth, service, browser, request, before, tab)
+
+    async def call(request, method, *values):
+        session, tab = await asyncio.to_thread(access, request)
+        result = await asyncio.to_thread(method, session, tab, *values)
+        await asyncio.to_thread(recheck, request, session, tab)
+        return result
+
+    @app.get("/chat/browser")
+    async def browser_status(request: Request):
+        return await call(request, browser.status)
+
+    @app.post("/chat/browser/open")
+    async def browser_open(request: Request):
+        return await call(request, browser.open)
+
+    @app.get("/chat/browser/frame")
+    async def browser_frame(request: Request,
+            generation: Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")]):
+        frame = await call(request, browser.frame, generation)
+        return Response(frame.jpeg, media_type="image/jpeg", headers={
+            "X-Radhouse-Browser-Generation": frame.generation,
+            "X-Radhouse-Browser-Frame-Id": frame.frame_id,
+            "X-Radhouse-Browser-Received-At": str(frame.received_at),
+            "X-Radhouse-Browser-Width": str(frame.width), "X-Radhouse-Browser-Height": str(frame.height)})
+
+    @app.post("/chat/browser/control/take")
+    async def browser_take(body: BrowserTakeBody, request: Request):
+        return await call(request, browser.control, "take", body.model_dump(exclude_none=True))
+
+    @app.post("/chat/browser/control/heartbeat")
+    async def browser_heartbeat(body: BrowserControlBody, request: Request):
+        return await call(request, browser.control, "heartbeat", body.model_dump(exclude_none=True))
+
+    @app.post("/chat/browser/control/input")
+    async def browser_input(body: BrowserInputBody, request: Request):
+        return await call(request, browser.control, "input", body.model_dump(exclude_none=True))
+
+    @app.post("/chat/browser/control/pause")
+    async def browser_pause(body: BrowserControlBody, request: Request):
+        return await call(request, browser.control, "pause", body.model_dump(exclude_none=True))
+
+    @app.post("/chat/browser/control/close")
+    async def browser_close(body: BrowserControlBody, request: Request):
+        return await call(request, browser.control, "close", body.model_dump(exclude_none=True))
+
+    @app.post("/chat/browser/return")
+    async def browser_return(body: BrowserReturnBody, request: Request):
+        session, tab = await asyncio.to_thread(access, request)
+        existing = service.store.find(session.principal_id, body.request_id)
+        if existing and existing.get("browser_context"):
+            import json
+            data = json.loads(existing["browser_context"])
+            if data.get("browser_owner") != {"principal_id": session.principal_id,
+                    "conversation_id": session.conversation_id}:
+                raise Rejected("browser_binding_changed", 409)
+        else:
+            await asyncio.to_thread(service.poll, session.principal_id)
+            if service.store.pending(session.principal_id) is not None:
+                raise Rejected("reply_pending", 409)
+            data = await asyncio.to_thread(browser.dispatch_data, session, tab,
+                body.model_dump(exclude={"request_id"}))
+        await asyncio.to_thread(recheck, request, session, tab)
+        result = await asyncio.to_thread(service.send, session.principal_id, body.request_id,
+            "I’m returning the browser to you. Continue from the current page.", browser_data=data)
+        await asyncio.to_thread(recheck, request, session, tab)
+        return result
+
+    @app.post("/chat/browser/logins/list")
+    async def browser_logins(body: BrowserVaultBody, request: Request):
+        return await call(request, browser.logins, "list", body.model_dump())
+
+    @app.post("/chat/browser/logins")
+    async def browser_login(body: BrowserLoginBody, request: Request):
+        return await call(request, browser.logins, "save", body.model_dump())
+
+    @app.delete("/chat/browser/logins/{entry_id}")
+    async def browser_remove_login(entry_id: str, body: BrowserVaultBody, request: Request):
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}", entry_id):
+            raise Rejected("invalid_request", 422)
+        return await call(request, browser.logins, "remove", {**body.model_dump(), "entry_id": entry_id})
