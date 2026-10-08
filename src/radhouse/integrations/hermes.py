@@ -84,6 +84,7 @@ class HermesCapabilities:
     document_scope: bool = False
     browser_view: bool = False
     browser_network_policy: dict | None = None
+    file_share: bool = False
 
 
 class HermesRunsClient:
@@ -169,6 +170,7 @@ class HermesRunsClient:
         steering = features.get("runs_steering_receipts")
         documents = features.get("runs_document_scope")
         browser = features.get("runs_browser_view")
+        sharing = features.get("runs_file_share")
         identified_steering = (isinstance(steering, dict)
             and steering.get("supported") is True and steering.get("durable") is True
             and type(steering.get("version")) is int and steering["version"] == 1
@@ -190,7 +192,9 @@ class HermesRunsClient:
             browser_view=(isinstance(browser, dict) and browser.get("supported") is True
                 and type(browser.get("version")) is int and browser["version"] == 1
                 and browser.get("mode") == "same_session_view_only"),
-            browser_network_policy=browser_network_policy(features.get("browser_network_policy")))
+            browser_network_policy=browser_network_policy(features.get("browser_network_policy")),
+            file_share=(isinstance(sharing, dict) and sharing.get("supported") is True
+                and type(sharing.get("version")) is int and sharing["version"] == 1))
 
     def start_or_attach(
         self, *, input_text: str, session_id: str, dispatch_key: str, disable_tools: bool = False,
@@ -673,5 +677,4 @@ def _validate_tool_restriction(allowed_tools, disable_tools):
             or any(re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value) is None for value in allowed_tools)
             or disable_tools and allowed_tools):
         raise ValueError("invalid_hermes_tool_restriction")
-
 

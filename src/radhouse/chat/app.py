@@ -97,6 +97,13 @@ def create_app(auth, service, *, admin=None, documents=None, browser=None):
         return {"turn": service.store.history(principal, before=turn["seq"] + 1, limit=1)["turns"][0]}
 
     _install_file_routes(app, service, owner)
+    @app.get("/chat/library")
+    def library(request: Request,
+                before: Annotated[str | None, Field(max_length=256)] = None,
+                query: Annotated[str, Field(max_length=512)] = "",
+                source: Annotated[str, Field(pattern=r"^(all|user|assistant)$")] = "all"):
+        return service.store.library(owner(request), before=before, query=query, source=source)
+
     @app.get("/chat/reply")
     def reply(request: Request):
         return service.poll(owner(request))
@@ -161,6 +168,8 @@ def _install_response_handlers(app):
 
 def _install_assets(app):
     @app.get("/")
+    @app.get("/library")
+    @app.get("/browser")
     def index():
         return FileResponse(STATIC / "index.html")
 
@@ -183,6 +192,18 @@ def _install_assets(app):
     @app.get("/browser-view.css")
     def browser_stylesheet():
         return FileResponse(STATIC / "browser-view.css", media_type="text/css")
+
+    @app.get("/navigation.js")
+    def navigation_javascript():
+        return FileResponse(STATIC / "navigation.js", media_type=JAVASCRIPT_MEDIA_TYPE)
+
+    @app.get("/navigation.css")
+    def navigation_stylesheet():
+        return FileResponse(STATIC / "navigation.css", media_type="text/css")
+
+    @app.get("/library.js")
+    def library_javascript():
+        return FileResponse(STATIC / "library.js", media_type=JAVASCRIPT_MEDIA_TYPE)
 
 
 def _install_browser_routes(app, browser, owner):
@@ -273,6 +294,10 @@ def _install_file_routes(app, service, owner):
     def upload_receipt(file_id: str, request: Request):
         return file_receipt(service.store.upload(owner(request), file_id))
 
+    @app.get("/chat/files/{file_id}/content")
+    def original(file_id: str, request: Request, download: bool = False):
+        return _original_response(service.store.upload(owner(request), file_id), request, download)
+
     @app.post("/chat/messages/{request_id}/retry")
     def retry(request_id: str, request: Request):
         return service.retry(owner(request), request_id)
@@ -280,13 +305,15 @@ def _install_file_routes(app, service, owner):
     @app.get("/chat/messages/{request_id}/attachments/{position}")
     def attachment(request_id: str, position: Annotated[int, Field(ge=0)], request: Request, download: bool = False):
         attachment = service.store.attachment(owner(request), request_id, position)
-        disposition = "inline" if not download and attachment.kind in {"image","audio"} else "attachment"
-        headers = {"Content-Disposition":disposition + "; filename*=UTF-8''" + quote(attachment.name,safe=""), "Accept-Ranges":"bytes"}
-        data = attachment.data
-        if isinstance(data, Path):
-            return FileResponse(data, media_type=attachment.media_type, headers=headers)
-        return _byte_response(data, attachment.media_type, headers, request.headers.get("range"))
+        return _original_response(attachment, request, download)
 
+
+def _original_response(attachment, request, download):
+    disposition = "inline" if not download and attachment.kind in {"image", "audio"} else "attachment"
+    headers = {"Content-Disposition": disposition + "; filename*=UTF-8''" + quote(attachment.name, safe=""), "Accept-Ranges": "bytes"}
+    if isinstance(attachment.data, Path):
+        return FileResponse(attachment.data, media_type=attachment.media_type, headers=headers)
+    return _byte_response(attachment.data, attachment.media_type, headers, request.headers.get("range"))
 
 
 def _byte_response(data, media_type, headers, range_header):
@@ -302,5 +329,4 @@ def _byte_response(data, media_type, headers, range_header):
         headers["Content-Range"] = f"bytes {start}-{end}/{len(data)}"
         return Response(data[start:end+1],status_code=206,media_type=media_type,headers=headers)
     return Response(data,media_type=media_type,headers=headers)
-
 

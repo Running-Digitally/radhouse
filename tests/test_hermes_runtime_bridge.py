@@ -357,19 +357,31 @@ def test_active_document_run_before_browser_start_uses_pinned_owned_resolver(mon
 
 
 @pytest.mark.parametrize("frame", [False, True])
-@pytest.mark.parametrize("changed", [False, True])
-def test_browser_reauthorizes_durable_run_after_stream_with_pinned_resolver(monkeypatch, frame, changed):
+@pytest.mark.parametrize("change", [None, "completed", "session", "tools", "dispatch", "unsupported",
+                                    "inplace_session", "inplace_tools", "inplace_dispatch"])
+def test_browser_reauthorizes_durable_run_after_stream_with_pinned_resolver(monkeypatch, frame, change):
     adapter, request, api, state, calls = owned_browser_status_adapter(monkeypatch)
     monkeypatch.setattr(bridge, "_session_stream", lambda session: (8123, "generation1"))
     async def native_frame(*args, **kwargs):
-        if changed:
+        if change == "completed":
             state["run"] = {**state["run"], "status": "completed"}
+        elif change == "inplace_tools":
+            state["run"]["allowed_tools"].pop()
+        elif change and change.startswith("inplace_"):
+            key = {"inplace_session": "session_id", "inplace_dispatch": "dispatch_key"}[change]
+            state["run"][key] = "replacement"
+        elif change:
+            key, value = {"session": ("session_id", "other-session"),
+                "tools": ("allowed_tools", list(bridge.BROWSER_TOOLS)),
+                "dispatch": ("dispatch_key", "other-dispatch"),
+                "unsupported": ("status", "unknown")}[change]
+            state["run"] = {**state["run"], key: value}
         return {"url": "https://example.com/", "jpeg": "actual-frame", "received_at": 1,
                 "captured_at": None, "frame_id": "frame1"}
     monkeypatch.setattr(bridge, "_native_frame", native_frame)
     result = asyncio.run(bridge.handle_browser(adapter, request, frame=frame, api_server=api))
     assert calls == ["status", "status"]
-    if changed:
+    if change not in (None, "completed"):
         assert result.value['state'] == 'unavailable'
         assert 'jpeg' not in result.value
         assert result.status == (409 if frame else 200)
@@ -379,6 +391,55 @@ def test_browser_reauthorizes_durable_run_after_stream_with_pinned_resolver(monk
     else:
         assert result.status == 200
         assert result.value['state'] == 'live'
+
+
+@pytest.mark.parametrize("saved_status", ["completed", "failed", "cancelled", "interrupted"])
+@pytest.mark.parametrize("frame", [False, True])
+def test_terminal_saved_run_observes_only_existing_owned_native_session(monkeypatch, saved_status, frame):
+    adapter, request, api, state, calls = owned_browser_status_adapter(monkeypatch)
+    state["run"] = {**state["run"], "status": saved_status}
+    monkeypatch.setattr(bridge, "_session_stream", lambda session: (8123, "generation1"))
+    async def native_frame(*args, **kwargs):
+        return {"url": "https://example.com/", "jpeg": "actual-frame", "received_at": 1,
+                "captured_at": None, "frame_id": "frame1"}
+    monkeypatch.setattr(bridge, "_native_frame", native_frame)
+    result = asyncio.run(bridge.handle_browser(adapter, request, frame=frame, api_server=api))
+    assert result.status == 200
+    assert calls == ["status", "status"]
+    assert result.value.get("jpeg") == ("actual-frame" if frame else None)
+    if not frame:
+        assert result.value["state"] == "live"
+
+
+@pytest.mark.parametrize("frame", [False, True])
+def test_retired_terminal_browser_is_idle_without_native_read_or_creation(monkeypatch, frame):
+    adapter, request, api, state, calls = owned_browser_status_adapter(monkeypatch)
+    state["run"] = {**state["run"], "status": "completed"}
+    monkeypatch.setattr(bridge, "_session_stream", lambda session: None)
+    monkeypatch.setattr(bridge, "_native_frame", lambda *args, **kwargs: pytest.fail("retired browser reached native stream"))
+    result = asyncio.run(bridge.handle_browser(adapter, request, frame=frame, api_server=api))
+    assert result.status == (409 if frame else 200)
+    assert result.value["state"] == "idle"
+    assert "jpeg" not in result.value
+    assert calls == ["status"]
+
+
+@pytest.mark.parametrize("frame", [False, True])
+def test_native_retirement_during_observation_clears_view_and_reports_idle(monkeypatch, frame):
+    adapter, request, api, state, calls = owned_browser_status_adapter(monkeypatch)
+    state["run"] = {**state["run"], "status": "completed"}
+    stream = [(8123, "generation1")]
+    monkeypatch.setattr(bridge, "_session_stream", lambda session: stream[0])
+    async def native_frame(*args, **kwargs):
+        stream[0] = None
+        raise ValueError("browser_stream_unavailable")
+    monkeypatch.setattr(bridge, "_native_frame", native_frame)
+    result = asyncio.run(bridge.handle_browser(adapter, request, frame=frame, api_server=api))
+    assert result.status == (409 if frame else 200)
+    assert result.value["state"] == "idle"
+    assert result.value["generation"] is result.value["url"] is None
+    assert "jpeg" not in result.value
+    assert calls == ["status"]
 
 
 @pytest.mark.parametrize("denial", ["auth", "foreign", "missing_durable"])
@@ -1043,6 +1104,30 @@ def test_actual_headless_finalizer_retains_two_turns_but_direct_lifecycle_closes
     assert f.calls['close'] == ['session']
     assert not directory.exists()
     assert not f.browser._active_sessions
+
+
+@pytest.mark.parametrize("missing", ["directory", "stream"])
+def test_retained_session_without_native_artifacts_is_idle_without_touching_lifecycle(monkeypatch, tmp_path, missing):
+    f = pinned_browser_turn_cleanup(monkeypatch, tmp_path)
+    directory = f.create()
+    record = dict(f.browser._active_sessions["session"])
+    activity = dict(f.browser._session_last_activity)
+    (directory / "h_0123456789.stream").unlink()
+    if missing == "directory":
+        directory.rmdir()
+    assert bridge._session_stream("session") is None
+    assert f.browser._active_sessions["session"] == record
+    assert f.browser._session_last_activity == activity
+    assert f.calls == {"close": [], "vm": []}
+
+
+def test_retained_session_with_untrusted_native_directory_remains_unavailable(monkeypatch, tmp_path):
+    f = pinned_browser_turn_cleanup(monkeypatch, tmp_path)
+    directory = f.create()
+    directory.chmod(0o755)
+    with pytest.raises(ValueError, match="browser_session_unavailable"):
+        bridge._session_stream("session")
+    assert f.calls == {"close": [], "vm": []}
 
 
 @pytest.mark.parametrize('denial', ['unscoped', 'unqualified', 'other-context', 'nonowned', 'owner', 'key', 'cdp', 'cloud', 'real-profile', 'lightpanda', 'name', 'malformed'])

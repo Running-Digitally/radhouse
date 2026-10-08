@@ -1,4 +1,4 @@
-"""Owner-scoped observation of the browser the current Hermes run already owns."""
+"""Owner-scoped observation of the browser a saved Hermes run already owns."""
 from dataclasses import dataclass
 import base64
 import binascii
@@ -17,8 +17,9 @@ BROWSER_TOOLS = (
 )
 MAX_FRAME_BYTES = 512 * 1024
 _IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}")
-_PERMITTED = frozenset((*BROWSER_TOOLS, "document_search", "document_read"))
-_ACTIVE = frozenset(("awaiting_dispatch", "queued", "running", "waiting_for_approval"))
+_PERMITTED = frozenset((*BROWSER_TOOLS, "document_search", "document_read", "file_share"))
+_ACTIVE = frozenset(("awaiting_dispatch", "queued", "running", "waiting_for_approval", "stopping"))
+_VIEWABLE = _ACTIVE | frozenset(("completed", "failed", "cancelled", "interrupted"))
 
 
 def _identifier(value):
@@ -137,7 +138,8 @@ class BrowserService:
         if (type(tools) is not tuple or any(type(tool) is not str for tool in tools)
                 or len(tools) != len(set(tools))
                 or not set(BROWSER_TOOLS) <= set(tools) or not set(tools) <= _PERMITTED
-                or run.get("status") not in _ACTIVE):
+                or "file_share" in tools and not {"document_search", "document_read"} <= set(tools)
+                or run.get("status") not in _VIEWABLE):
             raise Rejected("browser_scope_unavailable", 503)
         try:
             _identifier(run.get("session_id"))
@@ -164,6 +166,8 @@ class BrowserService:
         if run is None:
             return self._idle()
         if run["run_id"] is None:
+            if run["status"] not in _ACTIVE:
+                return self._idle()
             return {"state": "starting", "run_id": None, "generation": None, "url": None}
         try:
             status = self.hermes.browser_status(run["run_id"])

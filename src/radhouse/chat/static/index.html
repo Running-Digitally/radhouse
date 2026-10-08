@@ -2,13 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Radhouse</title><link rel="stylesheet" href="/chat.css"><link rel="stylesheet" href="/browser-view.css">
-  <script src="/format.js" defer></script><script src="/browser-view.js" defer></script><script src="/chat.js" defer></script>
+  <title>Radhouse</title><link rel="stylesheet" href="/chat.css"><link rel="stylesheet" href="/browser-view.css"><link rel="stylesheet" href="/navigation.css">
+  <script src="/navigation.js" defer></script><script src="/format.js" defer></script><script src="/browser-view.js" defer></script><script src="/library.js" defer></script><script src="/chat.js" defer></script>
 </head>
 <body>
 <div class="shell">
   <header><a href="/" class="brand">Radhouse</a><button id="logout" hidden>Sign out</button></header>
-  <nav id="management-nav" aria-label="Main navigation" hidden><a href="/" aria-current="page">Chat</a><a href="/settings">Settings</a><a href="/infrastructure">Infrastructure</a></nav>
+  <nav id="management-nav" aria-label="Main navigation" hidden><a href="/" id="chat-link" aria-current="page">Chat</a><a href="/library" id="library-link">Library</a><a href="/browser" id="browser-link">Browser</a><a href="/settings" id="settings-link" data-management hidden>Settings</a><a href="/infrastructure" id="infrastructure-link" data-management hidden>Infrastructure</a></nav>
   <main>
     <section id="login-view" hidden>
       <h1>Welcome to Radhouse</h1><p class="intro">Sign in to continue your conversation.</p>
@@ -24,7 +24,6 @@
       <section id="history-pane" tabindex="0" aria-label="Conversation history">
         <button id="older" hidden>Show earlier messages</button>
         <div id="messages" role="log" aria-label="Conversation" aria-live="off"></div>
-        <section id="assistant-browser" aria-label="Assistant browser" hidden></section>
         <div id="empty" hidden><h1>What’s on your mind?</h1><p>Ask a question or attach something to work through.</p></div>
       </section>
       <button id="latest" hidden>Latest ↓</button>
@@ -41,6 +40,18 @@
           <button class="primary" id="send" type="submit" title="Send · Enter on desktop, Shift+Enter for a new line">Send ↗</button>
         </div>
       </form>
+    </section>
+    <section id="library-view" class="workspace-page" aria-labelledby="library-title" hidden>
+      <div class="workspace-heading"><div><h1 id="library-title" tabindex="-1">Library</h1><p class="intro">Your uploaded files and files shared by Radhouse.</p></div><button id="library-refresh" type="button">Refresh</button></div>
+      <div class="library-filters"><label>Search files<input id="library-search" type="search" placeholder="Search by filename…" maxlength="512"></label><label>Shared by<select id="library-source"><option value="all">Everyone</option><option value="user">You</option><option value="assistant">Radhouse</option></select></label></div>
+      <p id="library-status" role="status" aria-live="polite"></p>
+      <div id="library-files" class="library-files"></div>
+      <button id="library-more" type="button" hidden>Show more files</button>
+    </section>
+    <section id="browser-page" class="workspace-page browser-page" aria-labelledby="browser-title" hidden>
+      <div class="workspace-heading"><div><h1 id="browser-title" tabindex="-1">Browser</h1><p class="intro">The same browser your assistant uses.</p></div></div>
+      <section id="assistant-browser" aria-label="Assistant browser" hidden></section>
+      <p id="browser-idle-hint" class="intro">Ask your assistant to browse a website. You can watch it here while its browser is open.</p>
     </section>
     <output id="loading">Opening your conversation…</output>
   </main>

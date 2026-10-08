@@ -78,6 +78,7 @@ function failureText(code) {
 }
 function failed(code) {
   if (code === "authentication_required") { session = null; $("logout").hidden = true; }
+  window.RadhouseNavigation?.update(session);
   $("content").replaceChildren(); $("content").hidden = true; $("loading").hidden = true;
   $("checked-at").textContent = ""; $("notice").hidden = false;
   $("notice-text").textContent = failureText(code);
@@ -100,6 +101,7 @@ async function load() {
     const next = await request("/auth/session", signal);
     if (current !== generation) { return; }
     session = next;
+    window.RadhouseNavigation?.update(session);
     if (session.management?.read !== true) { throw new Error("management_access_required"); }
     $("logout").hidden = false;
     $("loading").textContent = infrastructure ? "Checking the instance…" : "Checking current settings…";

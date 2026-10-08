@@ -18,8 +18,11 @@ from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, HTTPSHandler, ProxyHandler, Request, build_opener
 
 DOCUMENT_TOOLS = ("document_search", "document_read")
+FILE_TOOLS = ("file_share",)
 BROWSER_TOOLS = ("browser_navigate", "browser_snapshot", "browser_click", "browser_type",
                  "browser_scroll", "browser_back", "browser_press")
+BROWSER_VIEW_STATUSES = frozenset(("queued", "running", "waiting_for_approval", "stopping",
+                                   "completed", "failed", "cancelled", "interrupted"))
 MAX_RESPONSE = 1024 * 1024
 MAX_JPEG = 512 * 1024
 
@@ -105,7 +108,8 @@ class Callback:
         if len(data) > MAX_RESPONSE:
             raise ValueError("document_response_unavailable")
         value = json.loads(data)
-        if type(value) is not dict or value.get("kind") not in {"catalog", "passages"}:
+        kinds = {"file"} if operation == "share" else {"catalog", "passages"}
+        if type(value) is not dict or value.get("kind") not in kinds:
             raise ValueError("document_response_unavailable")
         return value
 
@@ -135,11 +139,15 @@ def features(adapter):
         from tools.registry import registry
         documents_registered = all((entry := registry.get_entry(name)) is not None
                                    and entry.handler.__module__ == __name__ for name in DOCUMENT_TOOLS)
+        sharing_registered = all((entry := registry.get_entry(name)) is not None
+                                and entry.handler.__module__ == __name__ for name in FILE_TOOLS)
     except Exception:
-        documents_registered = False
+        documents_registered = sharing_registered = False
     return {
         "runs_document_scope": {"supported": _callback is not None and documents_registered,
             "durable": bool(adapter._run_idempotency_store.durable), "version": 1, "scope": "saved_turn_files"},
+        "runs_file_share": {"supported": _callback is not None and documents_registered and sharing_registered,
+            "version": 1},
         "runs_browser_view": {"supported": _browser_configuration is not None,
             "version": 1, "mode": "same_session_view_only"},
         "browser_network_policy": dict(_network_policy),
@@ -151,19 +159,22 @@ def validate_admission(body, dispatch_key, durable):
     names = set(body.get("allowed_tools") or ())
     uses_documents = bool(names.intersection(DOCUMENT_TOOLS))
     uses_browser = bool(names.intersection(BROWSER_TOOLS))
+    uses_sharing = bool(names.intersection(FILE_TOOLS))
     scoped_session = type(body.get("session_id")) is str and 1 <= len(body["session_id"]) <= 512
     if token is not None and (type(token) is not str or not re.fullmatch(r"[A-Za-z0-9_-]{43}", token)):
         return "invalid_document_scope"
     if bool(token) != uses_documents:
         return "document_scope_required" if uses_documents else "document_scope_without_tools"
+    if uses_sharing and (not uses_documents or not set(DOCUMENT_TOOLS).issubset(names)):
+        return "file_share_scope_required"
     if token and (not dispatch_key or not durable or _callback is None or not scoped_session
                   or body.get("disable_tools") or not set(DOCUMENT_TOOLS).issubset(names)
-                  or not names.issubset(set(DOCUMENT_TOOLS + BROWSER_TOOLS))):
+                  or not names.issubset(set(DOCUMENT_TOOLS + BROWSER_TOOLS + FILE_TOOLS))):
         return "document_scope_unavailable"
     if uses_browser and _browser_configuration is None:
         return "browser_view_unavailable"
     if uses_browser and (not dispatch_key or not durable or not scoped_session or body.get("disable_tools")
-                         or not names.issubset(set(DOCUMENT_TOOLS + BROWSER_TOOLS))):
+                         or not names.issubset(set(DOCUMENT_TOOLS + BROWSER_TOOLS + FILE_TOOLS))):
         return "browser_scope_unavailable"
     return None
 
@@ -199,6 +210,19 @@ def document_handler(operation, args, **trusted):
         return json.dumps({"error": "document_access_unavailable"})
 
 
+def file_share_handler(args, **trusted):
+    try:
+        context = current_run_context(task_id=trusted.get("task_id"), session_id=trusted.get("session_id"), documents=True)
+        if (type(args) is not dict or set(args) != {"name", "content"}
+                or type(args["name"]) is not str or not 1 <= len(args["name"]) <= 200
+                or re.search(r'[/\\\x00-\x1f\x7f]', args["name"])
+                or type(args["content"]) is not str or _callback is None):
+            raise ValueError("file_share_arguments_invalid")
+        return json.dumps(_callback.post("share", context, dict(args)), ensure_ascii=False)
+    except Exception:
+        return json.dumps({"error": "file_share_unavailable"})
+
+
 def register(ctx):
     global _callback, _browser_configuration, _maintenance_configuration, _network_policy
     previous = (_callback, _browser_configuration, _maintenance_configuration, _network_policy)
@@ -224,6 +248,13 @@ def _register(ctx):
         def handler(args, _operation=operation, **trusted):
             return document_handler(_operation, args, **trusted)
         ctx.register_tool(name=name, toolset="radhouse_documents", schema=schema, handler=handler)
+    ctx.register_tool(name="file_share", toolset="radhouse_documents", handler=file_share_handler,
+        schema={"description": "Create and share a downloadable UTF-8 text file with the user. "
+                    "Use for Markdown, CSV, JSON, code or plain text, not PDF, Office, image or audio files. "
+                    "Only claim success after confirmation and use the returned download_url.",
+                "parameters": {"type": "object", "properties": {
+                    "name": {"type": "string"}, "content": {"type": "string"}},
+                    "additionalProperties": False, "required": ["name", "content"]}})
     policy_hash, runtime_hash = ctx.get_config("maintenance_policy_sha256"), ctx.get_config("runtime_sha256")
     if policy_hash is not None or runtime_hash is not None:
         configure_maintenance(policy_hash, runtime_hash)
@@ -523,11 +554,17 @@ def _session_stream(session_id):
             or not re.fullmatch(r"h_[a-f0-9]{10}", name)):
         raise ValueError("browser_session_unavailable")
     directory = Path(browser._socket_safe_tmpdir()) / ("agent-browser-" + name)
-    info = directory.lstat()
+    try:
+        info = directory.lstat()
+    except FileNotFoundError:
+        return None  # The retained native session was retired; observation cannot recreate it.
     if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
         raise ValueError("browser_session_unavailable")
     path = directory / (name + ".stream")
-    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    except FileNotFoundError:
+        return None  # Native idle shutdown may precede Hermes's session-cache cleanup.
     with os.fdopen(descriptor, "rb") as stream:
         info = os.fstat(stream.fileno())
         if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
@@ -647,10 +684,13 @@ async def handle_browser(adapter, request, *, frame=False, api_server):
     if error is not None:
         return error
     session_id = status.get("session_id")
-    names = status.get("allowed_tools", [])
+    # The pinned resolver returns a live cached dict. Freeze these identities
+    # before awaiting native data so in-place updates cannot evade revalidation.
+    names = list(status.get("allowed_tools", []))
+    dispatch_key = status.get("dispatch_key")
     base = {"run_id": run_id, "session_id": session_id}
     if (_browser_configuration is None or not session_id or not set(names).intersection(BROWSER_TOOLS)
-            or status.get("status") not in {"queued", "running", "waiting_for_approval", "stopping"}):
+            or status.get("status") not in BROWSER_VIEW_STATUSES):
         return web.json_response({**base, "state": "unavailable", "generation": None, "url": None}, status=409 if frame else 200)
     try:
         stream = _session_stream(session_id)
@@ -663,13 +703,17 @@ async def handle_browser(adapter, request, *, frame=False, api_server):
         _, after, _, _, error = _load_owned_run(adapter, request, _api_server=api_server,
                                               permission="status", active_fallback=False)
         if (error is not None or after.get("session_id") != session_id or after.get("allowed_tools") != names
-                or after.get("dispatch_key") != status.get("dispatch_key")
-                or after.get("status") not in {"queued", "running", "waiting_for_approval", "stopping"}):
+                or after.get("dispatch_key") != dispatch_key
+                or after.get("status") not in BROWSER_VIEW_STATUSES):
             raise ValueError("browser_run_changed")
         if frame:
             return web.json_response({**base, "generation": generation,
                 **{key: result[key] for key in ("jpeg", "received_at", "captured_at", "frame_id")}}, headers={"Cache-Control": "no-store"})
         return web.json_response({**base, "state": "live", "generation": generation, "url": result["url"]}, headers={"Cache-Control": "no-store"})
     except Exception:
-        return web.json_response({**base, "state": "unavailable", "generation": None, "url": None}, status=409 if frame else 200,
+        try:
+            retired = _session_stream(session_id) is None
+        except Exception:
+            retired = False
+        return web.json_response({**base, "state": "idle" if retired else "unavailable", "generation": None, "url": None}, status=409 if frame else 200,
                                  headers={"Cache-Control": "no-store"})
