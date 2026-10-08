@@ -71,8 +71,8 @@ def prerequisites(scanner, host, credential):
         raise ScanError("install SonarScanner CLI or provide its executable with --scanner")
     if not credential or not host:
         raise ScanError("a project analysis token and SONAR_HOST_URL are required")
-    if not host.startswith("https://") and not host.startswith("http://localhost:"):
-        raise ScanError("use HTTPS for SONAR_HOST_URL (HTTP is allowed only for localhost)")
+    if not host.startswith("https://"):
+        raise ScanError("use HTTPS for SONAR_HOST_URL")
     return executable
 
 
