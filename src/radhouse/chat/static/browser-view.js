@@ -313,12 +313,14 @@
       if(!this.request)return;
       const human=this._human(), input=human && !!this.displayedFrame && !this.actionPending && !this.inputUnconfirmed;
       const ownerText=human ? "You have control" : {agent:"Agent has control",takeover_pending:"Handing over…",paused:"Browser paused",recovering:"Check the page",human:"Open in another tab"}[this.control?.mode] || "Connecting…";
-      const ownerIcon=human ? "pointer" : this.control?.mode==="agent" ? "agent" : "browser";
+      const ownerIcon=human ? "pointer" : ["agent","takeover_pending","paused","recovering"].includes(this.control?.mode) ? "agent" : "browser";
       if(this.owner.textContent!==ownerText){
         this.owner.textContent="";
         if(window.RadhouseIcons)this.owner.append(window.RadhouseIcons.create(ownerIcon));
         this.owner.append(document.createTextNode(ownerText));
       }
+      window.RadhouseIcons?.setAgentState(this.owner,{agent:"working",takeover_pending:"waiting",paused:"paused",recovering:"error"}[this.control?.mode] || "ready");
+      window.RadhouseIcons?.setAgentState(this.returnButton,this.canReturn ? "ready" : "thinking");
       this.connection.textContent=this.image.hidden ? this.status.textContent===labels.unavailable ? "Unavailable" : "Connecting" : "Live";
       this.connection.dataset.state=this.image.hidden ? "pending" : "live";
       this.container.setAttribute("aria-busy",String(this.actionPending));

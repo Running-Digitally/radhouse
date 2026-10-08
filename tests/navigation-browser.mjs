@@ -107,6 +107,11 @@ try {
 
   // Real admin assets use the same shell and current session role.
   await page.goto(`${origin}/settings`); await expect(page.locator("#content")).toBeVisible();
+  const animationToggle=page.getByRole("switch",{name:"Icon animation",exact:true});
+  await expect(page.getByRole("heading",{name:"Appearance",exact:true})).toBeVisible();
+  await animationToggle.uncheck();await expect(page.locator("html")).toHaveAttribute("data-icon-animation","off");
+  await page.reload();await expect(animationToggle).not.toBeChecked();
+  await animationToggle.check();await expect(page.locator("html")).toHaveAttribute("data-icon-animation","on");
   await expect(link("Settings")).toHaveAttribute("aria-current", "page");
   await expect(link("Library")).toBeVisible(); await expect(link("Browser")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollHeight > innerHeight)).toBe(true);
@@ -138,6 +143,10 @@ try {
   await deniedPage.evaluate(() => window.RadhouseNavigation.update({username: "alice"}));
   await expect(deniedPage.locator("#navigation-panel")).toBeVisible();
   await deniedPage.locator("#navigation-toggle").click(); await expect(deniedPage.locator("#navigation-panel")).toBeHidden();
+  await deniedPage.evaluate(()=>document.querySelector("main").append(RadhouseIcons.appearanceControl()));
+  await deniedPage.getByRole("switch",{name:"Icon animation",exact:true}).uncheck();
+  await expect(deniedPage.locator("html")).toHaveAttribute("data-icon-animation","off");
+  await expect(deniedPage.locator(".rh-appearance-note")).toContainText("storage is unavailable");
   await deniedStorage.close();
   expect(errors).toEqual([]);
   console.log("Shared navigation and admin integration browser checks passed.");

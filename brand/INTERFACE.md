@@ -1,139 +1,190 @@
 # Radhouse interface language
 
-The interface should feel like a quiet home for capable tools: warm paper,
-green ink, clear actions and room for the work itself. The house mark remains
-the brand signature. Interface icons keep familiar meanings rather than turning
-every control into a house. This extends [the brand](README.md) and the
-[first useful action principle](../PRINCIPLES.md).
+Warm paper, green ink, clear actions and playful details that express what the
+control does. The house-and-hearth mark remains the brand signature. This extends
+[the brand](README.md) and the [first useful action principle](../PRINCIPLES.md).
+The icon family and motion remain a review candidate: the owner has not approved
+the other icons by saying they were okay in screenshots. Review motion in the
+[interactive showcase](interface-preview.html).
 
-The assistant mark adapts our own Radhouse house-and-hearth geometry into a
-monochrome outline: a shelter, a protective circle and a central point. The
-owner rejected the robot glyph and suggested a logo-inspired direction. This
-is the current review candidate, not owner approval of the finished family.
-Keep it beside an explicit agent label in ownership and handoff controls.
+## One original family
 
-## One small, original family
+`src/radhouse/chat/static/navigation.js` contains the canonical SVG geometry and
+motion. These original drawings are contributed under the repository's
+Apache-2.0 license. No icon package, font, copied library artwork or external
+request is needed. Named SVG parts keep motion tied to the glyph's meaning.
 
-The SVG paths in `src/radhouse/chat/static/navigation.js` are the canonical
-interface collection. They are original drawings contributed under the
-repository's Apache-2.0 license; no library paths, font, package or external
-request is used. A custom collection makes sense here because the small set can
-share one geometry and state treatment without shipping a much larger library.
-Do not copy document-format artwork into this family: those assets identify
-file formats rather than interface actions.
+- Draw on a 24 × 24 grid with a 1.7-unit round stroke, round joins and currentColor.
+  Most geometry fits inside 3–21; directional marks can reach 2–22. Agent chimney
+  effects extend above the grid, with space reserved around the glyph.
+- Render at 20px for actions, 21px in navigation, and 17–18px in dense controls.
+  The showcase enlarges the same SVGs; it has no separate animation implementation.
+- Green `#315d4b` marks selected and confirmed actions; muted ink `#526357`,
+  paper `#fffef9`, soft green `#e9eee8`, and terracotta `#a75c34` form the palette.
+- Keep 44 × 44px hit areas. The browser navigation row allows 40px-wide,
+  44px-tall targets on narrow screens. Never move a hit target during animation.
+- Keep labels on handoff, closure and saved-login actions. Familiar compact
+  controls have accessible names and supplementary hover/focus tooltips.
+- Visible clipboard actions say **Copy**. Accessible names preserve **Copy answer**
+  or **Copy code** so their context remains clear.
 
-- Draw on a 24 × 24 grid with a 1.7-unit stroke, round caps and round joins.
-  Keep most geometry inside 3–21; directional marks can reach 2–22.
-- Use 2-unit corners for small rectangular containers. Keep internal detail
-  sparse and open; do not fill strokes or add a second accent colour.
-- Render at 20px for actions, 21px in navigation and 17–18px in dense secondary
-  controls. Optical sizing changes the rendered size, not the stroke geometry.
-- Inherit `currentColor`. Use green `#315d4b` for selected and confirmed actions,
-  muted ink `#526357` for secondary actions, paper `#fffef9` and soft green
-  `#e9eee8` for surfaces. The small terracotta navigation dot `#a75c34` links the
-  selection treatment to the hearth in the house mark.
-- Keep a 44 × 44px hit area even when the glyph is 17px. The browser's tight
-  navigation row has 40px-wide, 44px-tall targets on narrow screens; never go
-  smaller. Keep visible labels on expanded navigation, handoff, shutdown and
-  saved-login actions. Mobile sign-out and familiar browser controls can use
-  icons with explicit accessible names.
+Refresh is a clean single arc and corner arrow. The key has a round bow, a small
+hole and distinct stepped teeth. Browser has an active tab, navigation dot,
+address field and page lines. Keyboard has individually drawn keys.
 
-## Action states and motion
+## Meaningful motion
 
-| State | Treatment and meaning |
+Hover and keyboard focus preview the action. Click gives a fuller gesture.
+Touch skips hover; activation still plays the click response. Effects run once
+per interaction; ongoing loops are reserved for actual pending refreshes and
+agent states. Actions run immediately and never wait for animation.
+
+| Icon | Hover / keyboard focus | Click |
+| --- | --- | --- |
+| Menu | Write three lines in sequence | Fan the lines open and return |
+| Chat | Write message lines | Trace the bubble, then write its lines |
+| Library | Write folder content lines | Lift the tab, then write the contents |
+| Copy | Write clipboard lines | A duplicate sheet peels away |
+| Browser | Load page lines | Trace the active tab and address field before the page |
+| Refresh | Re-ink the arc and tip | Full reload sweep; actual pending requests keep turning |
+| Key | Trace the hole and teeth | Insert, turn, withdraw |
+| Infrastructure | Blink LEDs and buzz two racks | Longer activity burst and vent strokes |
+| Keyboard | Type four individual keys | Eight-key phrase, followed by the space bar |
+| Eye | Natural blink | Close, hold, reopen and blink again |
+| Check | Draw the short leg, pause, finish the long stroke | Replay the deliberate hand-drawn stroke |
+| Close | Gather into a point and return with a small star | Collapse to a point, vanish in a star, redraw; no rotation |
+| Settings | Opposite slider adjustments | Wider adjustment and return |
+| Back / Go | Trace shaft and travel in the action's direction | Greater directional travel |
+| Sign out | Trace the exit arrow | Arrow leaves the doorway and returns |
+| Send | Draw the flight path | Plane flies away and a new plane arrives |
+| Attach | Thread the paperclip | Full loop, then inner strand |
+| Take control | Contact pulse at the pointer tip | Larger contact pulse |
+| Warning | Trace the warning mark and pulse its dot | Two dot pulses |
+| Terminal | Prompt, blinking cursor and a short typed command | Longer typing sequence |
+| Share terminal context | Write output lines | Output packet travels toward the conversation |
+| About You | Write saved-memory lines | Trace the read-only note and its contents |
+
+Hover gestures take about 330–700ms; clicks take about 580–900ms. Staggered strokes
+and pauses create character without translating the entire icon back and forth.
+Surface transitions take 160ms. Focus uses a 2px warm outline with 3px separation.
+Selected navigation includes `aria-current="page"`, a green surface and warm dot.
+Disabled controls remain native disabled controls with 42% opacity and no motion.
+
+Copy becomes a check with **Copied** only after `clipboard.writeText` resolves.
+A polite live region announces success; denied writes show **Copy unavailable**.
+Feedback resets after two seconds and keyboard focus is retained. The specimen's
+check sample demonstrates geometry; the real copy control verifies acknowledgement.
+
+## A stateful Radhouse agent
+
+The house, chimney, hearth ring and central point adapt our own logo into one
+recognizable agent mark. State is passed explicitly with `setAgentState`.
+
+| State | Appearance |
 | --- | --- |
-| Default | Muted glyph, stable size, quiet surface; the label names the action. |
-| Hover | Soft background. Back/Go move 2px in their direction, Refresh turns 35°, clipboard lifts 2px. This hints at the action. |
-| Pressed | Glyph contracts to 90% with an inset surface; primary controls deepen to `#244638`. This confirms the physical press. |
-| Focus visible | 2px warm outline with 3px separation; the same affordances work by keyboard. |
-| Selected | Green glyph and soft surface plus `aria-current="page"` and a warm dot in navigation. |
-| Disabled | 42% opacity; hover and activation give no action hint. Native `disabled` remains authoritative. |
-| Pending | `aria-busy="true"`, progress cursor and disabled input where the existing workflow requires it. Refresh rotates only during its actual request. |
-| Success | Clipboard becomes a check and “Copied” only after `clipboard.writeText` resolves; polite text announces success. Reset after two seconds. |
-| Failure | Clipboard shows “Copy unavailable”; browser actions retain the existing unconfirmed/rejected-action message. Never animate a false success. |
+| Ready | Still hearth and central point |
+| Idle | Three little zzz drift from the chimney |
+| Thinking | Curling chimney smoke and a breathing hearth point |
+| Working | Chimney smoke and circulating ink around the hearth |
+| Waiting | Gentle ellipsis inside the hearth |
+| Paused | Still pause bars inside the hearth |
+| Complete | Check inside the hearth |
+| Error | Warning inside the hearth |
 
-Hover transitions last 160ms. Click responses settle over 280–480ms: directional
-push and recoil for Back/Go, a lift for Library/clipboard, opposite slider travel
-for Settings, arrow travel for sign-out, a contraction for Close and one hearth
-pulse for the agent mark. A copied check draws in over 300ms after success. These
-effects run on the SVG alone; they never delay an action or move its hit target.
-Honour `prefers-reduced-motion`: suppress transforms,
-transitions and rotation while retaining colour, labels and status changes.
-Tooltips on pointer hover or keyboard focus supplement accessible names; touch
-users must be able to identify consequential actions without a tooltip.
-Do not put tooltips or SVG titles into the accessible name of a control.
+The empty conversation uses idle; saved replies awaiting dispatch use waiting;
+a reply in progress uses the illustrative thinking cue; completed replies use
+complete. Failure/interruption uses the attention cue. These presentation states
+do not claim access to internal reasoning or VM utilization. Browser ownership
+maps existing agent, takeover, paused and recovery states to working, waiting,
+paused and error. Existing text remains the source of meaning and is available
+to assistive technology. Decorative SVGs remain `aria-hidden`.
 
-## Browser composition
+The showcase offers every state, a large selector and an illustrative journey.
+Terminal, Share terminal context and About You are future icon studies only.
+Their demo controls launch no VM session, send no terminal output and edit no
+memory. The demo context switch starts off; Hide and Close illustrate their
+separate meanings. Implementation of those features belongs to the next release.
 
-The first row is Back, Refresh, editable address, Go and a view toggle. The
-second is concise ownership and connection status with labelled Take control /
-Return to agent and Close browser. The live page occupies the full inner width
-with no 420px desktop height cap. Keep its real aspect ratio and letterboxing:
-visual redesign must not change frame-to-page coordinate mapping.
+## Appearance and reduced motion
 
-Typing and saved logins sit below the viewport. Longer explanations are reserved
-for pending handoff, a finishing reply or unconfirmed input. The normal ownership
-explanation remains available to assistive technology. On mobile the ownership
-strip wraps, address controls stay on one row, and page-input controls wrap
-below the viewport. The navigation drawer preserves its modal focus trap and
-Escape/backdrop dismissal. Desktop keeps expanded labels and the user's collapse
-preference. Chat keeps a stable composer and generous copy targets.
+**Settings → Appearance → Icon animation** enables or disables all icon motion,
+including agent-state loops, hover, keyboard focus, click, success and pending
+refresh. The same switch is available in the showcase. Default is on; the device's
+`prefers-reduced-motion` setting always suppresses animation, even when the saved
+switch is on. Static smoke, zzz, ellipsis, pause, check and warning cues remain
+visible, as do control labels, colors and status updates.
 
-Presentation must preserve inert launch until explicit Open, status-only
-reconnection, retained URL drafts, action acknowledgement and no uncertain
-replay, authenticated tab/lease/frame binding, browser-only pause, same-page
-handoff, native vault restrictions and positive Close. Existing APIs and runtime
-permissions remain the authority. Hiding the view stops reading frames; it does
-not close the browser. Close is always labelled and distinct from Hide.
+The preference is local to this browser, stored as `on` / `off` under
+`radhouse.appearance.icon-animation`, and synchronized across tabs with storage
+events. Turning it off immediately cancels in-flight Web Animations and stops CSS
+loops. Storage failure applies the choice to the current page and tells the user
+it could not persist. This changes no server settings, permissions or account
+configuration. Instance settings remain read only.
 
-## Use and inspect
+## Browser composition and behavior
+
+Back, Refresh, editable address, Go and a view toggle occupy the first row.
+Concise ownership and connection status sit beside labelled Take control,
+Return to agent and Close browser actions. The live page occupies the full inner
+width without the previous 420px desktop height cap. Real aspect ratio and
+letterboxing preserve frame-to-page coordinate mapping.
+
+Typing and saved logins sit below the viewport. Longer explanations appear for
+pending handoff, a finishing reply or unconfirmed input; normal ownership text
+stays available to assistive technology. The Eye control stays in the header so
+it remains available when the view is hidden. On mobile, ownership wraps while
+address controls remain on one row. Navigation retains modal focus, Escape,
+backdrop dismissal and the user's collapse preference.
+
+Preserve inert launch until explicit Open, status-only reconnection, retained
+URL drafts, acknowledged actions without uncertain replay, authenticated
+tab/lease/frame binding, browser-only pause, same-page handoff, native vault
+restrictions and positive Close. Hiding stops frame reading and preserves the
+browser. Close ends the browser session. APIs and runtime permissions remain
+the authority; this design introduces no backend or credential changes.
+
+## Use and validate
 
 ```js
-RadhouseIcons.decorate(button, "clipboard", "Copy answer");
+RadhouseIcons.decorate(copy, "clipboard", "Copy", {accessibleLabel: "Copy answer"});
 RadhouseIcons.decorate(back, "back", "Back", {compact: true});
 RadhouseIcons.busy(refresh, requestPending);
+RadhouseIcons.setAgentState(agent, "thinking");
+settings.append(RadhouseIcons.appearanceControl());
 ```
 
 Load `navigation.js` before consumers and `navigation.css` after base styles.
-The BrowserView and formatter retain text-only fallbacks for standalone hosts.
-The family lives with the existing shared shell to avoid adding an asset API or
-component framework.
+BrowserView and the formatter retain text fallbacks for standalone hosts.
+Serve the repository with a static server and open `brand/interface-preview.html`.
+The showcase uses production components with an in-memory browser adapter and
+synthetic pixels. It launches no native browser or production API request.
 
-Open [interface-preview.html](interface-preview.html) directly, or serve the
-repository with an ordinary static preview server. It reuses the production
-icons, formatter, CSS and BrowserView DOM with an explicitly labelled synthetic
-page and an in-memory request adapter. It launches no Chromium or production
-requests. Inspect at desktop width, 390px and 320px; try Open, handoff, Close,
-copy, keyboard focus and reduced motion. This fixture demonstrates presentation;
-the existing browser-session journey validates real Chromium input and handoff.
-
-## Review and validation
-
-This design slice starts from the verified production source `7ac0630` on a
-separate `codex/icon-browser-design` branch. It is a visual review candidate;
-the owner has not approved the complete icon family or motion. No production
-activation is part of this slice. SonarQube sprints and GitHub review-comment
-cycles remain paused.
-
-Run the relevant browser checks with the existing Playwright installation:
+Run the relevant checks with an existing Playwright installation; set
+`RADHOUSE_PLAYWRIGHT_MODULE` to its `index.mjs` when this checkout has no dependencies:
 
 ```sh
 node tests/interface-browser.mjs
+node tests/navigation-browser.mjs
+node tests/library-browser.mjs
 node tests/browser-session-browser.mjs
 node tests/chat-browser-view-browser.mjs
-node tests/navigation-browser.mjs
 node tests/browser-view-browser.mjs
 node tests/browser-login-removal-browser.mjs
 ```
 
-`RADHOUSE_PLAYWRIGHT_MODULE` can point to an existing Playwright `index.mjs` when
-the isolated checkout has no local dependencies. `RADHOUSE_DESIGN_EVIDENCE`
-saves the specimen and clipboard screenshots;
-`RADHOUSE_BROWSER_SCREENSHOTS` saves desktop/mobile real-CDP journey screenshots.
-The tests use disposable synthetic accounts/pages. The interface check covers
-delayed and denied clipboard writes, confirmation timing, keyboard focus,
-distinct hover/click animations, reduced motion, 390/320px layouts and touch
-targets. The existing journeys cover native input, uncertain-input recovery,
-vault handling, browser ownership, handoff, positive Close and frame lifecycle.
-Targeted Python API/authentication/brand checks also passed (65 tests on
-2026-10-08); browser fixtures do not qualify a deployed runtime.
+The additional `minimal-chat-browser.mjs` integration is launched by
+`test_minimal_chat_postgres.py` with an owned PostgreSQL/authentication fixture;
+it cannot be run as a standalone static preview check.
+
+Coverage includes semantic hover/click motion, typed keys, the nonrotating Close
+star, agent states, acknowledged clipboard writes and keyboard focus, the real
+Settings switch, persistence, cross-tab updates, storage denial, OS reduced
+motion, 390/320px layout and touch targets. Existing browser journeys cover native
+input, uncertainty, vault handling, ownership, handoff, positive Close and frame
+lifecycle. Tests use disposable synthetic accounts/pages, without production
+runtime claims. Do not capture screenshots unless requested.
+
+This branch starts from verified production source `7ac0630` on
+`codex/icon-browser-design`. It remains a design review candidate, without
+production activation. SonarQube sprints and GitHub review-comment cycles remain
+paused.
