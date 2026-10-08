@@ -1,3 +1,4 @@
+import { cover, closeBrowser, closePage } from "./browser-coverage.mjs";
 import {readFile} from "node:fs/promises";
 import {pathToFileURL} from "node:url";
 const {chromium, expect: baseExpect} = await import(pathToFileURL(process.env.RADHOUSE_PLAYWRIGHT_MODULE).href);
@@ -5,6 +6,7 @@ const expect = baseExpect.configure({timeout:10000});
 const browser = await chromium.launch({headless: true});
 const context = await browser.newContext({viewport:{width:1200,height:950},permissions:["clipboard-read","clipboard-write"]});
 const page = await context.newPage(); const errors = [];
+await cover(page);
 async function screenshot(options) {
   for (let attempt=0; ; attempt++) {
     try { return await page.screenshot(options); }
@@ -139,6 +141,7 @@ try {
   await page.locator("#message").fill("Older draft with a retained original.");
   await page.evaluate(async () => { await draftWrites; });
   const staleTab=await context.newPage();
+await cover(staleTab);
   await staleTab.goto(process.env.RADHOUSE_BROWSER_ORIGIN);
   await expect(staleTab.locator("#message")).toHaveValue("Older draft with a retained original.");
   await page.locator("#message").fill("Newer draft written in the active tab.");
@@ -147,7 +150,7 @@ try {
   await staleTab.route("**/auth/logout",route => route.fulfill({status:204}));
   await staleTab.locator("#logout").click();
   await expect(staleTab.locator("#login-view")).toBeVisible();
-  await staleTab.close();
+  await closePage(staleTab);
   await page.reload();
   await expect(page.locator("#message")).toHaveValue("Newer draft written in the active tab.");
   await page.evaluate(async () => { await draftWrites; window.originalDraftOperation=draftOperation;
@@ -501,4 +504,4 @@ try {
   if (await page.evaluate(() => retainedSnapshots.get("alice").attachments[0].blob.text())!=="Kept across real sign-out") throw new Error("Sign-out lost the only original");
   if (errors.length) throw new Error(errors.join("; "));
   console.log("PASS: real authentication and recovery; safe formatting/copy; long-paste exact download; separate next draft during send and reload; session expiry; pagination/reading anchor/latest; compact files; large transfer acknowledgement recovery; mobile composer and logout");
-} catch (error) { console.log("Browser state", (await page.locator("main").innerText()).slice(-2000)); throw error; } finally { await browser.close(); }
+} catch (error) { console.log("Browser state", (await page.locator("main").innerText()).slice(-2000)); throw error; } finally { await closeBrowser(browser); }

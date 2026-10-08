@@ -1,3 +1,4 @@
+import { cover, closeBrowser } from "./browser-coverage.mjs";
 // Real browser checks with explicit synthetic HTTP fixtures; no deployed claims.
 import {readFile, mkdir} from "node:fs/promises";
 import {pathToFileURL} from "node:url";
@@ -25,6 +26,7 @@ const infrastructure = {checked_at: "2026-10-07T18:30:00Z", versions: {release_c
 const browser = await chromium.launch({headless: true});
 const context = await browser.newContext({viewport: {width: 1200, height: 950}});
 const page = await context.newPage(), errors = [];
+await cover(page);
 page.on("pageerror", error => errors.push(error.message));
 await context.route(`${origin}/**`, async route => {
   const path = new URL(route.request().url()).pathname;
@@ -192,4 +194,4 @@ try {
   expect(originals).toEqual([["unsaved-original.txt", "The original must survive."], ["pending-original.txt", "Save this original before leaving."]]);
   if (errors.length) throw new Error(`Browser errors: ${errors.join(", ")}`);
   console.log("Admin browser checks passed: Chat navigation, draft/original continuity under failed and pending writes, read-only settings, fixed health states, refresh, role/session changes, CSRF logout, stale-request cancellation, mobile layout and safe text rendering.");
-} finally { await context.close(); await browser.close(); }
+} finally { await closeBrowser(browser); }

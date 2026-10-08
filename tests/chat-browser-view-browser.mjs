@@ -1,3 +1,4 @@
+import { cover, closeBrowser } from "./browser-coverage.mjs";
 // Main chat integration with one agent page's real CDP stream; synthetic API only.
 import {readFile} from "node:fs/promises";
 import {pathToFileURL} from "node:url";
@@ -14,6 +15,7 @@ let turns=[first];
 const history=()=>({turns,older_before:null});
 const credentials=()=>({username:"alice",csrf_token:"synthetic-csrf",features:{browser:enabled,documents:true}});
 const agent=await browser.newContext({viewport:{width:960,height:540}}), agentPage=await agent.newPage();
+await cover(agentPage);
 const cdp=await agent.newCDPSession(agentPage);
 await cdp.send("Page.enable");
 cdp.on("Page.screencastFrame",event=>{jpeg=Buffer.from(event.data,"base64");void cdp.send("Page.screencastFrameAck",{sessionId:event.sessionId}).catch(()=>{});});
@@ -21,6 +23,7 @@ await cdp.send("Page.startScreencast",{format:"jpeg",quality:65,maxWidth:960,max
 await agentPage.setContent('<body style="background:#315441;color:white;font:40px system-ui"><h1>Agent-owned page</h1></body>');
 await expect.poll(()=>jpeg?.length||0).toBeGreaterThan(100);
 const context=await browser.newContext({viewport:{width:1200,height:900}}), page=await context.newPage(), errors=[];
+await cover(page);
 await page.addInitScript(()=>{
   const realFetch=fetch;window.ignoreAbort=false;window.urls=new Set();
   window.fetch=(path,options)=>realFetch(path,window.ignoreAbort?{...options,signal:undefined}:options);
@@ -90,4 +93,4 @@ try{
   if(await page.evaluate(()=>window.urls.size))throw new Error("Terminal run retained frame URLs");
   if(errors.length)throw new Error(errors.join("; "));
   console.log("Chat browser integration passed: first-class live pane, same agent stream, saved drafts, mobile composer, new-run race, feature revocation and sign-out.");
-}finally{releaseStatus?.();await browser.close();}
+}finally{releaseStatus?.();await closeBrowser(browser);}

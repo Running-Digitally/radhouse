@@ -1,9 +1,11 @@
+import { cover, closeBrowser } from "../../tests/browser-coverage.mjs";
 import assert from "node:assert/strict";
 const { chromium } = await import(process.env.RADHOUSE_PLAYWRIGHT_MODULE);
 const browser = await chromium.launch({ headless: true,
   ...(process.env.RADHOUSE_BROWSER_CHANNEL ? { channel: process.env.RADHOUSE_BROWSER_CHANNEL } : {}) });
 const origin = process.env.RADHOUSE_BROWSER_ORIGIN;
 const page = await browser.newPage();
+await cover(page);
 try {
   await page.goto(`${origin}/app/#review=${process.env.RADHOUSE_TEST_LOCATOR}`);
   assert.equal(await page.locator('[data-task-id]').count(), 0);
@@ -32,4 +34,4 @@ try {
   await page.getByRole('heading', { name: "Alice's work", exact: true }).waitFor();
   assert.equal(new URL(page.url()).hash, '');
   console.log('Review locator: MFA login, exact target, remembered session, publication, reconnect, tamper denial passed.');
-} finally { await browser.close(); }
+} finally { await closeBrowser(browser); }

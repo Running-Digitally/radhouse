@@ -101,7 +101,10 @@ It does not replace lifecycle, isolation, or cleanup enforcement.
 
 ## Radhouse development and deployment records
 
-Radhouse's own public repository follows the GitHub-hosted default. Real Proxmox,
+Radhouse's own public repository follows the GitHub-hosted default for automated
+CI. Its maintainer-run [SonarQube analysis](sonarqube.md) uses the local
+development laptop after merge, as recorded in
+[ADR-0001](decisions/0001-local-post-merge-sonarqube-analysis.md). Real Proxmox,
 supplied-VM, maintenance, recovery, and inference integration tests still need
 separately admitted environments and exact reviewed candidates. Neither successful
 CI nor this setup preference authorizes a deployment or a privileged follow-on job.

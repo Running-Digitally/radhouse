@@ -433,9 +433,8 @@ class BuzzConversationCycle:
                 ):
                     continue
                 text, tags = self._outgoing_content(tx, message)
-                if message.reply_to:
-                    if not self._thread_tags(tx, message, tags):
-                        continue
+                if message.reply_to and not self._thread_tags(tx, message, tags):
+                    continue
                 event = self.relay.event(9, text, tags)
                 tx.conversation_enqueue(
                     message.message_id, self.link.link_id, message.message_id, event
