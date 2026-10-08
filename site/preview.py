@@ -26,10 +26,13 @@ class Preview(SimpleHTTPRequestHandler):
         if path == "/__qa/reduced-motion":
             html = (PUBLIC / "index.html").read_text()
             html = html.replace('href="/styles.css"', 'href="/__qa/reduced.css"')
+            html = html.replace('href="/gallery.css"', 'href="/__qa/reduced-gallery.css"')
+            html = html.replace('href="/platform-icons.css"', 'href="/__qa/reduced-icons.css"')
             html = html.replace('<script src="/journey.js"', '<script src="/__qa/preferences.js"></script><script src="/journey.js"')
             body = html.encode()
-        elif path == "/__qa/reduced.css":
-            body = re.sub(r"@media\s*\(prefers-reduced-motion:\s*reduce\)", "@media all", (PUBLIC / "styles.css").read_text()).encode()
+        elif path in {"/__qa/reduced.css", "/__qa/reduced-gallery.css", "/__qa/reduced-icons.css"}:
+            source = {"/__qa/reduced.css": "styles.css", "/__qa/reduced-gallery.css": "gallery.css", "/__qa/reduced-icons.css": "platform-icons.css"}[path]
+            body = re.sub(r"@media\s*\(prefers-reduced-motion:\s*reduce\)", "@media all", (PUBLIC / source).read_text()).encode()
             mime = "text/css"
         elif path == "/__qa/preferences.js":
             body = b"const nativeMedia=window.matchMedia.bind(window);window.matchMedia=q=>q==='(prefers-reduced-motion: reduce)'?{matches:true,media:q,addEventListener(){},removeEventListener(){}}:nativeMedia(q);"

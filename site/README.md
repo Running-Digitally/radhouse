@@ -10,9 +10,10 @@ The page leads with the vision: a private, always-on, open-source agent with
 clear security boundaries, running on infrastructure the owner controls.
 The private pilot is a compact development note below the vision. Browser
 now describes qualified owner control, return and saved logins. A separate
-workspace section labels Terminal, About You and model controls as prepared
-for the next pilot release; Agent Identity remains a design awaiting working
-settings. [The update receipt](RELEASE-2026-10-08-WORKSPACE.md) records the evidence.
+workspace section describes Terminal, About You and model controls activated
+in the private pilot on 8 October. Agent Identity remains a design preview, with
+a popup gallery of four collections and thirteen characters awaiting working
+settings in the private app. [The update receipt](RELEASE-2026-10-08-WORKSPACE.md) records the evidence.
 The hero keeps its original message and uses a tactile conversation notebook.
 Talk, Reply, Away and Return move the scene from day to night and back while
 the notebook stays in place. This is an illustration, not a live agent or a
@@ -22,8 +23,7 @@ build; current limitations sit in the pilot's native disclosure.
 The browser feature section reflects the deployed private pilot: one shared
 live view of the assistant's browser and Hide/Show controls. Its native disclosure
 illustrates hiding the view without requiring JavaScript; it is clearly labelled
-as an illustration, with no connected live session. Human takeover remains future
-work. The pilot note also describes selective access to large attached documents.
+as an illustration, with no connected live session. The page explains qualified human takeover, return and page sharing. The pilot note also describes selective access to large attached documents.
 
 ## Preview
 
@@ -47,12 +47,14 @@ These preview-only fixtures aren't in `public/` and aren't uploaded.
 ## Files and checks
 
 `public/` is the complete deployable artifact: HTML, CSS, conversation interaction,
-analytics policy/loader, brand SVGs, headers, error page and vendored PostHog
-SDK/license. No build or dependency installation is required.
+analytics policy/loader, platform glyphs, character portraits and gallery,
+brand SVGs, headers, error page and vendored PostHog SDK/license. No build or dependency installation is required.
 
 ```sh
 node --check site/public/journey.js
 node --check site/public/analytics.js
+node --check site/public/platform-icons.js
+node --check site/public/gallery.js
 node --test site/test/analytics.test.mjs
 .venv/bin/python -m pytest tests/test_brand_assets.py -q
 git diff --check -- site
@@ -64,6 +66,19 @@ next action, retaining focus; the changed state is announced in a polite live
 region. One reading panel is exposed at a time. Reduced motion removes the clock,
 paper and day/night transitions while preserving the completed state. Static project
 links, the first illustration and a full prose fallback work without enhancement.
+
+The character gallery uses a native modal dialog, collection and portrait
+buttons, previous/next controls and short character stories. Escape and backdrop
+click close it; focus returns to the collection link. Arrow keys and Home/End
+select within each button group. Four native disclosures expose all portraits
+without JavaScript. Reduced motion removes gallery and glyph animation.
+
+The platform glyph module is copied exactly from the qualified app source,
+excluding the app navigation bootstrap. Thirteen original character PNGs are
+resized to 640px WebP previews (695,498 bytes total); canonical artwork stays
+untouched. [The asset receipt](ASSETS-2026-10-08-GALLERY.json) pins sources and
+hashes. The gallery shows the accepted identity design, with no claim that
+working identity settings have shipped.
 
 Brand assets remain byte-identical copies of `../brand/`. The
 [logo refinement](REVIEW-2026-10-06-LOGO.md) updates the canonical SVGs and their
