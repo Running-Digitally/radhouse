@@ -161,7 +161,7 @@ h1 em { display: inline-block; font-family: var(--serif); font-weight: 400; font
 .current-note details p { margin-bottom: 13px; color: #505e4f; line-height: 1.8; }
 .current-note details .text-link { font-size: 11px; margin: 6px 22px 0 0; }
 .browser-feature { display: grid; grid-template-columns: 1fr 1.05fr; align-items: center; gap: 50px; padding-block: 52px 0; }
-.browser-copy .eyebrow { color: var(--clay); margin-bottom: 17px; }
+.browser-copy .eyebrow { color: #934826; margin-bottom: 17px; }
 .browser-copy h2 { font-size: clamp(32px, 3.3vw, 44px); letter-spacing: -.04em; line-height: 1.15; margin-bottom: 20px; }
 .browser-copy h2 em { color: var(--green); font-family: var(--serif); font-weight: 400; }
 .browser-copy p:not(.eyebrow) { font-size: 13px; line-height: 1.8; color: var(--muted); }
