@@ -180,7 +180,7 @@ try{
   await expect(page.locator(".browser-control-status")).toHaveText("Login saved for this website.");
   if(await page.locator(".browser-logins input[type=password]").inputValue())throw new Error("Saved login password remained in form");
   await navigate("Chat");await page.getByRole("textbox",{name:"Message your assistant"}).fill("Use this current page");
-  await expect(page.locator("#browser-context-chip")).toBeVisible();await page.getByRole("button",{name:"Send ↗",exact:true}).click();
+  await expect(page.locator("#browser-context-chip")).toBeVisible();await page.getByRole("button",{name:"Send",exact:true}).click();
   await expect.poll(()=>calls.some(([path])=>path==="/chat/messages")).toBe(true);
   const message=calls.find(([path])=>path==="/chat/messages")[1];
   if(message.browser_context?.generation!=="generation-1")throw new Error("Actual run omitted current browser handoff");
@@ -196,6 +196,7 @@ try{
   if(!returned||JSON.stringify(returned).includes(secret)||Object.hasOwn(returned,"attachments"))throw new Error("Return copied secrets or draft files");
   turns[1]={...turns[1],status:"completed",output:"Continued"};
   await navigate("Browser");await page.getByRole("button",{name:"Take control",exact:true}).click();
+  if(process.env.RADHOUSE_BROWSER_SCREENSHOTS){await mkdir(process.env.RADHOUSE_BROWSER_SCREENSHOTS,{recursive:true});await page.screenshot({path:process.env.RADHOUSE_BROWSER_SCREENSHOTS+"/browser-control-desktop.png",fullPage:true});}
   await page.setViewportSize({width:390,height:844});await expect(page.locator("#assistant-browser img")).toBeVisible();
   if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw new Error("Browser controls overflow on mobile");
   if(process.env.RADHOUSE_BROWSER_SCREENSHOTS){await mkdir(process.env.RADHOUSE_BROWSER_SCREENSHOTS,{recursive:true});await page.screenshot({path:process.env.RADHOUSE_BROWSER_SCREENSHOTS+"/browser-control-mobile.png",fullPage:true});}
@@ -211,7 +212,7 @@ try{
   const count=openCalls;await page.waitForTimeout(2200);if(openCalls!==count||native)throw new Error("Closed browser was automatically reopened");
   await navigate("Chat");await expect(page.locator("#browser-context-label")).toHaveText("Use previous page: Example sign-in");
   await page.locator("#use-browser-context").check();await page.getByRole("textbox",{name:"Message your assistant"}).fill("About that previous page");
-  await page.getByRole("button",{name:"Send ↗",exact:true}).click();await expect.poll(()=>turns.length).toBe(3);
+  await page.getByRole("button",{name:"Send",exact:true}).click();await expect.poll(()=>turns.length).toBe(3);
   const lastMessage=calls.filter(([path])=>path==="/chat/messages").at(-1)[1];
   if(lastMessage.browser_context||!lastMessage.use_previous_browser)throw new Error("Previous locator claimed native continuity");
   turns[2]={...turns[2],status:"failed",error:"reply_failed",output:"I found the relevant page, but the remaining lookup did not finish."};

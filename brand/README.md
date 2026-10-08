@@ -1,5 +1,9 @@
 # Radhouse brand assets
 
+The [interface language](INTERFACE.md) defines the original SVG icon family,
+interaction states and browser composition. Open the local
+[interface specimen](interface-preview.html) to inspect and try it.
+
 This directory is the single source of truth for the Radhouse mark. Every
 other copy in the repository is a byte-identical duplicate kept here for
 directories that need their own local reference (a browser `<link>` or `<img>`

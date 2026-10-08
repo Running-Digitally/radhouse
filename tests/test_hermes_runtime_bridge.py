@@ -876,6 +876,8 @@ def test_maintenance_producer_timestamp_matches_strict_operator_iso_schema(monke
     tools = ModuleType("tools")
     tools.browser_tool = SimpleNamespace(_cleanup_lock=threading.Lock(), _active_sessions={})
     monkeypatch.setitem(sys.modules, "tools", tools)
+    terminal_count = [0]
+    monkeypatch.setitem(sys.modules, "radhouse_owner_terminal", SimpleNamespace(owner_terminal_active_count=lambda: terminal_count[0]))
     monkeypatch.setattr(bridge, "_hold", lambda: ({"cycle_id": "a" * 32}, "hold-digest"))
     monkeypatch.setattr(bridge, "_maintenance_configuration", ("b" * 64, "c" * 64))
     value = SimpleNamespace(_pending_agent_requests=0, _inflight_agent_runs=0, _active_run_tasks={})
@@ -884,7 +886,14 @@ def test_maintenance_producer_timestamp_matches_strict_operator_iso_schema(monke
     assert checked.tzinfo is not None
     assert abs((datetime.now(timezone.utc) - checked).total_seconds()) < 1
     assert response['active_runs'] == response['active_browsers'] == 0
+    assert response['active_terminals'] == 0
     assert response['verified'] is True
+    terminal_count[0] = 1
+    active = bridge.maintenance_status(value)
+    assert active['active_terminals'] == active['active_runs'] == 1
+    assert active['active_agent_runs'] == 0 and active['verified'] is True
+    terminal_count[0] = None
+    assert bridge.maintenance_status(value)['verified'] is False
 
 
 def test_bootstrap_promotes_only_real_isolation_proof_and_unwraps_cycle_receipt(tmp_path, monkeypatch):

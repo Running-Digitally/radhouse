@@ -521,7 +521,7 @@ def maintenance_status(adapter):
             or min(pending, inflight) < 0
         ):
             raise ValueError()
-        active_runs = (
+        active_agent_runs = (
             pending
             + inflight
             + sum(not task.done() for task in adapter._active_run_tasks.values())
@@ -530,6 +530,14 @@ def maintenance_status(adapter):
 
         with browser._cleanup_lock:
             active_browsers = len(browser._active_sessions)
+        from radhouse_owner_terminal import owner_terminal_active_count
+        active_terminals = owner_terminal_active_count()
+        if type(active_terminals) is not int or active_terminals < 0:
+            raise ValueError()
+        # Existing maintenance consumers use active_runs as a zero-work gate,
+        # not a distinct-conversation count. Include human shells so the pinned
+        # weekly updater defers; retain separate, truthful component counts.
+        active_runs = active_agent_runs + active_terminals
         if _controller is not None:
             observed = []
             for state in _controller.live_states():
@@ -546,11 +554,13 @@ def maintenance_status(adapter):
             if snapshot.active_commands or snapshot.recovering:
                 valid = False
     except Exception:
-        active_runs, active_browsers, valid = None, None, False
+        active_runs, active_agent_runs, active_browsers, active_terminals, valid = None, None, None, None, False
     return {
         "fenced": hold is not None or not valid,
         "active_runs": active_runs,
+        "active_agent_runs": active_agent_runs,
         "active_browsers": active_browsers,
+        "active_terminals": active_terminals,
         "cycle_id": hold["cycle_id"] if hold else None,
         "runtime_sha256": _maintenance_configuration[1]
         if _maintenance_configuration
