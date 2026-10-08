@@ -22,14 +22,14 @@ export function sourcePath(url, sourceRoot = root) {
   if (staticNames.has(name)) return join(sourceRoot, "src/radhouse/chat/static", name);
   if (url.startsWith("file:") || isAbsolute(url)) {
     const path = url.startsWith("file:") ? fileURLToPath(url) : url;
-    return within(path, join(sourceRoot, "src/radhouse/chat/static")) || within(path, join(sourceRoot, "web/dist"))
+    return within(path, join(sourceRoot, "src/radhouse/chat/static")) || within(path, join(sourceRoot, "web/dist")) || within(path, join(sourceRoot, "scripts"))
       ? path : null;
   }
   return null;
 }
 
 function firstParty(path, sourceRoot) {
-  return within(path, join(sourceRoot, "web/src")) || within(path, join(sourceRoot, "src/radhouse/chat/static"));
+  return within(path, join(sourceRoot, "scripts")) || within(path, join(sourceRoot, "web/src")) || within(path, join(sourceRoot, "src/radhouse/chat/static"));
 }
 
 async function addEntry(map, entry, sourceRoot) {

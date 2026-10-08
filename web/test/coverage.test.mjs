@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { build } from "esbuild";
+import { fileURLToPath } from "node:url";
 import { coverageReport, sourcePath } from "../../scripts/coverage-report.mjs";
 
 test("LCOV preserves measured execution and uncovered code, rejects changed browser source", async () => {
@@ -40,6 +41,8 @@ test("LCOV preserves measured execution and uncovered code, rejects changed brow
 test("coverage ignores dependency and unrelated script URLs", () => {
   assert.equal(sourcePath("file:///tmp/vendor/node_modules/library.js"), null);
   assert.equal(sourcePath("/unrelated.js"), null);
+  const helper = new URL("../../scripts/coverage-report.mjs", import.meta.url);
+  assert.equal(sourcePath(helper.href), fileURLToPath(helper));
   assert.ok(sourcePath("/app/dist/main.js").endsWith("/web/dist/main.js"));
 });
 
