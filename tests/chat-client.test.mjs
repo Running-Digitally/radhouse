@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
+import { fileURLToPath } from "node:url";
 
 const source = readFileSync(new URL("../src/radhouse/chat/static/chat.js", import.meta.url), "utf8");
 
@@ -24,7 +25,7 @@ async function client() {
     localStorage: { getItem() { return null; } },
     fetch: async () => ({ ok: false, status: 401, json: async () => ({ error: "authentication_required" }) }),
   });
-  vm.runInContext(source, context);
+  vm.runInContext(source, context, { filename: fileURLToPath(new URL("../src/radhouse/chat/static/chat.js", import.meta.url)) });
   // Let the real startup request finish before arranging each history load.
   await new Promise(resolve => setImmediate(resolve));
   vm.runInContext(`

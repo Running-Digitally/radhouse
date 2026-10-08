@@ -52,20 +52,23 @@ def initial_task_title(brief: str) -> str:
     return normalize_task_title(sentence)
 
 
+def _heading_task_title(heading: str) -> str | None:
+    value = heading.rstrip().rstrip("#").rstrip()
+    if not value and heading.strip():
+        value = heading.strip()[0]
+    value = re.sub(r"[`*_~]", "", value)
+    try:
+        return normalize_task_title(value)
+    except Rejected:
+        return None
+
+
 def agent_task_title(result: str) -> str | None:
     """Use the agent's own answer for a title; never request a title-only turn."""
     for line in result.splitlines():
         match = re.match(r"\s{0,3}#{1,6}\s+", line)
         if match:
-            heading = line[match.end():]
-            value = heading.rstrip().rstrip("#").rstrip()
-            if not value and heading.strip():
-                value = heading.strip()[0]
-            value = re.sub(r"[`*_~]", "", value)
-            try:
-                return normalize_task_title(value)
-            except Rejected:
-                return None
+            return _heading_task_title(line[match.end():])
     for line in result.splitlines():
         value = line.strip()
         if (not value or value.startswith(("RADHOUSE_", "```", "{", "[", "|", "<"))

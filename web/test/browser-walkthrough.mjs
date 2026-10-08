@@ -1,3 +1,4 @@
+import { cover, closeBrowser } from "../../tests/browser-coverage.mjs";
 import assert from "node:assert/strict";
 
 const { chromium } = await import(process.env.RADHOUSE_PLAYWRIGHT_MODULE);
@@ -6,6 +7,7 @@ const browser = await chromium.launch({ headless: true,
 const origin = process.env.RADHOUSE_BROWSER_ORIGIN;
 const context = await browser.newContext();
 const web = await context.newPage();
+await cover(web);
 try {
   await web.goto(`${origin}/app/`);
   await web.getByLabel("Username", { exact: true }).fill("alice");
@@ -61,6 +63,7 @@ try {
   await task.getByRole("heading", { name: "September planning figures", exact: true }).waitFor();
   // Protected review stays in a second ordinary web tab.
   const review = await context.newPage();
+await cover(review);
   await review.goto(`${origin}/app/`);
   await review.locator(".recent-activity > summary").click();
   const reviewTask = review.locator(`[data-task-id="${taskId}"]`);
@@ -86,5 +89,5 @@ try {
   await web.screenshot({ path: process.env.RADHOUSE_SCREENSHOT, fullPage: true });
   console.log("Browser walkthrough passed: selected input → task → web review → publication → reconnect → follow-up shown newest first.");
 } finally {
-  await browser.close();
+  await closeBrowser(browser);
 }

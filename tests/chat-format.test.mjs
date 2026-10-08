@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
 import test from "node:test";
 import vm from "node:vm";
+import { fileURLToPath } from "node:url";
 
 class DOMNode {
   constructor(tag, text = "") { this.tag = tag; this.text = text; this.children = []; this.dataset = {}; this.events = {}; }
@@ -24,7 +25,7 @@ function formatter() {
     navigator: { clipboard: { async writeText(text) { copied.push(text); } } },
     setTimeout() {},
   });
-  vm.runInContext(readFileSync(new URL("../src/radhouse/chat/static/format.js", import.meta.url), "utf8"), context);
+  vm.runInContext(readFileSync(new URL("../src/radhouse/chat/static/format.js", import.meta.url), "utf8"), context, { filename: fileURLToPath(new URL("../src/radhouse/chat/static/format.js", import.meta.url)) });
   return { ...context.window.RadhouseFormat, copied };
 }
 

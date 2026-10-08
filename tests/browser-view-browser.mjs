@@ -1,3 +1,4 @@
+import { cover, closeBrowser } from "./browser-coverage.mjs";
 // The observer receives real CDP screencast frames from the agent's one page.
 // This is a local fixture proof, not qualification of the production driver.
 import {readFile, mkdir} from "node:fs/promises";
@@ -40,6 +41,7 @@ try {
   browser = await chromium.launch({headless:true});
   const agentContext = await browser.newContext({viewport:{width:960,height:540}});
   const agentPage = await agentContext.newPage();
+await cover(agentPage);
   const cdp = await agentContext.newCDPSession(agentPage);
   await cdp.send("Page.enable");
   cdp.on("Page.screencastFrame", event => {
@@ -51,6 +53,7 @@ try {
   await expect.poll(()=>latest?.length || 0).toBeGreaterThan(100);
   const viewerContext = await browser.newContext({viewport:{width:1200,height:900}});
   const page = await viewerContext.newPage();
+await cover(page);
   await page.addInitScript(() => {
     window.blobUrls = new Set(); window.lateFetch = false;
     const create = URL.createObjectURL.bind(URL), revoke = URL.revokeObjectURL.bind(URL);
@@ -144,6 +147,6 @@ try {
   console.log("Browser viewer proof passed: same-page CDP frames, hide/background cleanup, reconnect, scope changes and auth expiry.");
 } finally {
   for (const release of held.splice(0)) release();
-  if (browser) await browser.close();
+  if (browser) await closeBrowser(browser);
   await new Promise(resolve=>server.close(resolve));
 }
