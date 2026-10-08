@@ -164,7 +164,8 @@ def analyze(root: Path, scanner: str, host: str, credential: str, *, dry_run: bo
         output = root / ".sonarqube" / f"{stamp}-{revision[:12]}"
         output.mkdir(parents=True)
         receipt = {"source_commit": revision, "branch": "main", "project_key": "Running-Digitally_radhouse",
-                   "project_version": version, "started_at": stamp, "test_coverage_imported": False}
+                   "project_version": version, "started_at": stamp, "report_submitted": False,
+                   "test_coverage_submitted": False, "test_coverage_imported": False}
         args = [executable, f"-Dsonar.projectBaseDir={checkout}",
                 f"-Dsonar.scm.revision={revision}", f"-Dsonar.projectVersion={version}",
                 f"-Dsonar.scanner.metadataFilePath={output / 'report-task.txt'}"]
@@ -180,8 +181,10 @@ def analyze(root: Path, scanner: str, host: str, credential: str, *, dry_run: bo
             env = os.environ.copy()
             env.update(SONAR_TOKEN=credential, SONAR_HOST_URL=host)
             result = scan_process(args, checkout, env, credential, output)
-            receipt.update(scanner_exit_code=result, report_submitted=(output / "report-task.txt").is_file(),
-                           test_coverage_imported=coverage)
+            submitted = (output / "report-task.txt").is_file()
+            receipt.update(scanner_exit_code=result, report_submitted=submitted,
+                           test_coverage_submitted=coverage and submitted,
+                           test_coverage_imported=coverage and submitted and result == 0)
             return result
         finally:
             (output / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")

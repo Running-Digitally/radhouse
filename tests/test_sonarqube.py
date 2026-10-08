@@ -48,13 +48,16 @@ class LocalSonarTests(unittest.TestCase):
             'assert base == pathlib.Path.cwd()\n'
             'assert not any("sonar.branch.name" in a or "sonar.pullrequest" in a for a in sys.argv)\n'
             'assert pathlib.Path("sonar-project.properties").read_text() == "sonar.projectKey=fixture\\n"\n'
+            'if os.environ.get("FIXTURE_TASK_REPORT") == "1":\n'
+            '    task = next(a.split("=", 1)[1] for a in sys.argv if a.startswith("-Dsonar.scanner.metadataFilePath="))\n'
+            '    pathlib.Path(task).write_text("ceTaskId=synthetic\\n")\n'
             'print("synthetic diagnostic " + os.environ["SONAR_TOKEN"])\n'
             'sys.exit(int(os.environ.get("FIXTURE_SCANNER_EXIT", "0")))\n'
         )
         self.scanner.chmod(0o700)
         self.environment = patch.dict(os.environ, {
             "CI": "", "GITHUB_ACTIONS": "", "GITLAB_CI": "", "JENKINS_URL": "",
-            "SONAR_SCANNER_JSON_PARAMS": "", "FIXTURE_SCANNER_EXIT": "0",
+            "SONAR_SCANNER_JSON_PARAMS": "", "FIXTURE_SCANNER_EXIT": "0", "FIXTURE_TASK_REPORT": "0",
         })
         self.environment.start()
         self.addCleanup(self.environment.stop)
@@ -185,6 +188,37 @@ class LocalSonarTests(unittest.TestCase):
                 self.scan(coverage=True)
         output = next((self.root / ".sonarqube").iterdir())
         self.assertFalse((output / "scan.log").exists())
+
+    def coverage_receipt(self, *, scanner_exit, uploaded):
+        os.environ["FIXTURE_SCANNER_EXIT"] = str(scanner_exit)
+        os.environ["FIXTURE_TASK_REPORT"] = "1" if uploaded else "0"
+        reports = {"python": self.root / "python.xml", "javascript": self.root / "lcov.info"}
+        with patch("scripts.sonarqube.qualify", return_value=(reports, {})):
+            self.assertEqual(self.scan(coverage=True), scanner_exit)
+        output = next((self.root / ".sonarqube").iterdir())
+        return json.loads((output / "receipt.json").read_text())
+
+    def test_failed_scanner_before_upload_never_claims_imported_coverage(self):
+        receipt = self.coverage_receipt(scanner_exit=1, uploaded=False)
+        self.assertFalse(receipt["report_submitted"])
+        self.assertFalse(receipt["test_coverage_submitted"])
+        self.assertFalse(receipt["test_coverage_imported"])
+
+    def test_submitted_analysis_failure_does_not_confirm_import(self):
+        receipt = self.coverage_receipt(scanner_exit=3, uploaded=True)
+        self.assertTrue(receipt["report_submitted"])
+        self.assertTrue(receipt["test_coverage_submitted"])
+        self.assertFalse(receipt["test_coverage_imported"])
+
+    def test_successful_scanner_with_submission_confirms_import(self):
+        receipt = self.coverage_receipt(scanner_exit=0, uploaded=True)
+        self.assertTrue(receipt["report_submitted"])
+        self.assertTrue(receipt["test_coverage_submitted"])
+        self.assertTrue(receipt["test_coverage_imported"])
+
+    def test_scanner_zero_exit_without_upload_does_not_confirm_import(self):
+        receipt = self.coverage_receipt(scanner_exit=0, uploaded=False)
+        self.assertFalse(receipt["test_coverage_imported"])
 
 
 if __name__ == "__main__":
