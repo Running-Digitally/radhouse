@@ -127,6 +127,23 @@ def test_late_frame_is_discarded_after_auth_or_binding_changes(app,change):
     assert JPEG not in response.content
 
 
+@pytest.mark.parametrize("change", ["logout", "revision"])
+def test_completed_owner_input_ack_is_discarded_after_authentication_changes(app, change):
+    client, auth, native, _, _ = app
+    client.post("/chat/browser/open", headers=HEADERS, json={})
+    count = len(native.calls)
+    native.after = ((lambda: setattr(auth, "active", False)) if change == "logout"
+        else (lambda: setattr(auth, "revision", 2)))
+    response = client.post("/chat/browser/control/input", headers=HEADERS, json={
+        **CONTROL, "sequence": 1, "operation": "navigate",
+        "arguments": {"url": "https://example.org/"}, "frame_id": "frame-1",
+        "viewport": {"width": 960, "height": 540}})
+    assert response.status_code == (401 if change == "logout" else 409)
+    assert "applied" not in response.text
+    assert len(native.calls) == count + 1
+    assert native.calls[-1][1] == "control/input"
+
+
 def test_frame_geometry_is_published_and_no_native_session_leaks(app):
     client,_,_,_,_=app
     client.post("/chat/browser/open",headers=HEADERS,json={})

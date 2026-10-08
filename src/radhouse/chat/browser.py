@@ -76,10 +76,17 @@ class HermesBrowserClient:
     def __init__(self, endpoint, bearer_token, *, transport=None, clock=time.time):
         self._runs = HermesRunsClient(endpoint, bearer_token, transport=transport,
             connect_timeout=2, read_timeout=3, request_deadline=5)
+        # Owner actions can wait for native launch, fencing and metadata in turn
+        # (45 seconds each), then the existing 3-second stream observation. Keep
+        # those acknowledgements connected without slowing observer requests or
+        # retrying an action whose native outcome may already have been applied.
+        self._actions = HermesRunsClient(endpoint, bearer_token, transport=transport,
+            connect_timeout=2, read_timeout=150, request_deadline=155)
         self.clock = clock
 
     def close(self):
         self._runs.close()
+        self._actions.close()
 
     def browser_session(self, session_id, operation, body):
         _identifier(session_id)
@@ -89,7 +96,8 @@ class HermesBrowserClient:
             raise ValueError("invalid_browser_operation")
         path = ("v1/browser-sessions/open" if operation == "open"
             else f"v1/browser-sessions/{session_id}/{operation}")
-        payload, _ = self._runs._request("POST", path, expected_status=200,
+        client = self._runs if operation in {"status", "frame"} else self._actions
+        payload, _ = client._request("POST", path, expected_status=200,
             body={**body, **({"session_id": session_id} if operation == "open" else {})})
         return payload
 

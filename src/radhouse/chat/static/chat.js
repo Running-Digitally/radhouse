@@ -95,6 +95,9 @@ async function refreshBrowser() {
   if (!browserView || !session || (!controlled && currentPage!=="/browser") || browserSuspended || openingHistory) {
     stopBrowser(); return;
   }
+  // Instance wiring comes from the authenticated session, not a status request
+  // that may fail while the browser service is temporarily unavailable.
+  browserView.controlEnabled=controlled;
   if (session.features?.browser!==true) {
     browserView.update({state:"idle"});
     $("browser-idle-hint").hidden=false;
@@ -115,14 +118,13 @@ async function refreshBrowser() {
     if (current()) {
       if(lastBrowserStatus?.state==="live" && status.state==="idle")browserContextWanted=false;
       lastBrowserStatus=status;updateBrowserChip();
-      browserView.controlEnabled=controlled;
       if(currentPage==="/browser" && !browserView.actionPending)browserView.update(status);
       $("browser-idle-hint").hidden=status.state!=="idle";
       $("browser-idle-hint").textContent=controlled ? "A browser opens only when you choose to use it." : "Browser control is not connected to this instance yet.";
     }
   } catch {
     // The current request becomes unavailable; cancelled or obsolete requests stay quiet.
-    if (current() && !request.controller.signal.aborted) {
+    if (current()) {
       browserView.update({state:"unavailable",run_id:browserView.run,generation:null,url:null});
       $("browser-idle-hint").hidden=true;
     }

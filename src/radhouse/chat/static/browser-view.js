@@ -59,6 +59,7 @@
       const changed = (!this.controlEnabled && run !== this.run) || generation !== this.generation;
       if (changed) {
         this._cancel(); this._clearImage();
+        if (state !== "unavailable" && this.generation !== null && generation !== this.generation) this.addressEdited = false;
         if (run !== this.run) {
           this.open = true; this.body.hidden = false;
           this.toggle.textContent = "Hide browser"; this.toggle.setAttribute("aria-expanded", "true");
@@ -152,6 +153,7 @@
       this._cancel(); this._clearImage();
       this._clearSecrets(); this.control = null; this.lease = null; this.actionNotice=null;
       this.inputUnconfirmed=false;
+      this.addressEdited=false;
       this.active = false; this.run = null; this.generation = null;
       this.site.textContent = ""; this._label(""); this.container.hidden = true;
     }
@@ -170,11 +172,14 @@
       this.illustration.setAttribute("aria-label","Open browser window");
       this.launchCaption = document.createElement("p");
       this.openButton = this._button("Open browser",()=>this._act("/chat/browser/open",{}));
-      this.launcher.append(this.illustration,this.launchCaption,this.openButton);
+      this.reconnectBrowser = this._button("Reconnect browser",()=>this._act("/chat/browser",undefined,{method:"GET"}));
+      this.launcher.append(this.illustration,this.launchCaption,this.openButton,this.reconnectBrowser);
       this.toolbar = document.createElement("form"); this.toolbar.className = "browser-address";
       this.address = document.createElement("input"); this.address.type="url";
       this.address.placeholder="Enter a website URL…"; this.address.setAttribute("aria-label","Website URL");
       this.address.autocomplete="off"; this.address.spellcheck=false;
+      this.addressEdited=false;
+      this.address.addEventListener("input",()=>{this.addressEdited=true;});
       this.back = this._button("Back",()=>this._input("back",{}));
       this.reload = this._button("Refresh",()=>this._input("reload",{}));
       this.go = document.createElement("button"); this.go.type="submit"; this.go.textContent="Go";
@@ -251,16 +256,22 @@
       if(previous!==this.lease){this.sequence=0;this.inputUnconfirmed=false;this.actionNotice=null;this._clearSecrets();}
       if(this.control?.next_sequence)this.sequence=Math.max(this.sequence,this.control.next_sequence-1);
       this.canReturn=value?.can_return===true;this.vaultEnabled=value?.vault_enabled===true;
-      this.launcher.hidden=this.active || this.controlEnabled && state!=="idle";
-      this.openButton.disabled=!this.controlEnabled || this.actionPending;
+      const unavailable=state==="unavailable";
+      if(state==="idle" || this.state==="unavailable" && !unavailable)this.actionNotice=null;
+      this.state=state;
+      this.launcher.hidden=this.active || this.controlEnabled && state!=="idle" && !unavailable;
+      this.openButton.hidden=unavailable;
+      this.reconnectBrowser.hidden=!unavailable;
+      this.openButton.disabled=!this.controlEnabled || this.actionPending || unavailable;
       this.illustration.disabled=this.openButton.disabled;
-      this.launchCaption.textContent=this.controlEnabled
+      this.launchCaption.textContent=unavailable ? "The browser connection is unavailable. Reconnect to check it again." : this.controlEnabled
         ? "Open a browser to explore, sign in, or share a page with your assistant."
         : "Browser control needs the upgraded Hermes runtime. You can still watch an active agent browser.";
       this.toolbar.hidden=!this.controlEnabled || !this.active;
       this.actions.hidden=!this.controlEnabled || !this.active;
       this.keyboard.hidden=!this._human();
-      if(document.activeElement!==this.address)this.address.value=value?.url || "";
+      if(state==="idle")this.addressEdited=false;
+      if(!this.addressEdited && document.activeElement!==this.address)this.address.value=value?.url || "";
       if(state!=="live")this._clearSecrets();
       this._renderControlState();
       if(!this.controlEnabled && state==="idle")this.controlStatus.textContent="Browser control is not connected to this instance yet.";
@@ -274,6 +285,9 @@
     _renderControlState() {
       if(!this.request)return;
       const human=this._human(), input=human && !!this.displayedFrame && !this.actionPending && !this.inputUnconfirmed;
+      this.openButton.disabled=!this.controlEnabled || this.actionPending || this.state==="unavailable";
+      this.illustration.disabled=this.openButton.disabled;
+      this.reconnectBrowser.disabled=this.actionPending;
       this.viewport.classList.toggle("browser-interactive",input);
       this.take.hidden=!this.control?.can_take || human;
       this.take.disabled=this.actionPending;
@@ -290,11 +304,12 @@
       for(const element of this.loginForm.elements)element.disabled=!human || this.actionPending || this.inputUnconfirmed;
       for(const button of this.loginList.querySelectorAll("button"))button.disabled=!human || this.actionPending || this.inputUnconfirmed;
       this.keyboard.hidden=!human;
-      const text={agent:"Your assistant is using this browser.",human:"You have control. Browser actions from your assistant are paused.",
+      const text=this.active ? {agent:"Your assistant is using this browser.",human:"You have control. Browser actions from your assistant are paused.",
         takeover_pending:"Waiting for the current browser action to finish…",paused:"Browser actions are paused. Take control to continue.",
-        recovering:"A browser action could not be confirmed. Input is paused."}[this.control?.mode];
+        recovering:"A browser action could not be confirmed. Input is paused."}[this.control?.mode] : null;
       if(this.actionNotice)this.controlStatus.textContent=this.actionNotice;
       else if(text)this.controlStatus.textContent=human && !this.canReturn ? text+" Its current reply is still finishing." : text;
+      else this.controlStatus.textContent="";
     }
 
     _point(event) {
@@ -319,7 +334,9 @@
         }
         return value;
       } catch {
-        if(epoch===this.epoch)this.actionNotice="We could not confirm that action. It has not been retried. Check the browser before continuing.";
+        if(epoch===this.epoch)this.actionNotice=method==="GET"
+          ? "The browser connection is unavailable. Reconnect to check it again."
+          : "We could not confirm that action. It has not been retried. Check the browser before continuing.";
         return null;
       } finally {
         this.actionPending=false;this._clearSecrets();this._renderControlState();
@@ -334,6 +351,7 @@
         this.inputUnconfirmed=true;
         this.actionNotice="Previous input wasn’t confirmed. Check the page before continuing.";
       } else if(value.outcome!=="applied")this.actionNotice="That action was not applied. Check the page before trying another action.";
+      else if(operation==="navigate" && this.address.value===args.url)this.addressEdited=false;
       this._renderControlState();
       this._cancel();this._schedule(0);
     }
