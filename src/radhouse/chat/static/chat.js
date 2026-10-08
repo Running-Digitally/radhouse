@@ -424,6 +424,7 @@ function assistantReply(turn) {
   const reply=document.createElement("div"); reply.className="assistant";
   const name=document.createElement("p"), answer=document.createElement("div"), copy=document.createElement("button"); name.className="message-label"; name.textContent="Radhouse";
   answer.className="answer"; answer.append(window.RadhouseFormat.render(turn.output || "")); copy.type="button"; copy.className="copy-answer"; copy.dataset.label="Copy answer"; copy.textContent="Copy answer"; copy.hidden=!turn.output;
+  window.RadhouseIcons?.decorate(copy,"clipboard");
   copy.addEventListener("click",() => window.RadhouseFormat.copyText(turn.output,copy)); reply.append(name,answer);
   if (turn.shared_files?.length) {
     const files=document.createElement("div"); files.className="attachments";
@@ -520,7 +521,8 @@ function controls() {
   $("message").disabled=openingHistory;
   $("send").disabled=busy || filesLoading || !!pending || !!outbox || tooLong || !hasContent || openingHistory;
   $("attach").disabled=filesLoading || openingHistory; $("attach-text").disabled=filesLoading || openingHistory; $("long-text").hidden=!tooLong;
-  $("send").textContent=busy ? "Sending…" : "Send ↗";
+  if(window.RadhouseIcons){window.RadhouseIcons.decorate($("send"),"send",busy ? "Sending…" : "Send");window.RadhouseIcons.busy($("send"),busy);}
+  else $("send").textContent=busy ? "Sending…" : "Send";
   $("reply-status").textContent = replyStatus(pending);
   document.querySelectorAll(".retry,#notice-action").forEach(button => { button.disabled=busy || openingHistory || button.dataset.outgoing==="true" && !!pending; });
   resizeMessage();
