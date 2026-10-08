@@ -426,37 +426,41 @@ function restoreSnapshot(saved) {
     }
   }
 }
-async function finishOpening(openingSession) {
-  if (session !== openingSession) return;
+function currentOpening(openingSession,generation) {
+  return session===openingSession && openingGeneration===generation;
+}
+let openingGeneration=0;
+async function finishOpening(openingSession,generation) {
+  if (!currentOpening(openingSession,generation)) { return; }
   openingHistory = false;
   if (outbox) { outbox.phase = "failed"; outbox.error = "network_error"; }
   await persist();
-  if (session !== openingSession) return;
+  if (!currentOpening(openingSession,generation)) { return; }
   if (!draftWriteFailed) retainedSnapshots.delete(openingSession.username);
   render(); void refreshBrowser();
   if (!matchMedia("(pointer:coarse)").matches) $("message").focus();
 }
 async function openConversation() {
   stopBrowser(); browserSuspended=false;
-  const openingSession=session; openingHistory=true; followingLatest=true; olderLoaded=false; olderBefore=null;
+  const openingSession=session, generation=++openingGeneration; openingHistory=true; followingLatest=true; olderLoaded=false; olderBefore=null;
   turns.clear(); turnNodes.clear(); $("messages").replaceChildren(); draftSignature=""; draft=emptyDraft(); outbox=null;
   $("login-view").hidden=true; $("chat-view").hidden=false; $("logout").hidden=false; $("loading").hidden=true;
   managementNavigation();
   controls();
   const storageKey=key(); let stored, fallback;
   try { stored=await draftOperation(storageKey); } catch { /* Recover through the text fallback or this tab’s retained originals. */ }
-  if (session!==openingSession) { return; }
+  if (!currentOpening(openingSession,generation)) { return; }
   try { fallback=JSON.parse(localStorage.getItem(storageKey) || "null"); } catch { /* Invalid or blocked fallback storage cannot replace retained originals. */ }
   const retained=retainedSnapshots.get(openingSession.username);
   const saved=recoveredSnapshot(recoveredSnapshot(stored,fallback),retained);
   if (saved?.has_files && [...(saved.attachments || []),...(saved.outbox?.attachments || [])].some(file => !(file.blob instanceof Blob))) { tell("draft_storage_unavailable",persist); }
-  if (session!==openingSession) { return; }
+  if (!currentOpening(openingSession,generation)) { return; }
   restoreSnapshot(saved);
   savedSignature=snapshotSignature({...draft,outbox}); draftWriteFailed=!!retained;
   $("message").value=draft.text; render({latest:true});
-  try { const data=await api("/chat/history"); if (session===openingSession) { accept(data,false,true); } }
-  catch (error) { if (session===openingSession) { tell(error.message,refreshHistory); } }
-  finally { await finishOpening(openingSession); }
+  try { const data=await api("/chat/history"); if (currentOpening(openingSession,generation)) { accept(data,false,true); } }
+  catch (error) { if (currentOpening(openingSession,generation)) { tell(error.message,refreshHistory); } }
+  finally { await finishOpening(openingSession,generation); }
 }
 
 async function refreshHistory() {

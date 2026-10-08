@@ -23,19 +23,25 @@ import sys
 from typing import Sequence
 
 
+API_UNIT = 'radhouse-api.service'
+COORDINATOR_TIMER = 'radhouse-coordinator.timer'
+PYTHON_COMMAND = 'python3.14'
+RADHOUSE_COMMAND = '.venv/bin/radhouse'
+
+
 CONTROL_UNITS = (
-    "radhouse-api.service",
+    API_UNIT,
     "radhouse-coordinator.service",
-    "radhouse-coordinator.timer",
+    COORDINATOR_TIMER,
     "radhouse-hermes-tunnel.service",
 )
 OPTIONAL_UNITS = ("radhouse-hermes-tunnel@.service",)
 WRITER_UNITS = (
-    "radhouse-coordinator.timer",
+    COORDINATOR_TIMER,
     "radhouse-coordinator.service",
-    "radhouse-api.service",
+    API_UNIT,
 )
-START_UNITS = ("radhouse-api.service", "radhouse-coordinator.timer")
+START_UNITS = (API_UNIT, COORDINATOR_TIMER)
 RELEASE_ID = re.compile(r"[0-9a-f]{40}")
 
 
@@ -99,7 +105,7 @@ class DeploymentManager:
         if any(not (source / name).is_file() for name in required_files):
             raise DeploymentError("incomplete_source_tree")
         for command in (
-            "cc", "docker", "git", "node", "npm", "pkg-config", "uv", "python3.14",
+            "cc", "docker", "git", "node", "npm", "pkg-config", "uv", PYTHON_COMMAND,
             "systemctl", "useradd",
         ):
             if self.runner.which(command) is None:
@@ -108,7 +114,7 @@ class DeploymentManager:
         match = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", node)
         if match is None or tuple(map(int, match.groups())) < (20, 19, 0):
             raise DeploymentError("unsupported_node_version")
-        if self.runner.run(("python3.14", "--version"), capture=True) != "Python 3.14.4":
+        if self.runner.run((PYTHON_COMMAND, "--version"), capture=True) != "Python 3.14.4":
             raise DeploymentError("unsupported_python_version")
         head = self._git(source, "rev-parse", "HEAD")
         if head != release_id:
@@ -136,6 +142,18 @@ class DeploymentManager:
             "next": "configure_database_tls_and_private_overlay",
         }
 
+
+    def _migration_command(self, new_release, config, overlay, owner_dsn_file, runtime_role):
+        migrate = [
+            str(new_release / RADHOUSE_COMMAND), "migrate",
+            "--config", str(config), "--owner-dsn-file", str(owner_dsn_file),
+            "--runtime-role", runtime_role, "--apply",
+        ]
+        if overlay:
+            migrate[4:4] = ("--overlay", str(overlay))
+        return migrate
+
+
     def upgrade(
         self,
         source: Path,
@@ -155,7 +173,7 @@ class DeploymentManager:
             raise DeploymentError("release_already_current")
         self._verify_backup(backup_file, backup_sha256)
         new_release = self._stage_release(source.resolve(), release_id)
-        command = [str(new_release / ".venv/bin/radhouse"), "preflight", "--config", str(config)]
+        command = [str(new_release / RADHOUSE_COMMAND), "preflight", "--config", str(config)]
         if overlay:
             command.extend(("--overlay", str(overlay)))
         self.runner.run(command)
@@ -168,13 +186,7 @@ class DeploymentManager:
         try:
             stopped = True
             self.runner.run(("systemctl", "stop", *WRITER_UNITS))
-            migrate = [
-                str(new_release / ".venv/bin/radhouse"), "migrate",
-                "--config", str(config), "--owner-dsn-file", str(owner_dsn_file),
-                "--runtime-role", runtime_role, "--apply",
-            ]
-            if overlay:
-                migrate[4:4] = ("--overlay", str(overlay))
+            migrate = self._migration_command(new_release, config, overlay, owner_dsn_file, runtime_role)
             self.runner.run(migrate)
             migrated = True
             self._install_units(new_release)
@@ -275,14 +287,14 @@ class DeploymentManager:
                 digest.update(hashlib.sha256(origin.read_bytes()).digest())
             self.runner.run(("npm", "--prefix", "web", "ci"), cwd=destination)
             self.runner.run(("npm", "--prefix", "web", "run", "build"), cwd=destination)
-            python = self.runner.which("python3.14")
+            python = self.runner.which(PYTHON_COMMAND)
             if python is None:
                 raise DeploymentError("missing_command:python3.14")
             self.runner.run((
                 "uv", "sync", "--frozen", "--no-dev", "--no-editable",
                 "--python", python,
             ), cwd=destination)
-            self.runner.run((str(destination / ".venv/bin/radhouse"), "--help"), cwd=destination)
+            self.runner.run((str(destination / RADHOUSE_COMMAND), "--help"), cwd=destination)
             schema = int(self.runner.run(
                 (str(destination / ".venv/bin/python"), "-I", "-c",
                  "from radhouse.storage.postgres import SCHEMA_VERSION; print(SCHEMA_VERSION)"),

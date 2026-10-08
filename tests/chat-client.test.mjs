@@ -85,3 +85,27 @@ test("message limits count Unicode characters and stop at the accepted boundary"
   assert.equal(vm.runInContext("messageFits('x'.repeat(16000))", context), true);
   assert.equal(vm.runInContext("messageFits('x'.repeat(100000))", context), false);
 });
+
+test("an older history load cannot enable or save a newer draft restoration", async () => {
+  const context = await client();
+  vm.runInContext(`
+    let saves=0, releaseHistory, releaseDraft;
+    api=() => new Promise(resolve => { releaseHistory=resolve; });
+    accept=()=>{};
+    persist=async () => { saves++; };
+    firstOpening=openConversation();
+  `, context);
+  await new Promise(resolve => setImmediate(resolve));
+  vm.runInContext(`
+    draftOperation=() => new Promise(resolve => { releaseDraft=resolve; });
+    secondOpening=openConversation();
+    releaseHistory({});
+  `, context);
+  await vm.runInContext("firstOpening", context);
+  assert.equal(vm.runInContext("openingHistory", context), true);
+  assert.equal(vm.runInContext("saves", context), 0);
+  vm.runInContext(`api=async()=>({}); releaseDraft(null);`, context);
+  await vm.runInContext("secondOpening", context);
+  assert.equal(vm.runInContext("openingHistory", context), false);
+  assert.equal(vm.runInContext("saves", context), 1);
+});

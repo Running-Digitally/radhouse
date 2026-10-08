@@ -18,6 +18,9 @@ from radhouse.domain.conversations import BUZZ_THREAD_ANCESTRY_REJECTED, Convers
 from radhouse.domain.tasks import Rejected
 
 
+EVENTS_PATH = '/events'
+
+
 class BuzzRelay:
     def __init__(self, origin, relay_pubkey, key, *, transport=None, clock=time.time):
         parsed = urlsplit(origin)
@@ -71,8 +74,24 @@ class BuzzRelay:
         event["sig"] = self._key.sign_schnorr(bytes.fromhex(event["id"])).hex()
         return verify_event(event, kind)
 
+
+    def _response_bytes(self, response, deadline, ancestry_candidate):
+        data = bytearray()
+        for chunk in response.iter_bytes():
+            if time.monotonic() > deadline or len(data) + len(chunk) > 1048576:
+                raise Rejected("buzz_response_limit", 503)
+            data.extend(chunk)
+        if ancestry_candidate:
+            if json.loads(data) == {
+                "error": "invalid: root tag does not match thread ancestry"
+            }:
+                raise Rejected(BUZZ_THREAD_ANCESTRY_REJECTED, 503)
+            raise Rejected("buzz_relay_unavailable", 503)
+        return data
+
+
     def _request(self, path, value):
-        if path not in {"/query", "/events"}:
+        if path not in {"/query", EVENTS_PATH}:
             raise Rejected("buzz_route_denied", 403)
         body = encoded(value)
         if len(body) > 262144:
@@ -101,7 +120,7 @@ class BuzzRelay:
             with self.client.stream(
                 "POST", url, content=body, headers=headers
             ) as response:
-                ancestry_candidate = path == "/events" and response.status_code == 400
+                ancestry_candidate = path == EVENTS_PATH and response.status_code == 400
                 if response.status_code != 200 and not ancestry_candidate:
                     raise Rejected(
                         "buzz_relay_denied"
@@ -109,17 +128,7 @@ class BuzzRelay:
                         else "buzz_relay_unavailable",
                         503,
                     )
-                data = bytearray()
-                for chunk in response.iter_bytes():
-                    if time.monotonic() > deadline or len(data) + len(chunk) > 1048576:
-                        raise Rejected("buzz_response_limit", 503)
-                    data.extend(chunk)
-                if ancestry_candidate:
-                    if json.loads(data) == {
-                        "error": "invalid: root tag does not match thread ancestry"
-                    }:
-                        raise Rejected(BUZZ_THREAD_ANCESTRY_REJECTED, 503)
-                    raise Rejected("buzz_relay_unavailable", 503)
+                data = self._response_bytes(response, deadline, ancestry_candidate)
             return json.loads(data)
         except httpx.HTTPError, ValueError:
             raise Rejected("buzz_relay_unavailable", 503) from None
@@ -137,7 +146,7 @@ class BuzzRelay:
         verify_event(event, event.get("kind"))
         if event["pubkey"] != self.pubkey:
             raise Rejected("buzz_author_denied", 403)
-        value = self._request("/events", event)
+        value = self._request(EVENTS_PATH, event)
         if (
             not isinstance(value, dict)
             or value.get("accepted") is not True
@@ -145,6 +154,22 @@ class BuzzRelay:
         ):
             raise Rejected("buzz_delivery_unconfirmed", 503)
         return event["id"]
+
+
+    def _conversation_snapshots(self, values, link):
+        snapshots = {}
+        for value in values:
+            kind = value.get("kind")
+            if kind not in {39000, 39002} or kind in snapshots:
+                raise Rejected("conversation_membership_denied", 403)
+            event = verify_event(value, kind)
+            if event["pubkey"] != self.relay_pubkey or [
+                t for t in event["tags"] if t[0] == "d"
+            ] != [["d", link.channel_id]]:
+                raise Rejected("conversation_membership_denied", 403)
+            snapshots[kind] = event
+        return snapshots
+
 
     def verify_conversation(self, link: ConversationLink):
         """Require signed private metadata and the exact configured roster."""
@@ -162,17 +187,7 @@ class BuzzRelay:
         )
         if len(values) != 2:
             raise Rejected("conversation_membership_denied", 403)
-        snapshots = {}
-        for value in values:
-            kind = value.get("kind")
-            if kind not in {39000, 39002} or kind in snapshots:
-                raise Rejected("conversation_membership_denied", 403)
-            event = verify_event(value, kind)
-            if event["pubkey"] != self.relay_pubkey or [
-                t for t in event["tags"] if t[0] == "d"
-            ] != [["d", link.channel_id]]:
-                raise Rejected("conversation_membership_denied", 403)
-            snapshots[kind] = event
+        snapshots = self._conversation_snapshots(values, link)
         metadata = snapshots[39000]["tags"]
         if ["private"] not in metadata or ["t", link.channel_kind] not in metadata:
             raise Rejected("conversation_requires_private_channel", 403)

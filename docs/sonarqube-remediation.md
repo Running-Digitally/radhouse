@@ -131,3 +131,30 @@ review-target loading. Every awaited helper is followed by a request-generation
 check before its result is used. The owned targeted fixture passed 77 tests,
 including browser walkthroughs, guidance, review links and chat; cleanup completed.
 Local SonarJS checks report no findings across the selected eight rules.
+
+## Document readers, runtime responses and route ownership
+
+Format readers, bounded passage scanning, cursor authentication and result
+construction use named helpers. Original file descriptors, source identity
+verification, stream lifetimes, process limits and parser-slot cleanup are retained.
+Runtime responses separately validate image budgets, approval requests, guidance
+receipts and activity metadata. API registration uses route groups while keeping
+authentication before data access and before/after browser pixel requests.
+
+Provisioning accepts an `InitialWorkHome` for the initial project/bot grant and
+keeps existing keyword calls through an explicitly typed compatibility adapter.
+Unknown, missing or conflicting fields fail before hashing or database writes.
+The Hermes work adapter explicitly implements its existing `AgentWorkPort`
+interface, including the required attempt argument. Two LocalSession findings
+are proposed analyzer false positives: Python 3.14 `dataclasses.replace` delegates
+to `_replace`, whose `self.__class__(**changes)` preserves the concrete class.
+No Sonar issue status was changed.
+
+Focused batches passed 186, 232 (three fixture-dependent skips) and 100 tests.
+The later owned authentication/enrollment/migration batch passed 75 tests and
+exposed a real chat restoration race in one browser test. An older history load
+could enable/save the composer during a newer draft restore in the same session.
+An opening-generation check now guards restore, history acceptance and final
+cleanup. The regression fails on the prior source and passes on the fix. The
+owned rerun passed all three browser tests and completed cleanup. A final full
+owned gate remains required after the remaining workflow refactors.

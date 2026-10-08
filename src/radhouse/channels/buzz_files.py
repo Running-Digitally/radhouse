@@ -30,34 +30,7 @@ def reference_files(relay, event):
     remaining_text = 65536
     remaining_images = 8 * 1024 * 1024
     for tag in tags:
-        fields = {}
-        for item in tag[1:]:
-            key, separator, value = item.partition(" ")
-            if not separator or key in fields:
-                raise Rejected("conversation_attachment_invalid", 422)
-            fields[key] = value
-        url = fields.get("url", "")
-        parsed = urlsplit(url)
-        origin = urlsplit(relay.origin)
-        match = re.fullmatch(
-            r"/media/([a-f0-9]{64})(?:\.([a-z0-9]{1,10}))?", parsed.path
-        )
-        if (
-            parsed.scheme != origin.scheme
-            or parsed.netloc != origin.netloc
-            or parsed.query
-            or parsed.fragment
-            or not match
-            or fields.get("x", match[1]) != match[1]
-        ):
-            raise Rejected("conversation_attachment_denied", 422)
-        digest = match[1]
-        name = fields.get(
-            "filename", fields.get("alt", "reference-" + digest[:8] + ".txt")
-        )
-        if not name or len(name) > 200 or any(ord(c) < 32 or c in "/\\" for c in name):
-            name = "reference-" + digest[:8] + ".txt"
-        declared_mime = fields.get("m", "").partition(";")[0].lower()
+        url, origin, digest, name, declared_mime = _reference_identity(relay, tag)
         auth = relay.event(
             24242,
             "Read attached reference",
@@ -75,29 +48,7 @@ def reference_files(relay, event):
                 relay.owner_attestation, separators=(",", ":")
             )
         try:
-            deadline = time.monotonic() + 10
-            with relay.client.stream("GET", url, headers=headers) as response:
-                if response.status_code != 200:
-                    raise Rejected("conversation_attachment_unavailable", 503)
-                mime = (
-                    response.headers.get("content-type", "").partition(";")[0].lower()
-                )
-                if declared_mime in _IMAGE_MIME_TYPES:
-                    if mime != declared_mime:
-                        raise Rejected("conversation_attachment_invalid", 422)
-                    limit = min(4 * 1024 * 1024, remaining_images)
-                else:
-                    if mime not in _TEXT_MIME_TYPES:
-                        raise Rejected("conversation_attachment_requires_text", 422)
-                    limit = remaining_text
-                data = bytearray()
-                for chunk in response.iter_bytes():
-                    if (
-                        time.monotonic() > deadline
-                        or len(data) + len(chunk) > limit
-                    ):
-                        raise Rejected("conversation_attachment_too_large", 422)
-                    data.extend(chunk)
+            data = _download_reference(relay, url, headers, declared_mime, remaining_images, remaining_text)
             if sha256(data) != digest:
                 raise Rejected("conversation_attachment_digest_mismatch", 422)
             if declared_mime in _IMAGE_MIME_TYPES:
@@ -116,3 +67,68 @@ def reference_files(relay, event):
         remaining_text -= len(data)
         files.append(InputFile(name, content))
     return tuple(files)
+
+def _reference_identity(relay, tag):
+    fields = {}
+    for item in tag[1:]:
+        key, separator, value = item.partition(" ")
+        if not separator or key in fields:
+            raise Rejected("conversation_attachment_invalid", 422)
+        fields[key] = value
+    url = fields.get("url", "")
+    parsed = urlsplit(url)
+    origin = urlsplit(relay.origin)
+    match = re.fullmatch(
+        r"/media/([a-f0-9]{64})(?:\.([a-z0-9]{1,10}))?", parsed.path
+    )
+    if (
+        parsed.scheme != origin.scheme
+        or parsed.netloc != origin.netloc
+        or parsed.query
+        or parsed.fragment
+        or not match
+        or fields.get("x", match[1]) != match[1]
+    ):
+        raise Rejected("conversation_attachment_denied", 422)
+    digest = match[1]
+    name = fields.get(
+        "filename", fields.get("alt", "reference-" + digest[:8] + ".txt")
+    )
+    if not name or len(name) > 200 or any(ord(c) < 32 or c in "/\\" for c in name):
+        name = "reference-" + digest[:8] + ".txt"
+    declared_mime = fields.get("m", "").partition(";")[0].lower()
+    return url, origin, digest, name, declared_mime
+
+
+def _response_limit(response, declared_mime, remaining_images, remaining_text):
+    mime = (
+        response.headers.get("content-type", "").partition(";")[0].lower()
+    )
+    if declared_mime in _IMAGE_MIME_TYPES:
+        if mime != declared_mime:
+            raise Rejected("conversation_attachment_invalid", 422)
+        limit = min(4 * 1024 * 1024, remaining_images)
+    else:
+        if mime not in _TEXT_MIME_TYPES:
+            raise Rejected("conversation_attachment_requires_text", 422)
+        limit = remaining_text
+    return limit
+
+
+def _download_reference(relay, url, headers, declared_mime, remaining_images, remaining_text):
+    deadline = time.monotonic() + 10
+    with relay.client.stream("GET", url, headers=headers) as response:
+        if response.status_code != 200:
+            raise Rejected("conversation_attachment_unavailable", 503)
+        limit = _response_limit(response, declared_mime, remaining_images, remaining_text)
+        data = bytearray()
+        for chunk in response.iter_bytes():
+            if (
+                time.monotonic() > deadline
+                or len(data) + len(chunk) > limit
+            ):
+                raise Rejected("conversation_attachment_too_large", 422)
+            data.extend(chunk)
+    return data
+
+

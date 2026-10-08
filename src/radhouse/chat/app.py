@@ -18,6 +18,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from radhouse.domain.tasks import Rejected
 from .attachments import FILE_ID, classify
 
+
+JAVASCRIPT_MEDIA_TYPE = 'text/javascript'
+
 STATIC = Path(__file__).with_name("static")
 
 
@@ -37,52 +40,10 @@ class Message(BaseModel):
 
 
 def create_app(auth, service, *, admin=None, documents=None, browser=None):
-    @asynccontextmanager
-    async def lifespan(_app):
-        stop = asyncio.Event()
-
-        async def observe_reply():
-            # Save completion even when the browser is closed. Never dispatch.
-            while not stop.is_set():
-                try:
-                    await asyncio.to_thread(service.poll, service.owner_id)
-                except (Rejected, sqlite3.Error):
-                    logging.getLogger(__name__).warning("Pending reply observation unavailable")
-                try:
-                    await asyncio.wait_for(stop.wait(), timeout=2)
-                except TimeoutError:
-                    pass
-
-        observer = asyncio.create_task(observe_reply())
-        try:
-            yield
-        finally:
-            stop.set()
-            await observer
-
+    lifespan = _reply_lifespan(service)
     app = FastAPI(title="Radhouse", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
-    @app.middleware("http")
-    async def private_responses(request, call_next):
-        response = await call_next(request)
-        response.headers.update({"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
-            "Referrer-Policy": "no-referrer", "X-Frame-Options": "DENY",
-            "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"})
-        return response
-
-    @app.exception_handler(Rejected)
-    async def rejected(_request, exc):
-        return JSONResponse({"error": exc.code}, status_code=exc.status)
-
-    @app.exception_handler(RequestValidationError)
-    async def invalid(_request, _exc):
-        # Framework validation errors otherwise echo submitted credentials/text.
-        return JSONResponse({"error": "invalid_request"}, status_code=422)
-
-    @app.exception_handler(sqlite3.Error)
-    async def storage_unavailable(_request, _exc):
-        return JSONResponse({"error": "conversation_unavailable"}, status_code=503)
-
+    _install_response_handlers(app)
     def session_payload(session):
         service.authorize(session)
         payload = {"username": session.username, "csrf_token": session.csrf_token,
@@ -115,17 +76,101 @@ def create_app(auth, service, *, admin=None, documents=None, browser=None):
 
         app.include_router(create_admin_router(admin, management_session))
 
+    _install_assets(app)
+    _install_browser_routes(app, browser, owner)
+    _install_icon_route(app)
+    _install_auth_routes(app, auth, session_payload)
+    @app.get("/chat/history")
+    def history(request: Request, before: Annotated[int | None, Field(gt=0)] = None):
+        return service.store.history(owner(request), before)
+
+    @app.post("/chat/messages")
+    def send(body: Message, request: Request):
+        principal = owner(request)
+        return service.send(principal, body.request_id, body.text, tuple(service.store.upload(principal, file_id) for file_id in body.attachments))
+
+    @app.get("/chat/messages/{request_id}")
+    def message_receipt(request_id: str, request: Request):
+        principal = owner(request)
+        turn = service.store.find(principal, request_id)
+        if turn is None: raise Rejected("message_not_found", 404)
+        return {"turn": service.store.history(principal, before=turn["seq"] + 1, limit=1)["turns"][0]}
+
+    _install_file_routes(app, service, owner)
+    @app.get("/chat/reply")
+    def reply(request: Request):
+        return service.poll(owner(request))
+
+    @app.get("/healthz")
+    def health():
+        auth.health()
+        with service.store.connection() as db:
+            db.execute("SELECT seq FROM turns LIMIT 1").fetchone()
+        return {"status": "ready", "scope": "web"}
+
+    return app
+
+def _reply_lifespan(service):
+    @asynccontextmanager
+    async def lifespan(_app):
+        stop = asyncio.Event()
+
+        async def observe_reply():
+            # Save completion even when the browser is closed. Never dispatch.
+            while not stop.is_set():
+                try:
+                    await asyncio.to_thread(service.poll, service.owner_id)
+                except (Rejected, sqlite3.Error):
+                    logging.getLogger(__name__).warning("Pending reply observation unavailable")
+                try:
+                    await asyncio.wait_for(stop.wait(), timeout=2)
+                except TimeoutError:
+                    pass
+
+        observer = asyncio.create_task(observe_reply())
+        try:
+            yield
+        finally:
+            stop.set()
+            await observer
+    return lifespan
+
+
+def _install_response_handlers(app):
+    @app.middleware("http")
+    async def private_responses(request, call_next):
+        response = await call_next(request)
+        response.headers.update({"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+            "Referrer-Policy": "no-referrer", "X-Frame-Options": "DENY",
+            "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"})
+        return response
+
+    @app.exception_handler(Rejected)
+    async def rejected(_request, exc):
+        return JSONResponse({"error": exc.code}, status_code=exc.status)
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid(_request, _exc):
+        # Framework validation errors otherwise echo submitted credentials/text.
+        return JSONResponse({"error": "invalid_request"}, status_code=422)
+
+    @app.exception_handler(sqlite3.Error)
+    async def storage_unavailable(_request, _exc):
+        return JSONResponse({"error": "conversation_unavailable"}, status_code=503)
+
+
+def _install_assets(app):
     @app.get("/")
     def index():
         return FileResponse(STATIC / "index.html")
 
     @app.get("/chat.js")
     def javascript():
-        return FileResponse(STATIC / "chat.js", media_type="text/javascript")
+        return FileResponse(STATIC / "chat.js", media_type=JAVASCRIPT_MEDIA_TYPE)
 
     @app.get("/format.js")
     def answer_formatter():
-        return FileResponse(STATIC / "format.js", media_type="text/javascript")
+        return FileResponse(STATIC / "format.js", media_type=JAVASCRIPT_MEDIA_TYPE)
 
     @app.get("/chat.css")
     def stylesheet():
@@ -133,12 +178,14 @@ def create_app(auth, service, *, admin=None, documents=None, browser=None):
 
     @app.get("/browser-view.js")
     def browser_javascript():
-        return FileResponse(STATIC / "browser-view.js", media_type="text/javascript")
+        return FileResponse(STATIC / "browser-view.js", media_type=JAVASCRIPT_MEDIA_TYPE)
 
     @app.get("/browser-view.css")
     def browser_stylesheet():
         return FileResponse(STATIC / "browser-view.css", media_type="text/css")
 
+
+def _install_browser_routes(app, browser, owner):
     @app.get("/chat/browser")
     async def browser_status(request: Request):
         principal = await asyncio.to_thread(owner, request)
@@ -161,12 +208,16 @@ def create_app(auth, service, *, admin=None, documents=None, browser=None):
             "X-Radhouse-Browser-Frame-Id": frame.frame_id,
             "X-Radhouse-Browser-Received-At": str(frame.received_at)})
 
+
+def _install_icon_route(app):
     @app.get("/icons/{name}.svg")
     def file_icon(name: str):
         if name not in {"pdf", "word", "excel", "powerpoint"}:
             raise Rejected("icon_not_found", 404)
         return FileResponse(STATIC / "icons" / (name + ".svg"), media_type="image/svg+xml")
 
+
+def _install_auth_routes(app, auth, session_payload):
     @app.post("/auth/login")
     def login(body: Login, request: Request, response: Response):
         auth.verify_origin(request)
@@ -189,22 +240,8 @@ def create_app(auth, service, *, admin=None, documents=None, browser=None):
         response.delete_cookie(auth.cookie_name, secure=auth.secure_cookie,
                                httponly=True, samesite="strict", path="/")
 
-    @app.get("/chat/history")
-    def history(request: Request, before: Annotated[int | None, Field(gt=0)] = None):
-        return service.store.history(owner(request), before)
 
-    @app.post("/chat/messages")
-    def send(body: Message, request: Request):
-        principal = owner(request)
-        return service.send(principal, body.request_id, body.text, tuple(service.store.upload(principal, file_id) for file_id in body.attachments))
-
-    @app.get("/chat/messages/{request_id}")
-    def message_receipt(request_id: str, request: Request):
-        principal = owner(request)
-        turn = service.store.find(principal, request_id)
-        if turn is None: raise Rejected("message_not_found", 404)
-        return {"turn": service.store.history(principal, before=turn["seq"] + 1, limit=1)["turns"][0]}
-
+def _install_file_routes(app, service, owner):
     def file_receipt(attachment):
         return {"file_id":attachment.file_id, "name":attachment.name, "size":attachment.size,
                 "sha256":attachment.sha256, "media_type":attachment.media_type, "kind":attachment.kind}
@@ -248,29 +285,22 @@ def create_app(auth, service, *, admin=None, documents=None, browser=None):
         data = attachment.data
         if isinstance(data, Path):
             return FileResponse(data, media_type=attachment.media_type, headers=headers)
-        range_header = request.headers.get("range")
-        if range_header:
-            match = re.fullmatch(r"bytes=(\d{0,20})-(\d{0,20})", range_header)
-            if not match or not any(match.groups()):
-                return Response(status_code=416,headers={"Content-Range":f"bytes */{len(data)}"})
-            first,last = match.groups()
-            start = int(first) if first else max(0,len(data)-int(last))
-            end = min(int(last),len(data)-1) if first and last else len(data)-1
-            if start > end or start >= len(data):
-                return Response(status_code=416,headers={"Content-Range":f"bytes */{len(data)}"})
-            headers["Content-Range"] = f"bytes {start}-{end}/{len(data)}"
-            return Response(data[start:end+1],status_code=206,media_type=attachment.media_type,headers=headers)
-        return Response(data,media_type=attachment.media_type,headers=headers)
+        return _byte_response(data, attachment.media_type, headers, request.headers.get("range"))
 
-    @app.get("/chat/reply")
-    def reply(request: Request):
-        return service.poll(owner(request))
 
-    @app.get("/healthz")
-    def health():
-        auth.health()
-        with service.store.connection() as db:
-            db.execute("SELECT seq FROM turns LIMIT 1").fetchone()
-        return {"status": "ready", "scope": "web"}
 
-    return app
+def _byte_response(data, media_type, headers, range_header):
+    if range_header:
+        match = re.fullmatch(r"bytes=(\d{0,20})-(\d{0,20})", range_header)
+        if not match or not any(match.groups()):
+            return Response(status_code=416,headers={"Content-Range":f"bytes */{len(data)}"})
+        first,last = match.groups()
+        start = int(first) if first else max(0,len(data)-int(last))
+        end = min(int(last),len(data)-1) if first and last else len(data)-1
+        if start > end or start >= len(data):
+            return Response(status_code=416,headers={"Content-Range":f"bytes */{len(data)}"})
+        headers["Content-Range"] = f"bytes {start}-{end}/{len(data)}"
+        return Response(data[start:end+1],status_code=206,media_type=media_type,headers=headers)
+    return Response(data,media_type=media_type,headers=headers)
+
+
