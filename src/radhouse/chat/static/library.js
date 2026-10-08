@@ -39,6 +39,7 @@
       if (append) params.set("before", this.cursor);
       if (!append) { this.files.replaceChildren(); this.cursor = null; this.more.hidden = true; }
       this.refresh.disabled = true; this.more.disabled = true;
+      window.RadhouseIcons?.busy(this.refresh,true);
       this.status.textContent = "Loading files…";
       try {
         const page = await this.request("/chat/library?" + params, undefined, false, controller.signal);
@@ -55,6 +56,7 @@
         clearTimeout(timeout);
         if (epoch === this.epoch) {
           this.controller = null; this.refresh.disabled = false; this.more.disabled = false;
+          window.RadhouseIcons?.busy(this.refresh,false);
         }
       }
     }
