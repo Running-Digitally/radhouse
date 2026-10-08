@@ -30,9 +30,12 @@ in a reply. No private runtime operation is part of this website change.
 
 The accepted Agent Identity design at `d221bec` supplies four collections:
 Hearthside, Kiln Club, Paper Trails and Signal Station, with thirteen characters.
-The public gallery offers collection selection, portraits and short stories in
-a native popup. This is labelled a design preview; working identity settings
-remain the next private-app step. The mobile address/search bar and
+One compact Visuals card sits alongside the workspace features. Its four
+groups each show three 44px portraits and open the matching collection in the
+existing native popup, with all thirteen characters and short stories. The
+large standalone heading and four separate collection cards are removed.
+The card is labelled a design preview; working identity settings remain the
+next private-app step. The mobile address/search bar and
 Send-during-reply research are omitted.
 
 The site's action and feature icons reuse the exact `RadhouseIcons` module and
@@ -60,6 +63,8 @@ handover text and no private browser connection.
 - Browser checks cover all thirteen portrait selections, collection changes,
   previous/next wrapping, group arrow/Home/End navigation, native modal focus
   containment, Escape, backdrop dismissal and focus return to the opener.
+- The compact card has four theme links, each with three 44px portraits. All
+  four open their matching popup collection and return focus to the opener.
 - Four static disclosures expose thirteen portraits without JavaScript.
   Reduced-motion checks confirm disabled glyph motion, no dialog animation,
   zero portrait transition and automatic scrolling.
