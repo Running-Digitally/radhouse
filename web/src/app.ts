@@ -253,44 +253,36 @@ function latestActivity(data: TaskEvents | undefined): { label: string; occurred
   return typeof label === "string" && label.length > 0 && label.length <= 160
     ? { label, occurred_at: activity?.data?.occurred_at } : null;
 }
-function historyPanel(card: TaskCard): HTMLElement {
-  const panel = element("section", "history-panel");
-  panel.append(element("h4", "section-title", "Task progress"));
-  const renderEvents = (data: TaskEvents): void => {
-    const list = element("ol", "timeline");
-    const steps: { key: string; label: string; occurred_at: number | undefined }[] = [];
-    for (const event of data.events) {
-      const activityLabel = event.data?.label;
-      const label = event.kind === "runtime_activity"
-        ? typeof activityLabel === "string" && activityLabel.length <= 160 ? activityLabel : undefined
-        : eventNames[event.kind];
-      if (label) {
-        const key = event.kind === "runtime_activity" ? `runtime:${event.data?.event ?? label}` : event.kind;
-        const earlier = steps.findIndex((step) => step.key === key);
-        if (earlier >= 0) steps.splice(earlier, 1);
-        steps.push({ key, label, occurred_at: event.data?.occurred_at });
-      }
+function renderTimeline(panel: HTMLElement, card: TaskCard, data: TaskEvents): void {
+  const list = element("ol", "timeline");
+  const steps: { key: string; label: string; occurred_at: number | undefined }[] = [];
+  for (const event of data.events) {
+    const label = eventLabel(event);
+    if (label) {
+      const key = eventKey(event, label);
+      const earlier = steps.findIndex((step) => step.key === key);
+      if (earlier >= 0) steps.splice(earlier, 1);
+      steps.push({ key, label, occurred_at: event.data?.occurred_at });
     }
-    for (const step of steps.slice(-8)) list.append(element("li", undefined,
-      step.label + (step.key.startsWith("runtime:") ? activityTime(step.occurred_at) : "")));
-    if (!list.children.length) list.append(element("li", undefined, "No milestones yet."));
-    panel.replaceChildren(element("h4", "section-title", "Task progress"), list);
-    if (card.task.phase === "active") panel.append(element("p", "muted", latestActivity(data)
-      ? "These are the latest confirmed types of activity, not a description of the actual change. This task feed has no specific work note yet."
-      : "No finer update has arrived yet. The agent may still be working through its current step."));
-  };
-  const cached = timelines.get(card.task.task_id);
-  if (cached) renderEvents(cached); else panel.append(element("p", "muted", "Loading progress…"));
-  const epoch = sessionEpoch;
-  if (api) void api.events(card.task.task_id).then((data) => {
-    if (epoch !== sessionEpoch || !panel.isConnected) return;
-    timelines.set(card.task.task_id, data); renderEvents(data);
-  }).catch(() => { if (panel.isConnected) panel.append(notice("Progress could not refresh. Try again when connected.", true)); });
-  return panel;
+  }
+  for (const step of steps.slice(-8)) list.append(element("li", undefined,
+    step.label + (step.key.startsWith("runtime:") ? activityTime(step.occurred_at) : "")));
+  if (!list.children.length) list.append(element("li", undefined, "No milestones yet."));
+  panel.replaceChildren(element("h4", "section-title", "Task progress"), list);
+  if (card.task.phase === "active") panel.append(element("p", "muted", latestActivity(data)
+    ? "These are the latest confirmed types of activity, not a description of the actual change. This task feed has no specific work note yet."
+    : "No finer update has arrived yet. The agent may still be working through its current step."));
 }
-function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
+function eventKey(event: TaskEvents["events"][number], label: string): string {
+  return event.kind === "runtime_activity" ? `runtime:${event.data?.event ?? label}` : event.kind;
+}
+function eventLabel(event: TaskEvents["events"][number]): string | undefined {
+  if (event.kind !== "runtime_activity") return eventNames[event.kind];
+  const label = event.data?.label;
+  return typeof label === "string" && label.length <= 160 ? label : undefined;
+}
+function appendTaskHeading(article: HTMLElement, card: TaskCard, home: WorkHome): void {
   const task = card.task;
-  const article = element("article", "task-card"); article.dataset.taskId = task.task_id;
   const heading = element("div", "task-card__heading");
   const titleGroup = element("div", "task-card__title-group");
   titleGroup.append(element("h3", "task-card__title", card.title.title));
@@ -306,16 +298,12 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
     titleGroup.append(editTitle);
   }
   heading.append(titleGroup,
-    element("span", `phase phase--${task.phase}`, task.outcome === "cancelled" ? "Cancelled"
-      : task.outcome === "failed" ? "Needs a new assignment" : phaseLabel(task.phase)));
+    element("span", `phase phase--${task.phase}`, taskPhaseName(task)));
   const agent = home.agents.find((item) => item.bot_id === task.bot_id);
   article.append(heading, element("p", "task-card__context", `${agent?.display_name ?? task.bot_id} · ${home.project_name} · Private task`));
-  if (task.phase === "active") {
-    const activity = latestActivity(timelines.get(task.task_id));
-    article.append(element("p", "task-card__activity", activity
-      ? `Last observed: ${activity.label}${activityTime(activity.occurred_at)}`
-      : "Waiting for the agent’s first progress update."));
-  }
+}
+function appendTitleForm(article: HTMLElement, card: TaskCard): void {
+  const task = card.task;
   const titleDraft = titleDrafts.get(task.task_id);
   if (titleDraft !== undefined) {
     const form = element("form", "title-form");
@@ -336,13 +324,9 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
     });
     article.append(form);
   }
-  const assignment = element("details", "task-card__assignment");
-  assignment.append(element("summary", undefined, "What you asked"), element("p", "message-content", task.brief));
-  article.append(assignment);
-  const blockers = blockerMessages(card);
-  if (blockers.length) {
-    const list = element("ul", "blockers"); blockers.forEach((text) => { list.append(element("li", "blockers__item", text)); }); article.append(list);
-  }
+}
+function appendTaskResult(article: HTMLElement, card: TaskCard, home: WorkHome): void {
+  const task = card.task;
   if (task.result !== null) {
     const summary = task.result.replace(/[#*_`>[\]]/g, "").replace(/\s+/g, " ").trim();
     if (summary !== card.title.title) article.append(element("p", "result-summary",
@@ -362,36 +346,63 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
     const instruction = receipt.text ?? `Permission response: ${receipt.choice}`;
     article.append(notice(`${instruction} — ${status}`));
   }
-  if (home.role !== "viewer" && task.phase === "active" && task.blockers.length === 0) {
-    if (task.permission_request) {
-      const permission = element("section", "permission-panel");
-      permission.append(element("h4", "section-title", "The agent needs your decision"),
-        element("pre", "result", task.permission_request.command),
-        element("p", "digest", `Request SHA-256: ${task.permission_request.digest}`));
-      const respond = async (choice: "once" | "deny"): Promise<void> => {
-        if (!api) return;
-        await api.permission(task, choice); await load("Permission response recorded for this run.");
-      };
-      if (task.permission_request.allow_once) permission.append(button("Allow this request once", async () => respond("once")));
-      else permission.append(notice("This action is outside the agent’s current grant. An administrator must review access before it can be allowed."));
-      permission.append(button("Deny this request", async () => respond("deny")));
-      article.append(permission);
-    } else if (!task.guidance.some((receipt) => ["submitted", "unknown"].includes(receipt.state))) {
-      const guidance = element("form", "guidance-form");
-      const label = element("label", "field"); const input = element("textarea", "field__control");
-      input.name = `guide-${task.task_id}`; input.maxLength = 4096; input.required = true;
-      input.value = guidanceDrafts.get(task.task_id) ?? "";
-      input.addEventListener("input", () => guidanceDrafts.set(task.task_id, input.value));
-      label.append(element("span", "field__label", "Guide the current assignment"), input);
-      const send = element("button", "button button--secondary", "Send guidance"); send.type = "submit";
-      guidance.append(label, send);
-      guidance.addEventListener("submit", (event) => {
-        event.preventDefault(); const current = api; if (!current) return;
-        void action(send, async () => { await current.guide(task, input.value); guidanceDrafts.delete(task.task_id); await load(); });
-      });
-      article.append(guidance);
-    }
+}
+function appendTaskGuidance(article: HTMLElement, task: TaskCard["task"], home: WorkHome): void {
+  if (home.role === "viewer" || task.phase !== "active" || task.blockers.length !== 0) return;
+  if (task.permission_request) {
+    const permission = element("section", "permission-panel");
+    permission.append(element("h4", "section-title", "The agent needs your decision"),
+      element("pre", "result", task.permission_request.command),
+      element("p", "digest", `Request SHA-256: ${task.permission_request.digest}`));
+    const respond = async (choice: "once" | "deny"): Promise<void> => {
+      if (!api) return;
+      await api.permission(task, choice); await load("Permission response recorded for this run.");
+    };
+    if (task.permission_request.allow_once) { permission.append(button("Allow this request once", async () => respond("once"))); }
+    else { permission.append(notice("This action is outside the agent’s current grant. An administrator must review access before it can be allowed.")); }
+    permission.append(button("Deny this request", async () => respond("deny")));
+    article.append(permission);
+  } else if (!task.guidance.some((receipt) => ["submitted", "unknown"].includes(receipt.state))) {
+    const guidance = element("form", "guidance-form");
+    const label = element("label", "field"); const input = element("textarea", "field__control");
+    input.name = `guide-${task.task_id}`; input.maxLength = 4096; input.required = true;
+    input.value = guidanceDrafts.get(task.task_id) ?? "";
+    input.addEventListener("input", () => guidanceDrafts.set(task.task_id, input.value));
+    label.append(element("span", "field__label", "Guide the current assignment"), input);
+    const send = element("button", "button button--secondary", "Send guidance"); send.type = "submit";
+    guidance.append(label, send);
+    guidance.addEventListener("submit", (event) => {
+      event.preventDefault(); const current = api; if (!current) return;
+      void action(send, async () => { await current.guide(task, input.value); guidanceDrafts.delete(task.task_id); await load(); });
+    });
+    article.append(guidance);
   }
+}
+function appendOwnerTaskActions(controls: HTMLElement, secondary: HTMLElement, article: HTMLElement, card: TaskCard, home: WorkHome): void {
+  const task = card.task;
+  for (const [label, verb, availability] of [
+    ["Pause", "pause", card.pause], ["Resume", "resume", card.resume], ["Cancel", "cancel", card.cancel],
+  ] as const) {
+    if ((verb === "pause" && card.resume.enabled) || (verb === "resume" && !card.resume.enabled) || task.phase === "closed") continue;
+    const control = button(label, async () => {
+      if (!api) return;
+      await api.changeState(task.task_id, verb, task.state_revision); await load();
+    });
+    control.disabled = !availability.enabled;
+    const reason = actionReason(availability); if (reason) control.title = reason;
+    secondary.append(control);
+  }
+  if (card.review.enabled) controls.append(button("Review and share", async () => prepareAudience(article, card), true));
+  if (task.phase === "closed") secondary.append(button("Ask for a change", async () => {
+    clearReviewTarget();
+    drafts.set(home.project_id, { bot: task.bot_id, brief: "", files: [], ...(task.result === null ? {} : { followsTaskId: task.task_id }) });
+    await load(task.result === null ? "Describe the next assignment." : "The previous result will be included. Describe the next assignment.");
+    page.querySelector<HTMLTextAreaElement>('textarea[name="brief"]')?.focus();
+    page.querySelector(".start-panel")?.scrollIntoView({ block: "start" });
+  }));
+}
+function appendTaskActions(article: HTMLElement, card: TaskCard, home: WorkHome): void {
+  const task = card.task;
   const controls = element("div", "task-card__actions");
   const more = element("details", "task-card__more");
   more.append(element("summary", undefined, "More options"));
@@ -415,30 +426,282 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
     if (expanded.has(task.task_id)) expanded.delete(task.task_id); else expanded.add(task.task_id);
     await load();
   }));
-  if (home.role !== "viewer") {
-    for (const [label, verb, availability] of [
-      ["Pause", "pause", card.pause], ["Resume", "resume", card.resume], ["Cancel", "cancel", card.cancel],
-    ] as const) {
-      if ((verb === "pause" && card.resume.enabled) || (verb === "resume" && !card.resume.enabled) || task.phase === "closed") continue;
-      const control = button(label, async () => {
-        if (!api) return;
-        await api.changeState(task.task_id, verb, task.state_revision); await load();
-      });
-      control.disabled = !availability.enabled;
-      const reason = actionReason(availability); if (reason) control.title = reason;
-      secondary.append(control);
-    }
-    if (card.review.enabled) controls.append(button("Review and share", async () => prepareAudience(article, card), true));
-    if (task.phase === "closed") secondary.append(button("Ask for a change", async () => {
-      clearReviewTarget();
-      drafts.set(home.project_id, { bot: task.bot_id, brief: "", files: [], ...(task.result === null ? {} : { followsTaskId: task.task_id }) });
-      await load(task.result === null ? "Describe the next assignment." : "The previous result will be included. Describe the next assignment.");
-      page.querySelector<HTMLTextAreaElement>('textarea[name="brief"]')?.focus();
-      page.querySelector(".start-panel")?.scrollIntoView({ block: "start" });
-    }));
-  } else article.append(element("p", "muted", "Read-only access"));
+  if (home.role !== "viewer") { appendOwnerTaskActions(controls, secondary, article, card, home); }
+  else article.append(element("p", "muted", "Read-only access"));
   if (secondary.childElementCount) { more.append(secondary); controls.append(more); }
   article.append(controls);
+}
+function projectCard(project: Project, home: WorkHome): HTMLElement {
+  const item = element("article", `project-card${project.project_id === home.project_id ? " project-card--current" : ""}`);
+  const names = project.bot_ids.map((id) => agentDirectory.get(id)?.display_name ?? id);
+  item.append(element("h3", "agent-card__name", project.display_name),
+    element("p", "muted", names.length ? `Agents: ${names.join(", ")}` : "No agents assigned"));
+  if (project.coordination) {
+    item.append(
+      element("span", `phase phase--${projectPhaseClass(project.coordination.phase)}`,
+        project.coordination.phase.replaceAll("_", " ")),
+    );
+    if (project.coordination.status_note) item.append(element("p", "muted", project.coordination.status_note));
+    if (project.coordination.preview_url) {
+      const preview = element("a", "project-card__link", `Open preview · ${project.coordination.preview_revision?.slice(0, 8) ?? "revision pending"}`);
+      preview.href = project.coordination.preview_url; preview.target = "_blank"; preview.rel = "noopener noreferrer";
+      item.append(preview);
+    }
+    if (project.coordination.deployment_url) {
+      const deployed = element("a", "project-card__link", `Open deployment · ${project.coordination.deployment_status ?? "status pending"}`);
+      deployed.href = project.coordination.deployment_url; deployed.target = "_blank"; deployed.rel = "noopener noreferrer";
+      item.append(deployed);
+    }
+  }
+  if (project.project_id === home.project_id) item.append(element("span", "phase phase--active", "Current"));
+  else item.append(button("Open project", async () => {
+    selectedProject = project.project_id; sessionEpoch++; selectedConversation = ""; conversationHistory = null;
+    await load();
+  }));
+  return item;
+}
+function appendHeader(home: WorkHome, message?: string): ConversationLink | undefined {
+  const header = element("header", "page-header"); const identity = element("div");
+  identity.append(brand(), element("h1", "page-title", reviewTarget ? "Review your work" : home.project_name));
+  if (projects.length > 1) {
+    const context = element("label", "field project-picker"); const picker = element("select", "field__control"); picker.name = "project";
+    for (const project of projects) { const option = element("option", undefined, project.display_name); option.value = project.project_id; picker.append(option); }
+    picker.value = home.project_id;
+    picker.addEventListener("change", () => {
+      clearReviewTarget(); selectedProject = picker.value; sessionEpoch++; reviews.clear(); timelines.clear(); expanded.clear();
+      selectedConversation = ""; conversationHistory = null; void load();
+    });
+    context.append(element("span", "field__label", "Project"), picker); identity.append(context);
+  }
+  header.append(identity);
+  header.append(button(`Sign out ${signedIn?.username ?? ""}`, async () => { await api?.logout(); loginScreen(); }));
+  page.append(header);
+  if (message) page.append(notice(message));
+  if (reviewTarget) page.append(button("Show all work", async () => { clearReviewTarget(); await load(); }));
+  const conversation = conversationLinks.find(link => link.link_id === selectedConversation);
+  if (!reviewTarget) {
+    const navigation = element("nav", "work-home-nav"); navigation.setAttribute("aria-label", "Work home sections");
+    const destinations: [string, string][] = [["Work", "work-section"]];
+    destinations.push(conversation ? ["Conversation", "conversation-section"] : ["Ask for help", "start-section"]);
+    for (const [label, id] of destinations) navigation.append(button(label, async () => {
+      page.querySelector(`#${id}`)?.scrollIntoView({ block: "start" });
+    }));
+    page.append(navigation);
+  }
+  return conversation;
+}
+function appendAttention(home: WorkHome): void {
+  if (reviewTarget) return;
+  const attention = element("section", "attention-panel");
+  attention.append(element("h2", "section-title", "What needs you"));
+  const coordination = projects.find((item) => item.project_id === home.project_id)?.coordination;
+  const latest = home.tasks.find((card) => card.task.task_id === coordination?.latest_task_id);
+  const pending = home.tasks.filter((card) => card.task.phase === "active" && card.task.permission_request);
+  const working = home.tasks.find((card) => card.task.phase === "active");
+  if (pending.length) {
+    attention.append(element("p", undefined, pending.length === 1
+      ? "An agent needs your decision to continue."
+      : `${pending.length} agents need your decision to continue.`));
+    attention.append(button("View request", async () => {
+      page.querySelector(`[data-task-id="${pending[0]?.task.task_id}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" });
+    }));
+  } else if (coordination?.phase === "preview_feedback" && working) {
+    const name = home.agents.find((agent) => agent.bot_id === working.task.bot_id)?.display_name ?? "An agent";
+    attention.append(element("p", undefined, `${name} is working on an update. The preview may not include it yet; nothing is needed from you right now.`));
+  } else if (coordination?.phase === "preview_feedback" && coordination.preview_url) {
+    attention.append(element("p", undefined, "A new version is ready to try. Tell Radhouse what you like or what to change."));
+    const link = element("a", "button button--primary", "Try the new version");
+    link.href = coordination.preview_url; link.target = "_blank"; link.rel = "noopener noreferrer";
+    attention.append(link);
+  } else if (coordination?.phase === "merge_ready") {
+    attention.append(element("p", undefined, "The review is complete. Tell Radhouse if you want to make this version live."));
+    if (coordination.pull_request) {
+      const link = element("a", "button button--secondary", "See changes");
+      link.href = coordination.pull_request; link.target = "_blank"; link.rel = "noopener noreferrer";
+      attention.append(link);
+    }
+  } else if (coordination?.phase === "blocked") {
+    attention.append(element("p", undefined, coordination.status_note ?? "Radhouse needs help with the current project step."));
+  } else if (latest?.task.outcome === "failed") {
+    attention.append(element("p", undefined, "The latest assignment failed. Open its result to see what happened."));
+  } else {
+    attention.append(element("p", "muted", "Nothing right now. Radhouse will let you know when a decision is needed."));
+  }
+  page.append(attention);
+}
+function appendConversation(home: WorkHome, conversation: ConversationLink | undefined): void {
+  if (!reviewTarget && conversation && conversationHistory && api && signedIn) {
+    const draft = conversationDrafts.get(conversation.link_id) ?? { content: "", reply: null, files: [] };
+    conversationDrafts.set(conversation.link_id, draft);
+    const conversationSection = conversationPanel(api, conversation, conversationHistory, draft, { owner: signedIn.principal_id,
+      refresh: async () => load(), review: taskId => {
+        const card = Array.from(page.querySelectorAll<HTMLElement>("[data-task-id]")).find(node => node.dataset.taskId === taskId);
+        card?.scrollIntoView({ block: "start", behavior: "smooth" });
+        card?.querySelector<HTMLButtonElement>("button")?.focus();
+      }, run: action, filePicker: open => { filePickerOpen = open; if (open) loadGeneration++; } });
+    conversationSection.id = "conversation-section";
+    page.append(conversationSection);
+  } else if (!reviewTarget) {
+    const start = startPanel(home); start.id = "start-section"; page.append(start);
+  }
+}
+function appendAgentRoster(home: WorkHome): void {
+  const roster = element("section", "section"); roster.id = "agents-section";
+  roster.append(element("h2", "section-title", "Your agents"),
+    element("p", "section-description", "See who can work with you and open an agent conversation."));
+  const grid = element("div", "agent-grid");
+  for (const agent of home.agents) {
+    const card = element("article", "agent-card"); card.append(element("h3", "agent-card__name", agent.display_name),
+      element("p", "agent-card__role", agent.role_name), element("p", "muted", agent.state === "ready" ? "Ready for an assignment" : "Temporarily unavailable"));
+    const link = conversationLinks.find(item => item.bot_id === agent.bot_id);
+    if (link) card.append(button(`Talk to ${agent.display_name}`, async () => { selectedConversation = link.link_id; await load(); }));
+    grid.append(card);
+  }
+  roster.append(grid); if (!reviewTarget) page.querySelector(".manage-details")?.append(roster);
+}
+function workSection(home: WorkHome): HTMLElement {
+  const work = element("section", "section"); work.id = "work-section";
+  work.append(element("h2", "section-title", "Project work"),
+    element("p", "section-description", "Newest first. Current work stays visible; older results stay available below."));
+  if (home.tasks.length === 0) work.append(element("p", "empty", "Start with one clear assignment. Its progress and result will appear here."));
+  const ordered = [...home.tasks].sort((a, b) => b.sequence - a.sequence);
+  if (reviewTarget) {
+    const list = element("div", "task-list");
+    for (const card of ordered) if (card.task.task_id === reviewTarget.task_id) list.append(taskCard(card, home));
+    work.append(list);
+  } else {
+    const active = ordered.filter((card) => card.task.phase !== "closed");
+    const finished = ordered.filter((card) => card.task.phase === "closed");
+    if (active.length) {
+      work.append(element("h3", "work-group__title", `In progress · ${active.length}`));
+      const list = element("div", "task-list"); active.forEach((card) => list.append(taskCard(card, home))); work.append(list);
+    }
+    if (finished.length) {
+      const activity = element("details", "recent-activity");
+      activity.open = recentActivityOpen;
+      activity.addEventListener("toggle", () => { recentActivityOpen = activity.open; });
+      activity.append(element("summary", "work-group__title", `Recent activity · ${finished.length}`));
+      const recent = element("div", "task-list"); finished.slice(0, 3).forEach((card) => recent.append(taskCard(card, home)));
+      activity.append(recent);
+      if (finished.length > 3) {
+        const older = element("details", "older-work");
+        older.open = olderWorkOpen;
+        older.addEventListener("toggle", () => { olderWorkOpen = older.open; });
+        older.append(element("summary", undefined, `Older work · ${finished.length - 3}`));
+        const list = element("div", "task-list"); finished.slice(3).forEach((card) => list.append(taskCard(card, home)));
+        older.append(list); activity.append(older);
+      }
+      work.append(activity);
+    }
+  }
+  return work;
+}
+function restoreFieldFocus(focusName: string, selection: number[] | null): void {
+  if (focusName === "brief" || focusName === "agent" || focusName === "project" || focusName === "project-name" || focusName.startsWith("conversation-") || focusName.startsWith("guide-") || focusName.startsWith("title-")) {
+    const next = Array.from(page.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>("[name]")).find(node => node.name === focusName);
+    next?.focus(); if (next instanceof HTMLTextAreaElement && selection) next.setSelectionRange(selection[0] ?? 0, selection[1] ?? 0);
+  }
+}
+async function ensureSession(generation: number): Promise<boolean> {
+  if (!api) {
+    const session = await client.currentSession();
+    if (generation !== loadGeneration) { return false; }
+    applySession(session);
+  }
+  return true;
+}
+async function resolveReviewTarget(current: RadhouseApi, generation: number): Promise<boolean> {
+  if (reviewToken && !reviewTarget) {
+    const resolved = await current.resolveReview(reviewToken);
+    if (generation !== loadGeneration) { return false; }
+    reviewTarget = resolved; selectedProject = resolved.project_id;
+  }
+  return true;
+}
+async function loadProjectHome(current: RadhouseApi, available: Project[], generation: number): Promise<{ project: Project; scoped: RadhouseApi; home: WorkHome } | null> {
+  const project = available.find((p) => p.project_id === selectedProject) ?? available[0];
+  if (!project) { page.replaceChildren(notice("No active project is assigned. Ask your administrator to provide access.")); return null; }
+  if (reviewTarget && (project.project_id !== reviewTarget.project_id
+      || project.conversation_id !== reviewTarget.conversation_id || project.binding_revision !== reviewTarget.binding_revision)) {
+    throw new ApiError("review_link_denied", 403);
+  }
+  const scoped = current.forProject(project);
+  const home = await scoped.home();
+  if (generation !== loadGeneration) { return null; }
+  return { project, scoped, home };
+}
+async function refreshActiveEvents(scoped: RadhouseApi, home: WorkHome, generation: number): Promise<boolean> {
+  const activeEvents = await Promise.allSettled(home.tasks
+    .filter((card) => card.task.phase === "active")
+    .map(async (card) => ({ taskId: card.task.task_id, data: await scoped.events(card.task.task_id) })));
+  if (generation !== loadGeneration) { return false; }
+  for (const result of activeEvents) if (result.status === "fulfilled") timelines.set(result.value.taskId, result.value.data);
+  return true;
+}
+type LoadedConversation = { links: ConversationLink[]; link: ConversationLink | undefined; history: ConversationHistory | null };
+async function loadConversation(scoped: RadhouseApi, generation: number): Promise<LoadedConversation | null> {
+  const links = reviewTarget ? [] : await scoped.conversations();
+  if (generation !== loadGeneration) { return null; }
+  const link = links.find(item => item.link_id === selectedConversation) ?? links[0];
+  const history = link ? await scoped.conversationHistory(link.link_id, conversationDrafts.get(link.link_id)?.before) : null;
+  if (generation !== loadGeneration) { return null; }
+  return { links, link, history };
+}
+function installLoadedHome(scoped: RadhouseApi, available: Project[], project: Project, home: WorkHome, conversation: LoadedConversation): void {
+  const { links, link, history } = conversation;
+  for (const agent of home.agents) agentDirectory.set(agent.bot_id, agent);
+  conversationLinks = links; selectedConversation = link?.link_id ?? ""; conversationHistory = history;
+  if (reviewTarget && !home.tasks.some(card => card.task.task_id === reviewTarget?.task_id)) throw new ApiError("review_link_denied", 403);
+  api = scoped; selectedProject = project.project_id; projects = available;
+  if (!reviewTarget && signedIn) {
+    try { window.localStorage.setItem(`radhouse.project.${signedIn.principal_id}`, project.project_id); }
+    catch { /* Storage may be unavailable; the current session still works. */ }
+  }
+}
+function taskPhaseName(task: TaskCard["task"]): string {
+  if (task.outcome === "cancelled") return "Cancelled";
+  if (task.outcome === "failed") return "Needs a new assignment";
+  return phaseLabel(task.phase);
+}
+function projectPhaseClass(phase: NonNullable<Project["coordination"]>["phase"]): string {
+  if (phase === "blocked") return "stopping";
+  if (phase === "deployed") return "active";
+  return "recovering";
+}
+
+function historyPanel(card: TaskCard): HTMLElement {
+  const panel = element("section", "history-panel");
+  panel.append(element("h4", "section-title", "Task progress"));
+  const cached = timelines.get(card.task.task_id);
+  if (cached) renderTimeline(panel, card, cached); else panel.append(element("p", "muted", "Loading progress…"));
+  const epoch = sessionEpoch;
+  if (api) void api.events(card.task.task_id).then((data) => {
+    if (epoch !== sessionEpoch || !panel.isConnected) return;
+    timelines.set(card.task.task_id, data); renderTimeline(panel, card, data);
+  }).catch(() => { if (panel.isConnected) panel.append(notice("Progress could not refresh. Try again when connected.", true)); });
+  return panel;
+}
+function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
+  const task = card.task;
+  const article = element("article", "task-card"); article.dataset.taskId = task.task_id;
+  appendTaskHeading(article, card, home);
+  if (task.phase === "active") {
+    const activity = latestActivity(timelines.get(task.task_id));
+    article.append(element("p", "task-card__activity", activity
+      ? `Last observed: ${activity.label}${activityTime(activity.occurred_at)}`
+      : "Waiting for the agent’s first progress update."));
+  }
+  appendTitleForm(article, card);
+  const assignment = element("details", "task-card__assignment");
+  assignment.append(element("summary", undefined, "What you asked"), element("p", "message-content", task.brief));
+  article.append(assignment);
+  const blockers = blockerMessages(card);
+  if (blockers.length) {
+    const list = element("ul", "blockers"); blockers.forEach((text) => { list.append(element("li", "blockers__item", text)); }); article.append(list);
+  }
+  appendTaskResult(article, card, home);
+  appendTaskGuidance(article, task, home);
+  appendTaskActions(article, card, home);
   const review = reviews.get(task.task_id);
   if (review && !card.publication && review.digest === task.result_digest && review.state_revision === task.state_revision
     && review.task_revision === task.task_revision && new Date(review.expires_at).getTime() > Date.now()) {
@@ -520,33 +783,7 @@ function projectsPanel(home: WorkHome): HTMLElement {
     element("p", "section-description", "Keep related work together."));
   const list = element("div", "project-list");
   for (const project of projects) {
-    const item = element("article", `project-card${project.project_id === home.project_id ? " project-card--current" : ""}`);
-    const names = project.bot_ids.map((id) => agentDirectory.get(id)?.display_name ?? id);
-    item.append(element("h3", "agent-card__name", project.display_name),
-      element("p", "muted", names.length ? `Agents: ${names.join(", ")}` : "No agents assigned"));
-    if (project.coordination) {
-      item.append(
-        element("span", `phase phase--${project.coordination.phase === "blocked" ? "stopping" : project.coordination.phase === "deployed" ? "active" : "recovering"}`,
-          project.coordination.phase.replaceAll("_", " ")),
-      );
-      if (project.coordination.status_note) item.append(element("p", "muted", project.coordination.status_note));
-      if (project.coordination.preview_url) {
-        const preview = element("a", "project-card__link", `Open preview · ${project.coordination.preview_revision?.slice(0, 8) ?? "revision pending"}`);
-        preview.href = project.coordination.preview_url; preview.target = "_blank"; preview.rel = "noopener noreferrer";
-        item.append(preview);
-      }
-      if (project.coordination.deployment_url) {
-        const deployed = element("a", "project-card__link", `Open deployment · ${project.coordination.deployment_status ?? "status pending"}`);
-        deployed.href = project.coordination.deployment_url; deployed.target = "_blank"; deployed.rel = "noopener noreferrer";
-        item.append(deployed);
-      }
-    }
-    if (project.project_id === home.project_id) item.append(element("span", "phase phase--active", "Current"));
-    else item.append(button("Open project", async () => {
-      selectedProject = project.project_id; sessionEpoch++; selectedConversation = ""; conversationHistory = null;
-      await load();
-    }));
-    list.append(item);
+    list.append(projectCard(project, home));
   }
   section.append(list);
   if (home.role === "viewer") return section;
@@ -585,71 +822,8 @@ function render(home: WorkHome, message?: string): void {
   const focusName = focused instanceof HTMLInputElement || focused instanceof HTMLTextAreaElement || focused instanceof HTMLSelectElement ? focused.name : "";
   const selection = focused instanceof HTMLTextAreaElement ? [focused.selectionStart, focused.selectionEnd] : null;
   page.replaceChildren();
-  const header = element("header", "page-header"); const identity = element("div");
-  identity.append(brand(), element("h1", "page-title", reviewTarget ? "Review your work" : home.project_name));
-  if (projects.length > 1) {
-    const context = element("label", "field project-picker"); const picker = element("select", "field__control"); picker.name = "project";
-    for (const project of projects) { const option = element("option", undefined, project.display_name); option.value = project.project_id; picker.append(option); }
-    picker.value = home.project_id;
-    picker.addEventListener("change", () => {
-      clearReviewTarget(); selectedProject = picker.value; sessionEpoch++; reviews.clear(); timelines.clear(); expanded.clear();
-      selectedConversation = ""; conversationHistory = null; void load();
-    });
-    context.append(element("span", "field__label", "Project"), picker); identity.append(context);
-  }
-  header.append(identity);
-  header.append(button(`Sign out ${signedIn?.username ?? ""}`, async () => { await api?.logout(); loginScreen(); }));
-  page.append(header);
-  if (message) page.append(notice(message));
-  if (reviewTarget) page.append(button("Show all work", async () => { clearReviewTarget(); await load(); }));
-  const conversation = conversationLinks.find(link => link.link_id === selectedConversation);
-  if (!reviewTarget) {
-    const navigation = element("nav", "work-home-nav"); navigation.setAttribute("aria-label", "Work home sections");
-    const destinations: [string, string][] = [["Work", "work-section"]];
-    destinations.push(conversation ? ["Conversation", "conversation-section"] : ["Ask for help", "start-section"]);
-    for (const [label, id] of destinations) navigation.append(button(label, async () => {
-      page.querySelector(`#${id}`)?.scrollIntoView({ block: "start" });
-    }));
-    page.append(navigation);
-  }
-  if (!reviewTarget) {
-    const attention = element("section", "attention-panel");
-    attention.append(element("h2", "section-title", "What needs you"));
-    const coordination = projects.find((item) => item.project_id === home.project_id)?.coordination;
-    const latest = home.tasks.find((card) => card.task.task_id === coordination?.latest_task_id);
-    const pending = home.tasks.filter((card) => card.task.phase === "active" && card.task.permission_request);
-    const working = home.tasks.find((card) => card.task.phase === "active");
-    if (pending.length) {
-      attention.append(element("p", undefined, pending.length === 1
-        ? "An agent needs your decision to continue."
-        : `${pending.length} agents need your decision to continue.`));
-      attention.append(button("View request", async () => {
-        page.querySelector(`[data-task-id="${pending[0]?.task.task_id}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" });
-      }));
-    } else if (coordination?.phase === "preview_feedback" && working) {
-      const name = home.agents.find((agent) => agent.bot_id === working.task.bot_id)?.display_name ?? "An agent";
-      attention.append(element("p", undefined, `${name} is working on an update. The preview may not include it yet; nothing is needed from you right now.`));
-    } else if (coordination?.phase === "preview_feedback" && coordination.preview_url) {
-      attention.append(element("p", undefined, "A new version is ready to try. Tell Radhouse what you like or what to change."));
-      const link = element("a", "button button--primary", "Try the new version");
-      link.href = coordination.preview_url; link.target = "_blank"; link.rel = "noopener noreferrer";
-      attention.append(link);
-    } else if (coordination?.phase === "merge_ready") {
-      attention.append(element("p", undefined, "The review is complete. Tell Radhouse if you want to make this version live."));
-      if (coordination.pull_request) {
-        const link = element("a", "button button--secondary", "See changes");
-        link.href = coordination.pull_request; link.target = "_blank"; link.rel = "noopener noreferrer";
-        attention.append(link);
-      }
-    } else if (coordination?.phase === "blocked") {
-      attention.append(element("p", undefined, coordination.status_note ?? "Radhouse needs help with the current project step."));
-    } else if (latest?.task.outcome === "failed") {
-      attention.append(element("p", undefined, "The latest assignment failed. Open its result to see what happened."));
-    } else {
-      attention.append(element("p", "muted", "Nothing right now. Radhouse will let you know when a decision is needed."));
-    }
-    page.append(attention);
-  }
+  const conversation = appendHeader(home, message);
+  appendAttention(home);
   if (!reviewTarget) {
     const manage = element("details", "manage-details");
     manage.open = manageOpen;
@@ -657,66 +831,9 @@ function render(home: WorkHome, message?: string): void {
     manage.append(element("summary", undefined, "Settings"), projectsPanel(home));
     page.append(manage);
   }
-  if (!reviewTarget && conversation && conversationHistory && api && signedIn) {
-    const draft = conversationDrafts.get(conversation.link_id) ?? { content: "", reply: null, files: [] };
-    conversationDrafts.set(conversation.link_id, draft);
-    const conversationSection = conversationPanel(api, conversation, conversationHistory, draft, { owner: signedIn.principal_id,
-      refresh: async () => load(), review: taskId => {
-        const card = Array.from(page.querySelectorAll<HTMLElement>("[data-task-id]")).find(node => node.dataset.taskId === taskId);
-        card?.scrollIntoView({ block: "start", behavior: "smooth" });
-        card?.querySelector<HTMLButtonElement>("button")?.focus();
-      }, run: action, filePicker: open => { filePickerOpen = open; if (open) loadGeneration++; } });
-    conversationSection.id = "conversation-section";
-    page.append(conversationSection);
-  } else if (!reviewTarget) {
-    const start = startPanel(home); start.id = "start-section"; page.append(start);
-  }
-  const roster = element("section", "section"); roster.id = "agents-section";
-  roster.append(element("h2", "section-title", "Your agents"),
-    element("p", "section-description", "See who can work with you and open an agent conversation."));
-  const grid = element("div", "agent-grid");
-  for (const agent of home.agents) {
-    const card = element("article", "agent-card"); card.append(element("h3", "agent-card__name", agent.display_name),
-      element("p", "agent-card__role", agent.role_name), element("p", "muted", agent.state === "ready" ? "Ready for an assignment" : "Temporarily unavailable"));
-    const link = conversationLinks.find(item => item.bot_id === agent.bot_id);
-    if (link) card.append(button(`Talk to ${agent.display_name}`, async () => { selectedConversation = link.link_id; await load(); }));
-    grid.append(card);
-  }
-  roster.append(grid); if (!reviewTarget) page.querySelector(".manage-details")?.append(roster);
-  const work = element("section", "section"); work.id = "work-section";
-  work.append(element("h2", "section-title", "Project work"),
-    element("p", "section-description", "Newest first. Current work stays visible; older results stay available below."));
-  if (home.tasks.length === 0) work.append(element("p", "empty", "Start with one clear assignment. Its progress and result will appear here."));
-  const ordered = [...home.tasks].sort((a, b) => b.sequence - a.sequence);
-  if (reviewTarget) {
-    const list = element("div", "task-list");
-    for (const card of ordered) if (card.task.task_id === reviewTarget.task_id) list.append(taskCard(card, home));
-    work.append(list);
-  } else {
-    const active = ordered.filter((card) => card.task.phase !== "closed");
-    const finished = ordered.filter((card) => card.task.phase === "closed");
-    if (active.length) {
-      work.append(element("h3", "work-group__title", `In progress · ${active.length}`));
-      const list = element("div", "task-list"); active.forEach((card) => list.append(taskCard(card, home))); work.append(list);
-    }
-    if (finished.length) {
-      const activity = element("details", "recent-activity");
-      activity.open = recentActivityOpen;
-      activity.addEventListener("toggle", () => { recentActivityOpen = activity.open; });
-      activity.append(element("summary", "work-group__title", `Recent activity · ${finished.length}`));
-      const recent = element("div", "task-list"); finished.slice(0, 3).forEach((card) => recent.append(taskCard(card, home)));
-      activity.append(recent);
-      if (finished.length > 3) {
-        const older = element("details", "older-work");
-        older.open = olderWorkOpen;
-        older.addEventListener("toggle", () => { olderWorkOpen = older.open; });
-        older.append(element("summary", undefined, `Older work · ${finished.length - 3}`));
-        const list = element("div", "task-list"); finished.slice(3).forEach((card) => list.append(taskCard(card, home)));
-        older.append(list); activity.append(older);
-      }
-      work.append(activity);
-    }
-  }
+  appendConversation(home, conversation);
+  appendAgentRoster(home);
+  const work = workSection(home);
   const conversationOrStart = page.querySelector("#conversation-section, #start-section");
   if (conversationOrStart) conversationOrStart.before(work);
   else page.append(work);
@@ -725,55 +842,24 @@ function render(home: WorkHome, message?: string): void {
   const allowed = new Set(home.tasks.map((card) => card.task.task_id));
   for (const id of reviews.keys()) if (!allowed.has(id)) reviews.delete(id);
   for (const id of timelines.keys()) if (!allowed.has(id)) timelines.delete(id);
-  if (focusName === "brief" || focusName === "agent" || focusName === "project" || focusName === "project-name" || focusName.startsWith("conversation-") || focusName.startsWith("guide-") || focusName.startsWith("title-")) {
-    const next = Array.from(page.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>("[name]")).find(node => node.name === focusName);
-    next?.focus(); if (next instanceof HTMLTextAreaElement && selection) next.setSelectionRange(selection[0] ?? 0, selection[1] ?? 0);
-  }
+  restoreFieldFocus(focusName, selection);
 }
 async function load(message?: string): Promise<void> {
   if (disposed) return;
   const generation = ++loadGeneration;
   try {
-    if (!api) {
-      const session = await client.currentSession();
-      if (generation !== loadGeneration) return;
-      applySession(session);
-    }
+    if (!await ensureSession(generation) || generation !== loadGeneration) return;
     const current = api; if (!current) return;
-    if (reviewToken && !reviewTarget) {
-      const resolved = await current.resolveReview(reviewToken);
-      if (generation !== loadGeneration) return;
-      reviewTarget = resolved; selectedProject = resolved.project_id;
-    }
+    if (!await resolveReviewTarget(current, generation) || generation !== loadGeneration) return;
     const available = await current.projects();
     if (generation !== loadGeneration) return;
-    const project = available.find((p) => p.project_id === selectedProject) ?? available[0];
-    if (!project) { page.replaceChildren(notice("No active project is assigned. Ask your administrator to provide access.")); return; }
-    if (reviewTarget && (project.project_id !== reviewTarget.project_id
-        || project.conversation_id !== reviewTarget.conversation_id || project.binding_revision !== reviewTarget.binding_revision)) {
-      throw new ApiError("review_link_denied", 403);
-    }
-    const scoped = current.forProject(project);
-    const home = await scoped.home();
-    if (generation !== loadGeneration) return;
-    const activeEvents = await Promise.allSettled(home.tasks
-      .filter((card) => card.task.phase === "active")
-      .map(async (card) => ({ taskId: card.task.task_id, data: await scoped.events(card.task.task_id) })));
-    if (generation !== loadGeneration) return;
-    for (const result of activeEvents) if (result.status === "fulfilled") timelines.set(result.value.taskId, result.value.data);
-    const links = reviewTarget ? [] : await scoped.conversations();
-    if (generation !== loadGeneration) return;
-    const link = links.find(item => item.link_id === selectedConversation) ?? links[0];
-    const history = link ? await scoped.conversationHistory(link.link_id, conversationDrafts.get(link.link_id)?.before) : null;
-    if (generation !== loadGeneration) return;
-    for (const agent of home.agents) agentDirectory.set(agent.bot_id, agent);
-    conversationLinks = links; selectedConversation = link?.link_id ?? ""; conversationHistory = history;
-    if (reviewTarget && !home.tasks.some(card => card.task.task_id === reviewTarget?.task_id)) throw new ApiError("review_link_denied", 403);
-    api = scoped; selectedProject = project.project_id; projects = available;
-    if (!reviewTarget && signedIn) {
-      try { window.localStorage.setItem(`radhouse.project.${signedIn.principal_id}`, project.project_id); }
-      catch { /* Storage may be unavailable; the current session still works. */ }
-    }
+    const loaded = await loadProjectHome(current, available, generation);
+    if (!loaded || generation !== loadGeneration) return;
+    const { project, scoped, home } = loaded;
+    if (!await refreshActiveEvents(scoped, home, generation) || generation !== loadGeneration) return;
+    const loadedConversation = await loadConversation(scoped, generation);
+    if (!loadedConversation || generation !== loadGeneration) return;
+    installLoadedHome(scoped, available, project, home, loadedConversation);
     render(home, message);
   } catch (error) {
     if (generation !== loadGeneration) return;
