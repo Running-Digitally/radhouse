@@ -4,9 +4,10 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>Your Agent · Radhouse</title>
   <link rel="icon" href="radhouse-mark.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="navigation.css">
+  <link rel="stylesheet" href="agent-icon-snapshot/navigation.css">
   <link rel="stylesheet" href="agent-settings.css">
-  <script src="navigation.js" defer></script>
+  <script src="agent-icon-snapshot/navigation.js" defer></script>
+  <script src="characters/catalog.js" defer></script>
   <script src="agent-settings.js" defer></script>
 </head>
 <body>
@@ -50,8 +51,13 @@
               <div class="section-heading"><h2>What should we call your agent?</h2><p>This name appears in your menu and conversations.</p></div>
               <div class="field"><label id="name-label" for="agent-name">Agent name</label><div class="name-row"><input id="agent-name" name="agent-name" aria-labelledby="name-label" aria-describedby="name-hint" maxlength="32" autocomplete="off" placeholder="A name of your own"><button id="suggest-name" class="quiet-button" type="button" data-glyph="refresh" aria-label="Use this character's suggested name">Suggest a name</button></div><small id="name-hint">Leave it blank to use “Your Agent”.</small></div>
               <div class="field"><label id="intro-label" for="agent-intro">A little introduction <em>optional</em></label><textarea id="agent-intro" name="agent-intro" aria-labelledby="intro-label" aria-describedby="intro-hint" rows="2" maxlength="160">Keeps the light on while you find your next good idea.</textarea><small id="intro-hint">A personal touch for the profile.</small></div>
-              <div class="section-heading character-heading"><div><h2>Find a familiar face.</h2><p>Four characters. Four little worlds. Pick the one that feels like you.</p></div></div>
+              <div class="section-heading character-heading"><div><h2>Find a familiar face.</h2><p>Four themes. A world of personalities. Find one that feels like home.</p></div></div>
+              <fieldset class="theme-options" id="theme-options" aria-describedby="theme-browse-hint"><legend>Choose a theme</legend></fieldset>
+              <p class="theme-browse-hint" id="theme-browse-hint">Explore a theme, then choose a character to change your portrait.</p>
+              <div class="collection-heading"><h3 id="collection-title">Hearthside</h3><span id="collection-count">4 characters</span></div>
+              <p class="theme-description" id="theme-description" aria-live="polite"></p>
               <fieldset class="character-grid" id="character-grid"><legend class="sr-only">Choose a character portrait</legend></fieldset>
+              <p class="current-portrait" id="current-portrait" role="status"></p>
               <div class="own-portrait"><div><strong>Or bring your own character.</strong><p>Use a portrait, a photo, or something entirely yours.</p></div><button id="upload-button" type="button" class="quiet-button" data-glyph="attach">Upload image</button><input id="portrait-file" type="file" accept="image/png,image/jpeg,image/webp" hidden></div>
               <p id="upload-status" class="field-note" role="status"></p>
             </section>
@@ -80,7 +86,7 @@
           <p class="preview-footnote">Your portrait is your agent’s identity.<br>The little house beside it is its live status.</p>
         </aside>
       </div>
-      <footer class="page-footer"><span>One agent. A character all its own.</span><span>Radhouse character study · 01</span></footer>
+      <footer class="page-footer"><span>One agent. A character all its own.</span><span>Radhouse character study · 02</span></footer>
     </main>
   </div>
   <div class="toast" id="toast" role="status" hidden></div>

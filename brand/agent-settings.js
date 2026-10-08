@@ -3,12 +3,7 @@
 (() => {
   const icons = window.RadhouseIcons;
   const key = "radhouse.design.agent-identity.v1";
-  const profiles = [
-    {id:"ember",name:"Ember",theme:"Hearth",story:"Once the keeper of a tiny hillside inn. Now keeps the light on while you find your next good idea.",intro:"Keeps the light on while you find your next good idea.",reply:"Of course. Let’s put the kettle on and start with what matters."},
-    {id:"moss",name:"Moss",theme:"Grove",story:"A collector of overlooked details and well-thumbed notebooks. Believes good ideas grow with a little patience.",intro:"Good ideas grow with a little patience.",reply:"Let’s look a little closer. There’s usually something useful hiding in the details."},
-    {id:"aster",name:"Aster",theme:"Orbit",story:"A quiet navigator with a sky full of questions. Turns faraway possibilities into a next step you can take.",intro:"Faraway possibilities. A next step you can take.",reply:"Absolutely. Let’s map what we know, then find a promising direction."},
-    {id:"lumi",name:"Lumi",theme:"Fable",story:"A moonlit storyteller who sees connections others miss. Makes a little room for the unexpected.",intro:"Makes a little room for the unexpected.",reply:"Yes. Let’s follow the interesting thread and see what it brings into view."}
-  ];
+  const {themes, profiles} = window.RadhouseCharacters;
   const accents = {fern:{name:"Fern",color:"#456d55",soft:"#eaf0e6"},clay:{name:"Clay",color:"#9a553b",soft:"#f5e9df"},tide:{name:"Tide",color:"#3d6574",soft:"#e5eef1"},plum:{name:"Plum",color:"#76576e",soft:"#efe7ec"}};
   const states = {thinking:["Thinking","Connecting the dots."],idle:["Idle","Here when you need me."],working:["Working","Making things happen."],waiting:["Waiting for you","A little input would help."],paused:["Paused","Taking a breather."],completed:["Completed","All wrapped up."]};
   const defaults = {name:"",intro:profiles[0].intro,portrait:"ember",customPortrait:null,accent:"fern",stateMotion:true,iconMotion:true,surface:"paper"};
@@ -25,7 +20,7 @@
       accent:Object.hasOwn(accents,value.accent)?value.accent:"fern",stateMotion:value.stateMotion!==false,iconMotion:value.iconMotion!==false,surface:["paper","night","system"].includes(value.surface)?value.surface:"paper"};
   }
   try {saved=validate(JSON.parse(localStorage.getItem(key)));} catch (_) { /* Optional local storage. */ }
-  draft={...saved}; customName=Boolean(draft.name);customIntro=draft.intro!==profiles.find(p=>p.id===draft.portrait).intro;
+  draft={...saved}; customName=Boolean(draft.name.trim() && draft.name!==profiles.find(p=>p.id===draft.portrait).name);customIntro=draft.intro!==profiles.find(p=>p.id===draft.portrait).intro;
   for(const node of document.querySelectorAll("[data-glyph]")) {
     const label=node.textContent.trim(), name=node.dataset.glyph;
     if(node.matches("button")) icons.decorate(node,name,label,{accessibleLabel:node.getAttribute("aria-label")||label});
@@ -34,22 +29,48 @@
   function radio(name,value,label,checked) {
     const input=document.createElement("input"); input.type="radio";input.name=name;input.value=value;input.checked=checked;input.setAttribute("aria-label",label); return input;
   }
-  for(const profile of profiles) {
-    const label=document.createElement("label");label.className="character-option";
-    const input=radio("portrait",profile.id,`${profile.name} · ${profile.theme}`,draft.portrait===profile.id&&!draft.customPortrait);
-    const top=document.createElement("div");top.className="character-top";
-    const image=document.createElement("img");image.src=`characters/${profile.id}.png`;image.alt="";
-    const caption=document.createElement("div"),name=document.createElement("span"),theme=document.createElement("span");
-    name.className="character-name";name.textContent=profile.name;theme.className="character-theme";theme.textContent=profile.theme;caption.append(name,theme);top.append(image,caption);
-    const story=document.createElement("p");story.className="character-story";story.textContent=profile.story;
-    const check=document.createElement("span");check.className="character-check";check.append(icons.create("check"));
-    label.append(input,top,story,check);byId("character-grid").append(label);
-    input.addEventListener("change",()=>{
-      uploadGeneration++;draft.portrait=profile.id;draft.customPortrait=null;
-      if(!customName){draft.name=profile.name;byId("agent-name").value=draft.name;}
-      if(!customIntro){draft.intro=profile.intro;byId("agent-intro").value=draft.intro;}
-      byId("upload-status").textContent="";update();
-    });
+  // Browsing a collection is ephemeral; only selecting a portrait changes identity.
+  let browseTheme=profiles.find(p=>p.id===draft.portrait).theme;
+  function renderPortraits() {
+    const collection=themes.find(theme=>theme.id===browseTheme);
+    const members=profiles.filter(profile=>profile.theme===browseTheme);
+    const legend=document.createElement("legend");legend.className="sr-only";legend.textContent=`Choose a ${collection.name} portrait`;
+    byId("character-grid").replaceChildren(legend);
+    byId("collection-title").textContent=collection.name;
+    byId("collection-count").textContent=`${members.length} characters`;
+    byId("theme-description").textContent=collection.description;
+    for(const profile of members) {
+      const label=document.createElement("label");label.className="character-option";
+      const input=radio("portrait",profile.id,`${profile.name} · ${collection.name}`,draft.portrait===profile.id&&!draft.customPortrait);
+      const top=document.createElement("div");top.className="character-top";
+      const image=document.createElement("img");image.src=`characters/${profile.id}.png`;image.alt="";image.loading="lazy";image.width=64;image.height=64;
+      const caption=document.createElement("div"),name=document.createElement("span"),role=document.createElement("span");
+      name.className="character-name";name.textContent=profile.name;role.className="character-theme";role.textContent=profile.role;caption.append(name,role);top.append(image,caption);
+      const story=document.createElement("p");story.className="character-story";story.textContent=profile.story;
+      const check=document.createElement("span");check.className="character-check";check.append(icons.create("check"));
+      label.append(input,top,story,check);byId("character-grid").append(label);
+      input.addEventListener("change",()=>{
+        uploadGeneration++;draft.portrait=profile.id;draft.customPortrait=null;
+        if(!customName){draft.name=profile.name;byId("agent-name").value=draft.name;}
+        if(!customIntro){draft.intro=profile.intro;byId("agent-intro").value=draft.intro;}
+        byId("upload-status").textContent="";update();
+      });
+    }
+  }
+  function browseCollection(id) {
+    browseTheme=id;
+    for(const input of document.querySelectorAll('[name="collection"]'))input.checked=input.value===id;
+    renderPortraits();
+  }
+  for(const theme of themes) {
+    const label=document.createElement("label");label.className="theme-option";
+    const members=profiles.filter(profile=>profile.theme===theme.id);
+    const input=radio("collection",theme.id,`${theme.name} · ${members.length} characters`,browseTheme===theme.id);
+    const image=document.createElement("img");image.src=`characters/${theme.cover}.png`;image.alt="";image.width=46;image.height=46;
+    const text=document.createElement("span"),name=document.createElement("strong"),style=document.createElement("small");
+    name.textContent=theme.name;style.textContent=theme.style;text.append(name,style);
+    label.append(input,image,text);byId("theme-options").append(label);
+    input.addEventListener("change",()=>browseCollection(theme.id));
   }
   for(const [id,accent] of Object.entries(accents)) {
     const label=document.createElement("label");label.className="accent-option";label.style.setProperty("--swatch",accent.color);
@@ -81,6 +102,7 @@
     document.title=`${name} · Radhouse`;
     byId("preview-intro").textContent=draft.intro.trim();
     byId("sample-reply").textContent=profile.reply;
+    byId("current-portrait").textContent=draft.customPortrait?"Current portrait: your uploaded image":`Current portrait: ${profile.name} · ${themes.find(theme=>theme.id===profile.theme).name}`;
     for(const node of document.querySelectorAll("[data-status-icon]"))node.replaceChildren(createStatus(previewState));
     for(const node of document.querySelectorAll("[data-state-label]"))node.textContent=states[previewState][0];
     byId("state-description").textContent=states[previewState][1];
@@ -90,6 +112,7 @@
     byId("motion-note").textContent=reducedMotion.matches?"Your device prefers reduced motion. Animations are paused; status labels stay visible.":"Your device’s reduced-motion preference is always respected.";
   }
   function syncInputs() {
+    browseCollection(profiles.find(profile=>profile.id===draft.portrait).theme);
     byId("agent-name").value=draft.name;byId("agent-intro").value=draft.intro;byId("state-motion").checked=draft.stateMotion;byId("icon-motion").checked=draft.iconMotion;
     for(const input of document.querySelectorAll('[name="portrait"]'))input.checked=input.value===draft.portrait&&!draft.customPortrait;
     for(const input of document.querySelectorAll('[name="accent"]'))input.checked=input.value===draft.accent;
@@ -142,7 +165,7 @@
     if(persisted){saved={...draft};update();byId("save-status").textContent="Saved in this browser preview.";toast("Your agent feels a little more like yours.");}
     else{byId("save-status").textContent="Couldn’t save in this browser. Your changes are still here.";toast("Local storage is unavailable. Your changes remain unsaved.");}
   });
-  byId("discard").addEventListener("click",()=>{uploadGeneration++;draft={...saved};customName=Boolean(draft.name);customIntro=draft.intro!==profiles.find(p=>p.id===draft.portrait).intro;syncInputs();});
+  byId("discard").addEventListener("click",()=>{uploadGeneration++;draft={...saved};customName=Boolean(draft.name.trim() && draft.name!==profiles.find(p=>p.id===draft.portrait).name);customIntro=draft.intro!==profiles.find(p=>p.id===draft.portrait).intro;syncInputs();});
   byId("reset").addEventListener("click",()=>{uploadGeneration++;draft={...defaults};customName=false;customIntro=false;syncInputs();toast("Default identity restored. Save to keep it.");});
   function toast(text) {clearTimeout(toastTimer);byId("toast").textContent=text;byId("toast").hidden=false;toastTimer=setTimeout(()=>{byId("toast").hidden=true;},3200);}
   byId("upload-button").addEventListener("click",()=>byId("portrait-file").click());
