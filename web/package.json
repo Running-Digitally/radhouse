@@ -4,17 +4,21 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json && esbuild src/main.ts --bundle --format=esm --platform=browser --target=es2023 --outfile=dist/main.js",
+    "build": "tsc -p tsconfig.json && esbuild src/main.ts --bundle --format=esm --platform=browser --target=es2023 --outfile=dist/main.js --sourcemap",
     "test": "npm run build && node --test test/*.test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.60.0",
     "@types/markdown-it": "14.2.0",
     "esbuild": "0.28.2",
-    "typescript": "7.0.2"
+    "istanbul-lib-coverage": "3.2.2",
+    "istanbul-lib-report": "3.0.1",
+    "istanbul-reports": "3.2.0",
+    "typescript": "7.0.2",
+    "v8-to-istanbul": "9.3.0"
   },
   "dependencies": {
-    "dompurify": "3.4.15",
+    "dompurify": "3.4.16",
     "markdown-it": "15.0.2"
   }
 }

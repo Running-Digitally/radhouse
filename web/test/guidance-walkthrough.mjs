@@ -1,9 +1,11 @@
+import { cover, closeBrowser } from "../../tests/browser-coverage.mjs";
 import assert from "node:assert/strict";
 const { chromium } = await import(process.env.RADHOUSE_PLAYWRIGHT_MODULE);
 const browser = await chromium.launch({ headless: true,
   ...(process.env.RADHOUSE_BROWSER_CHANNEL ? { channel: process.env.RADHOUSE_BROWSER_CHANNEL } : {}) });
 const context = await browser.newContext();
 const page = await context.newPage();
+await cover(page);
 const origin = process.env.RADHOUSE_BROWSER_ORIGIN;
 try {
   await page.clock.install();
@@ -38,4 +40,4 @@ try {
   await page.getByText("Used in a completed model response. Review the result", { exact: false }).waitFor();
   assert.equal(await page.getByText("Used in a completed model response. Review the result", { exact: false }).count(), 1);
   console.log("PASS: focused empty input, draft retention, queued/applied distinction, reconnect, no publication");
-} finally { await context.close(); await browser.close(); }
+} finally { await closeBrowser(browser); }

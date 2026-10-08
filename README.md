@@ -131,6 +131,10 @@ requests; other originals are forced downloads with content sniffing disabled.
 
 ## Verify locally
 
+For security and code-quality analysis after a merge, run the
+[local SonarQube launcher](docs/sonarqube.md) on the development laptop. It tests and scans
+a clean copy of remote `main` and waits for the quality gate.
+
 ```sh
 PYTHONPATH=src:. python -m pytest -q tests/test_minimal_chat.py tests/test_chat_attachments.py
 node --check src/radhouse/chat/static/chat.js

@@ -1,3 +1,4 @@
+import { cover, closeBrowser } from "../../tests/browser-coverage.mjs";
 import assert from "node:assert/strict";
 
 const { chromium } = await import(process.env.RADHOUSE_PLAYWRIGHT_MODULE);
@@ -5,6 +6,7 @@ const browser = await chromium.launch({ headless: true,
   ...(process.env.RADHOUSE_BROWSER_CHANNEL ? { channel: process.env.RADHOUSE_BROWSER_CHANNEL } : {}) });
 const context = await browser.newContext({ viewport: { width: 1280, height: 1000 } });
 const page = await context.newPage();
+await cover(page);
 try {
   await page.goto(`${process.env.RADHOUSE_BROWSER_ORIGIN}/app/`);
   await page.getByLabel("Username", { exact: true }).fill("alice");
@@ -44,5 +46,5 @@ try {
   console.log("SCREENSHOT", process.env.RADHOUSE_SCREENSHOT);
   throw error;
 } finally {
-  await browser.close();
+  await closeBrowser(browser);
 }

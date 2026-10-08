@@ -25,12 +25,21 @@ dependencies = [
 radhouse = "radhouse.cli:main"
 
 [dependency-groups]
-dev = ["pytest==9.1.1"]
+dev = [
+    "pytest==9.1.1",
+    "pytest-cov==7.1.0",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
 markers = ["postgres: requires the owned local PostgreSQL fixture"]
+
+[tool.coverage.run]
+source = ["src/radhouse", "scripts"]
+relative_files = true
+branch = true
+patch = ["subprocess"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/radhouse"]

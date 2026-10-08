@@ -1004,7 +1004,8 @@ def pinned_browser_turn_cleanup(monkeypatch, tmp_path):
             '_cdp': SimpleNamespace(_ensure_cdp_supervisor=lambda key: None)}
         exec(compile(sources['browser_tool_session_record'], 'pinned_session_record', 'exec'), lookup)
         result = lookup['_get_session_info'](task)
-        assert result['session_key'] == task and result['owner_task_id'] == task
+        assert result['session_key'] == task
+        assert result['owner_task_id'] == task
         return directory
     return SimpleNamespace(browser=browser, lifecycle=lifecycle, calls=calls, clock=clock, finish=finish, create=create, cloud=cloud)
 
@@ -1027,7 +1028,8 @@ def test_actual_headless_finalizer_retains_two_turns_but_direct_lifecycle_closes
             {'allowed_tools': list(bridge.BROWSER_TOOLS), 'room_dispatch': None}, None, None, None, run + '-dispatch', None)
         native._run_agent_sync(value, launch, Agent(), None, _api_server=api)
         assert bridge._context.get() is None
-        assert directory.is_dir() and bridge._session_stream('session') == original_stream
+        assert directory.is_dir()
+        assert bridge._session_stream('session') == original_stream
     assert f.calls == {'close': [], 'vm': ['session', 'session']}
     assert f.browser._session_last_activity == {'session': 10}
     token = bridge.bind_run_context('still-scoped', 'session', 'dispatch', None)
@@ -1038,7 +1040,8 @@ def test_actual_headless_finalizer_retains_two_turns_but_direct_lifecycle_closes
         elif teardown == 'shutdown': f.lifecycle['cleanup_all_browsers']()
         else: f.lifecycle['cleanup_browser']('session')
     finally: bridge.reset_run_context(token)
-    assert f.calls['close'] == ['session'] and not directory.exists()
+    assert f.calls['close'] == ['session']
+    assert not directory.exists()
     assert not f.browser._active_sessions
 
 
@@ -1065,7 +1068,8 @@ def test_turn_retention_never_applies_to_unqualified_or_foreign_session(monkeypa
         f.finish('session')
     finally:
         if token is not None: bridge.reset_run_context(token)
-    assert f.calls['close'] == ['session'] and 'session' not in f.browser._active_sessions
+    assert f.calls['close'] == ['session']
+    assert 'session' not in f.browser._active_sessions
     assert 'unrelated' in f.browser._active_sessions
     if denial != 'name': assert not directory.exists()
 
@@ -1074,4 +1078,5 @@ def test_existing_headed_skip_and_nonradhouse_vm_cleanup_are_preserved(monkeypat
     f = pinned_browser_turn_cleanup(monkeypatch, tmp_path); directory = f.create()
     f.cloud._is_headed_mode = lambda: True
     f.finish('session')
-    assert directory.is_dir() and f.calls == {'close': [], 'vm': ['session']}
+    assert directory.is_dir()
+    assert f.calls == {'close': [], 'vm': ['session']}
