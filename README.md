@@ -77,9 +77,10 @@ RADHOUSE_CHAT_CONFIG=/absolute/private/chat.json \
 ```
 
 Use this entry point for the new assistant; the older `radhouse` CLI still belongs
-to the retained platform. Do not alter a live ingress, service, database or
-runtime simply to run the source proof. The actual placement and activation
-remain a separate reviewed change.
+to the retained platform. For another installation, a local source proof does
+not authorize changes to a live ingress, service, database or runtime. Qualify
+that installation's runtime and review its placement and activation separately.
+The owner's private pilot has completed those qualification and activation steps.
 
 ## Attach files
 
