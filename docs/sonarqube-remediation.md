@@ -80,7 +80,7 @@ Validation so far: 609 Python tests passed without a PostgreSQL fixture (194
 appropriately skipped); 192 focused parser/attachment/integration tests passed
 (one fixture-dependent skip); the web build and nine unit tests passed. The first owned full gate ran 837 tests with no skips and two browser failures.
 Both failures passed on an isolated rerun (three tests, including parameterization);
-no reproducible cause is established. A later owned gate is required at closeout. The local SonarJS linter
+no reproducible cause is established. The final owned gate is recorded below. The local SonarJS linter
 confirms the formatter's two complexity findings are removed; it does not
 replace the required main-only server analysis.
 
@@ -156,8 +156,8 @@ exposed a real chat restoration race in one browser test. An older history load
 could enable/save the composer during a newer draft restore in the same session.
 An opening-generation check now guards restore, history acceptance and final
 cleanup. The regression fails on the prior source and passes on the fix. The
-owned rerun passed all three browser tests and completed cleanup. A final full
-owned gate remains required after the remaining workflow refactors.
+owned rerun passed all three browser tests and completed cleanup. The final full
+owned gate is recorded below.
 
 ## Workflow phases and closeout
 
@@ -180,3 +180,20 @@ SonarJS checks report no findings across eight selected rules. The calibrated
 Python approximation reports no function above complexity 15 in affected
 modules, including new helpers. These local checks aid iteration; they do not
 claim equivalence to the main-only SonarQube analyzer.
+
+### Final validation receipt
+
+The complete required gate `uv run python scripts/vs0.py verify` passed on the
+clean source commit `f49a493171d16567b5ffce7f7236ea000de63147`:
+846 tests executed; zero failures, errors or skips. The owned container and volume
+were removed and the manifest confirms `cleanup=complete`. Run identity:
+`9495ce46d6d248d29ef4e86ca3dfb032`. The fixture records the pinned PostgreSQL 18.6
+image and Python 3.14.4. Source fingerprint:
+`94a86f8a8e964a7dff7d6cde6e067b6919751ed56b3e402a57c0c39b22cebbdb`.
+
+`npm --prefix web test` passed compilation and all nine web unit tests. The chat
+client/formatter Node suite passed all ten tests, including the generation-race
+regression. The branch includes the fetched main commit and has no pending code
+changes. This receipt updates documentation only after testing; executable source
+is unchanged. Draft PR #71 remains unmerged, with no deployment, issue-status
+mutation, suppression or feature-branch SonarQube publication.
