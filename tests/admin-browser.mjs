@@ -50,12 +50,16 @@ await context.route(`${origin}/**`, async route => {
     catch (_) { /* An intentional logout aborts the held request. */ }
     return;
   }
-  const filename = {"/": "index.html", "/settings": "admin.html", "/infrastructure": "admin.html", "/admin.js": "admin.js", "/admin.css": "admin.css", "/chat.css": "chat.css", "/chat.js": "chat.js", "/format.js": "format.js", "/browser-view.js": "browser-view.js", "/browser-view.css": "browser-view.css"}[path];
+  const filename = {"/": "index.html", "/settings": "admin.html", "/infrastructure": "admin.html", "/admin.js": "admin.js", "/admin.css": "admin.css", "/chat.css": "chat.css", "/chat.js": "chat.js", "/format.js": "format.js", "/browser-view.js": "browser-view.js", "/browser-view.css": "browser-view.css", "/navigation.js": "navigation.js", "/navigation.css": "navigation.css", "/library.js": "library.js"}[path];
   if (!filename) { await route.fulfill({status: 200, contentType: "text/html", body: "<title>Chat</title><p>Return to Chat</p>"}); return; }
   await route.fulfill({status: 200, contentType: filename.endsWith(".js") ? "text/javascript" : filename.endsWith(".css") ? "text/css" : "text/html",
     headers: {"Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'", "Cache-Control": "no-store"},
     body: await readFile(new URL(filename, staticRoot), "utf8")});
 });
+async function navigate(name) {
+  if (await page.locator("#navigation-panel").isHidden()) { await page.locator("#navigation-toggle").click(); }
+  await page.getByRole("navigation").getByRole("link", {name, exact: true}).click();
+}
 try {
   await page.goto(`${origin}/`);
   await expect(page.locator("#chat-view")).toBeVisible();
@@ -64,7 +68,10 @@ try {
   await page.locator("#message").fill("Keep this draft while management access changes.");
   role = "viewer"; historyFailure = false;
   await page.locator("#notice-action").click();
-  await expect(page.locator("#management-nav")).toBeHidden();
+  await expect(page.locator("#management-nav")).toBeVisible();
+  for (const name of ["Chat", "Library", "Browser"]) await expect(page.getByRole("navigation").getByRole("link", {name, exact: true})).toBeVisible();
+  await expect(page.locator("#settings-link")).toBeHidden();
+  await expect(page.locator("#infrastructure-link")).toBeHidden();
   await expect(page.locator("#message")).toHaveValue("Keep this draft while management access changes.");
   role = "admin"; await page.reload();
   await expect(page.locator("#management-nav")).toBeVisible();
@@ -72,10 +79,12 @@ try {
   await page.setViewportSize({width: 390, height: 844});
   await expect.poll(() => page.locator("#message").evaluate(node => node.clientHeight >= node.scrollHeight - 1)).toBe(true);
   if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)) throw new Error("Chat management navigation overflows mobile viewport");
-  for (const name of ["Chat", "Settings", "Infrastructure"]) await expect(page.getByRole("navigation").getByRole("link", {name, exact: true})).toBeVisible();
+  await expect(page.locator("#navigation-panel")).toBeHidden();
+  await page.locator("#navigation-toggle").click();
+  for (const name of ["Chat", "Library", "Browser", "Settings", "Infrastructure"]) await expect(page.getByRole("navigation").getByRole("link", {name, exact: true})).toBeVisible();
   if (artifacts) { await mkdir(artifacts, {recursive: true}); await page.screenshot({path: `${artifacts}/chat-management-mobile.png`, fullPage: true}); }
   await page.setViewportSize({width: 1200, height: 950});
-  await page.getByRole("navigation").getByRole("link", {name: "Settings", exact: true}).click();
+  await navigate("Settings");
   await expect(page.getByRole("heading", {name: "Settings", exact: true})).toBeVisible();
   await expect(page.locator("#content")).toBeVisible();
   await expect(page.locator("#content")).toContainText("No configured limit");
@@ -83,7 +92,7 @@ try {
   await expect(page.locator("#settings-link")).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("textbox")).toHaveCount(0);
   if (artifacts) { await mkdir(artifacts, {recursive: true}); await page.screenshot({path: `${artifacts}/settings-desktop.png`, fullPage: true}); }
-  await page.getByRole("link", {name: "Infrastructure", exact: true}).click();
+  await navigate("Infrastructure");
   await expect(page.locator("#content")).toBeVisible();
   await expect(page.locator(".status[data-state='unavailable']")).toHaveText("Unavailable");
   await expect(page.locator(".status[data-state='unverified']")).toHaveText("Unverified");
@@ -97,10 +106,10 @@ try {
   if (probeRequests !== 2) throw new Error("Refresh failed to repeat current checks");
   if (artifacts) await page.screenshot({path: `${artifacts}/infrastructure-desktop.png`, fullPage: true});
   await page.setViewportSize({width: 390, height: 844});
-  await expect(page.getByRole("navigation")).toBeVisible();
+  await expect(page.locator("#navigation-panel")).toBeHidden();
   if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)) throw new Error("Infrastructure overflows mobile viewport");
   if (artifacts) await page.screenshot({path: `${artifacts}/infrastructure-mobile.png`, fullPage: true});
-  await page.getByRole("link", {name: "Settings", exact: true}).click();
+  await navigate("Settings");
   await expect(page.locator("#content")).toBeVisible();
   if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)) throw new Error("Settings overflows mobile viewport");
   if (artifacts) await page.screenshot({path: `${artifacts}/settings-mobile.png`, fullPage: true});
@@ -152,21 +161,21 @@ try {
   await expect(page.locator("#notice-text")).toContainText("Your browser couldn’t save this draft");
   await expect(page.locator("#draft-files")).toContainText("unsaved-original.txt");
   const failedAttempts = await page.evaluate(() => window.draftSaveControl.attempts);
-  await page.getByRole("navigation").getByRole("link", {name: "Settings", exact: true}).click();
+  await navigate("Settings");
   await expect.poll(() => page.evaluate(() => window.draftSaveControl.attempts)).toBeGreaterThan(failedAttempts);
   expect(page.url()).toBe(`${origin}/`);
   await expect(page.locator("#message")).toHaveValue("Keep originals during management navigation.");
   await expect(page.locator("#draft-files")).toContainText("unsaved-original.txt");
   // Once storage recovers the same retained original can safely cross pages.
   await page.evaluate(() => { window.draftSaveControl.fail = false; });
-  await page.getByRole("navigation").getByRole("link", {name: "Settings", exact: true}).click();
+  await navigate("Settings");
   await expect(page.getByRole("heading", {name: "Settings", exact: true})).toBeVisible();
-  await page.getByRole("navigation").getByRole("link", {name: "Chat", exact: true}).click();
+  await navigate("Chat");
   await expect(page.locator("#draft-files")).toContainText("unsaved-original.txt");
   await page.evaluate(() => { window.draftSaveControl.hold = true; });
   await page.locator("#file-picker").setInputFiles({name: "pending-original.txt", mimeType: "text/plain", buffer: Buffer.from("Save this original before leaving.")});
   await expect.poll(() => page.evaluate(() => window.draftSaveControl.completions.length)).toBe(1);
-  await page.getByRole("navigation").getByRole("link", {name: "Settings", exact: true}).click();
+  await navigate("Settings");
   expect(page.url()).toBe(`${origin}/`);
   await page.locator("#message").fill("Latest edit while the original was saving.");
   await page.evaluate(() => {
@@ -174,7 +183,7 @@ try {
     window.draftSaveControl.completions.splice(0).forEach(finish => finish());
   });
   await expect(page.getByRole("heading", {name: "Settings", exact: true})).toBeVisible();
-  await page.getByRole("navigation").getByRole("link", {name: "Chat", exact: true}).click();
+  await navigate("Chat");
   await expect(page.locator("#message")).toHaveValue("Latest edit while the original was saving.");
   await expect(page.locator("#draft-files")).toContainText("unsaved-original.txt");
   await expect(page.locator("#draft-files")).toContainText("pending-original.txt");

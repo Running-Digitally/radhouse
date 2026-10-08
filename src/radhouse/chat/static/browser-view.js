@@ -6,8 +6,9 @@
   const maxFrame = 512 * 1024;
 
   class BrowserView {
-    constructor(container) {
+    constructor(container, {persistent = false} = {}) {
       this.container = container;
+      this.persistent = persistent;
       this.container.classList.add("browser-view");
       this.container.hidden = true;
       this.epoch = 0; this.open = true; this.active = false;
@@ -60,7 +61,7 @@
       }
       this.run = run; this.generation = generation;
       this.active = state === "live" && run !== null && generation !== null;
-      this.container.hidden = state === "idle" && run === null;
+      this.container.hidden = !this.persistent && state === "idle" && run === null;
       this._label(labels[state]);
       this.site.textContent = typeof value?.url === "string" ? value.url : "";
       this.site.hidden = !this.site.textContent;

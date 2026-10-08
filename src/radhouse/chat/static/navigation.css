@@ -1,0 +1,33 @@
+.navigation-shell{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);column-gap:0;width:min(100%,900px)}
+.navigation-shell.nav-active:not(.nav-collapsed){width:min(100%,1180px);grid-template-columns:208px minmax(0,1fr);column-gap:28px}
+.navigation-shell>header{grid-column:1/-1;gap:14px}
+.navigation-shell>header .brand{margin-right:auto}
+.navigation-shell>header .brand:focus-visible{outline:3px solid #779e81;outline-offset:4px;border-radius:3px}
+.navigation-shell>main{grid-column:1;grid-row:2;min-width:0}
+.navigation-shell.nav-active:not(.nav-collapsed)>main{grid-column:2}
+.navigation-panel{grid-column:1;grid-row:2;padding:22px 0;min-width:0;position:sticky;top:12px;align-self:start;max-height:calc(100dvh - 24px);overflow-y:auto}
+.navigation-shell #management-nav{display:flex;flex-direction:column;gap:5px;padding:0;border:0;flex-wrap:nowrap}
+.navigation-shell #management-nav a{min-height:46px;padding:10px 14px;border-radius:9px;font-size:14px;text-decoration:none;color:#315441;align-items:center}
+.navigation-shell #management-nav a[aria-current="page"]{background:#e4e9df;font-weight:650}
+.navigation-shell #management-nav a:hover{background:#e4e9df}
+.navigation-shell #management-nav a:focus-visible{outline:3px solid #779e81;outline-offset:2px}
+.navigation-shell #management-nav #settings-link{margin-top:14px}
+#navigation-toggle{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-size:13px;padding:7px 11px;flex-shrink:0}
+#navigation-toggle span{font-size:18px;line-height:1}
+.navigation-heading{display:none}
+.navigation-backdrop{display:none}
+.admin-shell.navigation-shell{min-height:100dvh;grid-template-rows:auto 1fr}
+.admin-shell.navigation-shell main{display:block}
+@media(max-width:760px){
+  .navigation-shell,.navigation-shell.nav-active:not(.nav-collapsed){width:100%;grid-template-columns:minmax(0,1fr);column-gap:0;padding-left:12px;padding-right:12px}
+  .navigation-shell>main,.navigation-shell.nav-active:not(.nav-collapsed)>main{grid-column:1}
+  .navigation-shell>header{gap:10px}
+  .navigation-shell>header .brand{font-size:21px}
+  .navigation-shell>header #logout{padding:7px 9px}
+  .navigation-panel{position:fixed;inset:0 auto 0 0;z-index:6;width:min(300px,85vw);max-height:100dvh;background:#fffef9;padding:max(14px,env(safe-area-inset-top)) 16px max(20px,env(safe-area-inset-bottom));border-right:1px solid #d9ddd4;box-shadow:8px 0 30px #24332d20;overscroll-behavior:contain}
+  .navigation-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;font-size:17px;font-weight:650}
+  #navigation-close{border:0;font-size:27px;line-height:1;width:44px;padding:0}
+  .navigation-shell #management-nav a{font-size:15px;min-height:48px}
+  .navigation-backdrop{display:block;position:fixed;inset:0;z-index:5;width:100%;height:100%;background:#24332d55;border:0;border-radius:0;padding:0;cursor:default}
+  .navigation-backdrop:hover{background:#24332d55}
+}

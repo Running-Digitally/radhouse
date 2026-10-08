@@ -1,4 +1,4 @@
-"""Current-owner, current-run browser observation; no native browser is created."""
+"""Current-owner, latest-saved-run browser observation; no browser is created."""
 from dataclasses import replace
 import base64
 import math
@@ -71,7 +71,8 @@ def test_foreign_owner_denied_before_store_or_network(observer, operation):
 
 @pytest.mark.parametrize("tools", [(), ("browser_navigate",), (*BROWSER_TOOLS, "shell"),
                                     (*BROWSER_TOOLS, "browser_exec"), (*BROWSER_TOOLS, "browser_navigate"),
-                                    list(BROWSER_TOOLS), (*BROWSER_TOOLS, [])])
+                                    list(BROWSER_TOOLS), (*BROWSER_TOOLS, []), (*BROWSER_TOOLS, "file_share"),
+                                    (*BROWSER_TOOLS, "document_read", "file_share")])
 def test_missing_or_expanded_tool_scope_denied_before_network(observer, tools):
     service, store, relay = observer
     store.run["allowed_tools"] = tools
@@ -85,6 +86,12 @@ def test_missing_or_expanded_tool_scope_denied_before_network(observer, tools):
 def test_document_tools_can_coexist_without_expanding_browser_scope(observer):
     service, store, _ = observer
     store.run["allowed_tools"] += ("document_search", "document_read")
+    assert service.status("alice")["state"] == "live"
+
+
+def test_document_file_share_can_coexist_with_browser_scope(observer):
+    service, store, _ = observer
+    store.run["allowed_tools"] += ("document_search", "document_read", "file_share")
     assert service.status("alice")["state"] == "live"
 
 
@@ -119,13 +126,13 @@ def test_upstream_identity_mismatch_returns_no_frame_or_private_details(observer
     assert "foreign-secret" not in str(status)
 
 
-@pytest.mark.parametrize("change", ["terminal", "new_run", "new_session", "new_request", "tool_scope"])
+@pytest.mark.parametrize("change", ["removed", "new_run", "new_session", "new_request", "tool_scope"])
 def test_late_response_is_discarded_when_current_scope_changes(observer, change):
     service, store, relay = observer
     before = dict(store.run)
 
     def alter():
-        if change == "terminal":
+        if change == "removed":
             store.run = None
         elif change == "tool_scope":
             store.run["allowed_tools"] += ("document_search",)
@@ -165,10 +172,78 @@ def test_restart_uses_durable_browser_tool_policy_and_session(tmp_path):
     assert observer.frame("alice", "run-1").jpeg == JPEG
     with reopened.connection() as db:
         db.execute("UPDATE turns SET status='completed' WHERE request_id='request-1'")
-    assert observer.status("alice")["state"] == "idle"
+    assert observer.status("alice")["state"] == "live"
+    assert observer.frame("alice", "run-1").jpeg == JPEG
+    assert relay.calls == [("status", "run-1"), ("frame", "run-1")] * 2
+
+
+@pytest.mark.parametrize("status", ["completed", "failed", "cancelled", "interrupted"])
+def test_terminal_saved_run_can_view_retained_browser_but_reports_native_idle(observer, status):
+    service, store, relay = observer
+    store.run["status"] = status
+    assert service.status("alice")["state"] == "live"
+    assert service.frame("alice", "run-1").jpeg == JPEG
+    relay.status = replace(relay.status, state="idle", generation=None, url=None)
+    assert service.status("alice") == {
+        "state": "idle", "run_id": "run-1", "generation": None, "url": None}
+
+
+def test_completion_during_observation_preserves_same_saved_scope(observer):
+    service, store, relay = observer
+    relay.after = lambda: store.run.update(status="completed")
+    assert service.status("alice")["state"] == "live"
+    store.run["status"] = "running"
+    assert service.frame("alice", "run-1").jpeg == JPEG
+
+
+def test_latest_undispatched_turn_shadows_retained_browser_without_network(tmp_path):
+    store = ChatStore(tmp_path / "chat.sqlite3")
+    first = store.reserve("alice", "request-1", "Open a page", 1000)
+    store.select_tools(first, BROWSER_TOOLS)
+    with store.connection() as db:
+        db.execute("UPDATE turns SET run_id='run-1',status='completed' WHERE request_id='request-1'")
+    second = store.reserve("alice", "request-2", "Continue", 1001)
+    store.select_tools(second, BROWSER_TOOLS)
+    relay = Relay()
+    observer = BrowserService(store, relay, owner_id="alice")
+    assert store.browser_run("alice")["request_id"] == "request-2"
+    assert store.browser_run("mallory") is None
+    assert observer.status("alice") == {
+        "state": "starting", "run_id": None, "generation": None, "url": None}
     with pytest.raises(Rejected, match="browser_run_changed"):
         observer.frame("alice", "run-1")
-    assert relay.calls == [("status", "run-1"), ("frame", "run-1")]
+    assert relay.calls == []
+
+
+def test_latest_turn_without_browser_scope_never_falls_back_to_older_browser(tmp_path):
+    store = ChatStore(tmp_path / "chat.sqlite3")
+    first = store.reserve("alice", "request-1", "Open a page", 1000)
+    store.select_tools(first, BROWSER_TOOLS)
+    with store.connection() as db:
+        db.execute("UPDATE turns SET run_id='run-1',status='completed' WHERE request_id='request-1'")
+    latest = store.reserve("alice", "request-2", "Read a document", 1001)
+    store.select_tools(latest, ("document_search", "document_read"))
+    relay = Relay()
+    observer = BrowserService(store, relay, owner_id="alice")
+    with pytest.raises(Rejected, match="browser_scope_unavailable"):
+        observer.status("alice")
+    assert relay.calls == []
+
+
+def test_terminal_turn_without_admitted_run_is_idle_without_network(observer):
+    service, store, relay = observer
+    store.run.update(status="failed", run_id=None)
+    assert service.status("alice") == {
+        "state": "idle", "run_id": None, "generation": None, "url": None}
+    assert relay.calls == []
+
+
+def test_unknown_saved_status_is_denied_before_network(observer):
+    service, store, relay = observer
+    store.run["status"] = "unknown"
+    with pytest.raises(Rejected, match="browser_scope_unavailable"):
+        service.status("alice")
+    assert relay.calls == []
 
 
 def test_gateway_failure_is_sanitized(observer):

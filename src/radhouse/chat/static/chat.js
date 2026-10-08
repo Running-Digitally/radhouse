@@ -42,32 +42,46 @@ const emptyDraft = () => ({text:"",attachments:[]});
 let draft=emptyDraft(), noticeCode=null, noticeAction=null, draftSignature="";
 const turnNodes=new Map(), previewUrls=new Map();
 const retainedSnapshots=new Map();
-const browserView=typeof window.BrowserView==="function" ? new window.BrowserView($("assistant-browser")) : null;
+const browserView=typeof window.BrowserView==="function" ? new window.BrowserView($("assistant-browser"),{persistent:true}) : null;
+let currentPage=typeof location!=="undefined" && ["/library","/browser"].includes(location.pathname) ? location.pathname : "/";
+const library=typeof window.RadhouseLibrary==="function" ? new window.RadhouseLibrary({request:api,card:fileCard,openMessage}) : null;
 let browserEpoch=0, browserStatusRequest=null, browserRequestId=null, browserSuspended=false;
+function browserAnchor() { return [...turns.values()].sort((a,b)=>b.seq-a.seq)[0]?.request_id || null; }
 function stopBrowser() {
   browserEpoch++; browserStatusRequest?.controller.abort(); browserStatusRequest=null;
   browserRequestId=null; browserView?.stop();
 }
 async function refreshBrowser() {
-  const pending=pendingTurn();
-  if (!browserView || !session || session.features?.browser!==true || !pending || browserSuspended || openingHistory) {
+  if (!browserView || !session || currentPage!=="/browser" || browserSuspended || openingHistory) {
     stopBrowser(); return;
   }
+  if (session.features?.browser!==true) {
+    browserView.update({state:"idle"});
+    $("browser-idle-hint").hidden=false;
+    $("browser-idle-hint").textContent="Browsing isn’t connected to this instance yet.";
+    return;
+  }
   if (document.hidden) { return; }
-  if (browserRequestId!==pending.request_id) { stopBrowser(); browserRequestId=pending.request_id; }
+  const anchor=browserAnchor();
+  if (browserRequestId!==anchor) { stopBrowser(); browserRequestId=anchor; }
   if (browserStatusRequest) { return; }
-  const request={session,request_id:pending.request_id,epoch:browserEpoch,controller:new AbortController()};
+  const request={session,anchor,epoch:browserEpoch,controller:new AbortController()};
   browserStatusRequest=request;
   const timeout=setTimeout(()=>request.controller.abort(),5000);
   const current=()=>session===request.session && browserEpoch===request.epoch && !browserSuspended &&
-    pendingTurn()?.request_id===request.request_id && session.features?.browser===true;
+    currentPage==="/browser" && browserAnchor()===request.anchor && session.features?.browser===true;
   try {
     const status=await api("/chat/browser",undefined,false,request.controller.signal);
-    if (current()) { browserView.update(status); }
+    if (current()) {
+      browserView.update(status);
+      $("browser-idle-hint").hidden=status.state!=="idle";
+      $("browser-idle-hint").textContent="Ask your assistant to browse a website. You can watch it here while its browser is open.";
+    }
   } catch {
     // The current request becomes unavailable; cancelled or obsolete requests stay quiet.
     if (current() && !request.controller.signal.aborted) {
       browserView.update({state:"unavailable",run_id:browserView.run,generation:null,url:null});
+      $("browser-idle-hint").hidden=true;
     }
   } finally {
     clearTimeout(timeout);
@@ -95,7 +109,50 @@ function tell(code, action=null) {
   $("notice-action").textContent=["csrf_denied","request_origin_denied","message_conflict"].includes(code) ? "Reconnect" : "Retry";
 }
 function clearNotice() { noticeCode=null; noticeAction=null; $("notice").hidden=true; $("login-notice").hidden=true; }
-function managementNavigation() { $("management-nav").hidden=session?.management?.read!==true; }
+function managementNavigation() {
+  if (window.RadhouseNavigation) { window.RadhouseNavigation.update(session); }
+  else { $("management-nav").hidden=!session; }
+}
+let chatScroll=0, workspaceEpoch=0;
+function showPage(path, push=false, focus=false) {
+  workspaceEpoch++;
+  if (currentPage==="/" && path!=="/") { chatScroll=$("history-pane").scrollTop; }
+  currentPage=["/library","/browser"].includes(path) ? path : "/";
+  if (push && typeof history!=="undefined") { history.pushState(null,"",currentPage); }
+  $("chat-view").hidden=!session || currentPage!=="/";
+  $("library-view").hidden=!session || currentPage!=="/library";
+  $("browser-page").hidden=!session || currentPage!=="/browser";
+  document.title=currentPage==="/" ? "Radhouse" : (currentPage==="/library" ? "Library" : "Browser")+" · Radhouse";
+  managementNavigation();
+  if (currentPage!=="/library") { library?.cancel(); }
+  else if (session && !openingHistory) { void library?.load(); }
+  if (currentPage!=="/browser") { stopBrowser(); }
+  else { void refreshBrowser(); }
+  if (currentPage==="/" && session) {
+    resizeMessage(); $("history-pane").scrollTop=followingLatest ? $("history-pane").scrollHeight : chatScroll;
+  }
+  if (focus) { $(currentPage==="/library" ? "library-title" : currentPage==="/browser" ? "browser-title" : "message").focus(); }
+}
+async function openMessage(requestId, push=true) {
+  if (!session) return;
+  showPage("/",false);
+  if (push && typeof history!=="undefined") { history.pushState(null,"","/?message="+encodeURIComponent(requestId)); }
+  const readingSession=session, pageEpoch=workspaceEpoch;
+  try {
+    if (!turnNodes.has(requestId)) {
+      const result=await api("/chat/messages/"+encodeURIComponent(requestId));
+      if (session!==readingSession || workspaceEpoch!==pageEpoch || currentPage!=="/") return;
+      rememberTurn(result.turn); followingLatest=false; render();
+    }
+    const node=turnNodes.get(requestId)?.node;
+    if (node) { followingLatest=false; node.tabIndex=-1; node.focus({preventScroll:true}); node.scrollIntoView({block:"start"}); updateLatest(); }
+  } catch (error) { if (session===readingSession && workspaceEpoch===pageEpoch && currentPage==="/") { tell(error.message,refreshHistory); } }
+}
+window.addEventListener("popstate",()=>{
+  showPage(location.pathname,false);
+  const message=new URLSearchParams(location.search).get("message");
+  if (currentPage==="/" && message) { void openMessage(message,false); }
+});
 function key() { return "radhouse-chat-draft:"+session.username; }
 let draftDatabase;
 function database() {
@@ -151,7 +208,10 @@ $("management-nav").addEventListener("click",async event => {
   if (!link || event.button!==0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) { return; }
   event.preventDefault();
   const destination=new URL(link.href);
-  if (destination.pathname==="/" || !session || openingHistory || managementLeaving) { return; }
+  if (!session || openingHistory || managementLeaving) { return; }
+  if (["/","/library","/browser"].includes(destination.pathname)) {
+    void persist(); showPage(destination.pathname,true,true); return;
+  }
   const leavingSession=session; managementLeaving=true;
   try {
     // Full-page navigation must not discard the only unsent original. Also
@@ -169,6 +229,7 @@ function releaseFile(file) { const url=previewUrls.get(file.file_id); if (url) {
 function releasePreviews() { for (const url of previewUrls.values()) { URL.revokeObjectURL(url); } previewUrls.clear(); }
 function showLogin(expired=false) {
   stopBrowser(); browserSuspended=false;
+  library?.clear();
   if (session) {
     $("username").value=session.username;
     // Keep the only original in this tab when browser storage is unavailable.
@@ -181,6 +242,7 @@ function showLogin(expired=false) {
   busy=false; polling=false; filesLoading=false; openingHistory=false;
   $("messages").replaceChildren(); $("draft-files").replaceChildren(); $("message").value="";
   $("chat-view").hidden=true; $("logout").hidden=true; $("login-view").hidden=false; $("loading").hidden=true;
+  $("library-view").hidden=true; $("browser-page").hidden=true;
   clearNotice(); if (expired) { tell("authentication_required"); }
 }
 async function api(path,body,initial=false,signal=undefined) {
@@ -300,8 +362,13 @@ function attachmentList(turn) {
 function assistantReply(turn) {
   const reply=document.createElement("div"); reply.className="assistant";
   const name=document.createElement("p"), answer=document.createElement("div"), copy=document.createElement("button"); name.className="message-label"; name.textContent="Radhouse";
-  answer.className="answer"; answer.append(window.RadhouseFormat.render(turn.output)); copy.type="button"; copy.className="copy-answer"; copy.dataset.label="Copy answer"; copy.textContent="Copy answer";
-  copy.addEventListener("click",() => window.RadhouseFormat.copyText(turn.output,copy)); reply.append(name,answer,copy); return reply;
+  answer.className="answer"; answer.append(window.RadhouseFormat.render(turn.output || "")); copy.type="button"; copy.className="copy-answer"; copy.dataset.label="Copy answer"; copy.textContent="Copy answer"; copy.hidden=!turn.output;
+  copy.addEventListener("click",() => window.RadhouseFormat.copyText(turn.output,copy)); reply.append(name,answer);
+  if (turn.shared_files?.length) {
+    const files=document.createElement("div"); files.className="attachments";
+    turn.shared_files.forEach(file=>files.append(fileCard(file,file.download_url,false))); reply.append(files);
+  }
+  reply.append(copy); return reply;
 }
 function turnStatusText(turn) {
   if (turn.error) return explanations[turn.error] || "This message needs attention. Its text and files are kept.";
@@ -330,8 +397,8 @@ function makeTurn(turn) {
   const label=document.createElement("p"), text=document.createElement("p"); label.className="message-label"; label.textContent="You";
   text.className="message-text"; text.textContent=turn.text; block.append(label,text);
   if (turn.attachments?.length) { block.append(attachmentList(turn)); }
-  if (turn.output) { block.append(assistantReply(turn)); }
-  else { pendingReply(block, turn); }
+  if (turn.output || turn.shared_files?.length) { block.append(assistantReply(turn)); }
+  if (!turn.output && (turn.error || !terminal.has(turn.status) || !turn.shared_files?.length)) { pendingReply(block, turn); }
   return block;
 }
 
@@ -438,14 +505,17 @@ async function finishOpening(openingSession,generation) {
   if (!currentOpening(openingSession,generation)) { return; }
   if (!draftWriteFailed) retainedSnapshots.delete(openingSession.username);
   render(); void refreshBrowser();
-  if (!matchMedia("(pointer:coarse)").matches) $("message").focus();
+  showPage(currentPage);
+  const message=typeof location!=="undefined" ? new URLSearchParams(location.search).get("message") : null;
+  if (currentPage==="/" && message) { void openMessage(message,false); }
+  if (currentPage==="/" && !message && !matchMedia("(pointer:coarse)").matches) $("message").focus();
 }
 async function openConversation() {
   stopBrowser(); browserSuspended=false;
   const openingSession=session, generation=++openingGeneration; openingHistory=true; followingLatest=true; olderLoaded=false; olderBefore=null;
   turns.clear(); turnNodes.clear(); $("messages").replaceChildren(); draftSignature=""; draft=emptyDraft(); outbox=null;
-  $("login-view").hidden=true; $("chat-view").hidden=false; $("logout").hidden=false; $("loading").hidden=true;
-  managementNavigation();
+  $("login-view").hidden=true; $("logout").hidden=false; $("loading").hidden=true;
+  showPage(currentPage);
   controls();
   const storageKey=key(); let stored, fallback;
   try { stored=await draftOperation(storageKey); } catch { /* Recover through the text fallback or this tab’s retained originals. */ }
