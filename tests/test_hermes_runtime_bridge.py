@@ -896,6 +896,71 @@ def test_maintenance_producer_timestamp_matches_strict_operator_iso_schema(monke
     assert bridge.maintenance_status(value)['verified'] is False
 
 
+@pytest.fixture
+def bootstrap_runtime_policy(tmp_path, monkeypatch):
+    bootstrap = load("radhouse_browser_bootstrap_policy_test", RUNTIME / "bootstrap.py")
+    hermes = Path("/opt/hermes/818c13be1dc4fd28987e1e881a9408224afd4535")
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    files = {}
+    for index in range(35):
+        name = f"runtime_{index}.py"
+        source = runtime / name
+        source.write_text(f"# qualified runtime file {index}\n")
+        files[name] = bootstrap.sha(source)
+    value = {
+        "schema": "radhouse.builder-maintenance.v1", "machine_id": bootstrap.MACHINE_ID,
+        "browser_root": str(bootstrap.ROOT), "browser_helper_identity": "radhousebot",
+        "browser_helper_sha256": bootstrap.sha(bootstrap.__file__), "agent_browser_channel": "reviewed",
+        "runtime_files_sha256": files, "runtime_sha256": hashlib.sha256(bootstrap.canonical(files)).hexdigest(),
+        "hermes_root": str(hermes), "hermes_python": str(hermes / "venv/bin/python"),
+    }
+    read_text, source_sha = Path.read_text, bootstrap.sha
+    monkeypatch.setattr(Path, "read_text", lambda path, *args, **kwargs:
+        bootstrap.MACHINE_ID if path == Path("/etc/machine-id") else read_text(path, *args, **kwargs))
+    monkeypatch.setattr(bootstrap, "root_bytes", lambda path: bootstrap.canonical(value))
+    monkeypatch.setattr(bootstrap, "sha", lambda path:
+        source_sha(runtime / Path(path).relative_to(hermes)) if Path(path).is_relative_to(hermes) else source_sha(path))
+    return bootstrap, value, runtime
+
+
+@pytest.mark.parametrize("count", [32, 35])
+def test_bootstrap_policy_accepts_reviewed_runtime_map_capacity(bootstrap_runtime_policy, count):
+    bootstrap, value, _ = bootstrap_runtime_policy
+    files = dict(list(value["runtime_files_sha256"].items())[:count])
+    value["runtime_files_sha256"] = files
+    value["runtime_sha256"] = hashlib.sha256(bootstrap.canonical(files)).hexdigest()
+    assert bootstrap.policy(bootstrap.POLICY) == value
+
+
+@pytest.mark.parametrize("invalid", ["empty", "over_capacity", "wrong_type", "absolute_path", "parent_path",
+    "malformed_digest", "non_string_digest", "map_digest", "file_digest"])
+def test_bootstrap_policy_rejects_unverified_runtime_maps(bootstrap_runtime_policy, invalid):
+    bootstrap, value, runtime = bootstrap_runtime_policy
+    files = value["runtime_files_sha256"]
+    if invalid == "empty":
+        files.clear()
+    elif invalid == "over_capacity":
+        files["runtime_35.py"] = "a" * 64
+    elif invalid == "wrong_type":
+        files = list(files.items())
+    elif invalid in {"absolute_path", "parent_path"}:
+        name = {"absolute_path": "/runtime.py", "parent_path": "../runtime.py"}[invalid]
+        files[name] = files.pop("runtime_0.py")
+    elif invalid == "malformed_digest":
+        files["runtime_0.py"] = "invalid"
+    elif invalid == "non_string_digest":
+        files["runtime_0.py"] = None
+    elif invalid == "file_digest":
+        (runtime / "runtime_0.py").write_text("# changed after qualification\n")
+    value["runtime_files_sha256"] = files
+    value["runtime_sha256"] = hashlib.sha256(bootstrap.canonical(files)).hexdigest()
+    if invalid == "map_digest":
+        value["runtime_sha256"] = "a" * 64
+    with pytest.raises(ValueError, match="maintenance_runtime_unverified"):
+        bootstrap.policy(bootstrap.POLICY)
+
+
 def test_bootstrap_promotes_only_real_isolation_proof_and_unwraps_cycle_receipt(tmp_path, monkeypatch):
     bootstrap = load("radhouse_browser_bootstrap_test", RUNTIME / "bootstrap.py")
     selected = {"release_id": "a" * 32, "manifest_path": "fixed", "manifest_sha256": "b" * 64}
