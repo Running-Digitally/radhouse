@@ -7,7 +7,7 @@
   const accents = {fern:{name:"Fern",color:"#456d55",soft:"#eaf0e6"},clay:{name:"Clay",color:"#9a553b",soft:"#f5e9df"},tide:{name:"Tide",color:"#3d6574",soft:"#e5eef1"},plum:{name:"Plum",color:"#76576e",soft:"#efe7ec"}};
   const states = {thinking:["Thinking","Connecting the dots."],idle:["Idle","Here when you need me."],working:["Working","Making things happen."],waiting:["Waiting for you","A little input would help."],paused:["Paused","Taking a breather."],completed:["Completed","All wrapped up."]};
   const defaults = {name:"",intro:profiles[0].intro,portrait:"ember",customPortrait:null,accent:"fern",stateMotion:true,iconMotion:true,surface:"paper"};
-  let saved = {...defaults}, draft, customName=false, customIntro=false, previewState="thinking", toastTimer, uploadGeneration=0;
+  let saved = {...defaults}, draft, customName=false, customIntro=false, toastTimer, uploadGeneration=0;
   const byId = id => document.getElementById(id);
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
   const deviceNight = matchMedia("(prefers-color-scheme: dark)");
@@ -29,48 +29,54 @@
   function radio(name,value,label,checked) {
     const input=document.createElement("input"); input.type="radio";input.name=name;input.value=value;input.checked=checked;input.setAttribute("aria-label",label); return input;
   }
-  // Browsing a collection is ephemeral; only selecting a portrait changes identity.
-  let browseTheme=profiles.find(p=>p.id===draft.portrait).theme;
+  // Theme, portrait and preview always describe the same identity.
+  let selectedTheme=profiles.find(p=>p.id===draft.portrait).theme;
+  let portraitByTheme={};
+  function selectCharacter(profile) {
+    uploadGeneration++;draft.portrait=profile.id;draft.customPortrait=null;
+    portraitByTheme[profile.theme]=profile.id;
+    if(!customName){draft.name=profile.name;byId("agent-name").value=draft.name;}
+    if(!customIntro){draft.intro=profile.intro;byId("agent-intro").value=draft.intro;}
+    for(const input of document.querySelectorAll('[name="portrait"]'))input.checked=input.value===profile.id;
+    byId("upload-status").textContent="";update();
+  }
   function renderPortraits() {
-    const collection=themes.find(theme=>theme.id===browseTheme);
-    const members=profiles.filter(profile=>profile.theme===browseTheme);
-    const legend=document.createElement("legend");legend.className="sr-only";legend.textContent=`Choose a ${collection.name} portrait`;
+    const collection=themes.find(theme=>theme.id===selectedTheme);
+    const members=profiles.filter(profile=>profile.theme===selectedTheme);
+    const legend=document.createElement("legend");legend.className="sr-only";legend.textContent=`Choose a ${collection.name} character`;
     byId("character-grid").replaceChildren(legend);
+    byId("character-grid").style.setProperty("--portrait-count",members.length);
+    byId("character-grid").dataset.count=members.length;
     byId("collection-title").textContent=collection.name;
-    byId("collection-count").textContent=`${members.length} characters`;
-    byId("theme-description").textContent=collection.description;
     for(const profile of members) {
       const label=document.createElement("label");label.className="character-option";
       const input=radio("portrait",profile.id,`${profile.name} · ${collection.name}`,draft.portrait===profile.id&&!draft.customPortrait);
       const top=document.createElement("div");top.className="character-top";
-      const image=document.createElement("img");image.src=`characters/${profile.id}.png`;image.alt="";image.loading="lazy";image.width=64;image.height=64;
+      const image=document.createElement("img");image.src=`characters/${profile.id}.png`;image.alt="";image.width=88;image.height=88;
       const caption=document.createElement("div"),name=document.createElement("span"),role=document.createElement("span");
       name.className="character-name";name.textContent=profile.name;role.className="character-theme";role.textContent=profile.role;caption.append(name,role);top.append(image,caption);
-      const story=document.createElement("p");story.className="character-story";story.textContent=profile.story;
       const check=document.createElement("span");check.className="character-check";check.append(icons.create("check"));
-      label.append(input,top,story,check);byId("character-grid").append(label);
-      input.addEventListener("change",()=>{
-        uploadGeneration++;draft.portrait=profile.id;draft.customPortrait=null;
-        if(!customName){draft.name=profile.name;byId("agent-name").value=draft.name;}
-        if(!customIntro){draft.intro=profile.intro;byId("agent-intro").value=draft.intro;}
-        byId("upload-status").textContent="";update();
-      });
+      label.append(input,top,check);byId("character-grid").append(label);
+      input.addEventListener("change",()=>selectCharacter(profile));
     }
+    for(const input of document.querySelectorAll('[name="collection"]'))input.checked=input.value===selectedTheme;
   }
-  function browseCollection(id) {
-    browseTheme=id;
-    for(const input of document.querySelectorAll('[name="collection"]'))input.checked=input.value===id;
-    renderPortraits();
+  function chooseTheme(id) {
+    selectedTheme=id;renderPortraits();
+    const members=profiles.filter(profile=>profile.theme===id);
+    selectCharacter(members.find(profile=>profile.id===portraitByTheme[id])||members[0]);
   }
   for(const theme of themes) {
     const label=document.createElement("label");label.className="theme-option";
-    const members=profiles.filter(profile=>profile.theme===theme.id);
-    const input=radio("collection",theme.id,`${theme.name} · ${members.length} characters`,browseTheme===theme.id);
-    const image=document.createElement("img");image.src=`characters/${theme.cover}.png`;image.alt="";image.width=46;image.height=46;
+    const input=radio("collection",theme.id,theme.name,selectedTheme===theme.id);input.setAttribute("aria-controls","character-grid");
+    const portraits=document.createElement("span");portraits.className="theme-portraits";portraits.setAttribute("aria-hidden","true");
+    for(const profile of profiles.filter(profile=>profile.theme===theme.id).slice(0,3)) {
+      const image=document.createElement("img");image.src=`characters/${profile.id}.png`;image.alt="";image.width=44;image.height=44;portraits.append(image);
+    }
     const text=document.createElement("span"),name=document.createElement("strong"),style=document.createElement("small");
     name.textContent=theme.name;style.textContent=theme.style;text.append(name,style);
-    label.append(input,image,text);byId("theme-options").append(label);
-    input.addEventListener("change",()=>browseCollection(theme.id));
+    label.append(input,portraits,text);byId("theme-options").append(label);
+    input.addEventListener("change",()=>chooseTheme(theme.id));
   }
   for(const [id,accent] of Object.entries(accents)) {
     const label=document.createElement("label");label.className="accent-option";label.style.setProperty("--swatch",accent.color);
@@ -83,6 +89,42 @@
     icons.setAgentState(svg,state==="completed"?"complete":state);
     svg.classList.add("agent-status-svg");
     return svg;
+  }
+  const stateSequence=["idle","thinking","working","waiting","paused","completed"];
+  let pinnedState="thinking",hoveredState=null,focusedState=null;
+  function renderPreviewState() {
+    const state=hoveredState||focusedState||pinnedState;
+    for(const node of document.querySelectorAll("[data-status-icon]"))node.replaceChildren(createStatus(state));
+    for(const node of document.querySelectorAll("[data-state-label]"))node.textContent=states[state][0];
+    byId("state-description").textContent=states[state][1];
+    byId("header-status").setAttribute("aria-label",`Show agent state preview: ${states[state][0]}`);
+    for(const button of byId("state-options").querySelectorAll("button")) {
+      button.setAttribute("aria-pressed",String(button.dataset.state===pinnedState));
+      button.dataset.previewing=String(button.dataset.state===state);
+    }
+  }
+  for(const [index,state] of stateSequence.entries()) {
+    const button=document.createElement("button");button.type="button";button.className="state-chip";
+    button.dataset.state=state;button.style.setProperty("--state-index",index);
+    button.tabIndex=state===pinnedState?0:-1;button.setAttribute("aria-label",`Preview ${states[state][0]}`);
+    const text=document.createElement("span");text.textContent=states[state][0];button.append(createStatus(state),text);
+    byId("state-options").append(button);
+    button.addEventListener("pointerenter",event=>{if(event.pointerType!=="touch"){hoveredState=state;focusedState=null;renderPreviewState();}});
+    button.addEventListener("pointerleave",()=>{const changed=hoveredState===state||focusedState===state;if(hoveredState===state)hoveredState=null;if(focusedState===state)focusedState=null;if(changed)renderPreviewState();});
+    button.addEventListener("focus",()=>{focusedState=state;hoveredState=null;renderPreviewState();});
+    button.addEventListener("blur",()=>{if(focusedState===state){focusedState=null;renderPreviewState();}});
+    button.addEventListener("click",()=>{
+      pinnedState=state;
+      for(const choice of byId("state-options").querySelectorAll("button"))choice.tabIndex=choice===button?0:-1;
+      renderPreviewState();
+    });
+    button.addEventListener("keydown",event=>{
+      if(!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Home","End"].includes(event.key))return;
+      event.preventDefault();const buttons=[...byId("state-options").querySelectorAll("button")];
+      const next=event.key==="Home"?0:event.key==="End"?buttons.length-1:(index+(["ArrowLeft","ArrowUp"].includes(event.key)?-1:1)+buttons.length)%buttons.length;
+      for(const choice of buttons)choice.tabIndex=choice===buttons[next]?0:-1;
+      buttons[next].focus();
+    });
   }
   function dirty() {return JSON.stringify(draft)!==JSON.stringify(saved);}
   function cancelIconMotion() {for(const icon of document.querySelectorAll(".rh-icon:not(.agent-status-svg)")) for(const animation of icon.getAnimations({subtree:true})) animation.cancel();}
@@ -102,17 +144,18 @@
     document.title=`${name} · Radhouse`;
     byId("preview-intro").textContent=draft.intro.trim();
     byId("sample-reply").textContent=profile.reply;
-    byId("current-portrait").textContent=draft.customPortrait?"Current portrait: your uploaded image":`Current portrait: ${profile.name} · ${themes.find(theme=>theme.id===profile.theme).name}`;
-    for(const node of document.querySelectorAll("[data-status-icon]"))node.replaceChildren(createStatus(previewState));
-    for(const node of document.querySelectorAll("[data-state-label]"))node.textContent=states[previewState][0];
-    byId("state-description").textContent=states[previewState][1];
-    byId("header-status").setAttribute("aria-label",`Preview agent status: ${states[previewState][0]}`);
+    byId("profile-role").textContent=draft.customPortrait?"Your own portrait":`${profile.role} · ${themes.find(theme=>theme.id===profile.theme).name}`;
+    byId("profile-story").textContent=profile.story;byId("character-story-label").textContent=`About ${profile.name}`;
+    byId("character-notes").hidden=Boolean(draft.customPortrait);
+    byId("suggest-name").textContent=`Use ${profile.name}`;byId("suggest-name").setAttribute("aria-label",`Use ${profile.name} as agent name`);byId("suggest-name").hidden=draft.name===profile.name;
+    renderPreviewState();
     byId("save").disabled=!dirty();byId("discard").disabled=!dirty();
     byId("save-status").textContent=dirty()?"Unsaved changes":"Make yourself at home.";
     byId("motion-note").textContent=reducedMotion.matches?"Your device prefers reduced motion. Animations are paused; status labels stay visible.":"Your device’s reduced-motion preference is always respected.";
   }
   function syncInputs() {
-    browseCollection(profiles.find(profile=>profile.id===draft.portrait).theme);
+    selectedTheme=profiles.find(profile=>profile.id===draft.portrait).theme;portraitByTheme={[selectedTheme]:draft.portrait};renderPortraits();
+    byId("intro-disclosure").open=customIntro;
     byId("agent-name").value=draft.name;byId("agent-intro").value=draft.intro;byId("state-motion").checked=draft.stateMotion;byId("icon-motion").checked=draft.iconMotion;
     for(const input of document.querySelectorAll('[name="portrait"]'))input.checked=input.value===draft.portrait&&!draft.customPortrait;
     for(const input of document.querySelectorAll('[name="accent"]'))input.checked=input.value===draft.accent;
@@ -148,7 +191,7 @@
     byId(tab+"-tab").addEventListener("click",()=>showTab(tab));
     byId(tab+"-tab").addEventListener("keydown",event=>{if(["ArrowLeft","ArrowRight","Home","End"].includes(event.key)){event.preventDefault();showTab(event.key==="Home"?"identity":event.key==="End"?"appearance":tab==="identity"?"appearance":"identity",true);}});
   }
-  byId("open-profile").addEventListener("click",()=>{showTab("identity");byId("main").scrollIntoView({block:"start"});byId("agent-name").focus({preventScroll:true});});
+  byId("open-profile").addEventListener("click",()=>{showTab("identity");byId("main").scrollIntoView({block:"start"});byId("theme-options").querySelector("input:checked").focus({preventScroll:true});});
   byId("nav-settings").addEventListener("click",()=>{if(mobile.matches)menu(false,false);showTab("appearance",true);byId("appearance-tab").scrollIntoView({block:"center"});});
   for(const button of document.querySelectorAll("[data-nav]"))button.addEventListener("click",()=>toast("This preview focuses on your agent’s identity and appearance."));
   byId("agent-name").addEventListener("input",event=>{draft.name=event.target.value;customName=Boolean(draft.name.trim());update();});
@@ -157,8 +200,7 @@
   byId("state-motion").addEventListener("change",event=>{draft.stateMotion=event.target.checked;update();});
   byId("icon-motion").addEventListener("change",event=>{draft.iconMotion=event.target.checked;update();});
   for(const input of document.querySelectorAll('[name="surface"]'))input.addEventListener("change",()=>{draft.surface=input.value;update();});
-  byId("preview-state").addEventListener("change",event=>{previewState=event.target.value;update();});
-  byId("header-status").addEventListener("click",()=>{const ids=Object.keys(states);previewState=ids[(ids.indexOf(previewState)+1)%ids.length];byId("preview-state").value=previewState;update();toast(`Previewing: ${states[previewState][0]}`);});
+  byId("header-status").addEventListener("click",()=>{byId("live-preview").scrollIntoView({block:"center"});byId("state-options").querySelector(`[data-state="${pinnedState}"]`).focus({preventScroll:true});});
   byId("identity-form").addEventListener("submit",event=>{
     event.preventDefault();let persisted=true;
     try {localStorage.setItem(key,JSON.stringify(draft));}catch(_){persisted=false;}
