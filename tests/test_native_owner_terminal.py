@@ -32,7 +32,7 @@ def manager(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules,"hermes_cli.pty_bridge",bridge)
     monkeypatch.setitem(sys.modules,"tools.environments.local",local)
     monkeypatch.setitem(sys.modules,"utils",utils)
-    return native.OwnerTerminals(cwd=tmp_path,home=tmp_path,scrub=lambda text:text.replace("synthetic-secret","[REDACTED]"))
+    return native.OwnerTerminals(cwd=tmp_path,home=tmp_path,scrub=lambda text:text.replace("synthetic-secret","[REDACTED]"),maintenance_held=lambda:False)
 
 
 def body(**values): return {"owner":dict(OWNER),"auth_expires_at":native.time.time()+300,**values}
@@ -139,13 +139,15 @@ def test_quiet_presence_survives_but_abandonment_and_auth_expiry_close(manager):
             await asyncio.sleep(.3)
             assert (await manager.call("status",timed()))["state"]=="open"
             now[0]+=601
-            await asyncio.sleep(.5)
+            await asyncio.wait_for(next(iter(manager.sessions.values())).task, 5)
             assert (await manager.call("status",timed()))["state"]=="closed"
+            assert manager.active_count()==0
             # A fresh cookie with a short expiry still wins over ten-minute grace.
             await manager.call("open",{**timed(request_id=str(uuid4()),cols=80,rows=24),"auth_expires_at":now[0]+1})
             now[0]+=2
-            await asyncio.sleep(.5)
+            await asyncio.wait_for(next(iter(manager.sessions.values())).task, 5)
             assert list(manager.sessions.values())[0].state=="closed"
+            assert manager.active_count()==0
         finally:await manager.shutdown()
     asyncio.run(run())
 
@@ -185,4 +187,133 @@ def test_unexpected_read_failure_closes_actual_shell_and_background_job(manager)
             assert not psutil.pid_exists(pid) or psutil.Process(pid).status()==psutil.STATUS_ZOMBIE
             assert not shell.ring
         finally:await manager.shutdown()
+    asyncio.run(run())
+
+
+def test_maintenance_blocks_actions_but_allows_read_and_close(manager):
+    held = [True]
+    manager.maintenance_held = lambda: held[0]
+    async def run():
+        try:
+            with pytest.raises(native.TerminalRejected, match="maintenance_held"):
+                await manager.call("open", body(request_id=str(uuid4()), cols=80, rows=24))
+            assert not manager.sessions and manager.active_count() == 0
+            held[0] = False
+            status = await manager.call("open", body(request_id=str(uuid4()), cols=80, rows=24))
+            assert manager.active_count() == 1
+            held[0] = True
+            for operation, request in (
+                ("open", body(request_id=str(uuid4()), cols=80, rows=24)),
+                ("input", bound(status, sequence=1, data_b64="YQ==")),
+                ("resize", bound(status, cols=90, rows=25)),
+            ):
+                with pytest.raises(native.TerminalRejected, match="maintenance_held"):
+                    await manager.call(operation, request)
+            assert (await manager.call("status", body()))["last_sequence"] == 0
+            await manager.call("output", bound(status, cursor=0, wait_ms=0))
+            await manager.call("close", bound(status))
+            assert manager.active_count() == 0
+        finally:
+            await manager.shutdown()
+    asyncio.run(run())
+
+
+def test_hold_is_rechecked_after_waiting_for_terminal_locks(manager):
+    held = [False]
+    manager.maintenance_held = lambda: held[0]
+    async def run():
+        try:
+            await manager.lock.acquire()
+            pending = asyncio.create_task(manager.call("open", body(request_id=str(uuid4()), cols=80, rows=24)))
+            await asyncio.sleep(0)
+            held[0] = True
+            manager.lock.release()
+            with pytest.raises(native.TerminalRejected, match="maintenance_held"):
+                await pending
+            assert not manager.sessions
+            held[0] = False
+            opened = await manager.call("open", body(request_id=str(uuid4()), cols=80, rows=24))
+            item = next(iter(manager.sessions.values()))
+            await item.lock.acquire()
+            pending = asyncio.create_task(manager.call("input", bound(opened, sequence=1, data_b64="YQ==")))
+            await asyncio.sleep(0)
+            held[0] = True
+            item.lock.release()
+            with pytest.raises(native.TerminalRejected, match="maintenance_held"):
+                await pending
+            assert item.last_sequence == 0
+        finally:
+            await manager.shutdown()
+    asyncio.run(run())
+
+
+def test_maintenance_counts_spawn_and_cleanup_until_finished(manager, monkeypatch):
+    import threading
+    entered, resume = threading.Event(), threading.Event()
+    spawn = sys.modules["hermes_cli.pty_bridge"].PtyBridge.spawn
+    def slow_spawn(*args, **kwargs):
+        entered.set()
+        assert resume.wait(5)
+        return spawn(*args, **kwargs)
+    manager.bridge_factory = slow_spawn
+    async def wait_entered():
+        for _ in range(100):
+            if entered.is_set():
+                return
+            await asyncio.sleep(.01)
+        raise AssertionError("Synthetic phase did not start")
+    async def run():
+        try:
+            opening = asyncio.create_task(manager.call("open", body(request_id=str(uuid4()), cols=80, rows=24)))
+            await wait_entered()
+            assert not manager.sessions and manager.active_count() == 1
+            resume.set()
+            opened = await opening
+            entered.clear(); resume.clear()
+            cleanup = native._cleanup
+            def slow_cleanup(*args):
+                entered.set()
+                assert resume.wait(5)
+                return cleanup(*args)
+            monkeypatch.setattr(native, "_cleanup", slow_cleanup)
+            closing = asyncio.create_task(manager.call("close", bound(opened)))
+            await wait_entered()
+            assert next(iter(manager.sessions.values())).state == "closed"
+            assert manager.active_count() == 1
+            with pytest.raises(native.TerminalRejected, match="terminal_unavailable"):
+                await manager.call("open", body(request_id=str(uuid4()), cols=80, rows=24))
+            assert manager.active_count() == 1
+            resume.set()
+            await closing
+            assert manager.active_count() == 0
+            # Cancelling a request cannot hide a still-running spawn thread.
+            entered.clear(); resume.clear()
+            opening = asyncio.create_task(manager.call("open", body(request_id=str(uuid4()), cols=80, rows=24)))
+            await wait_entered()
+            opening.cancel()
+            await asyncio.sleep(0)
+            assert manager.active_count() == 1 and not opening.done()
+            resume.set()
+            with pytest.raises(asyncio.CancelledError):
+                await opening
+            assert manager.active_count() == 0
+        finally:
+            resume.set()
+            await manager.shutdown()
+    asyncio.run(run())
+
+
+def test_unknown_spawn_failure_remains_work_and_cannot_spawn_again(manager):
+    calls = []
+    def failing_spawn(*args, **kwargs):
+        calls.append(True)
+        raise OSError("Unknown spawn outcome")
+    manager.bridge_factory = failing_spawn
+    async def run():
+        with pytest.raises(OSError):
+            await manager.call("open", body(request_id=str(uuid4()), cols=80, rows=24))
+        assert manager.active_count() == 1
+        with pytest.raises(native.TerminalRejected, match="terminal_unavailable"):
+            await manager.call("open", body(request_id=str(uuid4()), cols=80, rows=24))
+        assert len(calls) == 1 and manager.active_count() == 1
     asyncio.run(run())

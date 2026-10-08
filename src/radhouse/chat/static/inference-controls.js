@@ -15,6 +15,7 @@
       this.hint = document.createElement("span"); this.hint.className = "inference-status";
       this.refresh = document.createElement("button"); this.refresh.type = "button";
       this.refresh.textContent = "Refresh models";
+      window.RadhouseIcons?.decorate(this.refresh, "refresh", "Refresh models");
       container.replaceChildren(this.modelLabel, this.thinkingLabel, this.refresh, this.hint, this.status);
       this.model.addEventListener("change", () => { this.renderThinking(); this.onChange(this.selection()); });
       this.thinking.addEventListener("change", () => { this.onChange(this.selection()); });
@@ -53,6 +54,7 @@
       this.model.disabled = this.disabled || this.loading;
       this.thinking.disabled = this.disabled || this.loading;
       this.refresh.disabled = this.disabled || this.loading;
+      window.RadhouseIcons?.busy(this.refresh, this.loading);
     }
 
     renderThinking(preserve = "default") {

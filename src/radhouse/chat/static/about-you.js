@@ -17,6 +17,7 @@
       this.container=container;this.request=request;this.onAuthRequired=onAuthRequired;
       this.epoch=0;this.controller=null;
       this.refresh=node("button","Refresh");this.refresh.type="button";
+      window.RadhouseIcons?.decorate(this.refresh,"refresh","Refresh");
       this.refresh.addEventListener("click",()=>{void this.load();});
       this.status=node("p",null,"about-you-status");this.status.setAttribute("role","status");this.status.setAttribute("aria-live","polite");
       this.sources=node("div",null,"about-you-sources");
@@ -25,6 +26,7 @@
 
     cancel() {
       this.epoch++;this.controller?.abort();this.controller=null;this.refresh.disabled=false;
+      window.RadhouseIcons?.busy(this.refresh,false);
     }
 
     clear() {
@@ -55,6 +57,7 @@
       this.cancel();const epoch=this.epoch;
       const controller=new AbortController();this.controller=controller;
       this.refresh.disabled=true;this.status.textContent="Checking saved notes…";this.sources.replaceChildren();
+      window.RadhouseIcons?.busy(this.refresh,true);
       try {
         const value=await this.request("/chat/about-you",undefined,false,controller.signal);
         if(epoch!==this.epoch)return;
@@ -65,7 +68,7 @@
         if(error.status===401) {this.clear();this.onAuthRequired?.();return;}
         this.status.textContent="Saved notes are unavailable right now. Refresh to try again.";
       } finally {
-        if(epoch===this.epoch){this.controller=null;this.refresh.disabled=false;}
+        if(epoch===this.epoch){this.controller=null;this.refresh.disabled=false;window.RadhouseIcons?.busy(this.refresh,false);}
       }
     }
   }

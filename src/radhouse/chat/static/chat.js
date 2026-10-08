@@ -454,10 +454,23 @@ function attachmentList(turn) {
   }
   return files;
 }
+// Presentation cues use known reply states; they do not infer VM activity.
+function agentMark(state) {
+  const icon=window.RadhouseIcons?.create("agent");
+  if(icon)window.RadhouseIcons.setAgentState(icon,state);
+  return icon;
+}
+function replyAgentState(turn) {
+  if(turn.error || ["failed","interrupted","cancelled"].includes(turn.status))return "error";
+  if(turn.status==="completed")return "complete";
+  return turn.status==="awaiting_dispatch" ? "waiting" : "thinking";
+}
 function assistantReply(turn) {
   const reply=document.createElement("div"); reply.className="assistant";
-  const name=document.createElement("p"), answer=document.createElement("div"), copy=document.createElement("button"); name.className="message-label"; name.textContent="Radhouse";
-  answer.className="answer"; answer.append(window.RadhouseFormat.render(turn.output || "")); copy.type="button"; copy.className="copy-answer"; copy.dataset.label="Copy answer"; copy.textContent="Copy answer"; copy.hidden=!turn.output;
+  const name=document.createElement("p"), answer=document.createElement("div"), copy=document.createElement("button"); name.className="message-label rh-agent-label"; name.textContent="Radhouse";
+  const icon=agentMark(replyAgentState(turn));if(icon)name.prepend(icon);
+  answer.className="answer"; answer.append(window.RadhouseFormat.render(turn.output || "")); copy.type="button"; copy.className="copy-answer"; copy.dataset.label="Copy"; copy.dataset.copyKind="answer"; copy.dataset.accessibleLabel="Copy answer"; copy.setAttribute("aria-label","Copy answer"); copy.textContent="Copy"; copy.hidden=!turn.output;
+  window.RadhouseIcons?.decorate(copy,"clipboard","Copy",{accessibleLabel:"Copy answer"});
   copy.addEventListener("click",() => window.RadhouseFormat.copyText(turn.output,copy)); reply.append(name,answer);
   if (turn.shared_files?.length) {
     const files=document.createElement("div"); files.className="attachments";
@@ -482,6 +495,7 @@ function turnStatusText(turn) {
 function pendingReply(block, turn) {
   const status=document.createElement("p"); status.className=turn.error ? "turn-error" : "pending";
   status.textContent = turnStatusText(turn);
+  if(!turn.local){const icon=agentMark(replyAgentState(turn));if(icon){status.prepend(icon);status.classList.add("rh-agent-label");}}
   block.append(status);
   if (turn.local && turn.phase==="uploading") { const progress=document.createElement("p"); progress.className="sending-files"; progress.dataset.uploadProgress=""; block.append(progress); }
   if (turn.local && turn.error) {
@@ -566,8 +580,19 @@ function controls() {
   $("attach").disabled=filesLoading || openingHistory || capturingContext; $("attach-text").disabled=filesLoading || openingHistory || capturingContext; $("long-text").hidden=!tooLong;
   inferenceControls?.setDisabled(busy || openingHistory);
   document.querySelectorAll("[data-remove-file]").forEach(button=>{button.disabled=capturingContext;});
-  $("send").textContent=busy ? "Sending…" : "Send ↗";
-  $("reply-status").textContent = replyStatus(pending);
+  if(window.RadhouseIcons){window.RadhouseIcons.decorate($("send"),"send",busy ? "Sending…" : "Send");window.RadhouseIcons.busy($("send"),busy);}
+  else $("send").textContent=busy ? "Sending…" : "Send";
+  const status=$("reply-status"),text=replyStatus(pending);
+  const showAgent=pending && !pending.local && !filesLoading && !busy;
+  // Preserve the same SVG through polling so ongoing state motion stays smooth.
+  let icon=status.querySelector('.rh-icon[data-icon="agent"]'),label=status.querySelector("span");
+  if(!label){label=document.createElement("span");status.replaceChildren(label);}
+  label.textContent=text;
+  if(showAgent){
+    if(!icon){icon=agentMark(replyAgentState(pending));if(icon)status.prepend(icon);}
+    if(icon)window.RadhouseIcons.setAgentState(icon,replyAgentState(pending));
+  }else icon?.remove();
+  if(!$("empty").querySelector('.rh-icon')){const idle=agentMark("idle");if(idle)$("empty").prepend(idle);}
   document.querySelectorAll(".retry,#notice-action").forEach(button => { button.disabled=busy || openingHistory || button.dataset.outgoing==="true" && !!pending; });
   resizeMessage();
   updateBrowserChip();

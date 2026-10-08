@@ -64,13 +64,18 @@ await context.route(`${origin}/**`,async route=>{
 });
 try{
   await page.goto(origin+"/terminal");
+  await expect(page.getByRole("link",{name:"Terminal",exact:true}).locator("svg")).toHaveAttribute("data-icon","terminal");
+  await expect(page.getByRole("link",{name:"About You",exact:true}).locator("svg")).toHaveAttribute("data-icon","about-you");
   await expect(page.getByRole("button",{name:"Open terminal",exact:true})).toBeVisible();assert.equal(openCount,0);
+  await expect(page.getByRole("button",{name:"Open terminal",exact:true}).locator("svg")).toHaveAttribute("data-icon","terminal");
   await page.getByRole("button",{name:"Open terminal",exact:true}).click();
   await expect(page.locator(".xterm")).toBeVisible();
   await expect.poll(()=>page.evaluate(()=>ownerTerminal.term?.buffer.active.getLine(0)?.translateToString(true)||"")).toContain("hello");
   await page.locator(".xterm-helper-textarea").pressSequentially("pwd\r");
   await expect.poll(()=>lastSequence).toBeGreaterThan(0);
   await page.getByRole("link",{name:"Chat",exact:true}).click();assert.equal(openCount,1);
+  await expect(page.locator("#terminal-context-chip .rh-icon[data-icon='terminal-context']")).toBeVisible();
+  await expect(page.getByRole("button",{name:"Refresh models",exact:true}).locator("svg")).toHaveAttribute("data-icon","refresh");
   await page.getByLabel("Model",{exact:true}).selectOption("fixture-alpha");
   await page.getByLabel("Thinking",{exact:true}).selectOption("high");
   await page.locator("#use-terminal-context").check();
@@ -91,6 +96,7 @@ try{
   await page.getByRole("button",{name:"Retry message",exact:true}).click();
   await expect(page.getByText("Fixture reply",{exact:true})).toBeVisible();assert.deepEqual(sent[1],first);
   await page.getByRole("link",{name:"About You",exact:true}).click();
+  await expect(page.getByRole("button",{name:"Refresh",exact:true}).locator("svg")).toHaveAttribute("data-icon","refresh");
   await expect(page.getByText("Enjoys careful work.",{exact:false})).toBeVisible();
   assert.equal(await page.evaluate(()=>window.unwanted),undefined);
   await page.getByRole("link",{name:"Terminal",exact:true}).click();assert.equal(openCount,1);
@@ -127,8 +133,15 @@ try{
   assert.equal(sent[2].text,"New session capture");
   assert.equal(sent.some(body=>body.text==="Old session capture"),false);
   await page.getByRole("link",{name:"Terminal",exact:true}).click();
-  await page.setViewportSize({width:390,height:844});
-  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+  for(const width of [390,320]) {
+    await page.setViewportSize({width,height:844});
+    for(const path of ["/terminal","/"]) {
+      await page.evaluate(path=>showPage(path),path);
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`${path} overflows at ${width}px`);
+    }
+  }
+  await page.evaluate(()=>showPage("/terminal"));
+  await expect(page.getByRole("button",{name:"Close terminal",exact:true}).locator("svg")).toHaveAttribute("data-icon","close");
   await page.getByRole("button",{name:"Close terminal",exact:true}).click();
   await expect(page.getByRole("button",{name:"Open terminal",exact:true})).toBeVisible();assert.equal(opened,false);
   assert.deepEqual(errors,[]);console.log("Workspace Chromium integration passed: lazy terminal, navigation, frozen model/context retry, capture/drop and relogin guards, notes and mobile.");

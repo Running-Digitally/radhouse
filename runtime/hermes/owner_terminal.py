@@ -89,6 +89,14 @@ def _scrub(text):
     return value
 
 
+def _maintenance_held():
+    try:
+        from radhouse_hermes_bridge import maintenance_held
+        return maintenance_held()
+    except Exception:
+        return True
+
+
 def _children(pid, birth):
     """Only descendants of this exact, unreused shell process are candidates."""
     import psutil
@@ -145,6 +153,7 @@ class Shell:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     descendants: set = field(default_factory=set, repr=False)
     task: object = field(default=None, repr=False)
+    cleanup_pending: bool = field(default=False, repr=False)
 
     def status(self):
         return {"state": self.state, "terminal_id": self.terminal_id,
@@ -154,11 +163,23 @@ class Shell:
 
 
 class OwnerTerminals:
-    def __init__(self, *, cwd, home, shell="/bin/bash", bridge_factory=None, clock=time.time, scrub=_scrub):
+    def __init__(self, *, cwd, home, shell="/bin/bash", bridge_factory=None, clock=time.time,
+                 scrub=_scrub, maintenance_held=_maintenance_held):
         self.cwd, self.home, self.shell = str(cwd), str(home), shell
         self.clock, self.scrub, self.bridge_factory = clock, scrub, bridge_factory
         self.sessions = {}
         self.lock = asyncio.Lock()
+        self.maintenance_held = maintenance_held
+        self.pending_spawns = 0
+
+    def _require_available(self):
+        if self.maintenance_held() is not False:
+            raise TerminalRejected("maintenance_held")
+
+    def active_count(self):
+        return self.pending_spawns + sum(
+            item.state != "closed" or item.cleanup_pending for item in self.sessions.values()
+        )
 
     @staticmethod
     def key(owner):
@@ -168,9 +189,11 @@ class OwnerTerminals:
         if item.state == "closed":
             return
         item.state = "closed"
+        item.cleanup_pending = True
         item.changed.set()
         await asyncio.to_thread(_cleanup, item.bridge, item.birth, item.descendants)
         item.ring.clear()
+        item.cleanup_pending = False
 
     async def _drain(self, item):
         sampled = 0
@@ -187,6 +210,8 @@ class OwnerTerminals:
                     await asyncio.sleep(.25)
                     continue
                 data = await asyncio.to_thread(item.bridge.read, .2)
+                if item.state == "closed":
+                    return  # A read finishing during Close must not reopen its state/ring.
                 if data is None:
                     item.state = "exited"
                     item.changed.set()
@@ -228,19 +253,26 @@ class OwnerTerminals:
             _identifier(body.get("request_id"), _UUID)
             cols, rows = _integer(body.get("cols"), 2, 2000), _integer(body.get("rows"), 2, 1000)
             async with self.lock:
+                self._require_available()
+                if self.pending_spawns:
+                    raise TerminalRejected("terminal_unavailable")
                 # Closed shells retain no replay ledger or output. Bound RAM
                 # by dropping their tombstones before another explicit Open.
-                self.sessions = {key: item for key, item in self.sessions.items() if item.state != "closed"}
+                self.sessions = {key: item for key, item in self.sessions.items()
+                                 if item.state != "closed" or item.cleanup_pending}
                 item = self.sessions.get(key)
+                if item and item.cleanup_pending:
+                    raise TerminalRejected("terminal_unavailable")
                 if item and item.state != "closed":
                     async with item.lock:
+                        self._require_available()
                         if item.request_id != body["request_id"] or item.owner != owner:
                             item.attach_epoch += 1
                             item.request_id = body["request_id"]
                         item.owner, item.expiry, item.last_seen = owner, expiry, self.clock()
                         item.bridge.resize(cols, rows)
                         return item.status()
-                if sum(item.state != "closed" for item in self.sessions.values()) >= 8:
+                if self.active_count() >= 8:
                     raise TerminalRejected("terminal_capacity_reached")
                 from hermes_cli.pty_bridge import PtyBridge
                 import psutil
@@ -249,18 +281,48 @@ class OwnerTerminals:
                 # BASH_ENV or PROMPT_COMMAND from the gateway process.
                 env = {"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": self.home, "TERM": "xterm-256color",
                     "LC_ALL": "en_US.UTF-8" if sys.platform == "darwin" else "C.UTF-8"}
-                bridge = await asyncio.to_thread(factory,
-                    [self.shell, "--noprofile", "--norc", "+o", "history", "-i"],
-                    cwd=self.cwd, env=env, cols=cols, rows=rows)
+                self.pending_spawns += 1
+                reconciled = False
                 try:
-                    birth = psutil.Process(bridge.pid).create_time()
-                except Exception:
-                    await asyncio.to_thread(bridge.close)
-                    raise TerminalRejected("terminal_unavailable") from None
-                item = Shell(owner, expiry, bridge, birth, body["request_id"], last_seen=self.clock())
-                self.sessions[key] = item
-                item.task = asyncio.create_task(self._drain(item))
-                return item.status()
+                    spawning = asyncio.create_task(asyncio.to_thread(factory,
+                        [self.shell, "--noprofile", "--norc", "+o", "history", "-i"],
+                        cwd=self.cwd, env=env, cols=cols, rows=rows))
+                    cancelled = False
+                    while True:
+                        try:
+                            bridge = await asyncio.shield(spawning)
+                            break
+                        except asyncio.CancelledError:
+                            if spawning.cancelled():
+                                raise  # Unknown thread outcome remains visible to maintenance.
+                            cancelled = True
+                    if cancelled:
+                        closing = asyncio.create_task(asyncio.to_thread(bridge.close))
+                        while True:
+                            try:
+                                await asyncio.shield(closing)
+                                break
+                            except asyncio.CancelledError:
+                                if closing.cancelled():
+                                    raise
+                        reconciled = True
+                        raise asyncio.CancelledError
+                    try:
+                        birth = psutil.Process(bridge.pid).create_time()
+                    except Exception:
+                        await asyncio.to_thread(bridge.close)
+                        reconciled = True
+                        raise TerminalRejected("terminal_unavailable") from None
+                    item = Shell(owner, expiry, bridge, birth, body["request_id"], last_seen=self.clock())
+                    self.sessions[key] = item
+                    item.task = asyncio.create_task(self._drain(item))
+                    reconciled = True
+                    return item.status()
+                finally:
+                    # A factory/cleanup failure can leave an unknown child;
+                    # service cgroup recovery must reconcile that work.
+                    if reconciled:
+                        self.pending_spawns -= 1
         item = self.sessions.get(key)
         if item is None or item.state == "closed":
             if operation == "status":
@@ -290,6 +352,7 @@ class OwnerTerminals:
                 if item.state != "open":
                     raise TerminalRejected("terminal_closed")
                 item.descendants.update(await asyncio.to_thread(_children, item.bridge.pid, item.birth))
+                self._require_available()
                 item.last_sequence, item.last_outcome = sequence, "uncertain"
                 try:
                     if await item.bridge.write(data, timeout=10):
@@ -298,6 +361,7 @@ class OwnerTerminals:
                     pass
                 return item.status()
             if operation == "resize":
+                self._require_available()
                 item.bridge.resize(_integer(body.get("cols"), 2, 2000), _integer(body.get("rows"), 2, 1000))
                 return item.status()
             if operation == "close":
@@ -356,6 +420,10 @@ def owner_terminal_features():
     except ImportError:
         supported = False
     return {"owner_terminal": {"supported": supported, "version": 1, "mode": "owner_vm_shell"}}
+
+
+def owner_terminal_active_count():
+    return _manager.active_count() if _manager is not None else 0
 
 
 async def handle_owner_terminal(adapter, request, *, operation):

@@ -12,6 +12,10 @@
     return btoa(text);
   };
   const from64 = text => Uint8Array.from(atob(text), byte => byte.charCodeAt(0));
+  const action = (button, icon, label) => {
+    if (window.RadhouseIcons) window.RadhouseIcons.decorate(button, icon, label);
+    else button.textContent = label;
+  };
 
   class OwnerTerminalView {
     constructor(root, {request, tab, onAuthRequired = null, onContextChange = null}) {
@@ -26,6 +30,8 @@
       header.append(make("h2", "Agent VM terminal"));
       this.openButton = make("button", "Open terminal"); this.openButton.type = "button";
       this.closeButton = make("button", "Close terminal"); this.closeButton.type = "button";
+      action(this.openButton, "terminal", "Open terminal");
+      action(this.closeButton, "close", "Close terminal");
       this.closeButton.hidden = true; header.append(this.openButton, this.closeButton);
       this.status = make("p", "Open a terminal when you need it.", "owner-terminal-status");
       this.status.setAttribute("role", "status"); this.status.setAttribute("aria-live", "polite");
@@ -36,7 +42,9 @@
         make("p", "Opening this page keeps the terminal asleep. Open terminal to start."));
       const contextLabel = make("label", null, "owner-terminal-context");
       this.checkbox = make("input"); this.checkbox.type = "checkbox";
-      contextLabel.append(this.checkbox, document.createTextNode(" Include terminal context in my next message"));
+      const contextText = make("span", "Include terminal context in my next message");
+      if (window.RadhouseIcons) window.RadhouseIcons.decorate(contextText, "terminal-context", contextText.textContent);
+      contextLabel.append(this.checkbox, contextText);
       const explanation = make("p", "Only selected text, or the last 20 visible lines, is shared when you send a message.", "owner-terminal-context-help");
       this.root.replaceChildren(header, this.status, this.placeholder, this.viewport, contextLabel, explanation);
       this.openButton.addEventListener("click", () => { void this.open(); });
@@ -82,7 +90,7 @@
       this.binding = binding; this.state = value.state; this.sequence = value.last_sequence;
       if (changed) { this.cursor = 0; this.term?.reset(); }
       this.closeButton.hidden = !this.available;
-      this.openButton.textContent = this.available ? "Reconnect terminal" : "Open terminal";
+      action(this.openButton, "terminal", this.available ? "Reconnect terminal" : "Open terminal");
       this.viewport.hidden = !this.available; this.placeholder.hidden = this.available;
       if (this.available) this._mount();
       this.status.textContent = this.state === "open" ? "Terminal ready. Commands run as the assistant VM’s unprivileged user."
@@ -253,7 +261,7 @@
       this.writing = Promise.resolve(); this.inputUnconfirmed = false; this.contextEnabled = false;
       this.actionPending = false; this.actionToken = null; this.openButton.disabled = false; this.closeButton.disabled = false;
       this.viewport.replaceChildren(); this.viewport.hidden = true; this.placeholder.hidden = false;
-      this.closeButton.hidden = true; this.openButton.textContent = "Open terminal";
+      this.closeButton.hidden = true; action(this.openButton, "terminal", "Open terminal");
       this.status.textContent = "Open a terminal when you need it.";
     }
   }
