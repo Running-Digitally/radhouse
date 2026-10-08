@@ -205,6 +205,12 @@ of context length.
 Downloads require the same signed-in owner. Images/audio support streaming range
 requests; other originals are forced downloads with content sniffing disabled.
 
+## Design references
+
+The [agent identity documentation mock](docs/design/agent-identity.md) includes
+the runnable profile/settings preview, four character themes, and a component
+reuse map for the main UI. Run `python3 brand/preview_settings.py` to try it locally.
+
 ## Verify locally
 
 For security and code-quality analysis after a merge, run the
