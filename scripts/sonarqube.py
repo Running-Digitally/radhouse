@@ -165,7 +165,7 @@ def analyze(root: Path, scanner: str, host: str, credential: str, *, dry_run: bo
         output.mkdir(parents=True)
         receipt = {"source_commit": revision, "branch": "main", "project_key": "Running-Digitally_radhouse",
                    "project_version": version, "started_at": stamp, "test_coverage_imported": False}
-        args = [executable, f"-Dproject.settings={settings}", f"-Dsonar.projectBaseDir={checkout}",
+        args = [executable, f"-Dsonar.projectBaseDir={checkout}",
                 f"-Dsonar.scm.revision={revision}", f"-Dsonar.projectVersion={version}",
                 f"-Dsonar.scanner.metadataFilePath={output / 'report-task.txt'}"]
         print(f"Local scan evidence: {output}", flush=True)
