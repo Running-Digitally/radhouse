@@ -41,7 +41,8 @@ def test_infrastructure_keeps_missing_and_failed_policy_explicitly_unverified(tm
     def failed(): raise RuntimeError("secret-token")
     admin.network_policy_probe = failed
     result = admin.infrastructure()["browser_network_policy"]
-    assert result["verified"] is False and result["source"] is None
+    assert result['verified'] is False
+    assert result['source'] is None
     assert "secret-token" not in str(result)
     admin.network_policy_probe = policy
     assert admin.infrastructure()["browser_network_policy"] == policy()

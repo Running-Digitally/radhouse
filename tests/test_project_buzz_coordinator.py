@@ -199,7 +199,8 @@ def test_ambiguous_project_goal_uses_one_tools_disabled_plan_then_routes_once(
         assert state.planning_task_id == tasks[0].task_id
 
     result = Coordinator(service, "worker-one").run_once()
-    assert len(result.receipts) == 1 and result.receipts[0].outcome == "completed"
+    assert len(result.receipts) == 1
+    assert result.receipts[0].outcome == 'completed'
     cycle.ingress()
 
     with store.transaction() as tx:
@@ -209,7 +210,8 @@ def test_ambiguous_project_goal_uses_one_tools_disabled_plan_then_routes_once(
             task for task in tasks
             if task.bot_id == "bot-alpha" and not task.disable_tools
         ]
-        assert len(tasks) == 2 and len(research_tasks) == 1
+        assert len(tasks) == 2
+        assert len(research_tasks) == 1
         assert research_tasks[0].files == (source_file,)
         assert state.phase == "research"
         assert state.active_task_id == research_tasks[0].task_id
@@ -220,14 +222,16 @@ def test_ambiguous_project_goal_uses_one_tools_disabled_plan_then_routes_once(
 
     fake_work.result_content = "The CSV contains one two-person expense group."
     result = Coordinator(service, "worker-one").run_once()
-    assert len(result.receipts) == 1 and result.receipts[0].outcome == "completed"
+    assert len(result.receipts) == 1
+    assert result.receipts[0].outcome == 'completed'
     cycle.ingress()
 
     with store.transaction() as tx:
         tasks = tx.tasks()
         state = tx.project_coordination("personal-alice")
         builder_tasks = [task for task in tasks if task.bot_id == "bot-beta"]
-        assert len(tasks) == 3 and len(builder_tasks) == 1
+        assert len(tasks) == 3
+        assert len(builder_tasks) == 1
         assert builder_tasks[0].files == (source_file,)
         assert builder_tasks[0].previous_result == fake_work.result_content
         assert state.phase == "building"
@@ -605,7 +609,8 @@ def test_project_pause_resume_and_stop_control_only_the_active_task(
     with store.transaction() as tx:
         tasks = tx.tasks()
         state = tx.project_coordination("personal-alice")
-        assert len(tasks) == 1 and tasks[0].task_id == task_id
+        assert len(tasks) == 1
+        assert tasks[0].task_id == task_id
         assert tasks[0].outcome == "cancelled"
         assert state.active_task_id is None
         assert state.handoff_bot_id is None

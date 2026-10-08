@@ -28,8 +28,10 @@ def test_guidance_stays_on_current_run_and_does_not_mutate_dispatch_input(servic
     updated = service.guide(alice, task.task_id, task.state_revision, "Focus on costs", envelope=command)
     replay = service.guide(alice, task.task_id, task.state_revision, "Focus on costs", envelope=command)
     assert replay == updated
-    assert len(calls) == 1 and updated.guidance[0]["state"] == "accepted"
-    assert updated.brief == task.brief and updated.budget_remaining == task.budget_remaining
+    assert len(calls) == 1
+    assert updated.guidance[0]['state'] == 'accepted'
+    assert updated.brief == task.brief
+    assert updated.budget_remaining == task.budget_remaining
     assert updated.attempt_id == task.attempt_id
     recovered = service.recover(task.task_id)
     assert "operation_unknown" not in recovered.blockers
@@ -48,8 +50,9 @@ def test_lost_guidance_reply_is_durable_and_never_replayed(service, service_fact
     restarted = service_factory()
     restarted.guide(alice, task.task_id, task.state_revision, "Use the attached figures", envelope=command)
     assert len(calls) == 1
+    prepared_envelope = envelope()
     with pytest.raises(Rejected, match="control_outcome_unknown"):
-        restarted.guide(alice, task.task_id, task2.state_revision, "Try again", envelope=envelope())
+        restarted.guide(alice, task.task_id, task2.state_revision, 'Try again', envelope=prepared_envelope)
 
 
 def test_guidance_applied_reconciles_across_restart_without_post_or_result_duplication(
@@ -69,12 +72,14 @@ def test_guidance_applied_reconciles_across_restart_without_post_or_result_dupli
     fake_work.result = lambda *_: RuntimeResult("completed", "Guided result", guidance_receipts=(applied,))
     restarted = service_factory()
     done = restarted.recover(task.task_id)
-    assert done.phase == "closed" and done.result == "Guided result"
+    assert done.phase == 'closed'
+    assert done.result == 'Guided result'
     assert done.guidance[0]["application_state"] == "applied"
     assert done.guidance[0]["application_final"]
     assert restarted.advance(task.task_id, "worker") == done
     assert task.task_id not in restarted.coordination_candidates(100)
-    assert len(admitted) == 1 and fake_work.start_count == 1
+    assert len(admitted) == 1
+    assert fake_work.start_count == 1
     with store.transaction() as tx:
         assert tx.operation(applied.control_id).state == "confirmed"
 
@@ -97,8 +102,10 @@ def test_terminal_get_before_lost_post_receipt_remains_reconcilable(
     fake_work.result = lambda *_: RuntimeResult("completed", "Original result", guidance_receipts=tuple(observed))
     recovered = service_factory().advance(task.task_id, "worker")
     assert recovered.guidance[0]["application_state"] == "too_late"
-    assert recovered.result_digest == done.result_digest and recovered.attempt_id == done.attempt_id
-    assert len(observed) == 1 and fake_work.start_count == 1
+    assert recovered.result_digest == done.result_digest
+    assert recovered.attempt_id == done.attempt_id
+    assert len(observed) == 1
+    assert fake_work.start_count == 1
 
 
 def test_concurrent_poll_newer_than_post_never_regresses_receipt_or_operation(
@@ -158,8 +165,9 @@ def test_legacy_runtime_refuses_new_guidance_before_saving_or_posting(service, f
     capabilities = fake_work.capabilities(task)
     fake_work.capabilities = lambda _: replace(capabilities, guidance_receipts=False)
     fake_work.steer = lambda *args, **kwargs: pytest.fail("unsupported guidance must not post")
+    prepared_envelope_2 = envelope()
     with pytest.raises(Rejected, match="runtime_guidance_receipts_unavailable"):
-        service.guide(alice, task.task_id, task.state_revision, "Update", envelope=envelope())
+        service.guide(alice, task.task_id, task.state_revision, 'Update', envelope=prepared_envelope_2)
     assert service.get(alice, task.task_id, envelope=envelope()) == task
 
 
@@ -174,14 +182,17 @@ def test_paused_task_reconciles_original_run_without_starting_another(service, f
     service.pause(alice, task.task_id, guided.state_revision, envelope=envelope())
     fake_work.result = lambda *_: RuntimeResult("cancelled", guidance_receipts=())
     paused = service.recover(task.task_id)
-    assert paused.phase == "queued" and paused.attempt_id is None and "human_pause" in paused.blockers
+    assert paused.phase == 'queued'
+    assert paused.attempt_id is None
+    assert 'human_pause' in paused.blockers
     fake_work.result = lambda task, dispatch: (
         RuntimeResult("cancelled", guidance_receipts=tuple(values))
         if dispatch.run_id == values[0].run_id else pytest.fail("wrong attempt queried")
     )
     assert task.task_id in service.coordination_candidates(100)
     reconciled = service.advance(task.task_id, "worker")
-    assert reconciled.phase == "queued" and reconciled.attempt_id is None
+    assert reconciled.phase == 'queued'
+    assert reconciled.attempt_id is None
     assert reconciled.guidance[0]["application_state"] == "not_applied"
     assert fake_work.start_count == 1
     assert task.task_id not in service.coordination_candidates(100)
@@ -202,7 +213,8 @@ def test_permission_requires_exact_request_and_existing_grant(service, fake_work
     command = envelope()
     result = respond(replace(alice, assurance_until=clock()), "once", command)
     respond(alice, "once", command)
-    assert len(called) == 1 and result.guidance[-1]["choice"] == "once"
+    assert len(called) == 1
+    assert result.guidance[-1]['choice'] == 'once'
 
 
 def test_lost_denial_retries_once_when_exact_request_remains_pending(
@@ -281,7 +293,8 @@ def test_lost_approval_is_never_retried(
     )
     fake_work.approve = lambda *args: pytest.fail("lost approval must never retry")
     service.recover(task.task_id)
-    assert len(calls) == 1 and unknown.guidance[-1]["state"] == "unknown"
+    assert len(calls) == 1
+    assert unknown.guidance[-1]['state'] == 'unknown'
 
 
 def test_lost_denial_is_not_retried_after_the_request_changes(
@@ -473,15 +486,20 @@ def test_files_and_followup_context_are_selected_snapshots(service, alice, bob, 
     second = service.admit(alice, envelope(), replace(start, brief="Summarize this", follows_task_id=first.task_id,
         files=(InputFile("numbers.txt", "42"),)))
     assert second.previous_result == first.result
-    assert first.result in runtime_input(second) and "numbers.txt\n42" in runtime_input(second)
+    assert first.result in runtime_input(second)
+    assert 'numbers.txt\n42' in runtime_input(second)
     assert service.get(alice, second.task_id, envelope=envelope()).files == second.files
+    prepared_argument_2 = envelope(principal='bob')
+    prepared_argument_3 = replace(start, follows_task_id=first.task_id)
     with pytest.raises(Rejected):
-        service.admit(bob, envelope(principal="bob"), replace(start, follows_task_id=first.task_id))
+        service.admit(bob, prepared_argument_2, prepared_argument_3)
 
 
 def test_files_exceeding_total_byte_limit_are_refused(service, alice, envelope, start):
+    prepared_argument_2_2 = envelope()
+    prepared_argument_3_2 = replace(start, files=(InputFile('data.txt', 'é' * 40000),))
     with pytest.raises(Rejected, match="invalid_input_files"):
-        service.admit(alice, envelope(), replace(start, files=(InputFile("data.txt", "é" * 40000),)))
+        service.admit(alice, prepared_argument_2_2, prepared_argument_3_2)
 
 
 def test_image_digest_is_required_to_match_the_decoded_pixels(service, alice, envelope, start):
@@ -490,5 +508,7 @@ def test_image_digest_is_required_to_match_the_decoded_pixels(service, alice, en
         "screen.png", base64.b64encode(b"pixels").decode(),
         "image/png", "base64", "0" * 64,
     )
+    prepared_argument_2_3 = envelope()
+    prepared_argument_3_3 = replace(start, files=(image,))
     with pytest.raises(Rejected, match="invalid_input_files"):
-        service.admit(alice, envelope(), replace(start, files=(image,)))
+        service.admit(alice, prepared_argument_2_3, prepared_argument_3_3)

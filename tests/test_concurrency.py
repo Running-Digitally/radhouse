@@ -86,13 +86,16 @@ def test_stale_cas_cannot_overwrite_concurrent_progress(store, alice):
 def test_claim_and_budget_roll_back_together(store, alice):
     task = _insert_task(store, alice)
     attempt = Attempt(f"attempt-{uuid4().hex}", task.task_id, 1, "worker-synthetic")
-    with pytest.raises(RuntimeError, match="fixture_interrupt"):
+    def interrupted_transaction():
         with store.transaction() as uow:
             assert uow.claim(task, attempt)
             active = task.evolve(phase="active", attempt_id=attempt.attempt_id,
                                  generation=1, budget_remaining=2)
             uow.save_task(active, task.state_revision)
             raise RuntimeError("fixture_interrupt")
+
+    with pytest.raises(RuntimeError, match="fixture_interrupt"):
+        interrupted_transaction()
     with store.transaction() as uow:
         assert uow.task(task.task_id) == task
         assert uow.attempt(attempt.attempt_id) is None
@@ -116,8 +119,10 @@ def test_concurrent_idempotent_admission_has_one_task(service, store, alice, env
         assert uow.command(alice.principal_id, first.command_key).task_id == results[0].task_id
         assert uow.delivery(first.channel, first.event_id).task_id == results[0].task_id
         assert uow.delivery(second.channel, second.event_id).task_id == results[0].task_id
+    prepared_argument_2 = envelope(command_key=first.command_key)
+    prepared_argument_3 = replace(start, brief='Different synthetic input')
     with pytest.raises(Rejected, match="command_conflict"):
-        service.admit(alice, envelope(command_key=first.command_key), replace(start, brief="Different synthetic input"))
+        service.admit(alice, prepared_argument_2, prepared_argument_3)
 
 
 @pytest.mark.postgres
@@ -229,11 +234,14 @@ def test_pause_resume_preserves_prepared_attempt_and_spent_budget(service, store
 def test_runtime_role_cannot_modify_schema_or_identity_ownership(store, statement):
     from psycopg.errors import InsufficientPrivilege
 
-    with pytest.raises(InsufficientPrivilege):
+    def attempt_forbidden_statement():
         with store.transaction() as uow:
             uow._connection.execute(statement)
             # Roll back even when this security assertion fails on a bad fixture.
             raise AssertionError("runtime role unexpectedly has bootstrap authority")
+
+    with pytest.raises(InsufficientPrivilege):
+        attempt_forbidden_statement()
 
 
 @pytest.mark.parametrize("ownership", [
@@ -265,6 +273,9 @@ def test_missing_or_mismatched_marker_never_exposes_unit_of_work(monkeypatch, ow
 
     monkeypatch.setattr("radhouse.storage.postgres.psycopg.connect", lambda **kwargs: MarkerConnection())
     store = PostgresStore(f"host=127.0.0.1 dbname={DATABASE}", RUN_ID)
-    with pytest.raises(FixtureBoundaryError):
+    def attempt_unowned_transaction():
         with store.transaction():
             raise AssertionError("an unowned fixture exposed transactional access")
+
+    with pytest.raises(FixtureBoundaryError):
+        attempt_unowned_transaction()

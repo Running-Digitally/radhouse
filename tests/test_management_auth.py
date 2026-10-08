@@ -55,8 +55,9 @@ def test_management_role_uses_current_role_and_session_identity(management_ident
     with psycopg.connect(dsn) as db:
         db.execute("UPDATE actors SET role='viewer' WHERE principal_id=%s", (session.principal_id,))
     assert auth.management_role(session) == "viewer"
+    prepared_argument_1 = replace(session, principal_id='unrelated-principal')
     with pytest.raises(Rejected, match="authentication_required"):
-        auth.management_role(replace(session, principal_id="unrelated-principal"))
+        auth.management_role(prepared_argument_1)
     with psycopg.connect(dsn) as db:
         db.execute("UPDATE local_sessions SET absolute_expires_at=%s WHERE principal_id=%s",
                    (now, session.principal_id))

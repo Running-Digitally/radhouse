@@ -7,7 +7,7 @@ import hashlib
 import hmac
 import re
 import secrets
-from typing import Callable
+from typing import Callable, TypedDict, Unpack
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
@@ -63,7 +63,7 @@ def _username(value: str) -> str:
 def _fernet(key: str) -> Fernet:
     try:
         return Fernet(key.encode("ascii"))
-    except (ValueError, UnicodeError):
+    except ValueError:
         raise LocalAuthError("invalid_local_auth_key") from None
 
 
@@ -82,6 +82,26 @@ def _verified_connection(connection, deployment_id: str, database: str) -> None:
         raise LocalAuthError("database_identity_mismatch")
 
 
+@dataclass(frozen=True)
+class InitialWorkHome:
+    """The project and configured bot granted when a local account is created."""
+    project_id: str
+    project_name: str
+    bot_id: str
+    bot_display_name: str
+    bot_role_name: str
+    provider_binding: str
+
+
+class InitialWorkHomeFields(TypedDict):
+    project_id: str
+    project_name: str
+    bot_id: str
+    bot_display_name: str
+    bot_role_name: str
+    provider_binding: str
+
+
 def provision_local_user(
     dsn: str,
     *,
@@ -93,15 +113,12 @@ def provision_local_user(
     role: str,
     password: str,
     totp_secret: str,
-    project_id: str,
-    project_name: str,
-    bot_id: str,
-    bot_display_name: str,
-    bot_role_name: str,
-    provider_binding: str,
+    initial_work_home: InitialWorkHome | None = None,
     now: datetime | None = None,
+    **initial_fields: Unpack[InitialWorkHomeFields],
 ) -> None:
-    """Create one explicitly scoped local user and its initial work-home grant."""
+    """Create one scoped account; legacy work-home keyword fields remain accepted."""
+    initial_work_home = _initial_work_home(initial_work_home, initial_fields)
     normalized = _username(username)
     if role not in {"admin", "operator", "viewer"}:
         raise LocalAuthError("invalid_role")
@@ -110,7 +127,7 @@ def provision_local_user(
     if not re.fullmatch(r"[A-Z2-7]{16,128}", totp_secret):
         raise LocalAuthError("invalid_totp_secret")
     if not all(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", item)
-               for item in (principal_id, project_id, bot_id)):
+               for item in (principal_id, initial_work_home.project_id, initial_work_home.bot_id)):
         raise LocalAuthError("invalid_identifier")
     current = now or datetime.now(timezone.utc)
     password_hash = PasswordHasher().hash(password)
@@ -124,12 +141,12 @@ def provision_local_user(
                 "INSERT INTO public.bots"
                 "(bot_id,display_name,role_name,provider_binding,state) "
                 "VALUES (%s,%s,%s,%s,'ready') ON CONFLICT (bot_id) DO NOTHING",
-                (bot_id, bot_display_name, bot_role_name, provider_binding),
+                (initial_work_home.bot_id, initial_work_home.bot_display_name, initial_work_home.bot_role_name, initial_work_home.provider_binding),
             )
             bot = connection.execute(
-                "SELECT provider_binding FROM public.bots WHERE bot_id=%s", (bot_id,)
+                "SELECT provider_binding FROM public.bots WHERE bot_id=%s", (initial_work_home.bot_id,)
             ).fetchone()
-            if bot is None or bot["provider_binding"] != provider_binding:
+            if bot is None or bot["provider_binding"] != initial_work_home.provider_binding:
                 raise LocalAuthError("bot_binding_mismatch")
             connection.execute(
                 "INSERT INTO public.actors(principal_id,role,active) VALUES (%s,%s,true) "
@@ -139,45 +156,45 @@ def provision_local_user(
             connection.execute(
                 "INSERT INTO public.projects(project_id,owner_id,display_name,state) "
                 "VALUES (%s,%s,%s,'active') ON CONFLICT (project_id) DO NOTHING",
-                (project_id, principal_id, project_name),
+                (initial_work_home.project_id, principal_id, initial_work_home.project_name),
             )
             owner = connection.execute(
-                "SELECT owner_id FROM public.projects WHERE project_id=%s", (project_id,)
+                "SELECT owner_id FROM public.projects WHERE project_id=%s", (initial_work_home.project_id,)
             ).fetchone()
             if owner is None or owner["owner_id"] != principal_id:
                 raise LocalAuthError("project_owner_mismatch")
-            state = ProjectCoordination(project_id).validate()
+            state = ProjectCoordination(initial_work_home.project_id).validate()
             connection.execute(
                 "INSERT INTO public.project_coordination"
                 "(project_id,revision,phase,active_task_id,snapshot) "
                 "VALUES (%s,%s,%s,NULL,%s) ON CONFLICT (project_id) DO NOTHING",
-                (project_id, state.revision, state.phase, Jsonb(asdict(state))),
+                (initial_work_home.project_id, state.revision, state.phase, Jsonb(asdict(state))),
             )
             connection.execute(
                 "INSERT INTO public.bot_grants(principal_id,bot_id) VALUES (%s,%s) "
-                "ON CONFLICT DO NOTHING", (principal_id, bot_id),
+                "ON CONFLICT DO NOTHING", (principal_id, initial_work_home.bot_id),
             )
             connection.execute(
                 "INSERT INTO public.project_members(principal_id,project_id) VALUES (%s,%s) "
-                "ON CONFLICT DO NOTHING", (principal_id, project_id),
+                "ON CONFLICT DO NOTHING", (principal_id, initial_work_home.project_id),
             )
             connection.execute(
                 "INSERT INTO public.project_bots(project_id,bot_id) VALUES (%s,%s) "
-                "ON CONFLICT DO NOTHING", (project_id, bot_id),
+                "ON CONFLICT DO NOTHING", (initial_work_home.project_id, initial_work_home.bot_id),
             )
-            conversation_id = f"{project_id}:{principal_id}:radhouse"
+            conversation_id = f"{initial_work_home.project_id}:{principal_id}:radhouse"
             existing = connection.execute(
                 "SELECT principal_id,project_id FROM public.channel_bindings "
                 "WHERE channel='radhouse' AND subject=%s AND conversation_id=%s",
                 (normalized, conversation_id),
             ).fetchone()
-            if existing and existing != {"principal_id": principal_id, "project_id": project_id}:
+            if existing and existing != {"principal_id": principal_id, "project_id": initial_work_home.project_id}:
                 raise LocalAuthError("binding_conflict")
             connection.execute(
                 "INSERT INTO public.channel_bindings"
                 "(channel,subject,conversation_id,principal_id,project_id,revision,active) "
                 "VALUES ('radhouse',%s,%s,%s,%s,1,true) ON CONFLICT DO NOTHING",
-                (normalized, conversation_id, principal_id, project_id),
+                (normalized, conversation_id, principal_id, initial_work_home.project_id),
             )
             connection.execute(
                 "INSERT INTO public.local_credentials"
@@ -359,12 +376,25 @@ class LocalAuthService:
         # accepted as CSRF proof.
         return self._keyed_digest("csrf:" + token)
 
+    def _totp_counter(self, credential, totp_code, now):
+        try:
+            secret = self._fernet.decrypt(bytes(credential["totp_secret_ciphertext"]))
+            totp = pyotp.TOTP(secret.decode("ascii"))
+            current = int(now.timestamp()) // totp.interval
+            last = credential["last_totp_counter"]
+            matches = [candidate for candidate in range(current - 1, current + 2)
+                       if (last is None or candidate > last)
+                       and hmac.compare_digest(totp.at(candidate * totp.interval), totp_code)]
+            return max(matches) if matches else None
+        except (InvalidToken, ValueError):
+            return None
+
     def _verify_credentials(self, connection, username, password, totp_code, source, now):
         try:
             normalized = _username(username)
         except LocalAuthError:
             normalized = "invalid"
-        if len(password) > 1024 or not re.fullmatch(r"[0-9]{6}", totp_code):
+        if len(password) > 1024 or not re.fullmatch(r"\d{6}", totp_code, re.ASCII):
             raise Rejected("invalid_credentials", 401)
         username_hash = self._keyed_digest(normalized)
         source_hash = self._keyed_digest(source)
@@ -390,17 +420,7 @@ class LocalAuthService:
             pass
         counter = None
         if credential and credential["active"] and password_ok:
-            try:
-                secret = self._fernet.decrypt(bytes(credential["totp_secret_ciphertext"]))
-                totp = pyotp.TOTP(secret.decode("ascii"))
-                current = int(now.timestamp()) // totp.interval
-                last = credential["last_totp_counter"]
-                matches = [candidate for candidate in range(current - 1, current + 2)
-                           if (last is None or candidate > last)
-                           and hmac.compare_digest(totp.at(candidate * totp.interval), totp_code)]
-                counter = max(matches) if matches else None
-            except (InvalidToken, UnicodeError, ValueError):
-                pass
+            counter = self._totp_counter(credential, totp_code, now)
         if not credential or not credential["active"] or not password_ok or counter is None:
             self._record_failure(connection, username_hash, source_hash, throttle, now)
             connection.commit()  # Authentication failures must retain their throttle.
@@ -590,3 +610,12 @@ class LocalAuthService:
                 )
         except (psycopg.Error, ApplicationStorageError):
             raise Rejected("authentication_unavailable", 503) from None
+
+def _initial_work_home(initial_work_home, initial_fields):
+    if initial_work_home is None:
+        initial_work_home = InitialWorkHome(**initial_fields)
+    elif initial_fields or not isinstance(initial_work_home, InitialWorkHome):
+        raise TypeError("supply one InitialWorkHome or its keyword fields")
+    return initial_work_home
+
+

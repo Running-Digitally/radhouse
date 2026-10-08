@@ -17,6 +17,13 @@ function button(label: string, selected: boolean, id: string, controls: string):
   return node;
 }
 
+function tabTarget(key: string, index: number): number | null {
+  if (key === "Home") return 0;
+  if (key === "End") return 1;
+  if (["ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown"].includes(key)) return (index + 1) % 2;
+  return null;
+}
+
 /** Render locally. The exact source remains the review, digest and download authority. */
 export function resultViewer(source: string): HTMLElement {
   const viewer = document.createElement("section");
@@ -69,9 +76,7 @@ export function resultViewer(source: string): HTMLElement {
   sourceButton.onclick = () => show("source");
   for (const [index, tab] of [previewButton, sourceButton].entries()) {
     tab.onkeydown = (event) => {
-      const target = event.key === "Home" ? 0 : event.key === "End" ? 1
-        : event.key === "ArrowLeft" || event.key === "ArrowUp" ? (index + 1) % 2
-        : event.key === "ArrowRight" || event.key === "ArrowDown" ? (index + 1) % 2 : null;
+      const target = tabTarget(event.key, index);
       if (target === null) return;
       event.preventDefault();
       show(target === 0 ? "preview" : "source");

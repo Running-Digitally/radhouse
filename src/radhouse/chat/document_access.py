@@ -101,45 +101,81 @@ class DocumentAccess:
             raise Rejected("document_locator_invalid", 422)
         return self._operate(file_id, "read", locator=locator, cursor=cursor)
 
+
+    def _validate_resume(self, attachment, position, resume):
+        if (attachment.kind != "text" or type(resume) is not dict
+                or set(resume) != {"cookie", "line", "offset", "index", "has_text"}
+                or any(type(resume[key]) is not int or resume[key] < 0
+                       for key in ("cookie", "line", "offset", "index"))
+                or resume["line"] < 1 or resume["cookie"].bit_length() > 512
+                or type(resume["has_text"]) is not bool
+                or not 0 <= position - resume["index"] <= 1):
+            raise ValueError()
+
+
+    def _decode_cursor(self, cursor, binding, attachment):
+        position, resume = 0, None
+        if cursor is None:
+            return position, resume
+        try:
+            if type(cursor) is not str or len(cursor) > 4096:
+                raise ValueError()
+            signed = json.loads(base64.b64decode(cursor, altchars=b"-_", validate=True))
+            if (type(signed) is not dict or set(signed) != {"body", "signature"}
+                    or type(signed["body"]) is not dict or type(signed["signature"]) is not str
+                    or re.fullmatch(r"[a-f0-9]{64}", signed["signature"]) is None
+                    or not hmac.compare_digest(signed["signature"], self._signature(signed["body"]))):
+                raise ValueError()
+            decoded = signed["body"]
+            if type(decoded) is not dict or set(decoded) != {"binding", "position", "resume"} or decoded["binding"] != binding:
+                raise ValueError()
+            position = decoded["position"]
+            if type(position) is not int or not 0 <= position <= 2**63 - 1:
+                raise ValueError()
+            resume = decoded["resume"]
+            if resume is not None:
+                self._validate_resume(attachment, position, resume)
+        except (ValueError, TypeError, RecursionError):
+            raise Rejected("document_cursor_invalid", 422) from None
+        return position, resume
+
+
+    def _parser_result(self, value, file_id, attachment, binding, position):
+        passages = tuple(Passage(**entry) for entry in value["passages"])
+        if (type(value["complete"]) is not bool or len(passages) > 8
+                or any(type(field) is not str for entry in passages for field in (entry.locator, entry.label, entry.text))):
+            raise ValueError()
+        next_position = value["next_position"]
+        continuation = None
+        if next_position is not None:
+            if type(next_position) is not int or next_position <= position or value["complete"]:
+                raise ValueError()
+            body = {"binding": binding, "position": next_position, "resume": value.get("next_resume")}
+            continuation = base64.urlsafe_b64encode(json.dumps(
+                {"body": body, "signature": self._signature(body)}, ensure_ascii=False,
+                separators=(",", ":")).encode()).decode()
+        elif not value["complete"]:
+            raise ValueError()
+        return DocumentResult(file_id, attachment.sha256, passages, continuation, value["complete"])
+
+
     def _operate(self, file_id, operation, *, query=None, locator=None, cursor=None):
         attachment = self._source(file_id)
         binding = {"v": PARSER_VERSION, "file_id": file_id, "sha256": attachment.sha256,
                    "operation": operation, "query": hashlib.sha256(query.encode()).hexdigest() if query else None,
                    "locator": locator}
-        position, resume = 0, None
-        if cursor is not None:
-            try:
-                if type(cursor) is not str or len(cursor) > 4096:
-                    raise ValueError()
-                signed = json.loads(base64.b64decode(cursor, altchars=b"-_", validate=True))
-                if (type(signed) is not dict or set(signed) != {"body", "signature"}
-                        or type(signed["body"]) is not dict or type(signed["signature"]) is not str
-                        or re.fullmatch(r"[a-f0-9]{64}", signed["signature"]) is None
-                        or not hmac.compare_digest(signed["signature"], self._signature(signed["body"]))):
-                    raise ValueError()
-                decoded = signed["body"]
-                if type(decoded) is not dict or set(decoded) != {"binding", "position", "resume"} or decoded["binding"] != binding:
-                    raise ValueError()
-                position = decoded["position"]
-                if type(position) is not int or not 0 <= position <= 2**63 - 1:
-                    raise ValueError()
-                resume = decoded["resume"]
-                if resume is not None:
-                    if (attachment.kind != "text" or type(resume) is not dict
-                            or set(resume) != {"cookie", "line", "offset", "index", "has_text"}
-                            or any(type(resume[key]) is not int or resume[key] < 0
-                                   for key in ("cookie", "line", "offset", "index"))
-                            or resume["line"] < 1 or resume["cookie"].bit_length() > 512
-                            or type(resume["has_text"]) is not bool
-                            or not 0 <= position - resume["index"] <= 1):
-                        raise ValueError()
-            except (ValueError, TypeError, UnicodeDecodeError, RecursionError):
-                raise Rejected("document_cursor_invalid", 422) from None
+        position, resume = self._decode_cursor(cursor, binding, attachment)
         request = {"operation": operation, "query": query, "locator": locator, "position": position, "resume": resume,
                    "sha256": attachment.sha256,
                    "extension": ".txt" if attachment.kind == "text" else PurePath(attachment.name).suffix.lower()}
         if not _PARSER_SLOT.acquire(blocking=False):
             return DocumentResult(file_id, attachment.sha256, error="document_reader_busy")
+        try:
+            return self._read_in_child(request, file_id, attachment, binding, position)
+        finally:
+            _PARSER_SLOT.release()
+
+    def _read_in_child(self, request, file_id, attachment, binding, position):
         source_fd = None
         try:
             try:
@@ -165,22 +201,7 @@ class DocumentAccess:
                     if code == "document_source_changed":
                         raise Rejected(code, 409)
                     return DocumentResult(file_id, attachment.sha256, error=code)
-                passages = tuple(Passage(**entry) for entry in value["passages"])
-                if (type(value["complete"]) is not bool or len(passages) > 8
-                        or any(type(field) is not str for entry in passages for field in (entry.locator, entry.label, entry.text))):
-                    raise ValueError()
-                next_position = value["next_position"]
-                continuation = None
-                if next_position is not None:
-                    if type(next_position) is not int or next_position <= position or value["complete"]:
-                        raise ValueError()
-                    body = {"binding": binding, "position": next_position, "resume": value.get("next_resume")}
-                    continuation = base64.urlsafe_b64encode(json.dumps(
-                        {"body": body, "signature": self._signature(body)}, ensure_ascii=False,
-                        separators=(",", ":")).encode()).decode()
-                elif not value["complete"]:
-                    raise ValueError()
-                return DocumentResult(file_id, attachment.sha256, passages, continuation, value["complete"])
+                return self._parser_result(value, file_id, attachment, binding, position)
             except subprocess.TimeoutExpired:
                 return DocumentResult(file_id, attachment.sha256, error="document_operation_exhausted")
             except (OSError, ValueError, KeyError, TypeError):
@@ -188,4 +209,4 @@ class DocumentAccess:
         finally:
             if source_fd is not None:
                 os.close(source_fd)
-            _PARSER_SLOT.release()
+

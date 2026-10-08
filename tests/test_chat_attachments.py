@@ -174,7 +174,8 @@ def test_audio_is_transcribed_once_then_frozen_across_lost_ack(chat):
     class Speech:
         def transcribe(self,attachment): calls.append(attachment.data); return "Start with a simple conversation."
     service.transcriber = Speech(); hermes.lose_ack = True
-    with pytest.raises(Rejected): service.send("alice",key,"",decode_uploads([upload("note.wav",wav())]))
+    prepared_argument_4 = decode_uploads([upload('note.wav', wav())])
+    with pytest.raises(Rejected): service.send('alice', key, '', prepared_argument_4)
     assert len(calls) == 1
     assert "Audio transcript" in hermes.requests[0][1]["input"]
     assert "simple conversation" in hermes.requests[0][1]["input"]
@@ -196,15 +197,19 @@ def test_slow_preparation_starts_recovery_window_at_first_post_and_keeps_it_acro
             return "Prepared beyond the old reservation deadline."
     service.transcriber = Speech()
     key = str(uuid4()); hermes.lose_ack = True
+    prepared_argument_4_2 = decode_uploads([upload('note.wav', wav())])
     with pytest.raises(Rejected, match="assistant_unavailable"):
-        service.send("alice", key, "", decode_uploads([upload("note.wav", wav())]))
+        service.send('alice', key, '', prepared_argument_4_2)
     receipt = service.store.find("alice", key)
-    assert receipt["created_at"] == 1000 and receipt["first_dispatch_at"] == 1061
-    assert receipt["retry_until"] == 1121 and len(hermes.requests) == 1
+    assert receipt['created_at'] == 1000
+    assert receipt['first_dispatch_at'] == 1061
+    assert receipt['retry_until'] == 1121
+    assert len(hermes.requests) == 1
     now[0] = 1080; hermes.lose_ack = True
     restarted = ChatService(ChatStore(service.store.path), hermes.client, owner_id="alice", clock=lambda: now[0])
     with pytest.raises(Rejected, match="assistant_unavailable"): restarted.retry("alice", key)
-    assert hermes.requests[0] == hermes.requests[1] and len(hermes.runs) == len(calls) == 1
+    assert hermes.requests[0] == hermes.requests[1]
+    assert len(hermes.runs) == len(calls) == 1
     assert restarted.store.find("alice", key)["first_dispatch_at"] == 1061
     now[0] = 1121
     with pytest.raises(Rejected, match="reply_recovery_required"): restarted.retry("alice", key)
@@ -217,12 +222,14 @@ def test_audio_unavailability_preserves_original_and_frozen_not_read_outcome(cha
         def transcribe(self,attachment):
             calls.append(1); raise Rejected("audio_transcription_unavailable",503)
     service.transcriber = Speech(); hermes.lose_ack = True
+    prepared_argument_4_3 = decode_uploads([upload('note.wav', wav())])
     with pytest.raises(Rejected,match="assistant_unavailable"):
-        service.send("alice",key,"",decode_uploads([upload("note.wav",wav())]))
+        service.send('alice', key, '', prepared_argument_4_3)
     assert service.store.attachment("alice",key,0).data == wav()
     assert "original saved, not read" in hermes.requests[0][1]["input"]
     service.retry("alice",key)
-    assert len(calls) == 1 and hermes.requests[0] == hermes.requests[1]
+    assert len(calls) == 1
+    assert hermes.requests[0] == hermes.requests[1]
     assert service.store.history("alice")["turns"][0]["attachments"][0]["reading_state"] == "not_read"
 
 
@@ -261,7 +268,8 @@ def test_original_download_requires_owner_and_supports_audio_range(chat):
         assert reply.headers["content-disposition"].startswith("inline;")
         assert reply.headers["x-content-type-options"] == "nosniff"
         assert "attachment;" in client.get(path+"?download=true").headers["content-disposition"]
-        part = client.get(path,headers={"Range":"bytes=4-9"}); assert part.status_code == 206 and part.content == wav()[4:10]
+        part = client.get(path,headers={"Range":"bytes=4-9"}); assert part.status_code == 206
+        assert part.content == wav()[4:10]
         assert client.get(path,headers={"Range":"bytes=999999-"}).status_code == 416
         assert client.get(path.replace(key,str(uuid4()))).status_code == 404
         auth.principal = "bob"; assert client.get(path).status_code == 403
@@ -269,7 +277,8 @@ def test_original_download_requires_owner_and_supports_audio_range(chat):
 
 
 def test_names_and_base64_fixture_syntax_are_validated():
-    with pytest.raises(Rejected,match="attachment_invalid"): decode_uploads([upload("../image.png",PNG)])
+    prepared_argument_1 = [upload('../image.png', PNG)]
+    with pytest.raises(Rejected,match="attachment_invalid"): decode_uploads(prepared_argument_1)
     with pytest.raises(Rejected,match="attachment_invalid"): decode_uploads([{"name":"x.txt","content":"%%%"}])
     # Unknown, legacy, binary and empty originals are retained for later access.
     assert decode_uploads([upload("old.doc",b"old")])[0].kind == "file"
@@ -286,10 +295,12 @@ def test_scanned_and_encrypted_pdf_do_not_claim_readable_content(data,code):
 def test_office_expansion_and_xml_entities_are_refused():
     data = BytesIO()
     with ZipFile(data,"w",ZIP_DEFLATED) as archive: archive.writestr("word/document.xml",b"x"*1000000)
-    with pytest.raises(Rejected,match="document_too_complex"): extract_document(decode_uploads([upload("bomb.docx",data.getvalue())])[0])
+    prepared_argument_1_2 = decode_uploads([upload('bomb.docx', data.getvalue())])[0]
+    with pytest.raises(Rejected,match="document_too_complex"): extract_document(prepared_argument_1_2)
     data = BytesIO()
     with ZipFile(data,"w") as archive: archive.writestr("word/document.xml",b'<!DOCTYPE x [<!ENTITY e "injected">]><x>&e;</x>')
-    with pytest.raises(Rejected,match="document_unreadable"): extract_document(decode_uploads([upload("entities.docx",data.getvalue())])[0])
+    prepared_argument_1_3 = decode_uploads([upload('entities.docx', data.getvalue())])[0]
+    with pytest.raises(Rejected,match="document_unreadable"): extract_document(prepared_argument_1_3)
 
 
 def test_transcriber_uses_fixed_endpoint_multipart_and_bounds_result():
@@ -297,7 +308,8 @@ def test_transcriber_uses_fixed_endpoint_multipart_and_bounds_result():
     def respond(request):
         calls.append(request)
         assert request.url == "http://127.0.0.1:9000/v1/audio/transcriptions"
-        assert b'filename="note.wav"' in request.content and wav() in request.content
+        assert b'filename="note.wav"' in request.content
+        assert wav() in request.content
         return httpx.Response(200,json={"text":"Spoken words"})
     transcriber = Transcriber("http://127.0.0.1:9000/v1/audio/transcriptions",transport=httpx.MockTransport(respond))
     assert transcriber.transcribe(decode_uploads([upload("note.wav",wav())])[0]) == "Spoken words"
@@ -305,7 +317,8 @@ def test_transcriber_uses_fixed_endpoint_multipart_and_bounds_result():
     with pytest.raises(ValueError): Transcriber("http://example.com/v1/audio/transcriptions")
     for value,code in [({"text":""},"audio_no_speech"),({"text":"x"*(MAX_TEXT+1)},"attachment_text_too_large"),({"text":"x"*(MAX_TEXT*6+32769)},"audio_transcription_unavailable")]:
         client = Transcriber("http://127.0.0.1/v1/audio/transcriptions",transport=httpx.MockTransport(lambda _:httpx.Response(200,json=value)))
-        with pytest.raises(Rejected,match=code): client.transcribe(decode_uploads([upload("note.wav",wav())])[0])
+        prepared_argument_1_4 = decode_uploads([upload('note.wav', wav())])[0]
+        with pytest.raises(Rejected,match=code): client.transcribe(prepared_argument_1_4)
         client.close()
 
 
@@ -335,9 +348,11 @@ def test_large_stream_upload_and_many_files_do_not_expand_prompt_or_duplicate_st
         def chunks():
             for _ in range(count): yield chunk
         reply = client.put(f"/chat/files/{file_id}?name=large.txt",content=chunks(),headers=HEADERS)
-        assert reply.status_code == 200 and reply.json()["size"] == size > 34*1024*1024
+        assert reply.status_code == 200
+        assert reply.json()['size'] == size > 34 * 1024 * 1024
         attachment = service.store.upload("alice",file_id)
-        assert isinstance(attachment.data,Path) and attachment.data.stat().st_size == size
+        assert isinstance(attachment.data, Path)
+        assert attachment.data.stat().st_size == size
         expected = hashlib.sha256()
         for _ in range(count): expected.update(chunk)
         assert attachment.sha256 == expected.hexdigest()
@@ -355,15 +370,18 @@ def test_large_stream_upload_and_many_files_do_not_expand_prompt_or_duplicate_st
         assert client.post("/chat/messages",json=body,headers=HEADERS).status_code == 503
         restarted = ChatService(ChatStore(service.store.path),hermes.client,owner_id="alice",clock=lambda:1001)
         restarted.retry("alice",key)
-        assert hermes.requests[0] == hermes.requests[1] and len(hermes.runs) == 1
+        assert hermes.requests[0] == hermes.requests[1]
+        assert len(hermes.runs) == 1
         assert len(hermes.requests[0][1]["input"].encode()) < 262144
         history = client.get("/chat/history").json()["turns"][0]
-        assert len(history["attachments"]) == 7 and history["attachments"][0]["reading_state"] == "excerpt"
+        assert len(history['attachments']) == 7
+        assert history['attachments'][0]['reading_state'] == 'excerpt'
         with service.store.connection() as db:
             assert db.execute("SELECT length(data),file_id FROM attachments ORDER BY position").fetchone()[0] == 0
         path = f"/chat/messages/{key}/attachments/0"
         part = client.get(path,headers={"Range":f"bytes={size-20}-{size-1}"})
-        assert part.status_code == 206 and part.content == chunk[-20:]
+        assert part.status_code == 206
+        assert part.content == chunk[-20:]
         assert client.get(f"/chat/messages/{key}/attachments/6").content == b"small"
         # Download streaming verification avoids materializing the large original.
         digest = hashlib.sha256()
@@ -397,8 +415,10 @@ def test_interrupted_and_failed_storage_leave_no_partial_upload(chat, monkeypatc
     async def interrupted():
         async def body(): yield b"first chunk"; raise RuntimeError("lost client")
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url="http://127.0.0.1",cookies={auth.cookie_name:"synthetic-cookie"}) as client:
+            prepared_argument_1_5 = f'/chat/files/{uuid4()}?name=note.txt'
+            prepared_content = body()
             with pytest.raises(ExceptionGroup) as failure:
-                await client.put(f"/chat/files/{uuid4()}?name=note.txt",content=body(),headers=HEADERS)
+                await client.put(prepared_argument_1_5, content=prepared_content, headers=HEADERS)
             assert isinstance(failure.value.exceptions[0], RuntimeError)
             assert str(failure.value.exceptions[0]) == "lost client"
     asyncio.run(interrupted())
@@ -409,7 +429,8 @@ def test_interrupted_and_failed_storage_leave_no_partial_upload(chat, monkeypatc
     with TestClient(app,base_url="http://127.0.0.1") as client:
         client.cookies.set(auth.cookie_name,"synthetic-cookie")
         response = client.put(f"/chat/files/{uuid4()}?name=note.txt",content=b"note",headers=HEADERS)
-        assert response.status_code == 507 and response.json()["error"] == "file_storage_unavailable"
+        assert response.status_code == 507
+        assert response.json()['error'] == 'file_storage_unavailable'
     assert list(service.store.files_path.iterdir()) == []
 
 
@@ -420,7 +441,8 @@ def test_unreadable_document_and_oversize_images_remain_saved(chat):
     history = service.send("alice",key,"Keep the originals",files)
     saved = history["turns"][0]["attachments"]
     assert len(saved) == 7
-    assert saved[0]["reading_error"] == "document_encrypted" and saved[0]["reading_state"] == "not_read"
+    assert saved[0]['reading_error'] == 'document_encrypted'
+    assert saved[0]['reading_state'] == 'not_read'
     assert saved[1]["reading_state"] == saved[-1]["reading_state"] == "not_read"
     content = hermes.requests[0][1]["input"][0]["content"]
     assert len([c for c in content if c["type"] == "image_url"]) == 4
@@ -434,13 +456,15 @@ def test_upload_writes_before_request_finishes(chat):
         async def body():
             yield first
             temporary = list(service.store.files_path.iterdir())
-            assert len(temporary) == 1 and temporary[0].stat().st_size == len(first)
+            assert len(temporary) == 1
+            assert temporary[0].stat().st_size == len(first)
             with service.store.connection() as db:
                 assert db.execute("SELECT count(*) FROM uploads").fetchone()[0] == 0
             yield b"last block"
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(auth,service)),base_url="http://127.0.0.1",cookies={auth.cookie_name:"synthetic-cookie"}) as client:
             reply = await client.put(f"/chat/files/{file_id}?name=original.bin",content=body(),headers=HEADERS)
-            assert reply.status_code == 200 and reply.json()["size"] == len(first)+10
+            assert reply.status_code == 200
+            assert reply.json()['size'] == len(first) + 10
     asyncio.run(stream_proof())
     assert service.store.upload("alice",file_id).data.is_file()
 
@@ -453,7 +477,8 @@ def test_large_inventory_is_saved_even_when_this_reading_omits_entries(chat):
     service.retry("alice",key)
     assert hermes.requests[0] == hermes.requests[1]
     prompt = hermes.requests[0][1]["input"]
-    assert len(prompt.encode()) < 262144 and "additional originals are saved" in prompt
+    assert len(prompt.encode()) < 262144
+    assert 'additional originals are saved' in prompt
     assert len(service.store.history("alice")["turns"][0]["attachments"]) == 1000
     assert service.store.attachment("alice",key,999).size == 0
 

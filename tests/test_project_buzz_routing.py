@@ -100,7 +100,7 @@ def test_coordinator_mention_answers_status_even_while_builder_is_active():
 
     assert selected is builder
     assert "Project status · building" in response
-    assert cycle._coordinator_content({"content": "@Radhouse pause this work"}, bots) == "pause this work"
+    assert cycle._coordinator_content({"content": "@Radhouse pause this work"}) == "pause this work"
 
 
 @pytest.mark.parametrize("signed_mention", [False, True])

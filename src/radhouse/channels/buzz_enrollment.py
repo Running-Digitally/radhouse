@@ -76,7 +76,7 @@ class BuzzEnrollment:
         self.service = service
         self.candidates = candidates
 
-    def _authorize(self, tx, actor, envelope, candidate, *, assure=False):
+    def _authorize(self, tx, actor, envelope, candidate):
         if (
             not candidate.active
             or actor.channel != "buzz"
@@ -133,6 +133,34 @@ class BuzzEnrollment:
                 )
         return result
 
+
+    def _verify_directory(self, directory, candidate, bot):
+        event = verify_event(directory[0], 30177)
+        try:
+            content = json.loads(event["content"])
+        except ValueError:
+            content = None
+        directory_keys = {"name", "parallelism", "respond_to"}
+        if isinstance(content, dict) and "persona_id" in content:
+            directory_keys.add("persona_id")
+            try:
+                UUID(content["persona_id"])
+            except (TypeError, ValueError, AttributeError):
+                content = None
+        if (
+            event["pubkey"] != candidate.owner_pubkey
+            or event["tags"] != [["d", candidate.agent_pubkey]]
+            or not isinstance(content, dict)
+            or set(content) != directory_keys
+            or content.get("name") != bot.display_name
+            or content.get("respond_to") != "owner-only"
+            or not isinstance(content.get("parallelism"), int)
+            or isinstance(content.get("parallelism"), bool)
+            or not 1 <= content["parallelism"] <= 10
+        ):
+            raise Rejected("buzz_agent_directory_denied", 403)
+
+
     def enroll(self, actor, envelope, link_id, channel_id, attestation):
         configured = next(
             (item for item in self.candidates if item.candidate.link_id == link_id),
@@ -148,7 +176,7 @@ class BuzzEnrollment:
             raise Rejected("buzz_agent_channel_denied", 422) from None
         with self.service.store.transaction() as tx:
             bot = configured.profile(
-                self._authorize(tx, actor, envelope, candidate, assure=True)
+                self._authorize(tx, actor, envelope, candidate)
             )
             previous = tx.conversation_link(link_id)
             saved = tx.conversation_enrollment(link_id)
@@ -197,32 +225,9 @@ class BuzzEnrollment:
         )
         if len(directory) != 1:
             raise Rejected("buzz_agent_directory_unavailable", 409)
-        event = verify_event(directory[0], 30177)
-        try:
-            content = json.loads(event["content"])
-        except ValueError:
-            content = None
-        directory_keys = {"name", "parallelism", "respond_to"}
-        if isinstance(content, dict) and "persona_id" in content:
-            directory_keys.add("persona_id")
-            try:
-                UUID(content["persona_id"])
-            except (TypeError, ValueError, AttributeError):
-                content = None
-        if (
-            event["pubkey"] != candidate.owner_pubkey
-            or event["tags"] != [["d", candidate.agent_pubkey]]
-            or not isinstance(content, dict)
-            or set(content) != directory_keys
-            or content.get("name") != bot.display_name
-            or content.get("respond_to") != "owner-only"
-            or not isinstance(content.get("parallelism"), int)
-            or isinstance(content.get("parallelism"), bool)
-            or not 1 <= content["parallelism"] <= 10
-        ):
-            raise Rejected("buzz_agent_directory_denied", 403)
+        self._verify_directory(directory, candidate, bot)
         with self.service.store.transaction() as tx:
-            self._authorize(tx, actor, envelope, candidate, assure=True)
+            self._authorize(tx, actor, envelope, candidate)
             tx.save_conversation_link(link)
             saved = tx.conversation_enrollment(link_id)
             if saved is None:
@@ -237,7 +242,7 @@ class BuzzEnrollment:
             relay.publish(event)
         relay.verify_conversation(link)
         with self.service.store.transaction() as tx:
-            self._authorize(tx, actor, envelope, candidate, assure=True)
+            self._authorize(tx, actor, envelope, candidate)
             tx.save_conversation_enrollment(link_id, {**saved, "ready": True})
         return {
             "link_id": link_id,
@@ -305,6 +310,36 @@ class ConfiguredBuzzConversation:
             and link.channel_kind == self.channel_kind
         )
 
+
+    def _enrolled_project_members(self):
+        from types import SimpleNamespace
+        members = []
+        for configured in self.project_members:
+            if configured.coordinator:
+                continue
+            with self.service.store.transaction() as tx:
+                member_link = tx.conversation_link(configured.candidate.link_id)
+                member_enrollment = tx.conversation_enrollment(configured.candidate.link_id)
+            if (
+                member_link is None
+                or not member_enrollment
+                or not member_enrollment["ready"]
+                or not configured.matches(member_link)
+            ):
+                continue
+            try:
+                verify_owner_attestation(
+                    member_enrollment["auth_tag"],
+                    member_link.owner_pubkey,
+                    member_link.agent_pubkey,
+                )
+            except Rejected:
+                continue
+            configured.relay.owner_attestation = member_enrollment["auth_tag"]
+            members.append(SimpleNamespace(link=member_link, relay=configured.relay))
+        return members
+
+
     def run(self, phase):
         with self.service.store.transaction() as tx:
             link = tx.conversation_link(self.candidate.link_id)
@@ -338,30 +373,7 @@ class ConfiguredBuzzConversation:
         if self.coordinator:
             from types import SimpleNamespace
             from radhouse.channels.project_buzz import ProjectBuzzConversationCycle
-            members = []
-            for configured in self.project_members:
-                if configured.coordinator:
-                    continue
-                with self.service.store.transaction() as tx:
-                    member_link = tx.conversation_link(configured.candidate.link_id)
-                    member_enrollment = tx.conversation_enrollment(configured.candidate.link_id)
-                if (
-                    member_link is None
-                    or not member_enrollment
-                    or not member_enrollment["ready"]
-                    or not configured.matches(member_link)
-                ):
-                    continue
-                try:
-                    verify_owner_attestation(
-                        member_enrollment["auth_tag"],
-                        member_link.owner_pubkey,
-                        member_link.agent_pubkey,
-                    )
-                except Rejected:
-                    continue
-                configured.relay.owner_attestation = member_enrollment["auth_tag"]
-                members.append(SimpleNamespace(link=member_link, relay=configured.relay))
+            members = self._enrolled_project_members()
             return ProjectBuzzConversationCycle(
                 self.service,
                 SimpleNamespace(link=link, relay=self.relay),

@@ -189,9 +189,10 @@ def test_failed_chat_write_with_readonly_database_parent_is_reported_without_pro
     parent.chmod(0o500)
     try:
         with pytest.raises(sqlite3.OperationalError, match="readonly"):
-            admin.store.reserve("alice", "parent-readonly-proof", "disposable write", 1000, 3600)
+            admin.store.reserve("alice", "parent-readonly-proof", "disposable write", 1000)
         storage = client.get("/admin/infrastructure").json()["components"][-1]
-        assert storage["state"] == "unavailable" and "read only" in storage["detail"]
+        assert storage['state'] == 'unavailable'
+        assert 'read only' in storage['detail']
         assert hashlib.sha256(admin.store.path.read_bytes()).hexdigest() == before
         assert sorted(path.name for path in parent.iterdir()) == entries
         assert parent.stat().st_mode & 0o777 == 0o500
@@ -214,7 +215,8 @@ def test_readonly_database_parent_filesystem_is_checked_independently(management
     monkeypatch.setattr("radhouse.chat.admin.os.statvfs", lambda path: SimpleNamespace(
         f_bavail=1024, f_frsize=4096, f_flag=os.ST_RDONLY if path == parent else 0))
     storage = client.get("/admin/infrastructure").json()["components"][-1]
-    assert storage["state"] == "unavailable" and "read only" in storage["detail"]
+    assert storage['state'] == 'unavailable'
+    assert 'read only' in storage['detail']
 
 
 @pytest.mark.parametrize("free,flags,detail", [(0, 0, "no free space"), (1024, os.ST_RDONLY, "read only")])
@@ -222,7 +224,8 @@ def test_storage_cannot_appear_healthy_on_full_or_readonly_filesystem(management
     client, _admin, _access, _calls = management
     monkeypatch.setattr("radhouse.chat.admin.os.statvfs", lambda _path: SimpleNamespace(f_bavail=free, f_frsize=4096, f_flag=flags))
     storage = client.get("/admin/infrastructure").json()["components"][-1]
-    assert storage["state"] == "unavailable" and detail in storage["detail"]
+    assert storage['state'] == 'unavailable'
+    assert detail in storage['detail']
     assert storage["free_bytes"] == free * 4096
 
 
@@ -250,7 +253,8 @@ def test_readonly_pages_and_public_assets_have_no_inline_or_private_configuratio
     client, _admin, _access, calls = management
     html = client.get("/settings").text
     assert '<script src="/admin.js" defer>' in html
-    assert '<style' not in html and '<script>' not in html
+    assert '<style' not in html
+    assert '<script>' not in html
     assert 'aria-label="Main navigation"' in html
     client.cookies.clear()
     for path in ("/admin.js", "/admin.css"):
@@ -315,7 +319,8 @@ def test_actual_app_rejects_foreign_owner_before_role_lookup_or_probe(integrated
         response = client.get(path)
         assert response.status_code == 403
         assert response.json()["error"] == "owner_access_required"
-    assert auth.role_calls == 0 and probes == []
+    assert auth.role_calls == 0
+    assert probes == []
 
 
 def test_management_auth_failure_hides_flags_preserves_chat_and_fails_management_closed(integrated_management):
@@ -349,7 +354,8 @@ def test_revoked_session_cannot_use_old_management_flags(integrated_management):
     role_calls = auth.role_calls
     for path in ("/auth/session", "/settings", "/admin/infrastructure"):
         assert client.get(path).status_code == 401
-    assert auth.role_calls == role_calls and probes == []
+    assert auth.role_calls == role_calls
+    assert probes == []
 
 
 def test_integrated_management_pages_use_existing_private_response_policy(integrated_management):
@@ -367,7 +373,8 @@ def test_original_chat_without_optional_management_preserves_existing_contract(t
     with TestClient(create_app(auth, ChatService(store, hermes.client, owner_id="alice")), base_url="http://127.0.0.1") as client:
         client.cookies.set("radhouse_session", "synthetic-cookie")
         session = client.get("/auth/session")
-        assert session.status_code == 200 and "management" not in session.json()
+        assert session.status_code == 200
+        assert 'management' not in session.json()
         assert client.get("/chat/history").status_code == 200
         assert client.get("/admin/settings").status_code == 404
         assert client.get("/settings").status_code == 404

@@ -87,14 +87,7 @@ def parse_coordination_plan(
         raise Rejected("coordination_plan_invalid", 422)
     # An older planner run may complete after an upgrade. An invalid optional
     # title cannot block a valid route; the brief remains the fallback.
-    title = value.get("title")
-    if isinstance(title, str) and title.strip() and len(title) <= 100 and "\n" not in title:
-        try:
-            title = normalize_task_title(title)
-        except Rejected:
-            title = None
-    else:
-        title = None
+    title = _planner_title(value)
     return CoordinationPlan(
         route, summary.strip(), clarification.strip() if clarification else None, title,
     )
@@ -148,6 +141,14 @@ def result_update(result: str | None) -> dict[str, str]:
     return value
 
 
+def _review_status_note(verdict):
+    if verdict == "READY":
+        return "Reviewer found the current preview revision ready."
+    if verdict == "CHANGES_NEEDED":
+        return "Reviewer returned changes to Builder."
+    return "Review evidence did not match the current preview revision."
+
+
 def apply_result(
     state: ProjectCoordination, role_name: str, result: str | None
 ) -> ProjectCoordination:
@@ -159,37 +160,7 @@ def apply_result(
         "active_task_id": None,
     }
     if "builder" in role:
-        permitted = {
-            key: value for key, value in update.items()
-            if key in {"repository", "branch", "pull_request", "source_revision",
-                       "preview_url", "preview_revision", "preview_digest"}
-        }
-        if (
-            permitted.get("source_revision")
-            and permitted.get("preview_revision")
-            and permitted["source_revision"] != permitted["preview_revision"]
-        ):
-            permitted = {}
-        if not {
-            "source_revision", "preview_revision", "preview_digest", "preview_url"
-        } <= set(permitted):
-            return state.evolve(
-                active_bot_id=None,
-                active_task_id=None,
-                phase="blocked",
-                status_note="Builder finished, but exact preview revision evidence is missing.",
-            ).validate()
-        changes.update(permitted)
-        if permitted.get("preview_revision") != state.accepted_preview_revision:
-            changes.update(
-                accepted_preview_revision=None,
-                reviewed_revision=None,
-                reviewer_verdict=None,
-                merged_revision=None,
-                deployed_revision=None,
-                deployment_status=None,
-            )
-        changes.update(phase="preview_feedback", status_note="Preview ready for owner feedback.")
+        changes.update(_builder_changes(state, update))
     elif "reviewer" in role:
         verdict = update.get("reviewer_verdict")
         reviewed = update.get("reviewed_revision")
@@ -200,42 +171,11 @@ def apply_result(
             reviewer_verdict=verdict,
             phase="merge_ready" if verdict == "READY" else "correction",
             status_note=(
-                "Reviewer found the current preview revision ready."
-                if verdict == "READY"
-                else "Reviewer returned changes to Builder."
-                if verdict == "CHANGES_NEEDED"
-                else "Review evidence did not match the current preview revision."
+                _review_status_note(verdict)
             ),
         )
     elif "deployer" in role:
-        merged = update.get("merged_revision")
-        deployed = update.get("deployed_revision")
-        status = update.get("deployment_status")
-        if (
-            status == "healthy"
-            and merged is not None
-            and deployed == merged
-            and update.get("deployment_url") is not None
-            and state.reviewer_verdict == "READY"
-            and state.reviewed_revision == state.preview_revision
-            and state.preview_revision == state.source_revision
-        ):
-            changes.update(
-                deployment_url=update["deployment_url"],
-                merged_revision=merged,
-                deployed_revision=deployed,
-                deployment_status="healthy",
-                phase="deployed",
-                status_note="Deployment is healthy.",
-            )
-        else:
-            # A failed operation cannot establish a merge or a running release.
-            # Keep any previously verified deployment, and leave the failure
-            # details in the task result rather than promoting claimed fields.
-            changes.update(
-                phase="blocked",
-                status_note="No new deployment was verified; inspect Deployer's result.",
-            )
+        _deployment_update(state, update, changes)
     elif "research" in role:
         changes.update(phase="research", status_note="Research completed.")
     return state.evolve(**changes).validate()
@@ -273,22 +213,7 @@ def status_text(
     lines = [f"Project status · {state.phase.replace('_', ' ')}"]
     if state.active_task_id and agent_name:
         lines.append(f"{agent_name} · {'Planning' if state.phase == 'planning' else 'Working'}")
-        if activity and isinstance(activity.get("label"), str):
-            lines.append("Current step: " + activity["label"])
-            if (
-                type(activity.get("occurred_at")) is int
-                and activity["occurred_at"] > 0
-                and now is not None
-            ):
-                lines.append("Last activity: " + _age_text(activity["occurred_at"], now))
-        else:
-            lines.append("Current step: Waiting for the first runtime update")
-        if task is not None and task.permission_request is not None:
-            lines.append("Needs you: permission decision")
-        elif task is not None and task.blockers:
-            lines.append("Needs you: attention in Radhouse")
-        else:
-            lines.append("Needs you: nothing")
+        _active_status_lines(lines, task, activity, now)
     if state.pull_request:
         lines.append("Pull request: " + state.pull_request)
     if state.preview_url:
@@ -300,3 +225,97 @@ def status_text(
             f"Deployment: {state.deployment_url} ({state.deployment_status or 'status unknown'})"
         )
     return "\n".join(lines)
+
+def _planner_title(value):
+    title = value.get("title")
+    if isinstance(title, str) and title.strip() and len(title) <= 100 and "\n" not in title:
+        try:
+            title = normalize_task_title(title)
+        except Rejected:
+            title = None
+    else:
+        title = None
+    return title
+
+
+def _deployment_update(state, update, changes):
+    merged = update.get("merged_revision")
+    deployed = update.get("deployed_revision")
+    status = update.get("deployment_status")
+    if (
+        status == "healthy"
+        and merged is not None
+        and deployed == merged
+        and update.get("deployment_url") is not None
+        and state.reviewer_verdict == "READY"
+        and state.reviewed_revision == state.preview_revision
+        and state.preview_revision == state.source_revision
+    ):
+        changes.update(
+            deployment_url=update["deployment_url"],
+            merged_revision=merged,
+            deployed_revision=deployed,
+            deployment_status="healthy",
+            phase="deployed",
+            status_note="Deployment is healthy.",
+        )
+    else:
+        # A failed operation cannot establish a merge or a running release.
+        # Keep any previously verified deployment, and leave the failure
+        # details in the task result rather than promoting claimed fields.
+        changes.update(
+            phase="blocked",
+            status_note="No new deployment was verified; inspect Deployer's result.",
+        )
+
+
+def _active_status_lines(lines, task, activity, now):
+    if activity and isinstance(activity.get("label"), str):
+        lines.append("Current step: " + activity["label"])
+        if (
+            type(activity.get("occurred_at")) is int
+            and activity["occurred_at"] > 0
+            and now is not None
+        ):
+            lines.append("Last activity: " + _age_text(activity["occurred_at"], now))
+    else:
+        lines.append("Current step: Waiting for the first runtime update")
+    if task is not None and task.permission_request is not None:
+        lines.append("Needs you: permission decision")
+    elif task is not None and task.blockers:
+        lines.append("Needs you: attention in Radhouse")
+    else:
+        lines.append("Needs you: nothing")
+
+
+def _builder_changes(state, update):
+    changes = {}
+    permitted = {
+        key: value for key, value in update.items()
+        if key in {"repository", "branch", "pull_request", "source_revision",
+                   "preview_url", "preview_revision", "preview_digest"}
+    }
+    if (
+        permitted.get("source_revision")
+        and permitted.get("preview_revision")
+        and permitted["source_revision"] != permitted["preview_revision"]
+    ):
+        permitted = {}
+    if not {
+        "source_revision", "preview_revision", "preview_digest", "preview_url"
+    } <= set(permitted):
+        return {"phase": "blocked", "status_note": "Builder finished, but exact preview revision evidence is missing."}
+    changes.update(permitted)
+    if permitted.get("preview_revision") != state.accepted_preview_revision:
+        changes.update(
+            accepted_preview_revision=None,
+            reviewed_revision=None,
+            reviewer_verdict=None,
+            merged_revision=None,
+            deployed_revision=None,
+            deployment_status=None,
+        )
+    changes.update(phase="preview_feedback", status_note="Preview ready for owner feedback.")
+    return changes
+
+

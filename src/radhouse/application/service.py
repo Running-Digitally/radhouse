@@ -51,6 +51,23 @@ def runtime_request_fingerprint(task: Task, session_id: str) -> str:
     return fingerprint(body)
 
 
+def _start_unavailable_reason(can_write, ready, agents):
+    if not can_write:
+        return "read_only_role"
+    if ready:
+        return None
+    if agents:
+        return "agents_unavailable"
+    return "no_assigned_agents"
+
+
+def _terminal_outcome(blockers, result):
+    if "cancel_requested" in blockers:
+        return "cancelled"
+    if result.state == "completed":
+        return "completed"
+    return "failed"
+
 class Service:
     def __init__(self, store: Store, work: AgentWorkPort, provider: ProviderPort,
                  clock: Callable[[], datetime], *, approval_commands: dict[str, tuple[str, ...]] | None = None,
@@ -124,7 +141,8 @@ class Service:
         if task.state_revision != expected:
             raise Rejected("stale_state")
 
-    def admit(self, actor: AuthContext, envelope: Envelope, start: StartTask) -> Task:
+
+    def _validated_start(self, start):
         # An explicit no-tools assignment narrows runtime authority. Only the
         # operator's brief is considered; reference material cannot set policy.
         if re.search(r"\b(?:use no tools|do not use (?:any )?tools|don't use (?:any )?tools|no tool calls)\b", start.brief, re.I):
@@ -147,6 +165,22 @@ class Service:
         if not start.brief.strip() or len(start.brief) > 4096 or not 1 <= start.budget <= 100:
             raise Rejected("invalid_task", 422)
         validate_input_files(start.files)
+        return start
+
+
+    def _previous_result(self, tx, actor, envelope, start):
+        previous_result = None
+        if start.follows_task_id:
+            previous = self._task(tx, start.follows_task_id)
+            self._authorize(tx, actor, previous, envelope, write=True)
+            if previous.project_id != start.project_id or previous.phase != "closed" or previous.result is None:
+                raise Rejected("followup_context_unavailable")
+            previous_result = previous.result
+        return previous_result
+
+
+    def admit(self, actor: AuthContext, envelope: Envelope, start: StartTask) -> Task:
+        start = self._validated_start(start)
         body = asdict(start)
         if not start.disable_tools:
             # Preserve schema-2 command fingerprints for ordinary retries.
@@ -167,13 +201,7 @@ class Service:
             if bot.provider_binding != start.provider_binding:
                 raise Rejected("provider_binding_denied", 403)
             self._binding(tx, actor, envelope, start.project_id)
-            previous_result = None
-            if start.follows_task_id:
-                previous = self._task(tx, start.follows_task_id)
-                self._authorize(tx, actor, previous, envelope, write=True)
-                if previous.project_id != start.project_id or previous.phase != "closed" or previous.result is None:
-                    raise Rejected("followup_context_unavailable")
-                previous_result = previous.result
+            previous_result = self._previous_result(tx, actor, envelope, start)
             delivery = tx.delivery(envelope.channel, envelope.event_id)
             if delivery:
                 if delivery.principal_id != actor.principal_id or delivery.fingerprint != event_identity:
@@ -294,8 +322,8 @@ class Service:
                                               )), tx.project_coordination(project.project_id)))
             return tuple(result)
 
-    def create_project(self, actor: AuthContext, envelope: Envelope,
-                       display_name: str, bot_ids: tuple[str, ...]) -> ProjectView:
+
+    def _project_selection(self, display_name, bot_ids):
         name = re.sub(r"\s+", " ", display_name).strip()
         selected = tuple(dict.fromkeys(bot_ids))
         if (not 1 <= len(name) <= 100
@@ -306,6 +334,12 @@ class Service:
                 or any(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", item) is None
                        for item in selected)):
             raise Rejected("invalid_project", 422)
+        return name, selected
+
+
+    def create_project(self, actor: AuthContext, envelope: Envelope,
+                       display_name: str, bot_ids: tuple[str, ...]) -> ProjectView:
+        name, selected = self._project_selection(display_name, bot_ids)
         project_id = "project-" + hashlib.sha256(
             f"{actor.principal_id}\0{envelope.command_key}".encode()
         ).hexdigest()[:24]
@@ -345,6 +379,32 @@ class Service:
             self._authorize(tx, actor, task, envelope, write=True)
             return tx.audience(task.bot_id, task.project_id)
 
+
+    def _task_card(self, task, titles, publications, order, can_write):
+        action = lambda enabled, reason: _task_action(can_write, enabled, reason)
+        title = titles[task.task_id]
+        if title is None:
+            raise Rejected("task_state_inconsistent")
+        paused = "human_pause" in task.blockers
+        cancellable = task.phase != "closed" and "cancel_requested" not in task.blockers
+        pausable = task.phase in {"active", "recovering"} and not paused and cancellable
+        resumable = paused and task.phase not in {"closed", "stopping"}
+        publication = publications[task.task_id]
+        reviewable = task.outcome == "completed" and task.result is not None and publication is None
+        if not can_write:
+            review = ActionView(False, "read_only_role")
+        else:
+            review = action(reviewable, "already_published" if publication else "result_not_ready")
+        return TaskCard(
+            task, title, order.get(task.task_id, 0),
+            action(cancellable, "task_closed"),
+            action(pausable, "task_not_pausable"),
+            action(resumable, "task_not_paused"),
+            review,
+            publication,
+        )
+
+
     def work_home(self, actor: AuthContext, *, envelope: Envelope) -> WorkHome:
         with self.store.transaction() as tx:
             access = tx.access(actor.principal_id)
@@ -371,38 +431,12 @@ class Service:
         ready = any(agent.state == "ready" for agent in agents)
         start = ActionView(
             can_write and ready,
-            None if can_write and ready else "read_only_role" if not can_write
-            else "agents_unavailable" if agents else "no_assigned_agents",
+            _start_unavailable_reason(can_write, ready, agents),
         )
-
-        def action(enabled: bool, reason: str) -> ActionView:
-            if not can_write:
-                return ActionView(False, "read_only_role")
-            return ActionView(enabled, None if enabled else reason)
 
         cards = []
         for task in tasks:
-            title = titles[task.task_id]
-            if title is None:
-                raise Rejected("task_state_inconsistent")
-            paused = "human_pause" in task.blockers
-            cancellable = task.phase != "closed" and "cancel_requested" not in task.blockers
-            pausable = task.phase in {"active", "recovering"} and not paused and cancellable
-            resumable = paused and task.phase not in {"closed", "stopping"}
-            publication = publications[task.task_id]
-            reviewable = task.outcome == "completed" and task.result is not None and publication is None
-            if not can_write:
-                review = ActionView(False, "read_only_role")
-            else:
-                review = action(reviewable, "already_published" if publication else "result_not_ready")
-            cards.append(TaskCard(
-                task, title, order.get(task.task_id, 0),
-                action(cancellable, "task_closed"),
-                action(pausable, "task_not_pausable"),
-                action(resumable, "task_not_paused"),
-                review,
-                publication,
-            ))
+            cards.append(self._task_card(task, titles, publications, order, can_write))
         return WorkHome(
             actor.principal_id, access.role, binding.project_id, project.display_name,
             agents, tuple(sorted(cards, key=lambda card: card.sequence, reverse=True)), start,
@@ -526,7 +560,23 @@ class Service:
         ):
             raise RuntimeFailure("runtime_idempotency_unavailable")
 
-    def _drive(self, task_id: str, worker_id: str | None) -> Task:
+
+    def _current_grant(self, tx, task, dispatch) -> tuple[Task, bool]:
+        try:
+            require_access(tx.access(task.owner_id), task.bot_id, task.project_id, write=True)
+        except Rejected:
+            blockers = tuple(sorted(set(task.blockers) | {"grant_withdrawal"}))
+            if dispatch.state != "accepted":
+                if blockers == task.blockers:
+                    return task, False
+                return self._save(tx, task, task.evolve(blockers=blockers), "waiting"), False
+            if task.phase != "stopping" or blockers != task.blockers:
+                task = self._save(tx, task, task.evolve(
+                    phase="stopping", blockers=blockers), "stop_requested")
+        return task, True
+
+
+    def _drive_snapshot(self, task_id, worker_id) -> Task | tuple[Task, Attempt, AgentDispatch]:
         with self.store.transaction() as tx:
             task = self._task(tx, task_id)
             if task.phase == "closed":
@@ -550,17 +600,9 @@ class Service:
             }
             if dispatch_blockers and task.phase != "stopping" and dispatch.state != "accepted":
                 return task
-            try:
-                require_access(tx.access(task.owner_id), task.bot_id, task.project_id, write=True)
-            except Rejected:
-                blockers = tuple(sorted(set(task.blockers) | {"grant_withdrawal"}))
-                if dispatch.state != "accepted":
-                    if blockers == task.blockers:
-                        return task
-                    return self._save(tx, task, task.evolve(blockers=blockers), "waiting")
-                if task.phase != "stopping" or blockers != task.blockers:
-                    task = self._save(tx, task, task.evolve(
-                        phase="stopping", blockers=blockers), "stop_requested")
+            task, continue_drive = self._current_grant(tx, task, dispatch)
+            if not continue_drive:
+                return task
             stop_blockers = {
                 "provider_mismatch", "provider_unavailable", "provider_incompatible",
                 "grant_withdrawal", "human_pause", "cancel_requested",
@@ -571,70 +613,72 @@ class Service:
                 and task.phase != "stopping"
             ):
                 task = self._save(tx, task, task.evolve(phase="stopping"), "stop_requested")
+        return task, attempt, dispatch
 
-        if dispatch.state == "prepared":
-            try:
-                capabilities = self.work.capabilities(task)
-                self._validate_capabilities(capabilities)
-            except RuntimeFailure:
-                return self._runtime_unavailable(task_id)
-            submitted_at = self._now()
-            retention_until = submitted_at + timedelta(
-                seconds=capabilities.idempotency_retention_seconds
-            )
-            with self.store.transaction() as tx:
-                current = self._task(tx, task_id)
-                latest = tx.dispatch(dispatch.key)
-                if current.phase == "closed":
-                    return current
-                if latest is None:
-                    raise Rejected("missing_dispatch")
-                if latest.state == "prepared":
-                    dispatch = replace(
-                        latest, state="submitted",
-                        runtime_revision=capabilities.runtime_revision,
-                        submitted_at=submitted_at, retention_until=retention_until,
-                    )
-                    tx.save_dispatch(dispatch)
-                else:
-                    dispatch = latest
 
-        if dispatch.state in {"submitted", "unknown"}:
-            if dispatch.retention_until is None or self._now() >= dispatch.retention_until:
-                return self._needs_attention(task_id, dispatch.key)
-            try:
-                accepted = self.work.start_or_attach(task, attempt, dispatch.key)
-            except RuntimeFailure:
-                return self._needs_attention(task_id, dispatch.key)
-            response_mismatch = (
-                accepted.session_id != dispatch.session_id
-                or accepted.provider_binding != dispatch.provider_binding
-                or accepted.runtime_revision != dispatch.runtime_revision
-            )
-            with self.store.transaction() as tx:
-                current = self._task(tx, task_id)
-                latest = tx.dispatch(dispatch.key)
-                if current.phase == "closed":
-                    return current
-                if latest is None:
-                    raise Rejected("missing_dispatch")
-                if latest.state == "accepted" and latest.run_id != accepted.run_id:
-                    blockers = tuple(sorted(set(current.blockers) | {"operation_unknown"}))
-                    return self._save(tx, current, current.evolve(
-                        phase="recovering", blockers=blockers), "needs_attention")
-                if latest.state != "accepted":
-                    dispatch = replace(latest, state="accepted", run_id=accepted.run_id)
-                    tx.save_dispatch(dispatch)
-                else:
-                    dispatch = latest
-            if response_mismatch:
-                return self._needs_attention(task_id, dispatch.key)
+    def _submit_dispatch(self, task_id, task, dispatch) -> Task | AgentDispatch:
+        try:
+            capabilities = self.work.capabilities(task)
+            self._validate_capabilities(capabilities)
+        except RuntimeFailure:
+            return self._runtime_unavailable(task_id)
+        submitted_at = self._now()
+        retention_until = submitted_at + timedelta(
+            seconds=capabilities.idempotency_retention_seconds
+        )
+        with self.store.transaction() as tx:
+            current = self._task(tx, task_id)
+            latest = tx.dispatch(dispatch.key)
+            if current.phase == "closed":
+                return current
+            if latest is None:
+                raise Rejected("missing_dispatch")
+            if latest.state == "prepared":
+                dispatch = replace(
+                    latest, state="submitted",
+                    runtime_revision=capabilities.runtime_revision,
+                    submitted_at=submitted_at, retention_until=retention_until,
+                )
+                tx.save_dispatch(dispatch)
+            else:
+                dispatch = latest
+        return dispatch
 
-        if dispatch.state == "closed":
-            with self.store.transaction() as tx:
-                return self._task(tx, task_id)
-        if dispatch.state != "accepted":
+
+    def _accept_dispatch(self, task_id, task, attempt, dispatch) -> Task | AgentDispatch:
+        if dispatch.retention_until is None or self._now() >= dispatch.retention_until:
             return self._needs_attention(task_id, dispatch.key)
+        try:
+            accepted = self.work.start_or_attach(task, attempt, dispatch.key)
+        except RuntimeFailure:
+            return self._needs_attention(task_id, dispatch.key)
+        response_mismatch = (
+            accepted.session_id != dispatch.session_id
+            or accepted.provider_binding != dispatch.provider_binding
+            or accepted.runtime_revision != dispatch.runtime_revision
+        )
+        with self.store.transaction() as tx:
+            current = self._task(tx, task_id)
+            latest = tx.dispatch(dispatch.key)
+            if current.phase == "closed":
+                return current
+            if latest is None:
+                raise Rejected("missing_dispatch")
+            if latest.state == "accepted" and latest.run_id != accepted.run_id:
+                blockers = tuple(sorted(set(current.blockers) | {"operation_unknown"}))
+                return self._save(tx, current, current.evolve(
+                    phase="recovering", blockers=blockers), "needs_attention")
+            if latest.state != "accepted":
+                dispatch = replace(latest, state="accepted", run_id=accepted.run_id)
+                tx.save_dispatch(dispatch)
+            else:
+                dispatch = latest
+        if response_mismatch:
+            return self._needs_attention(task_id, dispatch.key)
+        return dispatch
+
+
+    def _poll_runtime(self, task_id, dispatch):
         runtime_dispatch = self._runtime_dispatch(dispatch)
         with self.store.transaction() as tx:
             current = self._task(tx, task_id)
@@ -659,30 +703,67 @@ class Service:
         if result.state == "unknown":
             return self._needs_attention(task_id, dispatch.key)
         if result.state == "running":
-            with self.store.transaction() as tx:
-                current = self._task(tx, task_id)
-                if current.phase == "closed" or current.phase == "stopping":
-                    return current
-                blockers = tuple(x for x in current.blockers if x not in {
-                    "operation_unknown", "runtime_stop", "runtime_unavailable",
-                })
-                if denial_reconciliation == "stale":
-                    # This permission was already normalized from a newer
-                    # runtime observation. Preserve its exact digest.
-                    permission = current.permission_request
-                else:
-                    permission = (
-                        None if denial_reconciliation == "denied"
-                        else result.permission_request
-                    )
-                if permission is not None and denial_reconciliation != "stale":
-                    permission = {**permission, "digest": fingerprint(permission),
-                                  "allow_once": permission.get("command") in self.approval_commands.get(current.bot_id, ())}
-                if (current.phase, current.blockers, current.permission_request) == ("active", blockers, permission):
-                    return current
-                return self._save(tx, current, current.evolve(
-                    phase="active", blockers=blockers, permission_request=permission), "runtime_running")
+            return self._running_result(task_id, result, denial_reconciliation)
         return self._finish_work(task_id, dispatch.key, result)
+
+
+    def _running_result(self, task_id, result, denial_reconciliation):
+        with self.store.transaction() as tx:
+            current = self._task(tx, task_id)
+            if current.phase == "closed" or current.phase == "stopping":
+                return current
+            blockers = tuple(x for x in current.blockers if x not in {
+                "operation_unknown", "runtime_stop", "runtime_unavailable",
+            })
+            if denial_reconciliation == "stale":
+                # This permission was already normalized from a newer
+                # runtime observation. Preserve its exact digest.
+                permission = current.permission_request
+            else:
+                permission = (
+                    None if denial_reconciliation == "denied"
+                    else result.permission_request
+                )
+            if permission is not None and denial_reconciliation != "stale":
+                permission = {**permission, "digest": fingerprint(permission),
+                              "allow_once": permission.get("command") in self.approval_commands.get(current.bot_id, ())}
+            if (current.phase, current.blockers, current.permission_request) == ("active", blockers, permission):
+                return current
+            return self._save(tx, current, current.evolve(
+                phase="active", blockers=blockers, permission_request=permission), "runtime_running")
+
+
+    def _drive(self, task_id: str, worker_id: str | None) -> Task:
+        snapshot = self._drive_snapshot(task_id, worker_id)
+        if isinstance(snapshot, Task):
+            return snapshot
+        task, attempt, dispatch = snapshot
+        if dispatch.state == "prepared":
+            submitted = self._submit_dispatch(task_id, task, dispatch)
+            if isinstance(submitted, Task):
+                return submitted
+            dispatch = submitted
+        if dispatch.state in {"submitted", "unknown"}:
+            accepted = self._accept_dispatch(task_id, task, attempt, dispatch)
+            if isinstance(accepted, Task):
+                return accepted
+            dispatch = accepted
+        if dispatch.state == "closed":
+            with self.store.transaction() as tx:
+                return self._task(tx, task_id)
+        if dispatch.state != "accepted":
+            return self._needs_attention(task_id, dispatch.key)
+        return self._poll_runtime(task_id, dispatch)
+    def _propose_result_title(self, tx, task_id, content):
+        if content is not None:
+            current_title = tx.task_title(task_id)
+            proposed_title = agent_task_title(content)
+            if (current_title is not None and current_title.source != "owner"
+                    and proposed_title is not None and proposed_title != current_title.title):
+                tx.save_task_title(TaskTitle(
+                    task_id, proposed_title, "agent", current_title.revision + 1,
+                ), current_title.revision)
+
 
     def _finish_work(self, task_id: str, dispatch_key: str, result: RuntimeResult) -> Task:
         content = result.content if result.state == "completed" else None
@@ -706,9 +787,7 @@ class Service:
                 return self._save(tx, task, task.evolve(
                     phase="queued", attempt_id=None, blockers=tuple(sorted(blockers))), "paused")
             terminal = (
-                "cancelled" if "cancel_requested" in blockers
-                else "completed" if result.state == "completed"
-                else "failed"
+                _terminal_outcome(blockers, result)
             )
             updated = task.evolve(
                 phase="closed", outcome=terminal, blockers=tuple(sorted(blockers)),
@@ -716,14 +795,7 @@ class Service:
                 permission_request=None,
             )
             saved = self._save(tx, task, updated, terminal)
-            if content is not None:
-                current_title = tx.task_title(task_id)
-                proposed_title = agent_task_title(content)
-                if (current_title is not None and current_title.source != "owner"
-                        and proposed_title is not None and proposed_title != current_title.title):
-                    tx.save_task_title(TaskTitle(
-                        task_id, proposed_title, "agent", current_title.revision + 1,
-                    ), current_title.revision)
+            self._propose_result_title(tx, task_id, content)
             return saved
 
     def recover(self, task_id: str) -> Task:
@@ -763,19 +835,8 @@ class Service:
                                  terminal=result.guidance_terminal or result.state in {"completed", "failed", "cancelled"})
         return task
 
-    def _hold(self, actor: AuthContext, task_id: str, expected_state_revision: int,
-              envelope: Envelope, reason: str) -> Task:
-        with self.store.transaction() as tx:
-            task = self._task(tx, task_id)
-            self._authorize(tx, actor, task, envelope, write=True)
-            self._expected(task, expected_state_revision)
-            if task.phase == "closed":
-                return task
-            blockers = tuple(sorted(set(task.blockers) | {reason}))
-            task = self._save(tx, task, task.evolve(blockers=blockers,
-                              phase="stopping" if task.attempt_id else task.phase), "stop_requested")
-            attempt = tx.attempt(task.attempt_id) if task.attempt_id else None
-            dispatch = tx.dispatch(task.attempt_id) if task.attempt_id else None
+
+    def _stop_attempt(self, task, attempt, dispatch):
         if attempt is None:
             stopped, exact_run = True, False
         elif dispatch is None:
@@ -792,6 +853,10 @@ class Service:
             stopped, exact_run = True, True
         else:
             stopped, exact_run = False, False
+        return stopped, exact_run
+
+
+    def _held_state(self, task_id, attempt, stopped, exact_run, reason):
         with self.store.transaction() as tx:
             current = self._task(tx, task_id)
             if current.phase == "closed":
@@ -813,6 +878,22 @@ class Service:
             # Resume uses the same owner, budget reservation and operation key.
             return self._save(tx, current, current.evolve(phase="active" if attempt else "queued"), "paused")
 
+
+    def _hold(self, actor: AuthContext, task_id: str, expected_state_revision: int,
+              envelope: Envelope, reason: str) -> Task:
+        with self.store.transaction() as tx:
+            task = self._task(tx, task_id)
+            self._authorize(tx, actor, task, envelope, write=True)
+            self._expected(task, expected_state_revision)
+            if task.phase == "closed":
+                return task
+            blockers = tuple(sorted(set(task.blockers) | {reason}))
+            task = self._save(tx, task, task.evolve(blockers=blockers,
+                              phase="stopping" if task.attempt_id else task.phase), "stop_requested")
+            attempt = tx.attempt(task.attempt_id) if task.attempt_id else None
+            dispatch = tx.dispatch(task.attempt_id) if task.attempt_id else None
+        stopped, exact_run = self._stop_attempt(task, attempt, dispatch)
+        return self._held_state(task_id, attempt, stopped, exact_run, reason)
     def cancel(self, actor: AuthContext, task_id: str, expected_state_revision: int, *, envelope: Envelope) -> Task:
         return self._hold(actor, task_id, expected_state_revision, envelope, "cancel_requested")
 
@@ -864,6 +945,19 @@ class Service:
             tx.save_review(review)
             return review
 
+
+    def _publish_review(self, tx, task, review, review_id, expected_revision, content, audience, envelope):
+        validate_review(review, content, audience, expected_revision, self.clock())
+        if (review.task_revision, review.state_revision, review.digest) != (task.task_revision, task.state_revision, task.result_digest):
+            raise Rejected("review_task_changed")
+        existing = Publication(str(uuid4()), task.task_id, review_id, review.digest,
+                               audience, content, envelope.channel)
+        tx.publish(existing)
+        tx.save_review(replace(review, state="approved", revision=review.revision + 1))
+        tx.add_event(Event(task.task_id, "published", task.state_revision))
+        return existing
+
+
     def publish(self, actor: AuthContext, envelope: Envelope, review_id: str,
                 expected_revision: int, content: str, audience: Sequence[str]) -> Publication:
         with self.store.transaction() as tx:
@@ -890,14 +984,7 @@ class Service:
                 if existing.review_id != review_id or existing.digest != digest(content) or existing.audience != audience or expected_revision != review.revision - 1:
                     raise Rejected("publication_conflict")
             else:
-                validate_review(review, content, audience, expected_revision, self.clock())
-                if (review.task_revision, review.state_revision, review.digest) != (task.task_revision, task.state_revision, task.result_digest):
-                    raise Rejected("review_task_changed")
-                existing = Publication(str(uuid4()), task.task_id, review_id, review.digest,
-                                       audience, content, envelope.channel)
-                tx.publish(existing)
-                tx.save_review(replace(review, state="approved", revision=review.revision + 1))
-                tx.add_event(Event(task.task_id, "published", task.state_revision))
+                existing = self._publish_review(tx, task, review, review_id, expected_revision, content, audience, envelope)
             if command is None:
                 tx.save_command(SavedCommand(actor.principal_id, envelope.command_key, identity, task.task_id))
             tx.save_delivery(Delivery(envelope.channel, envelope.event_id, actor.principal_id,
@@ -924,3 +1011,8 @@ class Service:
             cursor = events[-1].cursor if events else after
             return {"task": task, "events": events, "cursor": cursor,
                     "resync_required": bool(events and after and events[0].cursor > after + 1)}
+
+def _task_action(can_write, enabled, reason):
+    if not can_write:
+        return ActionView(False, "read_only_role")
+    return ActionView(enabled, None if enabled else reason)

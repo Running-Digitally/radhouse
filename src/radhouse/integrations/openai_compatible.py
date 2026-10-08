@@ -53,6 +53,31 @@ class ProviderRequirements:
             raise ValueError("invalid_provider_context_requirement")
 
 
+def _validate_endpoint(endpoint, allow_plaintext_private_network):
+    parsed = urlsplit(endpoint)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or parsed.path not in {"", "/", "/v1", "/v1/"}
+    ):
+        raise ValueError("invalid_provider_endpoint")
+    if parsed.scheme == "http":
+        try:
+            address = ipaddress.ip_address(parsed.hostname)
+            allowed = address.is_loopback or (
+                allow_plaintext_private_network
+                and any(address in network for network in _PRIVATE_NETWORKS)
+            )
+            if not allowed:
+                raise ValueError("invalid_provider_endpoint")
+        except ValueError:
+            raise ValueError("invalid_provider_endpoint") from None
+
+
 class OpenAICompatibleProvider:
     """Describe one stable alias without making a generation request.
 
@@ -84,28 +109,7 @@ class OpenAICompatibleProvider:
             raise ValueError("invalid_provider_model")
         if model_identity not in {"alias", "catalog_sibling", "radhouse_extension"}:
             raise ValueError("invalid_provider_model_identity")
-        parsed = urlsplit(endpoint)
-        if (
-            parsed.scheme not in {"http", "https"}
-            or not parsed.hostname
-            or parsed.username is not None
-            or parsed.password is not None
-            or parsed.query
-            or parsed.fragment
-            or parsed.path not in {"", "/", "/v1", "/v1/"}
-        ):
-            raise ValueError("invalid_provider_endpoint")
-        if parsed.scheme == "http":
-            try:
-                address = ipaddress.ip_address(parsed.hostname)
-                allowed = address.is_loopback or (
-                    allow_plaintext_private_network
-                    and any(address in network for network in _PRIVATE_NETWORKS)
-                )
-                if not allowed:
-                    raise ValueError("invalid_provider_endpoint")
-            except ValueError:
-                raise ValueError("invalid_provider_endpoint") from None
+        _validate_endpoint(endpoint, allow_plaintext_private_network)
         if bearer_token is not None and (
             not bearer_token
             or len(bearer_token) > 4096
@@ -155,20 +159,7 @@ class OpenAICompatibleProvider:
             return ProviderDescription(self.binding, self.requested_model, False, False)
         model = matches[0]
 
-        evidence = model
-        if self.model_identity == "alias":
-            model_id = self.requested_model
-        elif self.model_identity == "radhouse_extension":
-            model_id = model.get("radhouse_model_id")
-        else:
-            siblings = [
-                item for item in catalog
-                if isinstance(item.get("id"), str) and item.get("id") != self.requested_model
-            ]
-            if len(siblings) != 1:
-                return ProviderDescription(self.binding, self.requested_model, True, False)
-            model_id = siblings[0]["id"]
-            evidence = siblings[0]
+        model_id, evidence = self._model_evidence(model, catalog)
         if not isinstance(model_id, str) or _MODEL_ID.fullmatch(model_id) is None:
             return ProviderDescription(self.binding, self.requested_model, True, False)
 
@@ -188,6 +179,17 @@ class OpenAICompatibleProvider:
                 not isinstance(context, bool) and isinstance(context, int) and context >= minimum
             )
         return ProviderDescription(self.binding, model_id, True, compatible)
+
+    def _model_evidence(self, model, catalog):
+        if self.model_identity == "alias":
+            return self.requested_model, model
+        if self.model_identity == "radhouse_extension":
+            return model.get("radhouse_model_id"), model
+        siblings = [item for item in catalog
+                    if isinstance(item.get("id"), str) and item.get("id") != self.requested_model]
+        if len(siblings) != 1:
+            return None, None
+        return siblings[0]["id"], siblings[0]
 
     def _catalog(self) -> list[dict] | None:
         deadline = time.monotonic() + self._request_deadline

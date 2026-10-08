@@ -5,7 +5,7 @@
   const tabs = [...journey.querySelectorAll('[role="tab"]')];
   const panels = tabs.map(tab => document.getElementById(tab.getAttribute('aria-controls')));
   const next = journey.querySelector('.journey-next');
-  const status = journey.querySelector('[role="status"]');
+  const status = journey.querySelector("#journey-status");
   const drawingDescription = document.getElementById('journey-art-desc');
   const actions = ['See the reply', 'Step away', 'Come back', 'Start again'];
   const descriptions = [

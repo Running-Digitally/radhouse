@@ -68,6 +68,23 @@ class BuzzConversationCycle:
             return mentioned, True
         return self._content_mentions(event)
 
+
+    def _reply_disposition(self, event):
+        parent_id = reply_target(event)
+        if parent_id:
+            with self.store.transaction() as tx:
+                parent = tx.conversation_reply_in_channel(
+                    self.link.channel_id, parent_id
+                )
+            if parent is not None:
+                return (
+                    "accept"
+                    if parent["message"].link_id == self.link.link_id
+                    else "skip"
+                )
+        return None
+
+
     def _event_disposition(self, event):
         """Select exactly one agent link in a shared project DM."""
         with self.store.transaction() as tx:
@@ -85,19 +102,59 @@ class BuzzConversationCycle:
         if len(mentioned) == 1:
             return "accept" if self.link.agent_pubkey in mentioned else "skip"
 
-        parent_id = reply_target(event)
-        if parent_id:
-            with self.store.transaction() as tx:
-                parent = tx.conversation_reply_in_channel(
-                    self.link.channel_id, parent_id
-                )
-            if parent is not None:
-                return (
-                    "accept"
-                    if parent["message"].link_id == self.link.link_id
-                    else "skip"
-                )
+        disposition = self._reply_disposition(event)
+        if disposition is not None:
+            return disposition
         return "accept" if self.link.default_agent else "skip"
+
+
+    def _incoming_message(self, event):
+        try:
+            files = reference_files(self.relay, event)
+            parent = reply_target(event)
+            if not event["content"].strip() or len(event["content"]) > 4096:
+                raise Rejected("conversation_message_requires_brief", 422)
+        except Rejected as error:
+            if error.status != 422:
+                raise
+            self._reject_message(event, error.code)
+            return
+        message = ConversationMessage(
+            event["id"],
+            self.link.link_id,
+            self.link.principal_id,
+            event["content"],
+            "buzz",
+            event["created_at"],
+            reply_to=parent,
+            files=files,
+            addressed=bool(self._agent_mentions(event)[0]),
+        )
+        return message
+
+
+    def _receive_event(self, event, existing):
+        try:
+            disposition = self._event_disposition(event)
+        except Rejected as error:
+            if error.status == 422 and self.link.default_agent:
+                self._reject_message(event, error.code)
+            return
+        if disposition == "skip":
+            return
+        if disposition == "ambiguous":
+            self._reject_message(event, "conversation_agent_ambiguous")
+            return
+        self._authorized()
+        if existing:
+            self.conversations.process(self.link, event["id"])
+            return
+        message = self._incoming_message(event)
+        if message is None:
+            return
+        self.conversations.receive(self.link, message, event=event)
+        self.conversations.process(self.link, message.message_id)
+
 
     def ingress(self):
         self._authorized()
@@ -122,44 +179,7 @@ class BuzzConversationCycle:
                 existing = tx.conversation_message(event["id"])
             if existing and existing["processed"]:
                 continue
-            try:
-                disposition = self._event_disposition(event)
-            except Rejected as error:
-                if error.status == 422 and self.link.default_agent:
-                    self._reject_message(event, error.code)
-                continue
-            if disposition == "skip":
-                continue
-            if disposition == "ambiguous":
-                self._reject_message(event, "conversation_agent_ambiguous")
-                continue
-            self._authorized()
-            if existing:
-                self.conversations.process(self.link, event["id"])
-                continue
-            try:
-                files = reference_files(self.relay, event)
-                parent = reply_target(event)
-                if not event["content"].strip() or len(event["content"]) > 4096:
-                    raise Rejected("conversation_message_requires_brief", 422)
-            except Rejected as error:
-                if error.status != 422:
-                    raise
-                self._reject_message(event, error.code)
-                continue
-            message = ConversationMessage(
-                event["id"],
-                self.link.link_id,
-                self.link.principal_id,
-                event["content"],
-                "buzz",
-                event["created_at"],
-                reply_to=parent,
-                files=files,
-                addressed=bool(self._agent_mentions(event)[0]),
-            )
-            self.conversations.receive(self.link, message, event=event)
-            self.conversations.process(self.link, message.message_id)
+            self._receive_event(event, existing)
         # Received web messages also use the same command implementation.
         with self.store.transaction() as tx:
             pending = tx.conversation_pending(self.link.link_id)
@@ -210,6 +230,92 @@ class BuzzConversationCycle:
                 processed=True,
             )
 
+
+    def _guidance_parent(self, tx, task, receipt, controls):
+        parent = controls.get(receipt.get("id"))
+        if receipt.get("source_channel") == "buzz" and receipt.get("source_event_id"):
+            source = tx.conversation_message(receipt["source_event_id"])
+            if source is not None:
+                message, route = source["message"], source["route"]
+                if (message.link_id != self.link.link_id or message.author != self.link.principal_id
+                        or route is None or route.action != "guide" or route.task_id != task.task_id
+                        or "control:" + fingerprint([message.author, message.message_id]) != receipt["id"]):
+                    raise Rejected("conversation_guidance_denied", 403)
+                parent = message.message_id
+        return parent
+
+
+    def _guidance_messages(self, tx, task):
+        # Guidance changes must not repost the completed result. Their
+        # own stable identity also deduplicates reconnect/restart delivery.
+        from radhouse.application.guidance import PROTOCOL, outcome_message_id, outcome_text
+        controls = {"control:" + fingerprint([self.link.principal_id, message_id]): message_id
+                    for message_id in tx.conversation_guidance_messages(self.link, task.task_id)}
+        for receipt in task.guidance:
+            outcome = receipt.get("application_state")
+            if receipt.get("protocol") != PROTOCOL or outcome not in {"applied", "too_late", "not_applied", "unknown"}:
+                continue
+            outcome_id = outcome_message_id(task.task_id, receipt)
+            # New controls retain their source event before the runtime
+            # POST. Resolve its frozen route even if processing has not
+            # yet marked the incoming message complete. The bounded
+            # lookup above is only for older retained receipts.
+            parent = self._guidance_parent(tx, task, receipt, controls)
+            if tx.conversation_message(outcome_id) is None:
+                tx.save_conversation_message(ConversationMessage(
+                    outcome_id, self.link.link_id, self.link.bot_id,
+                    outcome_text(receipt), "radhouse", int(self.service._now().timestamp()),
+                    task_id=task.task_id, state="guidance",
+                    reply_to=parent,
+                    task_state_revision=task.state_revision,
+                ), processed=True)
+
+
+    def _task_message(self, tx, task, bot):
+        identity = sha256(
+            encoded(
+                [
+                    task.task_id,
+                    task.phase,
+                    task.outcome,
+                    task.blockers,
+                    task.result_digest,
+                ]
+            )
+        )
+        message_id = "task:" + identity
+        existing = tx.conversation_message(message_id)
+        if existing:
+            tx.save_conversation_message(
+                replace(
+                    existing["message"], task_state_revision=task.state_revision
+                ),
+                processed=True,
+            )
+            return
+        text = self.conversations.describe(task, bot.display_name)
+        if task.result:
+            preview = task.result[:1200]
+            text = preview + ("\n\n[Preview — full result in Radhouse]" if len(task.result) > 1200 else "")
+            if self.service.review_links is not None:
+                text += "\n\nReview required · Sign in to Radhouse:\n" + self.service.review_links.issue(tx, self.link, task)
+        tx.save_conversation_message(
+            ConversationMessage(
+                message_id,
+                self.link.link_id,
+                self.link.bot_id,
+                text,
+                "radhouse",
+                int(self.service._now().timestamp()),
+                task_id=task.task_id,
+                reply_to=tx.conversation_task_anchor(self.link, task.task_id),
+                state="result" if task.result else "progress",
+                task_state_revision=task.state_revision,
+            ),
+            processed=True,
+        )
+
+
     def _task_messages(self):
         if self.link.coordinator:
             # Specialist links own task progress/results under their signed
@@ -232,81 +338,8 @@ class BuzzConversationCycle:
                     or task.project_id != self.link.project_id
                 ):
                     raise Rejected("conversation_task_denied", 403)
-                # Guidance changes must not repost the completed result. Their
-                # own stable identity also deduplicates reconnect/restart delivery.
-                from radhouse.application.guidance import PROTOCOL, outcome_message_id, outcome_text
-                controls = {"control:" + fingerprint([self.link.principal_id, message_id]): message_id
-                            for message_id in tx.conversation_guidance_messages(self.link, task.task_id)}
-                for receipt in task.guidance:
-                    outcome = receipt.get("application_state")
-                    if receipt.get("protocol") != PROTOCOL or outcome not in {"applied", "too_late", "not_applied", "unknown"}:
-                        continue
-                    outcome_id = outcome_message_id(task.task_id, receipt)
-                    # New controls retain their source event before the runtime
-                    # POST. Resolve its frozen route even if processing has not
-                    # yet marked the incoming message complete. The bounded
-                    # lookup above is only for older retained receipts.
-                    parent = controls.get(receipt.get("id"))
-                    if receipt.get("source_channel") == "buzz" and receipt.get("source_event_id"):
-                        source = tx.conversation_message(receipt["source_event_id"])
-                        if source is not None:
-                            message, route = source["message"], source["route"]
-                            if (message.link_id != self.link.link_id or message.author != self.link.principal_id
-                                    or route is None or route.action != "guide" or route.task_id != task.task_id
-                                    or "control:" + fingerprint([message.author, message.message_id]) != receipt["id"]):
-                                raise Rejected("conversation_guidance_denied", 403)
-                            parent = message.message_id
-                    if tx.conversation_message(outcome_id) is None:
-                        tx.save_conversation_message(ConversationMessage(
-                            outcome_id, self.link.link_id, self.link.bot_id,
-                            outcome_text(receipt), "radhouse", int(self.service._now().timestamp()),
-                            task_id=task.task_id, state="guidance",
-                            reply_to=parent,
-                            task_state_revision=task.state_revision,
-                        ), processed=True)
-                identity = sha256(
-                    encoded(
-                        [
-                            task.task_id,
-                            task.phase,
-                            task.outcome,
-                            task.blockers,
-                            task.result_digest,
-                        ]
-                    )
-                )
-                message_id = "task:" + identity
-                existing = tx.conversation_message(message_id)
-                if existing:
-                    tx.save_conversation_message(
-                        replace(
-                            existing["message"], task_state_revision=task.state_revision
-                        ),
-                        processed=True,
-                    )
-                    continue
-                text = self.conversations.describe(task, bot.display_name)
-                if task.result:
-                    preview = task.result[:1200]
-                    text = preview + ("\n\n[Preview — full result in Radhouse]" if len(task.result) > 1200 else "")
-                    if self.service.review_links is not None:
-                        text += "\n\nReview required · Sign in to Radhouse:\n" + self.service.review_links.issue(tx, self.link, task)
-                tx.save_conversation_message(
-                    ConversationMessage(
-                        message_id,
-                        self.link.link_id,
-                        self.link.bot_id,
-                        text,
-                        "radhouse",
-                        int(self.service._now().timestamp()),
-                        task_id=task.task_id,
-                        reply_to=tx.conversation_task_anchor(self.link, task.task_id),
-                        state="result" if task.result else "progress",
-                        task_state_revision=task.state_revision,
-                    ),
-                    processed=True,
-                )
-
+                self._guidance_messages(tx, task)
+                self._task_message(tx, task, bot)
     def _publication_messages(self):
         if self.link.coordinator:
             return
@@ -328,6 +361,64 @@ class BuzzConversationCycle:
                     state="publication", task_state_revision=task.state_revision,
                 ), processed=True)
 
+
+    def _thread_tags(self, tx, message, tags):
+        parent = tx.conversation_reply(self.link.link_id, message.reply_to)
+        parent_event = (
+            (
+                parent["event"]
+                or tx.conversation_event(parent["message"].message_id)
+            )
+            if parent
+            else None
+        )
+        if parent is not None and parent_event is None:
+            # A web message gets its signed mirror only after its
+            # command finishes. Never freeze an unthreaded child in
+            # this window; a later cycle uses the exact parent event.
+            return False
+        if parent_event:
+            markers = {
+                t[3]: t[1] for t in parent_event["tags"]
+                if len(t) >= 4 and t[0] == "e" and t[3] in {"root", "reply"}
+            }
+            # Buzz resolves a reply-only parent under that target.
+            # Without a reply marker (including root-only legacy
+            # events), the parent is itself a top-level message.
+            root = (markers.get("root", markers["reply"])
+                    if "reply" in markers else parent_event["id"])
+            tags.extend(
+                [
+                    ["e", root, "", "root"],
+                    ["e", parent_event["id"], "", "reply"],
+                ]
+            )
+        return True
+
+
+    def _outgoing_content(self, tx, message):
+        text = message.content
+        if message.author == self.link.principal_id:
+            text = f"{self.link.principal_id} · via Radhouse\n\n{text}"
+            if message.files:
+                text += "\n\nReferences saved with this task: " + ", ".join(
+                    file.name for file in message.files
+                )
+        tags = [
+            ["h", self.link.channel_id],
+            ["radhouse-mirror", message.message_id],
+        ]
+        if message.task_id:
+            tags.append(["radhouse-task", message.task_id])
+            correlated = tx.task(message.task_id)
+            if (message.state in {"result", "publication"}
+                    and correlated is not None and correlated.result_digest):
+                tags.append(["radhouse-result", correlated.result_digest])
+        if message.state == "result":
+            tags.append(["radhouse-review", message.task_id])
+        return text, tags
+
+
     def _prepare_outbox(self):
         # Iterate history in bounded pages. Existing deliveries are retained and
         # skipped; there is no per-process cursor that could lose a message.
@@ -341,56 +432,10 @@ class BuzzConversationCycle:
                     and message.source == "buzz"
                 ):
                     continue
-                text = message.content
-                if message.author == self.link.principal_id:
-                    text = f"{self.link.principal_id} · via Radhouse\n\n{text}"
-                    if message.files:
-                        text += "\n\nReferences saved with this task: " + ", ".join(
-                            file.name for file in message.files
-                        )
-                tags = [
-                    ["h", self.link.channel_id],
-                    ["radhouse-mirror", message.message_id],
-                ]
-                if message.task_id:
-                    tags.append(["radhouse-task", message.task_id])
-                    correlated = tx.task(message.task_id)
-                    if (message.state in {"result", "publication"}
-                            and correlated is not None and correlated.result_digest):
-                        tags.append(["radhouse-result", correlated.result_digest])
-                if message.state == "result":
-                    tags.append(["radhouse-review", message.task_id])
+                text, tags = self._outgoing_content(tx, message)
                 if message.reply_to:
-                    parent = tx.conversation_reply(self.link.link_id, message.reply_to)
-                    parent_event = (
-                        (
-                            parent["event"]
-                            or tx.conversation_event(parent["message"].message_id)
-                        )
-                        if parent
-                        else None
-                    )
-                    if parent is not None and parent_event is None:
-                        # A web message gets its signed mirror only after its
-                        # command finishes. Never freeze an unthreaded child in
-                        # this window; a later cycle uses the exact parent event.
+                    if not self._thread_tags(tx, message, tags):
                         continue
-                    if parent_event:
-                        markers = {
-                            t[3]: t[1] for t in parent_event["tags"]
-                            if len(t) >= 4 and t[0] == "e" and t[3] in {"root", "reply"}
-                        }
-                        # Buzz resolves a reply-only parent under that target.
-                        # Without a reply marker (including root-only legacy
-                        # events), the parent is itself a top-level message.
-                        root = (markers.get("root", markers["reply"])
-                                if "reply" in markers else parent_event["id"])
-                        tags.extend(
-                            [
-                                ["e", root, "", "root"],
-                                ["e", parent_event["id"], "", "reply"],
-                            ]
-                        )
                 event = self.relay.event(9, text, tags)
                 tx.conversation_enqueue(
                     message.message_id, self.link.link_id, message.message_id, event

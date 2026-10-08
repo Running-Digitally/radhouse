@@ -64,10 +64,12 @@ def test_removed_configured_candidate_denies_web_history_and_send(
 ):
     app, link = chat
     service.conversation_scope = lambda candidate: False
+    prepared_argument_2 = envelope()
     with pytest.raises(Rejected, match="conversation_link_denied"):
-        app.history(alice, envelope(), link.link_id)
+        app.history(alice, prepared_argument_2, link.link_id)
+    prepared_argument_2_2 = replace(message(link), source='radhouse')
     with pytest.raises(Rejected, match="conversation_link_denied"):
-        app.receive(link, replace(message(link), source="radhouse"))
+        app.receive(link, prepared_argument_2_2)
     with store.transaction() as tx:
         assert tx.tasks() == []
 
@@ -99,7 +101,8 @@ def test_crash_after_task_commit_recovers_same_admission(
 def test_status_message_does_not_create_or_run_work(chat, store):
     first = send(chat)
     status = send(chat, "Any progress?")
-    assert status.task_id == first.task_id and status.state == "status"
+    assert status.task_id == first.task_id
+    assert status.state == 'status'
     with store.transaction() as tx:
         assert len(tx.tasks()) == 1
         assert tx.task(first.task_id).attempt_id is None
@@ -121,13 +124,17 @@ def test_completed_result_discussion_keeps_selected_context(chat, service, store
 def test_short_no_tools_work_finishes_and_later_buzz_message_is_contextual_followup(chat, service, fake_work, store, threaded):
     first = send(chat, "Use no tools. Give a short comparison.")
     done = service.run(first.task_id)
-    assert done.disable_tools and done.phase == "closed" and done.guidance == ()
+    assert done.disable_tools
+    assert done.phase == 'closed'
+    assert done.guidance == ()
     # A new conversational message after completion is new contextual work,
     # never an attempt to reopen the completed provider response.
     second = send(chat, "Explain which choice is easier to maintain.", reply=first.message_id if threaded else None)
     followup = service.run(second.task_id)
-    assert followup.task_id != done.task_id and followup.follows_task_id == done.task_id
-    assert followup.previous_result == done.result and followup.guidance == ()
+    assert followup.task_id != done.task_id
+    assert followup.follows_task_id == done.task_id
+    assert followup.previous_result == done.result
+    assert followup.guidance == ()
     assert fake_work.start_count == 2
     with store.transaction() as tx:
         assert tx.task(done.task_id) == done
@@ -137,9 +144,11 @@ def test_ambiguous_busy_conversation_clarifies_and_explicit_reply_targets(chat, 
     first = send(chat)
     second = send(chat, "Separately, compare two other ideas.")
     unclear = send(chat, "Focus on Canada.")
-    assert unclear.state == "clarify" and unclear.task_id is None
+    assert unclear.state == 'clarify'
+    assert unclear.task_id is None
     targeted = send(chat, "Focus on Canada.", reply=first.message_id)
-    assert targeted.task_id == first.task_id and targeted.task_id != second.task_id
+    assert targeted.task_id == first.task_id
+    assert targeted.task_id != second.task_id
     with store.transaction() as tx:
         assert len(tx.tasks()) == 2
 
@@ -181,24 +190,28 @@ def test_web_history_rechecks_both_bindings_and_cannot_read_other_owner(
     app, link = chat
     send(chat)
     assert len(app.history(alice, envelope(), link.link_id)["messages"]) == 2
+    prepared_argument_2_3 = envelope()
     with pytest.raises(Rejected):
-        app.history(bob, envelope(), link.link_id)
+        app.history(bob, prepared_argument_2_3, link.link_id)
     with store.transaction() as tx:
         tx._connection.execute(
             "UPDATE channel_bindings SET active=false WHERE channel='buzz' AND subject='alice@buzz'"
         )
+    prepared_argument_2_4 = envelope()
     with pytest.raises(Rejected):
-        app.history(alice, envelope(), link.link_id)
+        app.history(alice, prepared_argument_2_4, link.link_id)
 
 
 def test_event_id_reuse_cannot_change_content_or_reply_target(chat):
     app, link = chat
     m = message(link)
     app.receive(link, m)
+    prepared_argument_2_5 = replace(m, content='Different work')
     with pytest.raises(Rejected, match="conversation_message_conflict"):
-        app.receive(link, replace(m, content="Different work"))
+        app.receive(link, prepared_argument_2_5)
+    prepared_argument_2_6 = replace(m, reply_to='another-task')
     with pytest.raises(Rejected, match="conversation_message_conflict"):
-        app.receive(link, replace(m, reply_to="another-task"))
+        app.receive(link, prepared_argument_2_6)
 
 
 def test_unknown_thread_requests_clarification(chat, store):

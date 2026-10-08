@@ -34,10 +34,8 @@ def test_web_conversation_send_retry_history_and_binding(
             assert len(tasks) == 1
             assert tasks[0].files[0].content == "A useful reference."
         history = client.get(path, params=query)
-        assert (
-            history.status_code == 200
-            and history.headers["cache-control"] == "no-store"
-        )
+        assert history.status_code == 200
+        assert history.headers['cache-control'] == 'no-store'
         assert len(history.json()["messages"]) == 2
         cursor = history.json()["cursor"]
         assert (
@@ -46,9 +44,8 @@ def test_web_conversation_send_retry_history_and_binding(
         assert client.post(path, json={**body, "files": []}).status_code == 409
         identity[0] = bob
         denied = client.get(path, params=query)
-        assert (
-            denied.status_code == 403 and denied.headers["cache-control"] == "no-store"
-        )
+        assert denied.status_code == 403
+        assert denied.headers['cache-control'] == 'no-store'
 
 
 def test_conversation_message_rejects_spoofed_authority(chat, service, alice, envelope):

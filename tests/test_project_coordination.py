@@ -147,14 +147,16 @@ def test_failed_deployment_does_not_promote_claimed_merge_or_release():
 def test_invalid_machine_report_does_not_replace_the_human_result():
     assert result_update("RADHOUSE_PROJECT_UPDATE: not-json") == {}
     assert result_update(report(preview_url="http://public.example")) == {}
+    prepared_argument_1 = ProjectCoordination('expenses')
     with pytest.raises(Rejected, match="project_preview_not_current"):
-        accept_preview(ProjectCoordination("expenses"))
+        accept_preview(prepared_argument_1)
 
     text = status_text(ProjectCoordination(
         "expenses", phase="preview_feedback",
         preview_url="https://preview.example/", preview_revision="abc1234",
     ))
-    assert "preview feedback" in text and "abc1234" in text
+    assert 'preview feedback' in text
+    assert 'abc1234' in text
 
 
 def test_llm_coordination_plan_is_strict_bounded_data():
@@ -206,11 +208,9 @@ def test_llm_coordination_plan_is_strict_bounded_data():
     ],
 )
 def test_invalid_or_authority_expanding_llm_coordination_plan_is_rejected(result):
+    prepared_allowed_routes = frozenset({'research', 'build', 'research_then_build', 'clarify'})
     with pytest.raises(Rejected, match="coordination_plan_invalid"):
-        parse_coordination_plan(
-            result,
-            allowed_routes=frozenset({"research", "build", "research_then_build", "clarify"}),
-        )
+        parse_coordination_plan(result, allowed_routes=prepared_allowed_routes)
 
 
 def test_pull_status_renders_sanitized_runtime_activity_without_raw_trace():

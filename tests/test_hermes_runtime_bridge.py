@@ -152,24 +152,29 @@ def test_native_admission_receipt_precedes_first_tool_and_private_token_fingerpr
         def run_conversation(self, **kwargs):
             context = bridge.current_run_context(task_id=kwargs["task_id"], documents=True)
             status = value._run_statuses[context.run_id]
-            assert status["dispatch_key"] == "dispatch1" and status["session_id"] == "chat1"
+            assert status['dispatch_key'] == 'dispatch1'
+            assert status['session_id'] == 'chat1'
             assert status["allowed_tools"] == list(bridge.DOCUMENT_TOOLS)
             assert token not in json.dumps(status)
             seen.append(context)
             return "done"
     async def execute(owner, launch, **kwargs):
-        assert token not in repr(launch) and token not in json.dumps(launch.agent_kwargs)
+        assert token not in repr(launch)
+        assert token not in json.dumps(launch.agent_kwargs)
         return await asyncio.to_thread(native._run_agent_sync, owner, launch, Agent(), None, _api_server=api)
     native._execute_run = execute
     async def run():
         response = await native._handle_runs(value, request(body), _api_server=api)
         assert response.status == 202
         await asyncio.gather(*value._active_run_tasks.values())  # Before delivering acknowledgement to client.
-        assert seen and bridge._context.get() is None
+        assert seen
+        assert bridge._context.get() is None
         replay = await native._handle_runs(value, request(body), _api_server=api)
-        assert replay.status == 202 and replay.value["replayed"] is True
+        assert replay.status == 202
+        assert replay.value['replayed'] is True
         conflict = await native._handle_runs(value, request({**body, "document_scope_token": "b" * 43}), _api_server=api)
-        assert conflict.status == 409 and conflict.value["error"] == "idempotency_key_conflict"
+        assert conflict.status == 409
+        assert conflict.value['error'] == 'idempotency_key_conflict'
         assert len(value._active_run_tasks) == 1
     asyncio.run(run())
 
@@ -184,8 +189,9 @@ def test_native_worker_resets_context_after_exception(monkeypatch):
         def run_conversation(self, **kwargs):
             assert bridge.current_run_context().run_id == "run1"
             raise RuntimeError("private parser failure")
+    prepared_argument_3 = Agent()
     with pytest.raises(RuntimeError):
-        native._run_agent_sync(value, launch, Agent(), None, _api_server=api)
+        native._run_agent_sync(value, launch, prepared_argument_3, None, _api_server=api)
     with pytest.raises(ValueError):
         bridge.current_run_context()
 
@@ -254,27 +260,31 @@ def test_maintenance_gate_is_before_native_first_await(monkeypatch):
     async def handler(*args):
         pytest.fail("held runtime reached first await")
     response = asyncio.run(namespace["_admit_api_agent_request"](handler)(value, request({})))
-    assert response.status == 503 and value._pending_agent_requests == 0
+    assert response.status == 503
+    assert value._pending_agent_requests == 0
 
 
 def test_firewall_information_is_unverified_by_default_and_not_a_url_permission():
     value = SimpleNamespace(_run_idempotency_store=ReceiptStore())
     assert bridge.features(value)["browser_network_policy"]["verified"] is False
     assert bridge.http_url("http://192.168.50.66:8443/status")
-    assert not bridge.http_url("file:///etc/passwd") and not bridge.http_url("https://user:password@example.com")
+    assert not bridge.http_url('file:///etc/passwd')
+    assert not bridge.http_url('https://user:password@example.com')
     policy = {"schema": "radhouse.browser-network-policy.v1", "verified": True, "source": "deployment-target firewall snapshot",
         "verified_at": "2026-10-07T12:00:00+00:00", "enforcement": "vm_firewall", "allowed": ["Configured LAN destinations"], "denied": []}
     bridge.configure_network_policy(policy)
     prompt = bridge.trusted_browser_instructions("base instructions", bridge.BROWSER_TOOLS)
-    assert "not permission" in prompt and "deployment-target firewall snapshot" in prompt
+    assert 'not permission' in prompt
+    assert 'deployment-target firewall snapshot' in prompt
     assert bridge.trusted_browser_instructions("base instructions", bridge.DOCUMENT_TOOLS) == "base instructions"
     with pytest.raises(ValueError):
         bridge.configure_network_policy({**policy, "verified_at": None})
     with pytest.raises(ValueError):
         bridge.configure_network_policy({**policy, "allowed": ["LAN café"]})
     from datetime import datetime, timedelta, timezone
+    prepared_argument_1 = {**policy, 'verified_at': (datetime.now(timezone.utc) + timedelta(minutes=6)).isoformat()}
     with pytest.raises(ValueError):
-        bridge.configure_network_policy({**policy, "verified_at": (datetime.now(timezone.utc) + timedelta(minutes=6)).isoformat()})
+        bridge.configure_network_policy(prepared_argument_1)
 
 
 def test_failed_plugin_setup_cannot_advertise_partial_document_configuration(monkeypatch):
@@ -292,7 +302,8 @@ def test_native_child_environment_cannot_inherit_credentials_or_browser_profile(
         clean = bridge.browser_environment({"PATH": "/usr/bin", "HOME": "/home/bot", "OPENAI_API_KEY": "secret",
             "DOCUMENT_SCOPE_TOKEN": "private", "AGENT_BROWSER_ARGS": "--no-sandbox", "AGENT_BROWSER_PROFILE": "/private/profile"})
         assert set(clean) == {"PATH", "HOME", "AGENT_BROWSER_EXECUTABLE_PATH", "AGENT_BROWSER_ARGS"}
-        assert "secret" not in json.dumps(clean) and "--no-sandbox" not in json.dumps(clean)
+        assert 'secret' not in json.dumps(clean)
+        assert '--no-sandbox' not in json.dumps(clean)
         assert bridge.browser_argv() == ["/fixed/browser", "--config", "/fixed/empty.json", "--executable-path", "/fixed/chrome"]
     finally:
         bridge.reset_run_context(token)
@@ -311,7 +322,8 @@ def test_browser_arguments_cannot_override_native_options_and_text_remains_liter
             assert json.loads(result) == {"error": "browser_access_unavailable"}
         result = bridge.checked_browser_call("browser_type", {"ref": "@e1", "text": "--config"},
                                              {"task_id": "chat1"}, lambda: "literal-text")
-        assert result == "literal-text" and seen == []
+        assert result == 'literal-text'
+        assert seen == []
     finally:
         bridge.reset_run_context(token)
 
@@ -339,8 +351,8 @@ def test_active_document_run_before_browser_start_uses_pinned_owned_resolver(mon
     adapter, request, api, state, calls = owned_browser_status_adapter(monkeypatch)
     monkeypatch.setattr(bridge, "_session_stream", lambda session: None)
     result = asyncio.run(bridge.handle_browser(adapter, request, api_server=api))
-    assert result.status == 200 and result.value == {
-        "run_id": "run1", "session_id": "chat1", "state": "idle", "generation": None, "url": None}
+    assert result.status == 200
+    assert result.value == {'run_id': 'run1', 'session_id': 'chat1', 'state': 'idle', 'generation': None, 'url': None}
     assert calls == ["status"]
 
 
@@ -358,12 +370,15 @@ def test_browser_reauthorizes_durable_run_after_stream_with_pinned_resolver(monk
     result = asyncio.run(bridge.handle_browser(adapter, request, frame=frame, api_server=api))
     assert calls == ["status", "status"]
     if changed:
-        assert result.value["state"] == "unavailable" and "jpeg" not in result.value
+        assert result.value['state'] == 'unavailable'
+        assert 'jpeg' not in result.value
         assert result.status == (409 if frame else 200)
     elif frame:
-        assert result.status == 200 and result.value["jpeg"] == "actual-frame"
+        assert result.status == 200
+        assert result.value['jpeg'] == 'actual-frame'
     else:
-        assert result.status == 200 and result.value["state"] == "live"
+        assert result.status == 200
+        assert result.value['state'] == 'live'
 
 
 @pytest.mark.parametrize("denial", ["auth", "foreign", "missing_durable"])
@@ -377,7 +392,8 @@ def test_browser_resolver_denies_before_stream_and_never_falls_back_to_active_ag
         state["run"] = None  # An active agent alone cannot establish durable scope.
     monkeypatch.setattr(bridge, "_session_stream", lambda session: pytest.fail("denied observation reached native stream"))
     result = asyncio.run(bridge.handle_browser(adapter, request, api_server=api))
-    assert result.status == (401 if denial == "auth" else 404) and "jpeg" not in result.value
+    assert result.status == (401 if denial == 'auth' else 404)
+    assert 'jpeg' not in result.value
     assert calls == ["status"]
 
 
@@ -448,7 +464,8 @@ def test_unscoped_preflight_preserves_upstream_missing_cached_and_ready_behavior
     monkeypatch.setattr(bridge, "_browser_configuration", {"agent_browser_path": "/qualified/native"})
     result = preflight()
     if cached_chromium:
-        assert result == {"browser_cmd": "/ambient/browser"} and calls == []
+        assert result == {'browser_cmd': '/ambient/browser'}
+        assert calls == []
     else:
         assert result == {"success": False, "error": "missing Chromium"}
         assert calls.count("lazy_install") == 1
@@ -462,7 +479,8 @@ def test_scoped_pinned_preflight_keeps_upstream_interrupt_check(monkeypatch):
         "empty_config_path": "/qualified/empty.json", "chromium_path": "/qualified/chrome"})
     token = bridge.bind_run_context("run1", "chat1", "dispatch1", None)
     try:
-        assert preflight() == {"success": False, "error": "Interrupted"} and calls == []
+        assert preflight() == {'success': False, 'error': 'Interrupted'}
+        assert calls == []
     finally:
         bridge.reset_run_context(token)
 
@@ -478,10 +496,13 @@ def test_stationary_native_relay_retains_frame_with_unknown_capture_time(monkeyp
         relay.ingest({"type": "frame", "data": __import__("base64").b64encode(b"\xff\xd8\xffactual-frame").decode(), "metadata": {"timestamp": 0}})
         first = await relay.snapshot(True)
         second = await relay.snapshot(True)
-        assert first == second and first["captured_at"] is None and first["received_at"] > 0
+        assert first == second
+        assert first['captured_at'] is None
+        assert first['received_at'] > 0
         assert first["url"] == "https://example.com/page"
         relay.ingest({"type": "url", "url": "http://192.0.2.10/second?token=hidden"})
-        assert relay.url == "http://192.0.2.10/second" and relay.frame is None
+        assert relay.url == 'http://192.0.2.10/second'
+        assert relay.frame is None
         relay.ingest({"type": "frame", "data": __import__("base64").b64encode(b"\xff\xd8\xffsecond-frame").decode()})
         assert (await relay.snapshot(True))["frame_id"] != first["frame_id"]
         relay.ingest({"type": "status", "connected": False})
@@ -496,8 +517,10 @@ def test_overlay_refuses_modified_source_and_preserves_existing_controls(tmp_pat
         overlay.render(tmp_path)
     raw = (RUNTIME / "fixtures/api_server_runs.snapshot").read_text()
     patched = overlay.patch_runs(raw)
-    assert "allowed_tools_not_configured" in patched and "provider_request_budget_requires_idempotency" in patched
-    assert "_runtime_contract.fresh_admission_error" in patched and '"body": body' in patched
+    assert 'allowed_tools_not_configured' in patched
+    assert 'provider_request_budget_requires_idempotency' in patched
+    assert '_runtime_contract.fresh_admission_error' in patched
+    assert '"body": body' in patched
     with pytest.raises(ValueError):
         overlay.patch_runs(patched)
 
@@ -560,8 +583,10 @@ def test_maintenance_producer_timestamp_matches_strict_operator_iso_schema(monke
     value = SimpleNamespace(_pending_agent_requests=0, _inflight_agent_runs=0, _active_run_tasks={})
     response = bridge.maintenance_status(value)
     checked = datetime.fromisoformat(response["checked_at"])
-    assert checked.tzinfo is not None and abs((datetime.now(timezone.utc) - checked).total_seconds()) < 1
-    assert response["active_runs"] == response["active_browsers"] == 0 and response["verified"] is True
+    assert checked.tzinfo is not None
+    assert abs((datetime.now(timezone.utc) - checked).total_seconds()) < 1
+    assert response['active_runs'] == response['active_browsers'] == 0
+    assert response['verified'] is True
 
 
 def test_bootstrap_promotes_only_real_isolation_proof_and_unwraps_cycle_receipt(tmp_path, monkeypatch):
@@ -730,7 +755,8 @@ def test_bootstrap_verify_runs_bot_canary_after_package_or_reboot_changes(monkey
     result = bootstrap.verify({}, {"runtime_sha256": "e" * 64, "hermes_python": "/pinned/venv/python"})
     assert result["state"] == "verified"
     assert calls[0][0][:4] == ["/usr/sbin/runuser", "-u", "radhousebot", "--"]
-    assert "maintenance-qualify" in calls[0][0] and calls[0][1] == {"candidate": selected}
+    assert 'maintenance-qualify' in calls[0][0]
+    assert calls[0][1] == {'candidate': selected}
 
 
 @pytest.mark.parametrize("entrypoint", ["qualify", "verify"])
@@ -840,7 +866,8 @@ def test_qualification_repeated_termination_is_deferred_until_native_exit(monkey
     monkeypatch.setattr(bootstrap.os, "waitpid", reap)
     with pytest.raises(ValueError, match="browser_qualification_observation_interrupted"):
         bootstrap.qualification_output(["fixed-canary"], b"{}", timeout=0.01)
-    assert child.returncode == 0 and len(waits) == 3
+    assert child.returncode == 0
+    assert len(waits) == 3
     assert handlers == originals
 
 
