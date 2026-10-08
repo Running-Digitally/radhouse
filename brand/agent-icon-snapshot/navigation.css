@@ -34,7 +34,7 @@
 
 /* Shared interface language. Icons inherit their control's semantic colour. */
 :root{--rh-green:#315d4b;--rh-pressed:#244638;--rh-warm:#a75c34;--rh-soft:#e9eee8;--rh-focus:#a75c34;--rh-motion:160ms}
-.rh-icon{display:block;width:20px;height:20px;flex:none;overflow:visible;transform-box:view-box;transform-origin:12px 12px}
+.rh-icon{display:block;width:20px;height:20px;flex:none;overflow:visible;transform-box:view-box;transform-origin:50% 50%}
 .rh-icon path{transform-box:fill-box;transform-origin:center}
 .rh-action{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-width:44px;min-height:44px;transition:background var(--rh-motion) ease,color var(--rh-motion) ease,box-shadow var(--rh-motion) ease;touch-action:manipulation}
 .rh-action-label{line-height:1.35}
@@ -81,7 +81,7 @@
   .navigation-panel{background:#fffef9}
 }
 /* Motion is drawn inside the glyph; hit targets never move. */
-.rh-icon[data-icon="key"]{transform-origin:7px 10px}
+.rh-icon[data-icon="key"]{transform-origin:29.166667% 41.666667%}
 .rh-icon[data-icon="key"] [data-part="hole"]{stroke-width:1.1}
 .rh-icon[data-icon="eye"] [data-part="lid"],.rh-icon[data-icon="close"] path{transform-box:view-box;transform-origin:12px 12px}
 .rh-icon[data-icon="keyboard"] [data-part^="key"]{stroke-width:1.1}

@@ -6,7 +6,7 @@ window.RadhouseIcons = (() => {
   const paths = Object.freeze({
     chat: [["M7 4h10a4 4 0 0 1 4 4v6a4 4 0 0 1-4 4h-6l-5 3v-3a3 3 0 0 1-3-3V8a4 4 0 0 1 4-4Z","shell"],["M8 9h8","write1"],["M8 13h5","write2"]],
     library: [["M3 8h18v10q0 2-2 2H5q-2 0-2-2Z","shell"],["M3 8V6q0-1 1-1h6l2 3","lid"],["M7 12h10","write1"],["M7 16h7","write2"]],
-    browser: [["M4 3h16q1 0 1 1v16q0 1-1 1H4q-1 0-1-1V4q0-1 1-1Z","shell"],["M3 8h3V6q0-1 1-1h4q1 0 1 1v2h9","tab"],["M9 10.5h8q1 0 1 1v.5q0 1-1 1H9q-1 0-1-1v-.5q0-1 1-1Z","address"],["M5.5 11.7h.01","nav"],["M6 16h12","write1"],["M6 18.5h8","write2"]],
+    browser: [["M4 3h16q1 0 1 1v16q0 1-1 1H4q-1 0-1-1V4q0-1 1-1Z","shell"],["M3 9h4V6h6v3h8","tab"],["M7 13h10","write1"],["M7 17h6","write2"]],
     settings: [["M4 7h16M4 17h16","rails"],["M9 4v6","slider1"],["M15 14v6","slider2"]],
     infrastructure: [["M5 3h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z","server1"],["M5 13h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2Z","server2"],["M7 7h.01","led1"],["M7 17h.01","led2"],["M12 7h5","write1"],["M12 17h5","write2"]],
     clipboard: [["M8 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2","shell"],["M9 3h6q1 0 1 1v3H8V4q0-1 1-1Z","clip"],["M8 12h8","write1"],["M8 16h5","write2"],["M6 7h12v14H6Z","echo"]],
@@ -26,7 +26,7 @@ window.RadhouseIcons = (() => {
     send: [["m3 3 18 9-18 9 4-9Z","plane"],["M7 12h14","trail"]],
     warning: [["m12 3 10 18H2Z","shell"],["M12 9v5","mark"],["M12 17h.01","dot"]],
     terminal: [["M4 4h16q1 0 1 1v14q0 1-1 1H4q-1 0-1-1V5q0-1 1-1Z","shell"],["M3 8h18M6 6h.01","chrome"],["m7 11 3 3-3 3","prompt"],["M13 17h4","cursor"],["M13 13h4","command"]],
-    "terminal-context": [["M3 4h9v10H3Z","source"],["M5 7h5","write1"],["M5 10h3","write2"],["M16 8h3q2 0 2 2v5q0 2-2 2h-2l-3 2v-9q0-2 2-2Z","chat"],["M5 18h7m-3-3 3 3-3 3","arrow"],["M5 18h.01","packet"]],
+    "terminal-context": [["M17 8V5q0-1-1-1H4q-1 0-1 1v14q0 1 1 1h12q1 0 1-1v-3","source"],["m6 9 3 3-3 3","write1"],["M12 12h9m-3-3 3 3-3 3","arrow"],["M12 12h.01","packet"]],
     "about-you": [["M11 7a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z","profile"],["M3 20v-2q0-5 5-5h2","shoulders"],["M14 10h5l2 2v8h-7Z","page"],["M19 10v3h2","fold"],["M16 15h3","write1"],["M16 18h2","write2"]],
   });
   const bound=new WeakSet(), running=new Set(), byTarget=new WeakMap();
@@ -116,13 +116,13 @@ window.RadhouseIcons = (() => {
   }
   function closing(svg,click){
     for(const arm of parts(svg,"arm")){
-      if(!click)play(arm,[{transform:"scale(1)"},{transform:"scale(.65)",offset:.45},{transform:"scale(1)"}],500);
+      if(!click)play(arm,[{transform:"scale(1)",opacity:1},{transform:"scale(.02)",opacity:0,offset:.38},{transform:"scale(.02)",opacity:0,offset:.58},{transform:"scale(1)",opacity:1}],700);
       else {
         const length=arm.getTotalLength();
         play(arm,[{transform:"scale(1)",opacity:1,strokeDasharray:String(length),strokeDashoffset:"0"},{transform:"scale(.02)",opacity:0,strokeDasharray:String(length),strokeDashoffset:"0",offset:.28},{transform:"scale(1)",opacity:0,strokeDasharray:String(length),strokeDashoffset:String(length),offset:.65},{transform:"scale(1)",opacity:1,strokeDasharray:String(length),strokeDashoffset:String(length),offset:.66},{transform:"scale(1)",opacity:1,strokeDasharray:String(length),strokeDashoffset:"0"}],900);
       }
     }
-    play(part(svg,"star"),click?[{opacity:0,transform:"scale(.1)"},{opacity:0,transform:"scale(.1)",offset:.27},{opacity:1,transform:"scale(1.15)",offset:.45},{opacity:0,transform:"scale(.2)",offset:.64},{opacity:0,transform:"scale(.2)"}]:[{opacity:0},{opacity:.65,offset:.45},{opacity:0}],click?900:500);
+    play(part(svg,"star"),click?[{opacity:0,transform:"scale(.1)"},{opacity:0,transform:"scale(.1)",offset:.27},{opacity:1,transform:"scale(1.15)",offset:.45},{opacity:0,transform:"scale(.2)",offset:.64},{opacity:0,transform:"scale(.2)"}]:[{opacity:0,transform:"scale(.2)"},{opacity:0,transform:"scale(.2)",offset:.35},{opacity:.8,transform:"scale(.85)",offset:.48},{opacity:0,transform:"scale(.2)",offset:.65},{opacity:0}],click?900:700);
   }
   function motion(node,click=false){
     if(node.disabled || !effective())return;
@@ -142,7 +142,10 @@ window.RadhouseIcons = (() => {
       else play(svg,[{transform:"translateX(0) rotate(0)"},{transform:"translateX(2px) rotate(0)",offset:.2},{transform:"translateX(2px) rotate(-35deg)",offset:.48},{transform:"translateX(2px) rotate(0)",offset:.75},{transform:"translateX(0) rotate(0)"}],850);
     }else if(name==="agent"){
       if(!click)write(part(svg,"hearth"),0,700);
-      else {write(part(svg,"hearth"),100,700);play(part(svg,"center"),[{opacity:1,strokeWidth:1.7},{opacity:1,strokeWidth:4,offset:.5},{opacity:1,strokeWidth:1.7}],800);}
+      else {
+        write(part(svg,"hearth"),100,700);play(part(svg,"center"),[{opacity:1,strokeWidth:1.7},{opacity:1,strokeWidth:4,offset:.5},{opacity:1,strokeWidth:1.7}],800);
+        parts(svg,"smoke").forEach((smoke,i)=>play(smoke,[{opacity:0,transform:"translateY(2px)"},{opacity:.8,transform:"translateY(0)",offset:.35},{opacity:0,transform:"translateY(-4px)"}],900,{delay:i*120}));
+      }
     }else if(name==="settings"){
       for(const [i,slider] of parts(svg,"slider").entries())play(slider,[{transform:"translateX(0)"},{transform:`translateX(${(i? -1:1)*(click?5:3)}px)`,offset:.45},{transform:"translateX(0)"}],click?720:500);
     }else if(name==="back" || name==="forward"){
@@ -161,7 +164,7 @@ window.RadhouseIcons = (() => {
         {opacity:0,strokeDasharray:String(length),strokeDashoffset:"0"}],click?850:650,{delay:click?120:240,easing:"steps(4,end)"});
     }else if(name==="terminal-context"){
       writing(svg);
-      if(click){write(part(svg,"arrow"),200,400);play(part(svg,"packet"),[{opacity:0,transform:"translateX(0)"},{opacity:1,transform:"translateX(0)",offset:.2},{opacity:1,transform:"translateX(8px)",offset:.75},{opacity:0,transform:"translateX(8px)"}],800);write(part(svg,"chat"),400,400);}
+      if(click){write(part(svg,"arrow"),200,400);play(part(svg,"packet"),[{opacity:0,transform:"translateX(0)"},{opacity:1,transform:"translateX(0)",offset:.2},{opacity:1,transform:"translateX(8px)",offset:.75},{opacity:0,transform:"translateX(8px)"}],800);write(part(svg,"source"),0,350);}
     }else if(name==="send"){
       if(!click)write(part(svg,"trail"),0,450);
       else play(part(svg,"plane"),[{transform:"translate(0,0)",opacity:1},{transform:"translate(7px,-3px)",opacity:0,offset:.5},{transform:"translate(-5px,2px)",opacity:0,offset:.51},{transform:"translate(0,0)",opacity:1}],750);
@@ -175,7 +178,7 @@ window.RadhouseIcons = (() => {
       writing(svg,click?180:0);
       if(click && name==="clipboard")play(part(svg,"echo"),[{opacity:0,transform:"translate(0,0)"},{opacity:.65,transform:"translate(3px,-3px)",offset:.35},{opacity:0,transform:"translate(5px,-5px)"}],750);
       if(click && name==="library")play(part(svg,"lid"),[{transform:"translateY(0)"},{transform:"translateY(-2px)",offset:.4},{transform:"translateY(0)"}],700);
-      if(click && name==="browser"){write(part(svg,"tab"),0,350);write(part(svg,"address"),180,350);}
+      if(click && name==="browser")write(part(svg,"tab"),0,350);
       if(click && name==="chat")write(part(svg,"shell"),0,420);
       if(click && name==="menu")parts(svg,"write").forEach((line,i)=>play(line,[{transform:"translateY(0)"},{transform:`translateY(${(i-1)*3}px)`,offset:.4},{transform:"translateY(0)"}],650,{delay:i*45}));
       if(click && name==="about-you")write(part(svg,"page"),0,500);

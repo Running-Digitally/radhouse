@@ -10,10 +10,11 @@ ALLOWED = {
     "/agent-settings.html": ROOT / "agent-settings.html",
     "/agent-settings.css": ROOT / "agent-settings.css",
     "/agent-settings.js": ROOT / "agent-settings.js",
+    "/characters/catalog.js": ROOT / "characters" / "catalog.js",
     "/radhouse-mark.svg": ROOT / "radhouse-mark.svg",
-    "/navigation.js": ROOT / "agent-icon-snapshot" / "navigation.js",
-    "/navigation.css": ROOT / "agent-icon-snapshot" / "navigation.css",
-    **{f"/characters/{name}.png": ROOT / "characters" / f"{name}.png" for name in ("ember", "moss", "aster", "lumi")},
+    "/agent-icon-snapshot/navigation.js": ROOT / "agent-icon-snapshot" / "navigation.js",
+    "/agent-icon-snapshot/navigation.css": ROOT / "agent-icon-snapshot" / "navigation.css",
+    **{f"/characters/{name}.png": ROOT / "characters" / f"{name}.png" for name in ("ember", "moss", "aster", "lumi", "miro", "nori", "pebble", "rue", "kit", "sol", "beacon", "echo", "orbit")},
 }
 
 class PreviewHandler(SimpleHTTPRequestHandler):
