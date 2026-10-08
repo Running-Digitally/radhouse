@@ -3,9 +3,9 @@
 Warm paper, green ink, clear actions and playful details that express what the
 control does. The house-and-hearth mark remains the brand signature. This extends
 [the brand](README.md) and the [first useful action principle](../PRINCIPLES.md).
-The icon family and motion remain a review candidate: the owner has not approved
-the other icons by saying they were okay in screenshots. Review motion in the
-[interactive showcase](interface-preview.html).
+The owner accepted the icon family and motion as V1 on 2026-10-08 after
+interactive review. The [interactive showcase](interface-preview.html) is the
+reference for geometry, agent states and motion.
 
 ## One original family
 
@@ -191,7 +191,7 @@ input, uncertainty, vault handling, ownership, handoff, positive Close and frame
 lifecycle. Tests use disposable synthetic accounts/pages, without production
 runtime claims. Do not capture screenshots unless requested.
 
-This branch starts from verified production source `7ac0630` on
-`codex/icon-browser-design`. It remains a design review candidate, without
-production activation. SonarQube sprints and GitHub review-comment cycles remain
-paused.
+This design started from verified production source `7ac0630` on
+`codex/icon-browser-design`. The owner accepted V1 and authorized its source
+merge on 2026-10-08. Production activation belongs to the release workflow.
+SonarQube sprints and GitHub review-comment cycles remain paused.
