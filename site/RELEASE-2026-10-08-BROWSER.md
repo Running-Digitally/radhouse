@@ -23,9 +23,10 @@ The existing vision, conversation notebook, brand, security headers and approved
 public analytics policy are preserved. Existing project links now use main.
 
 Changes are limited to `site/public/index.html`, `site/public/styles.css`, the
-public-file release manifest, their site documentation and a minimal root README
-current-status correction. That README now agrees with the advertised pilot,
-while preserving the requirement to qualify other installations. No extra Worker,
+public-file release manifest, their site documentation and minimal root README/
+ROADMAP current-status corrections. Those companion documents now agree with
+the advertised pilot, while preserving the requirement to qualify other
+installations. No extra Worker,
 DNS, access, bindings, VM or privileged runtime change is part of this release.
 
 ## Verification and release gate
@@ -46,6 +47,14 @@ on `#f3efe5` (5.72:1); other new small-text colors reach at least 4.88:1.
 The README's stale tools-disabled and unqualified-deployment statements are
 corrected using the verified private-pilot evidence. A new exact-head GitHub
 Codex review is required after these corrections.
+
+The second cycle on `f38cd24e432fd1801d0c7dba09e76465a2d33b25` found the README's
+remaining pre-deployment setup paragraph and the linked roadmap's old selective-
+access qualification sequence. The setup instruction now explicitly applies to
+other installations; the roadmap records delivered, qualified and active pilot
+progress and distinguishes remaining qualification from the live browser view.
+The complete README/roadmap and homepage link destinations were checked for
+contradictory current-state claims before the next exact-head review.
 
 Publication requires the GitHub Codex review cycle to complete for the exact
 source head, then a normal merge. Upload `public/` from that merged source to
