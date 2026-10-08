@@ -4,6 +4,13 @@ The [interface language](INTERFACE.md) defines the original SVG icon family,
 interaction states and browser composition. Open the local
 [interface specimen](interface-preview.html) to inspect and try it.
 
+The [single-agent identity concept](AGENT-IDENTITY.md) has an interactive
+[profile and appearance mockup](agent-settings.html), thirteen raster character
+portraits across four themes, and the accepted V1 stateful Radhouse icons. Run
+`python3 brand/preview_settings.py` for its local preview. The
+[runnable documentation mock and component reuse map](../docs/design/agent-identity.md)
+keeps this page available as the main UI adopts it.
+
 This directory is the single source of truth for the Radhouse mark. Every
 other copy in the repository is a byte-identical duplicate kept here for
 directories that need their own local reference (a browser `<link>` or `<img>`
