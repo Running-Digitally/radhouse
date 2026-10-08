@@ -15,6 +15,8 @@ from urllib.parse import quote, unquote
 from xml.etree import ElementTree as ET
 from zipfile import ZipFile
 
+PDF_PAGE_PREFIX = "pdf:page:"
+
 CHUNK_CHARS = 2048
 MAX_SCAN_UNITS = 16_384
 MAX_TEXT_BYTES = 24 * 1024
@@ -191,7 +193,7 @@ def _selection(locator):
         base, offset_text = locator, "0"
     if not re.fullmatch(r"0|[1-9]\d*", offset_text, re.ASCII):
         raise ValueError("document_locator_not_found")
-    prefixes = ("text:line:", "pdf:page:", "word:paragraph:", "slide:")
+    prefixes = ("text:line:", PDF_PAGE_PREFIX, "word:paragraph:", "slide:")
     prefix = next((item for item in prefixes if base.startswith(item)), None)
     if prefix is not None:
         valid = re.fullmatch(r"[1-9]\d*", base[len(prefix):], re.ASCII)
@@ -460,26 +462,24 @@ def _text_fragments(data, resume):
                 offset += len(text)
                 if text.endswith("\n"):
                     line, offset = line + 1, 0
-    return
 
 
 def _pdf_fragments(data, selected):
-    if selected is not None and not selected.startswith("pdf:page:"):
+    if selected is not None and not selected.startswith(PDF_PAGE_PREFIX):
         raise ValueError("document_locator_not_found")
     from pypdf import PdfReader
     reader = PdfReader(BytesIO(data) if isinstance(data, bytes) else data, strict=True)
     if reader.is_encrypted:
         raise ValueError("document_encrypted")
     if selected is not None:
-        number = int(selected.removeprefix("pdf:page:"))
+        number = int(selected.removeprefix(PDF_PAGE_PREFIX))
         if number > len(reader.pages):
             raise ValueError("document_locator_not_found")
         page = reader.pages[number - 1]
         yield from _chunks(selected, f"Page {number}", page.extract_text() or "")
         return
     for number, page in enumerate(reader.pages, 1):
-        yield from _chunks(f"pdf:page:{number}", f"Page {number}", page.extract_text() or "")
-    return
+        yield from _chunks(f"{PDF_PAGE_PREFIX}{number}", f"Page {number}", page.extract_text() or "")
 
 
 if __name__ == "__main__":

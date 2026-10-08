@@ -19,6 +19,28 @@ function activityTime(seconds: number | undefined): string {
   return ` · ${new Date(seconds * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
 }
 
+function field(label: string, name: string, type = "text"): { wrapper: HTMLLabelElement; input: HTMLInputElement } {
+  const wrapper = element("label", "field");
+  const input = element("input", "field__control");
+  input.name = name;
+  input.type = type;
+  input.required = true;
+  if (type === "password") input.autocomplete = "current-password";
+  if (name === "totp") {
+    input.autocomplete = "one-time-code";
+    input.inputMode = "numeric";
+    input.pattern = "[0-9]{6}";
+    input.maxLength = 6;
+  }
+  wrapper.append(element("span", "field__label", label), input);
+  return { wrapper, input };
+}
+function taskPhaseName(task: TaskCard["task"]): string {
+  if (task.outcome === "cancelled") return "Cancelled";
+  if (task.outcome === "failed") return "Needs a new assignment";
+  return phaseLabel(task.phase);
+}
+
 export function mountWorkHome(page: HTMLElement, client = operatorClient()): () => void {
 let reviewToken = new URLSearchParams(window.location.hash.slice(1)).get("review");
 let reviewTarget: { task_id: string; project_id: string; conversation_id: string; binding_revision: number } | null = null;
@@ -95,22 +117,6 @@ function errorMessage(error: unknown): string {
     return labels[error.code] ?? "Radhouse could not complete the action. Refresh to check its current state.";
   }
   return "The connection was interrupted. Your draft is retained; retrying the same request uses its original task identity.";
-}
-function field(label: string, name: string, type = "text"): { wrapper: HTMLLabelElement; input: HTMLInputElement } {
-  const wrapper = element("label", "field");
-  const input = element("input", "field__control");
-  input.name = name;
-  input.type = type;
-  input.required = true;
-  if (type === "password") input.autocomplete = "current-password";
-  if (name === "totp") {
-    input.autocomplete = "one-time-code";
-    input.inputMode = "numeric";
-    input.pattern = "[0-9]{6}";
-    input.maxLength = 6;
-  }
-  wrapper.append(element("span", "field__label", label), input);
-  return { wrapper, input };
 }
 async function action(button: HTMLButtonElement, run: () => Promise<void>): Promise<void> {
   const epoch = sessionEpoch;
@@ -657,11 +663,6 @@ function installLoadedHome(scoped: RadhouseApi, available: Project[], project: P
     try { window.localStorage.setItem(`radhouse.project.${signedIn.principal_id}`, project.project_id); }
     catch { /* Storage may be unavailable; the current session still works. */ }
   }
-}
-function taskPhaseName(task: TaskCard["task"]): string {
-  if (task.outcome === "cancelled") return "Cancelled";
-  if (task.outcome === "failed") return "Needs a new assignment";
-  return phaseLabel(task.phase);
 }
 function projectPhaseClass(phase: NonNullable<Project["coordination"]>["phase"]): string {
   if (phase === "blocked") return "stopping";

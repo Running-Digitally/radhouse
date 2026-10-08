@@ -25,6 +25,8 @@ IMAGE_TAG = "postgres:18.6-bookworm"
 PINNED_IMAGE = IMAGE_TAG + "@sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af"
 LABEL = "org.radhouse.vs0.run-id"
 LIMIT_SECONDS = 900
+COVERAGE_DIRECTORY = "coverage"
+PYTHON_COVERAGE_XML = "python.xml"
 
 
 class FixtureError(Exception):
@@ -101,7 +103,7 @@ class Run:
                              source_commit=self.command(["git", "rev-parse", "HEAD"]).stdout.strip(),
                              dependency_lock_sha256=hashlib.sha256((ROOT / "uv.lock").read_bytes()).hexdigest())
         source = hashlib.sha256()
-        for base in (ROOT / "src", ROOT / "tests", ROOT / "scripts", ROOT / "deploy" / "dev"):
+        for base in (ROOT / "src", ROOT / "tests", ROOT / "scripts", ROOT / "deploy" / "dev", ROOT / "web/src", ROOT / "web/test"):
             for path in sorted(base.rglob("*")):
                 if path.is_file() and "__pycache__" not in path.parts:
                     source.update(str(path.relative_to(ROOT)).encode())
@@ -314,7 +316,10 @@ def demonstration(run: Run):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("verify", "demo"))
+    parser.add_argument("--coverage", action="store_true", help="collect Python and browser/Node coverage during verify")
     args = parser.parse_args()
+    if args.coverage and args.mode != "verify":
+        parser.error("--coverage requires verify")
     run = Run()
     def deadline_expired(signum, frame):
         raise FixtureError("VS0 reached its 15-minute execution limit")
@@ -322,12 +327,17 @@ def main():
     signal.alarm(LIMIT_SECONDS)
     succeeded = False
     prerequisite_missing = False
+    measurement = None
     try:
         run.preflight()
+        if args.coverage:
+            measurement = _prepare_coverage(run)
         run.start()
         demonstration(run)
         if args.mode == "verify":
-            _verify_tests(run)
+            _verify_tests(run, coverage=args.coverage)
+            if args.coverage:
+                _finish_coverage(run)
         run.manifest["result"] = "passed"
         succeeded = True
     except Exception as exc:
@@ -337,6 +347,8 @@ def main():
     finally:
         signal.alarm(0)
         run.cleanup()
+        if measurement is not None:
+            succeeded = _save_measurement(run, measurement) and succeeded
     if run.output.exists():
         print(f"Sanitized run manifest: {run.manifest_path.relative_to(ROOT)}")
     if succeeded:
@@ -390,9 +402,70 @@ def _demonstrate_direction(run, service, work, clock, index, source, destination
         print(f"TRACE channel={destination} task={task_id} attempt={task['attempt_id']} state={task['phase']} decision=published runs={work.start_count}")
 
 
-def _verify_tests(run):
+def _prepare_coverage(run):
+    directory = run.output / COVERAGE_DIRECTORY
+    directory.mkdir()
+    run.env.update(COVERAGE_FILE=str(directory / ".coverage"),
+                   RADHOUSE_COVERAGE_DIR=str(directory / "browser"),
+                   NODE_V8_COVERAGE=str(directory / "node"))
+    # Build once before browser tests so their coverage maps to the tested TS.
+    run.command(["npm", "--prefix", "web", "run", "build"])
+    from coverage import Coverage
+    measurement = Coverage(data_file=str(directory / ".coverage"), data_suffix=True)
+    measurement.start()
+    run.env["COVERAGE_PROCESS_CONFIG"] = os.environ["COVERAGE_PROCESS_CONFIG"]
+    return measurement
+
+
+def _save_measurement(run, measurement):
+    measurement.stop()
+    measurement.save()
+    if run.manifest.get("result") != "passed":
+        return False
+    try:
+        from coverage import Coverage
+        directory = run.output / COVERAGE_DIRECTORY
+        combined = Coverage(data_file=str(directory / ".coverage"))
+        combined.load()
+        combined.combine()
+        combined.save()
+        combined.xml_report(outfile=str(directory / PYTHON_COVERAGE_XML))
+        combined.json_report(outfile=str(directory / "python.json"))
+        _record_coverage(run)
+    except Exception:
+        run.manifest["result"] = "failed"
+        run.save()
+        print("FAIL: coverage combination or report creation failed; no qualified coverage recorded", file=sys.stderr)
+        return False
+    return True
+
+
+def _finish_coverage(run):
+    directory = run.output / COVERAGE_DIRECTORY
+    run.command(["node", "--test", *[str(path.relative_to(ROOT)) for path in sorted((ROOT / "web/test").glob("*.test.mjs"))]])
+    for script in ("admin-browser.mjs", "browser-view-browser.mjs", "chat-browser-view-browser.mjs"):
+        run.command(["node", f"tests/{script}"])
+    run.manifest["javascript_browser_checks"] = 3
+    run.command(["node", "scripts/coverage-report.mjs", str(directory)])
+
+
+def _record_coverage(run):
+    directory = run.output / COVERAGE_DIRECTORY
+    reports = {name: {"path": str((directory / filename).relative_to(ROOT)),
+                      "sha256": hashlib.sha256((directory / filename).read_bytes()).hexdigest()}
+               for name, filename in (("python", PYTHON_COVERAGE_XML), ("javascript", "lcov.info"))}
+    run.manifest["coverage"] = reports
+    run.save()
+    print("COVERAGE: Python XML (including fixture execution) and JavaScript/TypeScript LCOV generated from this run")
+
+
+def _verify_tests(run, *, coverage=False):
     report = run.output / "pytest.xml"
-    result = run.command([sys.executable, "-m", "pytest", "-q", "--tb=short", f"--junitxml={report}"], env=run.env, accepted=(0, 1, 2, 3, 4, 5))
+    args = [sys.executable, "-m", "pytest", "-q", "--tb=short", f"--junitxml={report}"]
+    if coverage:
+        args.extend(["--cov", f"--cov-report=xml:{run.output / 'coverage/python.xml'}",
+                     f"--cov-report=json:{run.output / 'coverage/python.json'}"])
+    result = run.command(args, env=run.env, accepted=(0, 1, 2, 3, 4, 5))
     import xml.etree.ElementTree as ET
     if not report.exists():
         raise FixtureError("pytest did not produce a verification report")
