@@ -76,7 +76,11 @@ completed fixture cleanup are imported. Report paths and SHA256 digests must
 match that run. Source changes, failed tests, missing/tampered reports or a main
 merge during preparation stop analysis. The token is supplied only to the
 scanner, not dependency installation or tests. Receipts retain the verification
-manifest and imported reports alongside the redacted scanner log.
+manifest and supplied reports alongside the redacted scanner log.
+`test_coverage_submitted` requires the upload task locator;
+`test_coverage_imported` is a positive confirmation only after a successful
+scanner result with that locator. A failed submitted analysis retains submission
+evidence with import unconfirmed, including a processing or quality-gate failure.
 
 For a deliberate diagnostic without tests, use `--static-only`; its receipt
 explicitly records that coverage was not imported. Missing coverage data does
