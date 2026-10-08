@@ -3687,8 +3687,9 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 19 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
-        "verification": "Main-only SonarQube analysis pending owner-authorized merge."
+        "status": "corrected_in_source",
+        "verification": "Main-only SonarQube analysis pending owner-authorized merge.",
+        "evidence": "Named dispatch/control/ingress phases preserve existing authorized transaction and adapter boundaries. Owned workflow batches: 71 and 65 tests passed, cleanup complete. Local Python complexity approximation has no function above 15 in the affected modules; authoritative main scan remains pending."
       }
     },
     {
@@ -3701,8 +3702,9 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 58 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
-        "verification": "Main-only SonarQube analysis pending owner-authorized merge."
+        "status": "corrected_in_source",
+        "verification": "Main-only SonarQube analysis pending owner-authorized merge.",
+        "evidence": "Named dispatch/control/ingress phases preserve existing authorized transaction and adapter boundaries. Owned workflow batches: 71 and 65 tests passed, cleanup complete. Local Python complexity approximation has no function above 15 in the affected modules; authoritative main scan remains pending."
       }
     },
     {
@@ -3715,8 +3717,9 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 27 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
-        "verification": "Main-only SonarQube analysis pending owner-authorized merge."
+        "status": "corrected_in_source",
+        "verification": "Main-only SonarQube analysis pending owner-authorized merge.",
+        "evidence": "Named dispatch/control/ingress phases preserve existing authorized transaction and adapter boundaries. Owned workflow batches: 71 and 65 tests passed, cleanup complete. Local Python complexity approximation has no function above 15 in the affected modules; authoritative main scan remains pending."
       }
     },
     {
@@ -3729,8 +3732,9 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 16 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
-        "verification": "Main-only SonarQube analysis pending owner-authorized merge."
+        "status": "corrected_in_source",
+        "verification": "Main-only SonarQube analysis pending owner-authorized merge.",
+        "evidence": "Named dispatch/control/ingress phases preserve existing authorized transaction and adapter boundaries. Owned workflow batches: 71 and 65 tests passed, cleanup complete. Local Python complexity approximation has no function above 15 in the affected modules; authoritative main scan remains pending."
       }
     },
     {
@@ -3743,8 +3747,9 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 31 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
-        "verification": "Main-only SonarQube analysis pending owner-authorized merge."
+        "status": "corrected_in_source",
+        "verification": "Main-only SonarQube analysis pending owner-authorized merge.",
+        "evidence": "Named dispatch/control/ingress phases preserve existing authorized transaction and adapter boundaries. Owned workflow batches: 71 and 65 tests passed, cleanup complete. Local Python complexity approximation has no function above 15 in the affected modules; authoritative main scan remains pending."
       }
     },
     {
@@ -3757,8 +3762,9 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 76 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
-        "verification": "Main-only SonarQube analysis pending owner-authorized merge."
+        "status": "corrected_in_source",
+        "verification": "Main-only SonarQube analysis pending owner-authorized merge.",
+        "evidence": "Named dispatch/control/ingress phases preserve existing authorized transaction and adapter boundaries. Owned workflow batches: 71 and 65 tests passed, cleanup complete. Local Python complexity approximation has no function above 15 in the affected modules; authoritative main scan remains pending."
       }
     },
     {
@@ -3771,8 +3777,9 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 19 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
-        "verification": "Main-only SonarQube analysis pending owner-authorized merge."
+        "status": "corrected_in_source",
+        "verification": "Main-only SonarQube analysis pending owner-authorized merge.",
+        "evidence": "Named dispatch/control/ingress phases preserve existing authorized transaction and adapter boundaries. Owned workflow batches: 71 and 65 tests passed, cleanup complete. Local Python complexity approximation has no function above 15 in the affected modules; authoritative main scan remains pending."
       }
     },
     {
@@ -3785,8 +3792,9 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 25 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
-        "verification": "Main-only SonarQube analysis pending owner-authorized merge."
+        "status": "corrected_in_source",
+        "verification": "Main-only SonarQube analysis pending owner-authorized merge.",
+        "evidence": "Named dispatch/control/ingress phases preserve existing authorized transaction and adapter boundaries. Owned workflow batches: 71 and 65 tests passed, cleanup complete. Local Python complexity approximation has no function above 15 in the affected modules; authoritative main scan remains pending."
       }
     },
     {
@@ -3799,8 +3807,9 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 17 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
-        "verification": "Main-only SonarQube analysis pending owner-authorized merge."
+        "status": "corrected_in_source",
+        "verification": "Main-only SonarQube analysis pending owner-authorized merge.",
+        "evidence": "Named dispatch/control/ingress phases preserve existing authorized transaction and adapter boundaries. Owned workflow batches: 71 and 65 tests passed, cleanup complete. Local Python complexity approximation has no function above 15 in the affected modules; authoritative main scan remains pending."
       }
     },
     {
@@ -3827,8 +3836,9 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 18 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
-        "verification": "Main-only SonarQube analysis pending owner-authorized merge."
+        "status": "corrected_in_source",
+        "verification": "Main-only SonarQube analysis pending owner-authorized merge.",
+        "evidence": "Named dispatch/control/ingress phases preserve existing authorized transaction and adapter boundaries. Owned workflow batches: 71 and 65 tests passed, cleanup complete. Local Python complexity approximation has no function above 15 in the affected modules; authoritative main scan remains pending."
       }
     },
     {
@@ -3841,8 +3851,9 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 26 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
-        "verification": "Main-only SonarQube analysis pending owner-authorized merge."
+        "status": "corrected_in_source",
+        "verification": "Main-only SonarQube analysis pending owner-authorized merge.",
+        "evidence": "Named dispatch/control/ingress phases preserve existing authorized transaction and adapter boundaries. Owned workflow batches: 71 and 65 tests passed, cleanup complete. Local Python complexity approximation has no function above 15 in the affected modules; authoritative main scan remains pending."
       }
     },
     {
@@ -3855,8 +3866,9 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 41 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
-        "verification": "Main-only SonarQube analysis pending owner-authorized merge."
+        "status": "corrected_in_source",
+        "verification": "Main-only SonarQube analysis pending owner-authorized merge.",
+        "evidence": "Named dispatch/control/ingress phases preserve existing authorized transaction and adapter boundaries. Owned workflow batches: 71 and 65 tests passed, cleanup complete. Local Python complexity approximation has no function above 15 in the affected modules; authoritative main scan remains pending."
       }
     },
     {
@@ -3869,8 +3881,9 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 35 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
-        "verification": "Main-only SonarQube analysis pending owner-authorized merge."
+        "status": "corrected_in_source",
+        "verification": "Main-only SonarQube analysis pending owner-authorized merge.",
+        "evidence": "Named dispatch/control/ingress phases preserve existing authorized transaction and adapter boundaries. Owned workflow batches: 71 and 65 tests passed, cleanup complete. Local Python complexity approximation has no function above 15 in the affected modules; authoritative main scan remains pending."
       }
     },
     {
@@ -3953,8 +3966,9 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 31 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
-        "verification": "Main-only SonarQube analysis pending owner-authorized merge."
+        "status": "corrected_in_source",
+        "verification": "Main-only SonarQube analysis pending owner-authorized merge.",
+        "evidence": "Named dispatch/control/ingress phases preserve existing authorized transaction and adapter boundaries. Owned workflow batches: 71 and 65 tests passed, cleanup complete. Local Python complexity approximation has no function above 15 in the affected modules; authoritative main scan remains pending."
       }
     },
     {
@@ -3967,8 +3981,9 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 61 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
-        "verification": "Main-only SonarQube analysis pending owner-authorized merge."
+        "status": "corrected_in_source",
+        "verification": "Main-only SonarQube analysis pending owner-authorized merge.",
+        "evidence": "Named dispatch/control/ingress phases preserve existing authorized transaction and adapter boundaries. Owned workflow batches: 71 and 65 tests passed, cleanup complete. Local Python complexity approximation has no function above 15 in the affected modules; authoritative main scan remains pending."
       }
     },
     {
@@ -3995,8 +4010,9 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 115 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
-        "verification": "Main-only SonarQube analysis pending owner-authorized merge."
+        "status": "corrected_in_source",
+        "verification": "Main-only SonarQube analysis pending owner-authorized merge.",
+        "evidence": "Named dispatch/control/ingress phases preserve existing authorized transaction and adapter boundaries. Owned workflow batches: 71 and 65 tests passed, cleanup complete. Local Python complexity approximation has no function above 15 in the affected modules; authoritative main scan remains pending."
       }
     },
     {
@@ -8329,7 +8345,7 @@
     }
   ],
   "remediation_status": {
-    "source_corrected": 450,
+    "source_corrected": 466,
     "external_status_changes": false,
     "feature_branch_analysis_published": false
   }
