@@ -108,8 +108,9 @@ window.RadhouseFormat = (() => {
     const block = document.createElement("div"); block.className = "code-block";
     const header = document.createElement("div"); header.className = "code-header";
     const label = document.createElement("span"); label.textContent = language || "Code";
-    const copy = document.createElement("button"); copy.type = "button"; copy.textContent = "Copy code";
-    copy.dataset.label = "Copy code"; window.RadhouseIcons?.decorate(copy, "clipboard");
+    const copy = document.createElement("button"); copy.type = "button"; copy.textContent = "Copy";
+    copy.dataset.label = "Copy"; copy.dataset.copyKind = "code"; copy.dataset.accessibleLabel = "Copy code"; copy.setAttribute("aria-label","Copy code");
+    window.RadhouseIcons?.decorate(copy, "clipboard", "Copy", {accessibleLabel:"Copy code"});
     const content = code.join("\n");
     copy.addEventListener("click", () => copyText(content, copy)); header.append(label, copy);
     const pre = document.createElement("pre"), body = document.createElement("code"); body.textContent = content;
@@ -160,10 +161,11 @@ window.RadhouseFormat = (() => {
     if (button.disabled) return;
     clearTimeout(copyTimers.get(button));
     const hadFocus = document.activeElement === button;
-    const label = button.dataset.label || "Copy code";
-    const show = (icon, text) => {
-      if (window.RadhouseIcons) window.RadhouseIcons.decorate(button, icon, text);
-      else button.textContent = text;
+    const label = button.dataset.label || "Copy";
+    const accessibleLabel = button.dataset.accessibleLabel || label;
+    const show = (icon, text, name=text) => {
+      if (window.RadhouseIcons) window.RadhouseIcons.decorate(button, icon, text, {accessibleLabel:name});
+      else { button.textContent = text; button.setAttribute("aria-label",name); }
     };
     let status = document.getElementById("radhouse-copy-status");
     if (!status) {
@@ -176,7 +178,7 @@ window.RadhouseFormat = (() => {
     try {
       await navigator.clipboard.writeText(text);
       show("check", "Copied"); button.dataset.state = "success";
-      status.textContent = label === "Copy answer" ? "Answer copied." : "Code copied.";
+      status.textContent = button.dataset.copyKind === "answer" ? "Answer copied." : "Code copied.";
       button.removeAttribute("title");
     } catch {
       show("warning", "Copy unavailable"); button.dataset.state = "error";
@@ -187,7 +189,7 @@ window.RadhouseFormat = (() => {
       if (hadFocus && button.isConnected && document.activeElement === document.body) button.focus({preventScroll:true});
     }
     copyTimers.set(button, setTimeout(() => {
-      show("clipboard", label); delete button.dataset.state; button.removeAttribute("title");
+      show("clipboard", label, accessibleLabel); delete button.dataset.state; button.removeAttribute("title");
     }, 2000));
   }
   return { render, copyText };

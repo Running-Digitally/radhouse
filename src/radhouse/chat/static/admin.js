@@ -28,6 +28,7 @@ function bytes(value) {
 }
 function renderSettings(data) {
   $("content").append(
+    window.RadhouseIcons.appearanceControl(),
     section("Sign-in", [["Methods", "Password and authenticator code"],
       ["Idle session", duration(data.authentication.idle_timeout_seconds)],
       ["Session duration", duration(data.authentication.maximum_session_seconds)],
@@ -40,7 +41,7 @@ function renderSettings(data) {
       ["Agent browser", data.browser?.enabled ? (data.browser.mode === "owner_session"
         ? "Open Browser to browse or take control" : "Enabled with a live view in Chat") : "Not connected"],
       ["Message text", `${data.messages.character_limit.toLocaleString()} characters`]]),
-    element("p", "These are the current app settings. Settings are read only in this version.", "admin-note"));
+    element("p", "Instance settings are read only. Appearance changes apply to this browser.", "admin-note"));
 }
 function infrastructureComponent(component) {
   const node = element("section", undefined, "admin-section"), heading = element("div", undefined, "component-heading");
