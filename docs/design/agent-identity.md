@@ -98,8 +98,10 @@ changes the visible profile and menu label while keeping conversations, memory,
 permissions and runtime binding. Character stories and example replies are design
 flavor; they do not become system prompts or imply a new specialist agent.
 
-Replace browser-local draft storage with the existing authenticated settings
-contract once identity ownership and persistence scope are settled. Replace
+Replace browser-local draft storage with an owner-scoped authenticated read/save
+contract. The current `/admin/settings` contract is read-only; adopting this
+mock requires a new presentation save endpoint using the existing session and
+CSRF mechanisms. Replace
 uploaded data URLs with validated raster asset references. Keep current portrait
 IDs stable, and introduce production-sized image renditions through the asset
 pipeline while retaining the original artwork and prompts in the design reference.
@@ -114,3 +116,17 @@ including cross-tab preference updates and device reduced motion.
 The preview is a documentation deliverable on `codex/agent-personalization-settings`.
 The owner reviewed this revision and authorized committing the work so far on 2026-10-08.
 It is not a production settings implementation or a deployment.
+
+## Production adoption plan
+
+The design was integrated with the owner-workspace source on 2026-10-08 while
+preserving the application, runtime and tests unchanged. Production adoption
+can be a deployment-target web-only release; it does not require a Hermes upgrade or another
+VM/service.
+
+| Slice | Source and contract | Acceptance |
+| --- | --- | --- |
+| Persist presentation | Add an owner presentation record to `ChatStore`, keyed by authenticated immutable principal ID. Proposed `GET`/`POST /chat/agent-profile` reads/saves optional name and introduction, stable theme/character IDs and validated appearance choices. The server derives ownership; POST requires the existing CSRF check. | Save survives reload; another principal cannot read/write the record; invalid IDs and unsafe text cannot become asset paths or rendered HTML. Existing instance settings remain read-only. |
+| Adopt the owner shell | Add authenticated `/agent`, the first navigation item and centered portrait to the shared chat/admin layout. Retain Chat, Library, Browser, Terminal and About You. Reuse the canonical icons and actual reply-state adapter. | Save/Discard, keyboard focus, 320/390px layouts, cross-tab appearance and device reduced motion work. Synthetic preview states never issue runtime commands or report invented live states. |
+| Package assets | Generate small production renditions of the approved catalog portraits and package their immutable catalog under existing static assets. Load visible/selected portraits; retain original artwork and prompts here. Custom uploaded portraits need a validated raster asset endpoint before adoption. | Runtime pages serve the optimized assets and stable IDs; no full artwork preloading or browser-local data URL persistence is required. |
+| Release | Qualify persistence, owner/CSRF isolation, safe rendering, navigation and existing browser/terminal regressions; freeze a new web package and deploy on deployment-target. Keep the current release and its native/browser pins intact until that package is ready. | Actual web retention/health and authenticated UI checks pass. Runtime IDs, prompts, memory, tool permissions and model choices remain unchanged. |
