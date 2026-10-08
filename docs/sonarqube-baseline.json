@@ -8348,5 +8348,40 @@
     "source_corrected": 466,
     "external_status_changes": false,
     "feature_branch_analysis_published": false
+  },
+  "validation": {
+    "tested_source_commit": "f49a493171d16567b5ffce7f7236ea000de63147",
+    "source_sha256": "94a86f8a8e964a7dff7d6cde6e067b6919751ed56b3e402a57c0c39b22cebbdb",
+    "owned_gate": {
+      "command": "uv run python scripts/vs0.py verify",
+      "run_id": "9495ce46d6d248d29ef4e86ca3dfb032",
+      "tests": {
+        "tests": 846,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "cleanup": "complete",
+      "python": "3.14.4",
+      "image": "postgres:18.6-bookworm@sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af"
+    },
+    "web": {
+      "command": "npm --prefix web test",
+      "build": "passed",
+      "unit_tests": 9
+    },
+    "chat_client_and_formatter": {
+      "command": "node --test tests/chat-client.test.mjs tests/chat-format.test.mjs",
+      "tests": 10
+    },
+    "local_sonarjs": {
+      "rules_checked": 8,
+      "findings": 0,
+      "authoritative_server_analysis": false
+    },
+    "local_python_complexity": {
+      "functions_above_15_in_affected_modules": 0,
+      "authoritative_server_analysis": false
+    }
   }
 }
