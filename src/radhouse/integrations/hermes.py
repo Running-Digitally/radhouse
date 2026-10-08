@@ -54,6 +54,10 @@ class HermesGatewayError(RuntimeFailure):
         super().__init__(code)
 
 
+class HermesBrowserAdmissionRejected(HermesGatewayError):
+    """Positive, fixed proof that an expired browser handoff created no run."""
+
+
 @dataclass(frozen=True)
 class HermesDispatch:
     run_id: str
@@ -85,6 +89,8 @@ class HermesCapabilities:
     browser_view: bool = False
     browser_network_policy: dict | None = None
     file_share: bool = False
+    browser_control: bool = False
+    browser_credential_vault: bool = False
 
 
 class HermesRunsClient:
@@ -171,6 +177,8 @@ class HermesRunsClient:
         documents = features.get("runs_document_scope")
         browser = features.get("runs_browser_view")
         sharing = features.get("runs_file_share")
+        control = features.get("runs_browser_control")
+        vault = features.get("browser_credential_vault")
         identified_steering = (isinstance(steering, dict)
             and steering.get("supported") is True and steering.get("durable") is True
             and type(steering.get("version")) is int and steering["version"] == 1
@@ -194,12 +202,19 @@ class HermesRunsClient:
                 and browser.get("mode") == "same_session_view_only"),
             browser_network_policy=browser_network_policy(features.get("browser_network_policy")),
             file_share=(isinstance(sharing, dict) and sharing.get("supported") is True
-                and type(sharing.get("version")) is int and sharing["version"] == 1))
+                and type(sharing.get("version")) is int and sharing["version"] == 1),
+            browser_control=(isinstance(control, dict) and control.get("supported") is True
+                and type(control.get("version")) is int and control["version"] == 1
+                and control.get("mode") == "owner_session"),
+            browser_credential_vault=(isinstance(vault, dict) and vault.get("supported") is True
+                and type(vault.get("version")) is int and vault["version"] == 1
+                and vault.get("scope") == "local_login_only"))
 
     def start_or_attach(
         self, *, input_text: str, session_id: str, dispatch_key: str, disable_tools: bool = False,
         allowed_tools: tuple[str, ...] = (), images: tuple[InputFile, ...] = (),
         document_scope_token: str | None = None,
+        browser_owner: dict | None = None, browser_context: dict | None = None,
     ) -> HermesDispatch:
         if not input_text or len(input_text.encode("utf-8")) > MAX_INPUT_BYTES:
             raise ValueError("invalid_hermes_input")
@@ -210,6 +225,16 @@ class HermesRunsClient:
                 or disable_tools or not {"document_search", "document_read"} <= set(allowed_tools)):
             raise ValueError("invalid_hermes_document_scope")
         _validate_images(images)
+        if browser_owner is not None:
+            if (type(browser_owner) is not dict or set(browser_owner) != {"principal_id", "conversation_id"}
+                    or not all(type(v) is str and _IDENTIFIER.fullmatch(v) for v in browser_owner.values())
+                    or not {"browser_navigate", "browser_snapshot"} <= set(allowed_tools)):
+                raise ValueError("invalid_hermes_browser_owner")
+        if browser_context is not None:
+            if (type(browser_context) is not dict or browser_owner is None
+                    or not {"generation", "revision", "lease_id", "owner", "auth_expires_at"} <= set(browser_context)
+                    or set(browser_context) - {"generation", "revision", "lease_id", "owner", "auth_expires_at", "previous_run_id"}):
+                raise ValueError("invalid_hermes_browser_context")
         session_id = _validated_identifier(session_id, "session")
         dispatch_key = _validated_identifier(dispatch_key, "dispatch")
         payload, response_headers = self._request(
@@ -226,7 +251,9 @@ class HermesRunsClient:
                 ), "session_id": session_id,
                   **({"disable_tools": True} if disable_tools else {}),
                   **({"allowed_tools": list(allowed_tools)} if allowed_tools else {}),
-                  **({"document_scope_token": document_scope_token} if document_scope_token else {})},
+                  **({"document_scope_token": document_scope_token} if document_scope_token else {}),
+                  **({"browser_owner": browser_owner} if browser_owner is not None else {}),
+                  **({"browser_context": browser_context} if browser_context is not None else {})},
             headers={"Idempotency-Key": dispatch_key},
         )
         replayed = payload.get("replayed")
@@ -334,6 +361,14 @@ class HermesRunsClient:
                     if len(data) > MAX_RESPONSE_BYTES:
                         raise HermesGatewayError("runtime_response_too_large")
                 if response.status_code != expected_status:
+                    if (response.status_code == 409 and path == "v1/runs"
+                            and body is not None and body.get("browser_context") is not None):
+                        try:
+                            rejection = json.loads(data)
+                        except (UnicodeDecodeError, json.JSONDecodeError):
+                            rejection = None
+                        if rejection == {"error": "browser_context_rejected", "admitted": False}:
+                            raise HermesBrowserAdmissionRejected("browser_context_changed")
                     raise HermesGatewayError(_status_code(response.status_code, path))
         except HermesGatewayError:
             raise
@@ -677,4 +712,3 @@ def _validate_tool_restriction(allowed_tools, disable_tools):
             or any(re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value) is None for value in allowed_tools)
             or disable_tools and allowed_tools):
         raise ValueError("invalid_hermes_tool_restriction")
-

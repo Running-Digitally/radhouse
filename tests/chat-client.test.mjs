@@ -78,6 +78,24 @@ test("history cleanup completes the current session after saving its draft", asy
   assert.equal(vm.runInContext("openingHistory", context), false);
 });
 
+test("a late browser heartbeat cannot repaint a browser that was closed", async () => {
+  const context=await client();
+  vm.runInContext(`
+    session={username:"alice",features:{browser_control:true}};
+    lastBrowserStatus={state:"live",generation:"before-close",control:{revision:1,lease_id:"lease-1"}};
+    lastBrowserActivity=Date.now();
+    let releaseHeartbeat;
+    api=()=>new Promise(resolve=>{releaseHeartbeat=resolve;});
+    const oldHeartbeat=heartbeatBrowser();
+    browserEpoch++;
+    lastBrowserStatus={state:"idle",generation:null};
+    releaseHeartbeat({state:"live",generation:"before-close",control:{revision:1,lease_id:"lease-1"}});
+  `,context);
+  await vm.runInContext("oldHeartbeat",context);
+  assert.equal(vm.runInContext("lastBrowserStatus.state",context),"idle");
+  assert.equal(vm.runInContext("lastBrowserStatus.generation",context),null);
+});
+
 
 test("message limits count Unicode characters and stop at the accepted boundary", async () => {
   const context = await client();

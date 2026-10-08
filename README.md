@@ -24,7 +24,26 @@ The pilot supports selective access to searchable PDF and DOCX/XLSX/PPTX text,
 a live view of the same browser the assistant uses, and read-only **Settings**
 and **Infrastructure** pages. **Hide/Show** changes the browser view; the assistant
 keeps mouse and keyboard control. Human takeover, scanned-document OCR, audio
-transcription and editable administration settings remain future work.
+transcription and editable administration settings have not been activated in
+that deployed pilot.
+
+**Next release source:** Browser can open before any chat. Its launcher starts
+no Chromium process until **Open browser** is clicked. The owner can navigate,
+take control while the assistant finishes its reply, and **Return to agent**
+after that reply ends. **Close browser** ends the native process; only a clearly
+labelled previous-page reference remains. Sharing a page adds its brief locator
+and title to a real chat turn, with further reading through browser tools.
+
+Saved logins reuse the local Hermes credential vault. Explicit save/remove and
+exact-origin fill stay within the owned browser. Login tools return metadata and
+fill outcomes; credential form inputs are not saved in chat. This requires the
+qualified Hermes v0.21.6 private session-control API and its separate Python 3.14
+environment. Local native and
+UI proofs have passed; Linux browser/sandbox qualification and production
+activation remain deployment steps. Retain the paired old-runtime schema-31
+compatibility patch for rollback; an unchanged old runtime can delete upgraded
+tool-definition blobs during ordinary prompt cleanup. Preserve newer chats and
+the separate vault rather than restoring an older database.
 
 The earlier fleet, Buzz integration, work/task engine and software delivery code
 are retained for history and recovery. They are excluded from this app. The
@@ -56,11 +75,14 @@ placeholders, not working credentials:
 `document_access_enabled` and `browser_enabled` are optional booleans, both
 defaulting to `false`. After qualifying the matching Hermes private API, set the
 document flag to `true` for owner/session-scoped saved-file reads, and the browser
-flag to `true` for the live view and its Hide/Show control. The API must advertise
-the restricted-tool capability plus the corresponding saved-turn document scope
-or same-session, view-only browser capability. Enabling a flag cannot supply a
-missing runtime capability; requests fail closed if it is unavailable. Both are
-enabled in the qualified owner's pilot. This does not enable human browser input.
+flag to `true` for Browser. The API must advertise the restricted-tool capability
+plus the corresponding document or browser capabilities. This source uses the
+qualified owner-session API for opening and controlling the browser; saved-login
+operations additionally require its qualified vault capability. An older
+view-only API retains its viewer. Enabling a flag cannot supply a missing runtime
+capability; unavailable operations fail closed. Web startup and sign-in do not
+depend on the agent being reachable. Both flags are enabled in the existing
+pilot, whose older runtime still provides only its qualified live view.
 
 Optional `transcription_endpoint` selects an existing OpenAI-compatible
 `/v1/audio/transcriptions` service; optional `transcription_bearer` belongs only to

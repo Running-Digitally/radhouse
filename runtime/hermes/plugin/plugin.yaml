@@ -5,4 +5,6 @@ provides_tools:
   - document_search
   - document_read
   - file_share
+  - browser_login_list
+  - browser_login_fill
 kind: standalone

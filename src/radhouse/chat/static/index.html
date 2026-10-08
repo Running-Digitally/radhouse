@@ -29,6 +29,7 @@
       <button id="latest" hidden>Latest ↓</button>
       <form id="compose">
         <div id="draft-files" class="attachments" aria-label="Attached files"></div>
+        <div id="browser-context-chip" class="browser-context-chip" hidden><label><input id="use-browser-context" type="checkbox" checked><span id="browser-context-label"></span></label><button id="open-browser-context" type="button">Open browser</button></div>
         <label class="sr-only" for="message">Message your assistant</label>
         <textarea id="message" placeholder="Message your assistant…" rows="1" aria-describedby="long-text"></textarea>
         <div id="long-text" hidden><span>Your text is kept. Attach it as a file to send it.</span><button id="attach-text" type="button">Attach as text file</button></div>
@@ -51,7 +52,7 @@
     <section id="browser-page" class="workspace-page browser-page" aria-labelledby="browser-title" hidden>
       <div class="workspace-heading"><div><h1 id="browser-title" tabindex="-1">Browser</h1><p class="intro">The same browser your assistant uses.</p></div></div>
       <section id="assistant-browser" aria-label="Assistant browser" hidden></section>
-      <p id="browser-idle-hint" class="intro">Ask your assistant to browse a website. You can watch it here while its browser is open.</p>
+      <p id="browser-idle-hint" class="intro">A browser opens only when you choose to use it.</p>
     </section>
     <output id="loading">Opening your conversation…</output>
   </main>

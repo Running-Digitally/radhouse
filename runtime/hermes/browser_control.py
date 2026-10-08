@@ -8,18 +8,19 @@ rejected rather than executed again. No input payload or action history is kept.
 
 The existing root maintenance hold remains authoritative. Admission checks that
 hold inside the state transaction; maintenance observes committed state after
-creating the hold. The module remains unwired pending runtime/web integration.
+creating the hold. The integration binds exact native generations and owners.
 """
-from contextlib import contextmanager
-from dataclasses import asdict, dataclass, field, replace
+
 import json
 import math
 import os
-from pathlib import Path
 import re
 import sqlite3
 import stat
 import time
+from contextlib import contextmanager
+from dataclasses import asdict, dataclass, field, replace
+from pathlib import Path
 from typing import Callable, Iterable, Literal
 from uuid import uuid4
 
@@ -119,6 +120,11 @@ class ControlState:
     last_sequence: int = 0
     last_input: InputReceipt | None = None
     retired: bool = False
+    native_name: str | None = None
+    native_pid: int | None = None
+    native_started: float | None = None
+    current_page: dict | None = None
+    previous_page: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -145,6 +151,15 @@ class RetirementObservation:
     identity: BrowserIdentity
     process_gone: bool
     channel_closed: bool
+
+
+@dataclass(frozen=True)
+class RunTerminalObservation:
+    """Internal runtime status proof; never construct from a browser request."""
+
+    run_id: str
+    session_id: str
+    status: str
 
 
 @dataclass(frozen=True)
@@ -283,45 +298,163 @@ class BrowserController:
         if type(revision) is not int or revision != state.revision:
             raise ControlRejected("stale_control")
 
-    def bind_browser(self, identity: BrowserIdentity, run: RunBinding,
-                     principal_id: str) -> ControlState:
+    def bind_browser(
+        self,
+        identity: BrowserIdentity,
+        run: RunBinding | None,
+        principal_id: str,
+        *,
+        native_name=None,
+        native_pid=None,
+        native_started=None,
+    ) -> ControlState:
         """Trusted lifecycle only: caller verifies the actual current native identity.
 
         No web/model registration, historical generation lookup or native launch.
         A replacement requires positive retirement of the previous generation.
         """
         _identifier(principal_id)
-        if run.session_id != identity.session_id:
+        if run is not None and run.session_id != identity.session_id:
             raise ControlRejected("run_mismatch")
         with self._transaction() as db:
             self._admission()
-            claim = db.execute("SELECT conversation_id FROM browser_control_state "
-                "WHERE session_id=? AND retired=0", (identity.session_id,)).fetchone()
-            if claim is not None and claim["conversation_id"] != identity.conversation_id:
+            claim = db.execute(
+                "SELECT conversation_id FROM browser_control_state "
+                "WHERE session_id=? AND retired=0",
+                (identity.session_id,),
+            ).fetchone()
+            if (
+                claim is not None
+                and claim["conversation_id"] != identity.conversation_id
+            ):
                 raise ControlRejected("native_session_already_bound")
-            record = db.execute("SELECT body FROM browser_control_state WHERE conversation_id=?",
-                                (identity.conversation_id,)).fetchone()
-            revision = 1
+            record = db.execute(
+                "SELECT body FROM browser_control_state WHERE conversation_id=?",
+                (identity.conversation_id,),
+            ).fetchone()
+            revision, previous_page = 1, None
             if record is not None:
                 existing = self._expire(db, _decode(record["body"]))
                 if existing.identity == identity:
                     if existing.retired:
                         raise ControlRejected("browser_retired")
-                    if existing.admitted_run != run or existing.principal_id != principal_id:
+                    if (
+                        existing.admitted_run != run
+                        or existing.principal_id != principal_id
+                    ):
                         raise ControlRejected("run_mismatch")
                     return existing
                 if not existing.retired:
                     raise ControlRejected("previous_generation_unresolved")
                 if existing.principal_id != principal_id:
                     raise ControlRejected("owner_mismatch")
-                revision = existing.revision+1
-            state = ControlState(identity, principal_id, "agent", revision, run)
+                revision, previous_page = existing.revision + 1, existing.previous_page
+            state = ControlState(
+                identity,
+                principal_id,
+                "agent" if run else "paused",
+                revision,
+                run,
+                native_name=native_name,
+                native_pid=native_pid,
+                native_started=native_started,
+                previous_page=previous_page,
+            )
             self._save(db, state)
             return state
 
     def state(self, identity: BrowserIdentity) -> ControlState:
         with self._transaction() as db:
             return self._load(db, identity)
+
+    def current(
+        self, conversation_id: str, session_id: str, principal_id: str
+    ) -> ControlState | None:
+        """Current owner-scoped state; this read cannot launch or replace a browser."""
+        with self._transaction() as db:
+            row = db.execute(
+                "SELECT body FROM browser_control_state WHERE conversation_id=?",
+                (conversation_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            state = self._expire(db, _decode(row["body"]))
+            if (
+                state.identity.session_id != session_id
+                or state.principal_id != principal_id
+            ):
+                raise ControlRejected("owner_mismatch")
+            return state
+
+    def record_page(
+        self, identity: BrowserIdentity, current: dict, previous: dict | None
+    ) -> None:
+        """Bounded, already-redacted URL/title only; no revision or action history."""
+        for page in (current, previous):
+            if page is not None and (
+                type(page) is not dict
+                or set(page) != {"url", "title"}
+                or any(
+                    type(value) is not str or len(value) > 2048
+                    for value in page.values()
+                )
+            ):
+                raise ControlRejected("invalid_page_context")
+        with self._transaction() as db:
+            state = self._load(db, identity)
+            if state.retired:
+                raise ControlRejected("browser_retired")
+            self._save(db, replace(state, current_page=current, previous_page=previous))
+
+    def admit_run(
+        self,
+        identity: BrowserIdentity,
+        owner: OwnerBinding,
+        run: RunBinding,
+        *,
+        lease_id: str | None,
+        revision: int,
+        previous: RunTerminalObservation | None = None,
+    ) -> ControlState:
+        """Explicit handback admits a fresh run, never the run paused by takeover."""
+        if run.session_id != identity.session_id:
+            raise ControlRejected("run_mismatch")
+        with self._transaction() as db:
+            self._admission()
+            state = self._load(db, identity)
+            if state.mode == "human":
+                self._lease(state, owner, lease_id, revision)
+            elif state.mode == "agent" and lease_id is None:
+                self._owner(state, owner)
+                if state.retired or state.revision != revision:
+                    raise ControlRejected("stale_control")
+            else:
+                raise ControlRejected("control_lease_unavailable")
+            if state.active_command is not None:
+                raise ControlRejected("browser_control_busy")
+            old = state.admitted_run
+            if old is not None and (
+                run.run_id == old.run_id
+                or run.dispatch_key == old.dispatch_key
+                or not isinstance(previous, RunTerminalObservation)
+                or previous.run_id != old.run_id
+                or previous.session_id != old.session_id
+                or previous.status
+                not in {"completed", "failed", "cancelled", "interrupted"}
+            ):
+                raise ControlRejected("previous_run_not_terminal")
+            if old is None and previous is not None:
+                raise ControlRejected("run_mismatch")
+            state = replace(
+                state,
+                mode="agent",
+                revision=state.revision + 1,
+                admitted_run=run,
+                lease=None,
+                takeover_after=None,
+            )
+            self._save(db, state)
+            return state
 
     def reserve_agent(self, identity: BrowserIdentity, run: RunBinding,
                       command_id: str) -> ActiveCommand:
@@ -453,14 +586,35 @@ class BrowserController:
             self._save(db, state)
             return self._ack(state, receipt)
 
-    def heartbeat(self, identity: BrowserIdentity, owner: OwnerBinding,
-                  lease_id: str, revision: int) -> ControlState:
+    def heartbeat(
+        self,
+        identity: BrowserIdentity,
+        owner: OwnerBinding,
+        lease_id: str,
+        revision: int,
+        *,
+        auth_expires_at: float | None = None,
+    ) -> ControlState:
         with self._transaction() as db:
             self._admission()
             state = self._load(db, identity)
             self._lease(state, owner, lease_id, revision)
-            lease = replace(state.lease, expires_at=min(self._now()+self.lease_seconds,
-                                                       state.lease.auth_expires_at))
+            if auth_expires_at is not None:
+                if (
+                    type(auth_expires_at) not in (int, float)
+                    or not math.isfinite(auth_expires_at)
+                    or auth_expires_at <= self._now()
+                ):
+                    raise ControlRejected("authentication_expired")
+                state = replace(
+                    state, lease=replace(state.lease, auth_expires_at=auth_expires_at)
+                )
+            lease = replace(
+                state.lease,
+                expires_at=min(
+                    self._now() + self.lease_seconds, state.lease.auth_expires_at
+                ),
+            )
             state = replace(state, lease=lease)
             self._save(db, state)
             return state
@@ -474,6 +628,65 @@ class BrowserController:
             state = replace(state, mode="paused", revision=state.revision+1, lease=None)
             self._save(db, state)
             return state
+
+    def presence(
+        self, identity: BrowserIdentity, owner: OwnerBinding, revision: int
+    ) -> ControlState:
+        """Authenticated observation keeps a quiescent browser alive; no authority transfer."""
+        with self._transaction() as db:
+            self._admission()
+            state = self._load(db, identity)
+            self._owner(state, owner)
+            if (
+                state.retired
+                or state.mode not in {"agent", "paused"}
+                or state.revision != revision
+            ):
+                raise ControlRejected("stale_control")
+            return state
+
+    def begin_close(
+        self,
+        identity: BrowserIdentity,
+        owner: OwnerBinding,
+        revision: int,
+        previous: RunTerminalObservation | None = None,
+    ) -> ControlState:
+        """Explicit owner close of an inactive browser, never an active agent command."""
+        with self._transaction() as db:
+            self._admission()
+            state = self._load(db, identity)
+            self._owner(state, owner)
+            if (
+                state.retired
+                or state.mode not in {"agent", "paused"}
+                or state.revision != revision
+                or state.active_command is not None
+            ):
+                raise ControlRejected("browser_control_busy")
+            old = state.admitted_run
+            if old is not None and (
+                not isinstance(previous, RunTerminalObservation)
+                or previous.run_id != old.run_id
+                or previous.session_id != old.session_id
+                or previous.status
+                not in {"completed", "failed", "cancelled", "interrupted"}
+            ):
+                raise ControlRejected("previous_run_not_terminal")
+            state = replace(
+                state, mode="paused", revision=state.revision + 1, lease=None
+            )
+            self._save(db, state)
+            return state
+
+    def live_states(self) -> list[ControlState]:
+        with self._transaction() as db:
+            return [
+                self._expire(db, _decode(row["body"]))
+                for row in db.execute(
+                    "SELECT body FROM browser_control_state WHERE retired=0"
+                ).fetchall()
+            ]
 
     def pause(self, identity: BrowserIdentity, owner: OwnerBinding) -> ControlState:
         """Existing authentication logout/disconnect of the exact controller tab."""
@@ -489,7 +702,9 @@ class BrowserController:
     def recover_startup(self) -> None:
         """Exclusive runtime startup, not every construction of a DB client."""
         with self._transaction() as db:
-            for record in db.execute("SELECT body FROM browser_control_state").fetchall():
+            for record in db.execute(
+                "SELECT body FROM browser_control_state"
+            ).fetchall():
                 state = _decode(record["body"])
                 if state.retired:
                     continue
@@ -497,16 +712,37 @@ class BrowserController:
                     receipt = state.last_input
                     if receipt is not None and receipt.outcome == "reserved":
                         receipt = replace(receipt, outcome="uncertain")
-                    self._save(db, replace(state, mode="recovering", revision=state.revision+1,
-                                           lease=None, last_input=receipt))
-                elif state.mode in {"human", "takeover_pending"}:
-                    self._save(db, replace(state, mode="paused", revision=state.revision+1, lease=None))
+                    self._save(
+                        db,
+                        replace(
+                            state,
+                            mode="recovering",
+                            revision=state.revision + 1,
+                            lease=None,
+                            last_input=receipt,
+                        ),
+                    )
+                elif state.mode in {"agent", "human", "takeover_pending"}:
+                    self._save(
+                        db,
+                        replace(
+                            state,
+                            mode="paused",
+                            revision=state.revision + 1,
+                            lease=None,
+                        ),
+                    )
 
-    def retire_browser(self, identity: BrowserIdentity,
-                       observation: RetirementObservation) -> ControlState:
+    def retire_browser(
+        self, identity: BrowserIdentity, observation: RetirementObservation
+    ) -> ControlState:
         """Trusted positive native retirement closes current ownership and input."""
-        if (not isinstance(observation, RetirementObservation) or observation.identity != identity
-                or observation.process_gone is not True or observation.channel_closed is not True):
+        if (
+            not isinstance(observation, RetirementObservation)
+            or observation.identity != identity
+            or observation.process_gone is not True
+            or observation.channel_closed is not True
+        ):
             raise ControlRejected("retirement_unproven")
         with self._transaction() as db:
             state = self._load(db, identity)
@@ -515,9 +751,19 @@ class BrowserController:
             receipt = state.last_input
             if receipt is not None and receipt.outcome == "reserved":
                 receipt = replace(receipt, outcome="uncertain")
-            state = replace(state, mode="paused", revision=state.revision+1,
-                admitted_run=None, active_command=None, lease=None, takeover_after=None,
-                last_input=receipt, retired=True)
+            state = replace(
+                state,
+                mode="paused",
+                revision=state.revision + 1,
+                admitted_run=None,
+                active_command=None,
+                lease=None,
+                takeover_after=None,
+                last_input=receipt,
+                retired=True,
+                current_page=None,
+                previous_page=state.current_page or state.previous_page,
+            )
             self._save(db, state)
             return state
 

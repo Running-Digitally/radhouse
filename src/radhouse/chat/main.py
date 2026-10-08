@@ -13,7 +13,7 @@ from .store import ChatStore
 from .transcription import Transcriber
 from .admin import AdminService, AssistantSignal, DocumentSignal, EffectiveSettings
 from .document_bridge import DocumentBridge
-from .browser import BrowserService, HermesBrowserClient
+from .browser import BrowserSessionService, HermesBrowserClient
 
 
 def app_factory():
@@ -30,8 +30,11 @@ def app_factory():
     transcriber = Transcriber(config["transcription_endpoint"], bearer=config.get("transcription_bearer")) if "transcription_endpoint" in config else None
     store = ChatStore(Path(config["transcript_path"]))
     browser_client = HermesBrowserClient(config["hermes_endpoint"], config["hermes_bearer"]) if browser_enabled else None
+    # Agent availability must not decide whether sign-in, Library or routes exist.
+    # Every run and native action still validates its actual current capability.
+    browser_control = browser_enabled
 
-    assistant_status = lambda: _assistant_status(status_client, document_access, browser_enabled)
+    assistant_status = lambda: _assistant_status(status_client, document_access, browser_enabled, browser_control)
     def document_status():
         available = (importlib.util.find_spec("radhouse.chat.document_parser") is not None
             and importlib.util.find_spec("pypdf") is not None)
@@ -41,16 +44,20 @@ def app_factory():
     # Never infer a live revision from an archived repository checkout.
     admin = AdminService(store, settings=EffectiveSettings(**auth.session_limits(),
             transcription_enabled=transcriber is not None, document_access_enabled=document_access,
-            browser_enabled=browser_enabled),
+            browser_enabled=browser_enabled, browser_control_enabled=browser_control),
         assistant_probe=assistant_status,
         document_probe=document_status,
         network_policy_probe=(lambda: status_client.capabilities().browser_network_policy) if browser_enabled else None,
         release_commit=os.environ.get("RADHOUSE_RELEASE_COMMIT"))
     service = ChatService(store, hermes, owner_id=config["owner_id"], transcriber=transcriber,
-        document_access=document_access, browser_enabled=browser_enabled)
+        document_access=document_access, browser_enabled=browser_enabled, browser_control=browser_control)
+    browser_service = None
+    if browser_enabled:
+        browser_service = BrowserSessionService(store, browser_client, owner_id=config["owner_id"],
+            chat_service=service, credential_vault=lambda: _browser_vault_available(status_client))
     app = create_app(auth, service, admin=admin,
         documents=DocumentBridge(store, status_client, owner_id=config["owner_id"]) if document_access else None,
-        browser=BrowserService(store, browser_client, owner_id=config["owner_id"]) if browser_enabled else None)
+        browser=browser_service)
 
     observe_lifespan = app.router.lifespan_context
 
@@ -82,11 +89,15 @@ def _load_chat_config():
     return config
 
 
-def _assistant_status(status_client, document_access, browser_enabled):
+def _assistant_status(status_client, document_access, browser_enabled, browser_control=False):
     capabilities = status_client.capabilities()
     return AssistantSignal(ready=capabilities.disable_tools
         and capabilities.idempotency_retention_seconds > 60
         and (not document_access or capabilities.allowed_tools and capabilities.document_scope)
-        and (not browser_enabled or capabilities.allowed_tools and capabilities.browser_view))
+        and (not browser_enabled or capabilities.allowed_tools and capabilities.browser_view)
+        and (not browser_control or capabilities.browser_control))
 
 
+def _browser_vault_available(status_client):
+    capabilities = status_client.capabilities()
+    return capabilities.browser_control and capabilities.browser_credential_vault
