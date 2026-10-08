@@ -72,8 +72,9 @@ def test_direct_locator_validation_cannot_invent_passages(locator):
 
 
 def test_direct_verification_rejects_source_hash_mismatch():
+    replaced_sha = hashlib.sha256(b"Replaced").hexdigest()
     with pytest.raises(ValueError, match="document_source_changed"):
-        read(b"Original", ".txt", sha256=hashlib.sha256(b"Replaced").hexdigest())
+        read(b"Original", ".txt", sha256=replaced_sha)
 
 
 @pytest.mark.parametrize("xml", [
@@ -81,12 +82,15 @@ def test_direct_verification_rejects_source_hash_mismatch():
     '<!DOCTYPE document [<!ENTITY expanded "unsafe">]><document>&expanded;</document>',
 ])
 def test_direct_office_parser_rejects_external_and_expanding_entities(xml):
+    data = archive_files({"word/document.xml": xml})
     with pytest.raises(ValueError, match="document_unreadable"):
-        read(archive_files({"word/document.xml": xml}), ".docx")
+        read(data, ".docx")
 
 
 def test_direct_pdf_distinguishes_encryption_from_blank_page():
+    encrypted = pdf_pages(["Secret"], encrypted=True)
+    blank = pdf_pages([""])
     with pytest.raises(ValueError, match="document_encrypted"):
-        read(pdf_pages(["Secret"], encrypted=True), ".pdf")
+        read(encrypted, ".pdf")
     with pytest.raises(ValueError, match="document_needs_ocr"):
-        read(pdf_pages([""]), ".pdf", locator="pdf:page:1")
+        read(blank, ".pdf", locator="pdf:page:1")

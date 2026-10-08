@@ -41,6 +41,10 @@ scanner's `bin` directory to `PATH`, or supply `--scanner /path/to/sonar-scanner
 
 ## After each merge
 
+An explicit owner scan request uses the established destination/payload approval
+in [the Codex capability record](codex-capabilities.md). Project-scoped reviewer
+context preserves that scope without changing global approvals or networking.
+
 From the repository on the local laptop:
 
 ```sh
