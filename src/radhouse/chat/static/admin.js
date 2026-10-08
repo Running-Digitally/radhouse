@@ -96,6 +96,7 @@ async function request(path, signal, body) {
 async function load() {
   const current = ++generation; controller?.abort(); controller = new AbortController();
   const signal = controller.signal; $("refresh").disabled = true; $("notice").hidden = true;
+  window.RadhouseIcons?.busy($("refresh"),true);
   $("content").replaceChildren(); $("content").hidden = true; $("checked-at").textContent = "";
   $("loading").hidden = false; $("loading").textContent = "Checking current settings…";
   try {
@@ -112,7 +113,7 @@ async function load() {
     $("content").hidden = false; $("loading").hidden = true; $("refresh").hidden = false;
     $("checked-at").textContent = `Checked ${new Date(data.checked_at).toLocaleString()}`;
   } catch (error) { if (current === generation && error.name !== "AbortError") { failed(error.message); } }
-  finally { if (current === generation) { $("refresh").disabled = false; } }
+  finally { if (current === generation) { $("refresh").disabled = false; window.RadhouseIcons?.busy($("refresh"),false); } }
 }
 $("page-title").textContent = infrastructure ? "Infrastructure" : "Settings";
 document.title = `${infrastructure ? "Infrastructure" : "Settings"} · Radhouse`;
