@@ -72,7 +72,7 @@ def policy(path):
             or value.get("agent_browser_channel") != "reviewed"):
         raise ValueError("maintenance_policy_unverified")
     files = value.get("runtime_files_sha256")
-    if (type(files) is not dict or not 1 <= len(files) <= 32
+    if (type(files) is not dict or not 1 <= len(files) <= 35
             or any(type(name) is not str or Path(name).is_absolute() or ".." in Path(name).parts
                    or type(digest) is not str or re.fullmatch(r"[a-f0-9]{64}", digest) is None for name, digest in files.items())
             or hashlib.sha256(canonical(files)).hexdigest() != value.get("runtime_sha256")):
