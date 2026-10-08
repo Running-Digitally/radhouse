@@ -18,10 +18,12 @@ The portrait represents identity and does not morph into a thinking animation.
 The adjacent status mark uses the shared icon family, with smoke, idle zzz,
 working circulation, waiting, pause and completion. Text accompanies status. Actual
 runtime states must come from existing authoritative reply/control status when
-implemented; this mockup explicitly offers a synthetic state picker.
+implemented; this mockup offers an interactive synthetic state arc around the portrait.
 
-The profile has Identity and Appearance tabs. Identity offers a name, a short
-introduction, themed character portraits and an optional uploaded raster image.
+The profile has Identity and Appearance tabs. Identity follows a visible sequence:
+choose a theme, pick its character, then optionally personalize the name. A short
+introduction and the selected character’s backstory are disclosed only on request.
+An uploaded raster portrait remains available below the character choices.
 Appearance offers profile accent, independent agent-state and interface-icon
 motion controls, and paper/evening/device surfaces. Device reduced motion always
 wins. Existing Settings remains available for application and infrastructure
@@ -29,9 +31,11 @@ configuration; its mockup shortcut opens Appearance.
 
 ## Character collections
 
-The owner likes the original four portraits as the **first theme, Hearthside**.
-The three additional themes are exploratory candidates, each with a different
-material and character language. All are identities for one agent.
+The original four portraits form **Hearthside**. The owner directionally accepted
+the images across all four collections for the first version on 2026-10-08 and
+liked the Appearance settings. Identity and the state arc are being refined for
+review. Each collection has a different material and character language; all
+are identities for one agent.
 
 | Collection | Visual language | Characters |
 | --- | --- | --- |
@@ -64,17 +68,34 @@ provides stable portrait and collection IDs for later main-UI reuse.
 
 ## Interaction and persistence
 
+The Identity flow follows [the no-manual principle](../PRINCIPLES.md): theme,
+character, optional name. Theme cards show their characters visually. Changing
+theme immediately selects its first character, or the character last selected in
+that theme during the current edit. The radio selection, preview, and header
+portrait stay in agreement. The full character set is visible together where
+space allows. Long backstories are available behind About in the preview instead
+of competing with every portrait choice.
+
 Edits update the portrait, menu name, header, and chat preview immediately.
 Save commits only to the preview's namespaced browser-local storage. Discard
 restores the saved draft. Reset stages defaults, requiring Save to keep them.
-The empty-name fallback is intentional. Suggested names remain optional.
-Browsing another theme preserves the current identity and leaves Save disabled
-until an identity or appearance setting changes. Selecting another character
-preserves an explicitly edited name/introduction; suggested names follow the
-chosen character when a personal name has not been entered.
-Uploaded PNG/JPEG/WebP portraits stay in the browser (1 MB limit); they are
-never sent to a service. No live authentication, agent, model, or settings API
-is connected. Adjacent menu items are context for this mockup.
+The empty-name fallback is Your Agent. Character names are optional suggestions;
+an explicitly entered personal name/introduction survives theme and portrait
+changes. On compact screens, the form comes first, the live profile follows,
+and Save comes after the preview. The fixed header provides immediate identity
+feedback throughout.
+
+Six state buttons form a semicircle around the preview portrait. Mouse/pen hover
+temporarily previews a state in the profile and fixed-header house mark; leaving
+returns to the clicked selection. Click or tap selects the state until another
+is selected. Keyboard focus previews, arrow keys move focus, and Enter/Space
+select. The selected state remains visibly marked while another is previewed.
+These interactions do not dirty or save identity settings. The state examples
+remain local to this page session and do not send runtime commands.
+
+Uploaded PNG/JPEG/WebP portraits stay in the browser (1 MB limit); they are never
+sent to a service. No live authentication, agent, model, or settings API is
+connected. Adjacent menu items are context for this documentation mock.
 
 ## Implementation proposal
 
@@ -106,7 +127,7 @@ is the integration handoff. This preview remains checked in as the visual refere
 when its components move into the main UI. It has no external assets or framework
 dependencies, and its relative paths also work under ordinary static hosting.
 
-## Validation on 2026-10-08
+## Initial preview validation on 2026-10-08
 
 The in-app browser verified the initial Your Agent fallback, character selection,
 name propagation in the menu/header/chat, a custom name retained across character
@@ -131,7 +152,7 @@ Device reduced-motion support is implemented in both the shared icons and the
 mockup styles; the OS preference itself was not changed during verification.
 Uploaded-image success and browser-storage exhaustion were not exercised.
 
-## Theme and documentation validation on 2026-10-08
+## Previous theme iteration validation on 2026-10-08
 
 The updated in-app browser verified all four collection controls and all new
 gallery images. Browsing Kiln Club from the saved Ember identity left the portrait
@@ -158,3 +179,32 @@ captures are checked in with the documentation; the runnable mock remains the
 canonical interaction reference. The same upload/storage/OS-preference limitations
 recorded for the initial preview still apply. No product build or dependency
 installation was required for this static documentation mock.
+
+## Identity refinement validation on 2026-10-08
+
+The revised Identity view was checked in the in-app browser. Choosing Paper Trails
+selected Rue and changed the header/profile immediately; selecting Sol, switching
+to Signal Station, then returning restored Sol. A custom name and introduction
+survived theme changes. Discard restored the saved Miro identity and collapsed
+the optional introduction. The external form-associated Save button persisted
+Nori across reload; Miro was then restored and saved as the review fixture.
+
+With Working selected, native pointer hover previewed Paused while the selected
+button stayed Working; leaving restored Working. Clicking Paused and leaving
+kept Paused. ArrowRight focused and previewed Completed without changing the selection;
+Enter selected Completed and the state survived focus moving outside the arc.
+The page contains no select/dropdown elements. State selection leaves identity
+Save disabled.
+
+CSS widths 1600, 1333, 1024, 390 and 320 showed no horizontal overflow. At 320,
+all six state targets were at least 54 × 60 pixels, with no overlapping target
+rectangles; the header portrait center was x=160. At 390 the center was x=195.
+On mobile the Save bar follows the profile preview. Appearance's evening surface
+and independent motion controls were exercised again; static smoke retained
+opacity 0.65. No broken displayed images or browser warnings/errors were observed.
+JavaScript syntax, relative documentation links and Git whitespace checks passed.
+The 21 explicit fixture routes match their saved files; unrelated paths stay 404.
+
+The updated screenshots and component map describe this revision. The owner
+reviewed the mock and authorized committing the work so far on 2026-10-08.
+Previously recorded upload/storage/OS-preference testing limitations still apply.

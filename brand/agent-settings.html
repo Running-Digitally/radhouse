@@ -48,18 +48,17 @@
           </div>
           <form id="identity-form">
             <section id="identity-panel" role="tabpanel" aria-labelledby="identity-tab">
-              <div class="section-heading"><h2>What should we call your agent?</h2><p>This name appears in your menu and conversations.</p></div>
-              <div class="field"><label id="name-label" for="agent-name">Agent name</label><div class="name-row"><input id="agent-name" name="agent-name" aria-labelledby="name-label" aria-describedby="name-hint" maxlength="32" autocomplete="off" placeholder="A name of your own"><button id="suggest-name" class="quiet-button" type="button" data-glyph="refresh" aria-label="Use this character's suggested name">Suggest a name</button></div><small id="name-hint">Leave it blank to use “Your Agent”.</small></div>
-              <div class="field"><label id="intro-label" for="agent-intro">A little introduction <em>optional</em></label><textarea id="agent-intro" name="agent-intro" aria-labelledby="intro-label" aria-describedby="intro-hint" rows="2" maxlength="160">Keeps the light on while you find your next good idea.</textarea><small id="intro-hint">A personal touch for the profile.</small></div>
-              <div class="section-heading character-heading"><div><h2>Find a familiar face.</h2><p>Four themes. A world of personalities. Find one that feels like home.</p></div></div>
-              <fieldset class="theme-options" id="theme-options" aria-describedby="theme-browse-hint"><legend>Choose a theme</legend></fieldset>
-              <p class="theme-browse-hint" id="theme-browse-hint">Explore a theme, then choose a character to change your portrait.</p>
-              <div class="collection-heading"><h3 id="collection-title">Hearthside</h3><span id="collection-count">4 characters</span></div>
-              <p class="theme-description" id="theme-description" aria-live="polite"></p>
-              <fieldset class="character-grid" id="character-grid"><legend class="sr-only">Choose a character portrait</legend></fieldset>
-              <p class="current-portrait" id="current-portrait" role="status"></p>
-              <div class="own-portrait"><div><strong>Or bring your own character.</strong><p>Use a portrait, a photo, or something entirely yours.</p></div><button id="upload-button" type="button" class="quiet-button" data-glyph="attach">Upload image</button><input id="portrait-file" type="file" accept="image/png,image/jpeg,image/webp" hidden></div>
-              <p id="upload-status" class="field-note" role="status"></p>
+              <fieldset class="theme-options" id="theme-options"><legend><span class="step-number">1</span>Choose a theme</legend></fieldset>
+              <section class="character-section" aria-labelledby="character-heading">
+                <div class="choice-heading"><h2 id="character-heading"><span class="step-number">2</span>Pick a character</h2><span id="collection-title" aria-live="polite">Hearthside</span></div>
+                <fieldset class="character-grid" id="character-grid"><legend class="sr-only">Choose a Hearthside character</legend></fieldset>
+                <div class="own-portrait"><button id="upload-button" type="button" class="quiet-button" data-glyph="attach">Use your own image</button><input id="portrait-file" type="file" accept="image/png,image/jpeg,image/webp" hidden></div>
+                <p id="upload-status" class="field-note" role="status"></p>
+              </section>
+              <div class="identity-personalize">
+                <div class="field"><label id="name-label" for="agent-name"><span class="step-number">3</span>Make the name yours</label><div class="name-row"><input id="agent-name" name="agent-name" aria-labelledby="name-label" aria-describedby="name-hint" maxlength="32" autocomplete="off" placeholder="Your Agent"><button id="suggest-name" class="quiet-button" type="button" aria-label="Use Ember as agent name">Use Ember</button></div><small id="name-hint">Optional. Leave blank for “Your Agent”.</small></div>
+                <details class="intro-disclosure" id="intro-disclosure"><summary>Personalize the introduction</summary><div class="field"><label id="intro-label" for="agent-intro">Introduction <em>optional</em></label><textarea id="agent-intro" name="agent-intro" aria-labelledby="intro-label" rows="2" maxlength="160">Keeps the light on while you find your next good idea.</textarea></div></details>
+              </div>
             </section>
             <section id="appearance-panel" role="tabpanel" aria-labelledby="appearance-tab" hidden>
               <div class="section-heading"><h2>A color to call your own.</h2><p>A small accent around your portrait and profile.</p></div>
@@ -71,22 +70,24 @@
               <div class="section-heading"><h2>Make room for your rhythm.</h2><p>Choose how the interface feels around your character.</p></div>
               <fieldset class="surface-options"><legend class="sr-only">Interface appearance</legend><label><input type="radio" name="surface" value="paper" checked><span class="surface-sample paper"></span><span>Warm paper</span></label><label><input type="radio" name="surface" value="night"><span class="surface-sample night"></span><span>Evening</span></label><label><input type="radio" name="surface" value="system"><span class="surface-sample system"></span><span>Follow device</span></label></fieldset>
             </section>
-            <div class="save-bar"><output id="save-status" role="status" aria-live="polite">Make yourself at home.</output><div><button id="discard" type="button" class="quiet-button" disabled>Discard</button><button id="save" type="submit" class="primary-button" data-glyph="check" disabled>Save changes</button></div></div>
+
           </form>
         </section>
-        <aside class="preview-column" aria-label="Live agent preview">
+        <aside class="preview-column" id="live-preview" aria-label="Live agent preview">
           <div class="preview-card">
             <div class="preview-caption"><span class="eyebrow">YOUR AGENT, IN CONTEXT</span><span class="live-dot"></span></div>
-            <div class="portrait-stage"><img data-portrait src="characters/ember.png" alt="Your agent's portrait"><span class="portrait-status" data-status-icon aria-hidden="true"></span></div>
-            <h2 class="preview-name" data-name>Your Agent</h2><p class="profile-intro" id="preview-intro">Keeps the light on while you find your next good idea.</p>
+            <div class="state-orbit"><div class="state-options" id="state-options" role="group" aria-label="Preview agent states"></div><div class="portrait-stage"><img data-portrait src="characters/ember.png" alt="Your agent's portrait"><span class="portrait-status" data-status-icon aria-hidden="true"></span></div></div>
+            <h2 class="preview-name" data-name>Your Agent</h2><p class="profile-role" id="profile-role"></p><p class="profile-intro" id="preview-intro">Keeps the light on while you find your next good idea.</p>
+            <details class="character-notes" id="character-notes"><summary id="character-story-label">About Ember</summary><p id="profile-story"></p></details>
             <div class="preview-state"><span class="state-dot"></span><span data-state-label>Thinking</span><span class="state-description" id="state-description">Connecting the dots.</span></div>
             <div class="chat-sample" id="chat-preview"><p class="you-label">YOU</p><p class="you-message">Can we make sense of this together?</p><div class="reply-heading"><img data-portrait src="characters/ember.png" alt=""><strong data-name>Your Agent</strong></div><p id="sample-reply">Of course. Let’s put the kettle on and start with what matters.</p><button class="sample-copy quiet-button" id="copy-sample" data-glyph="clipboard">Copy</button></div>
-            <div class="state-picker"><label for="preview-state">Try an agent state</label><select id="preview-state"><option value="thinking">Thinking</option><option value="idle">Idle</option><option value="working">Working</option><option value="waiting">Waiting for you</option><option value="paused">Paused</option><option value="completed">Completed</option></select></div>
+
           </div>
           <p class="preview-footnote">Your portrait is your agent’s identity.<br>The little house beside it is its live status.</p>
         </aside>
+        <div class="save-bar"><output id="save-status" role="status" aria-live="polite">Make yourself at home.</output><div><button id="discard" type="button" class="quiet-button" disabled>Discard</button><button id="save" type="submit" form="identity-form" class="primary-button" data-glyph="check" disabled>Save changes</button></div></div>
       </div>
-      <footer class="page-footer"><span>One agent. A character all its own.</span><span>Radhouse character study · 02</span></footer>
+      <footer class="page-footer"><span>One agent. A character all its own.</span><span>Radhouse character study · 03</span></footer>
     </main>
   </div>
   <div class="toast" id="toast" role="status" hidden></div>

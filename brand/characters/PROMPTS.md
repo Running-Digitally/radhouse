@@ -3,8 +3,9 @@
 Generated on 2026-10-08 with the built-in `image_gen` tool. Thirteen independent
 square raster PNG illustrations; no SVG portrait substitutes or external asset
 library. Original outputs remain under Codex generated_images. These assets are
-design references. The owner likes the original four as the first theme;
-the three additional collections are exploratory candidates.
+design references. The owner directionally accepted all four collections
+as images for the first version on 2026-10-08. Identity interaction design remains
+under review; this is not deployment or final product approval.
 
 Project assets: `brand/characters/ember.png`, `moss.png`, `aster.png`, and
 `lumi.png` form Hearthside. Kiln Club adds `miro.png`, `nori.png`,

@@ -18,11 +18,21 @@ required. The server binds to loopback and exposes only the mock's listed public
 assets. Relative asset paths also work when the `brand` directory is served by
 an ordinary static documentation server; there are no external font or image requests.
 
-Try the four collections, choose a portrait, enter a name, and change the
-Appearance controls. The live card, centered header portrait, and first menu item
-update together. Browse collections without replacing the selected identity.
-Save persists in this browser preview; Discard restores the last saved identity.
-The state picker illustrates runtime states. Other menu entries provide context.
+Identity presents one sequence: **Theme → Character → Name**. Choosing a theme
+selects a character immediately and shows the alternatives directly beneath it.
+The live card, centered header portrait and first menu item update together.
+Character stories are behind About; the introduction editor is optional and
+collapsed. An explicit personal name/introduction survives character changes.
+Save persists in this browser preview; Discard restores the saved identity.
+
+The six state buttons form a semicircle around the profile portrait. Hover or
+keyboard focus previews a state; leaving returns to the selected state. Click,
+tap or Enter/Space selects it. The selection stays marked while another state
+is previewed. These are illustrative states, separate from saved identity or
+runtime commands. Other menu entries provide context.
+
+On compact screens, the choices come first, followed by the live profile, then
+Save. The fixed portrait/header status remains visible throughout.
 
 ## Four visual collections
 
@@ -34,20 +44,26 @@ The state picker illustrates runtime states. Other menu entries provide context.
 | Signal Station | Retro-future explorers in brass, enamel and soft green | Beacon, Echo, Orbit |
 
 Short character profiles and design rules are in
-[the identity concept](../../brand/AGENT-IDENTITY.md). The owner liked the original
-four portraits as the first theme; the other collections remain design candidates.
+[the identity concept](../../brand/AGENT-IDENTITY.md). The owner directionally accepted the
+images for the first version and liked Appearance. The revised Identity flow
+and state arc were reviewed as a documentation mock, with the current work
+authorized for committing on 2026-10-08.
 All 13 portraits are real raster assets, with their generation prompts preserved
 in [the asset ledger](../../brand/characters/PROMPTS.md).
 
 ## Mock screenshots
 
-Desktop collection browsing with Kiln Club selected:
+Desktop theme-first Identity with the six-state arc:
 
-![Desktop mock: theme picker, character cards and live profile](assets/themes-kiln-desktop.jpg)
+![Desktop mock: theme, character, optional name and interactive profile states](assets/themes-kiln-desktop.jpg)
 
-Compact character cards below the fixed identity header:
+Compact Identity starts with theme and character choices:
 
-![Mobile mock: round identity portrait, adjacent house status and portrait choices](assets/themes-kiln-mobile.jpg)
+![Mobile mock: theme first, matching character choices and fixed identity header](assets/themes-kiln-mobile.jpg)
+
+The same state arc supports tap selection on compact screens:
+
+![Mobile profile: six state buttons arranged around the portrait](assets/agent-state-arc-mobile.jpg)
 
 These captures are a reference for this iteration. Use the runnable mock to
 inspect the other collections, appearance states and interactions.
@@ -62,10 +78,11 @@ working HTML/CSS/JavaScript available for comparison during implementation.
 | Agent navigation item | `agent-settings.html`: `.nav-agent`, `[data-name]` | First item above Chat; trimmed display name or Your Agent; link to the agent profile |
 | Centered identity header | `.header-identity`, `.profile-button`, `.header-status`; layout in `agent-settings.css` | Round portrait centered independently of the adjacent status mark; fixed desktop/mobile layout and 44px hit areas |
 | Character catalog | `characters/catalog.js`: `RadhouseCharacters.themes` and `.profiles` | Immutable presentation metadata with stable IDs, asset names, roles and brief stories; names remain optional suggestions |
-| Theme picker | `#theme-options`; `browseCollection()` in `agent-settings.js` | Native radio collection selector; browsing remains separate from the selected portrait |
-| Portrait cards | `#character-grid`, `.character-option`; `renderPortraits()` | Native radio cards with portrait, name, role, story and visible selected state |
+| Theme picker | `#theme-options`; `chooseTheme()` in `agent-settings.js` | Native radio theme selector; selecting a theme updates its character selection and preview together |
+| Portrait cards | `#character-grid`, `.character-option`; `renderPortraits()` | Compact native radio cards with portrait, name, role and visible selection; disclose the selected story in the preview |
+| Interactive state arc | `#state-options`, `.state-orbit`; `renderPreviewState()` | Reusable preview interaction: hover/focus is transient, click/tap/Enter pins, pointer exit/blur restores selection; runtime state remains authoritative in the main UI |
 | Profile summary | `.preview-card`, `.portrait-stage`, `[data-portrait]` | Shared presentation of portrait, display name, introduction and separate status; reuse independently of the synthetic chat example |
-| Identity form | `#identity-form`, `syncInputs()`, `validate()`, `update()` | Bounded name/introduction fields, explicit draft/save/discard lifecycle and custom-name preservation |
+| Identity form | `#identity-form`, `syncInputs()`, `validate()`, `update()` | Optional name/introduction after visual choices; explicit draft/save/discard lifecycle, form-associated Save and custom-name preservation |
 | Appearance tokens | `--accent`, `--soft`, `--paper`, `--panel`, `--ink`, `--muted`, `--line` | Reuse color roles and surface choices while aligning values with the main UI's existing tokens |
 | Navigation drawer and tabs | `menu()` / `showTab()`, inert background, tab roles | Retain Escape dismissal, focus wrapping, native radio keys and tab-arrow navigation when adopting the layout |
 | Shared icons | Accepted V1 pinned files in `agent-icon-snapshot/` | Use the canonical `src/radhouse/chat/static/navigation.js` and `.css` in the product; do not create a second icon implementation |
@@ -87,12 +104,13 @@ uploaded data URLs with validated raster asset references. Keep current portrait
 IDs stable, and introduce production-sized image renditions through the asset
 pipeline while retaining the original artwork and prompts in the design reference.
 
-Replace the synthetic state selector with the existing authoritative reply/control
-status adapter. Keep the house mark separate from portrait identity and pair its
+Replace the synthetic state preview controller with the existing authoritative
+reply/control status adapter. Keep the house mark separate from portrait identity and pair its
 state with accessible text. The mock studies independent state/interface motion;
 the accepted V1 icon implementation currently uses one browser-wide Icon animation
 preference. Reconcile that interaction during adoption using its shared controller,
 including cross-tab preference updates and device reduced motion.
 
 The preview is a documentation deliverable on `codex/agent-personalization-settings`.
+The owner reviewed this revision and authorized committing the work so far on 2026-10-08.
 It is not a production settings implementation or a deployment.
