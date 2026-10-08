@@ -5,6 +5,7 @@ import ast
 import hashlib
 import importlib.util
 import json
+import sys
 from pathlib import Path
 
 PACKAGE = Path(__file__).parent
@@ -40,6 +41,26 @@ def _insert_function(source, name, block):
 
 
 def patch_runs(source):
+    source = _replace(
+        source,
+        "    if selection_error:\n        return _json_error(_openai_error, selection_error, status=400)\n",
+        "    if selection_error and body.get(\"radhouse_inference\") is not True:\n        return _json_error(_openai_error, selection_error, status=400)\n",
+    )
+    source = _replace(
+        source,
+        "    # Enforce concurrency only for a genuinely new run.\n",
+        """    # Frozen Radhouse model choices are checked only for a genuinely new run.
+    # Durable replay must survive a later engine/catalog outage.
+    if body.get("radhouse_inference") is True:
+        if selection_error:
+            return web.json_response({"error": "inference_selection_changed", "admitted": False}, status=409)
+        from radhouse_native_inference import inference_admission_error
+        inference_error = await inference_admission_error(self, body)
+        if inference_error:
+            return web.json_response({"error": inference_error, "admitted": False}, status=409)
+    # Enforce concurrency only for a genuinely new run.
+""",
+    )
     source = _replace(
         source,
         "    browser_control_transport_family: Any\n",
@@ -122,11 +143,16 @@ def patch_runs(source):
         )
     else:  # Bounded original-function snapshot used by the standalone source tests.
         source = "from dataclasses import field\n" + source
+    spec = importlib.util.spec_from_file_location("radhouse_inference_overlay_transform", PACKAGE / "native_inference.py")
+    helper = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = helper
+    spec.loader.exec_module(helper)
+    source = helper.patch_selected_run(source)
     ast.parse(source)
     return source
 
 
-def patch_api(source):
+def patch_api(source, *, include_lifecycle=True):
     anchor = '                "runs_idempotency": _api_runs._idempotency_capabilities(self, store_type=RunIdempotencyStore),\n'
     source = _replace(
         source,
@@ -176,8 +202,24 @@ def patch_api(source):
             routes.append(("POST", "/v1/browser-sessions/{session_id}/control/" + operation, self._handle_radhouse_browser_session))
         for operation in ("list", "save", "remove", "fill"):
             routes.append(("POST", "/v1/browser-sessions/{session_id}/logins/" + operation, self._handle_radhouse_browser_logins))
+        from radhouse_about_you import handle_about_you
+        from radhouse_native_inference import handle_inference
+        from radhouse_owner_terminal import handle_owner_terminal
+        async def about_you_handler(request):
+            return await handle_about_you(self, request)
+        async def inference_handler(request):
+            return await handle_inference(self, request)
+        routes.append(("GET", "/v1/radhouse/memory", about_you_handler))
+        routes.append(("GET", "/v1/inference/options", inference_handler))
+        async def owner_terminal_handler(request):
+            return await handle_owner_terminal(self, request, operation=request.match_info["operation"])
+        routes.append(("POST", "/v1/owner-terminal/{operation}", owner_terminal_handler))
 """
     source = _replace(source, anchor, anchor + routes)
+    if include_lifecycle:
+        source = _insert_function(source, "disconnect", """        from radhouse_owner_terminal import shutdown_owner_terminals
+        await shutdown_owner_terminals()
+""")
     ast.parse(source)
     return source
 
@@ -363,6 +405,9 @@ def write(root, destination):
         ("browser_control.py", "radhouse_browser_control.py"),
         ("native_control.py", "radhouse_native_control.py"),
         ("vault_bridge.py", "radhouse_vault_bridge.py"),
+        ("about_you.py", "radhouse_about_you.py"),
+        ("native_inference.py", "radhouse_native_inference.py"),
+        ("owner_terminal.py", "radhouse_owner_terminal.py"),
     ):
         target = destination / name
         target.write_bytes((PACKAGE / source).read_bytes())

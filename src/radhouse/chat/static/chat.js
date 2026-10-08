@@ -36,8 +36,17 @@ const explanations = {
   original_unavailable:"This browser no longer has the unsent original. Edit this message and attach the file again.",
   browser_context_changed:"The browser changed before this message was received. Take control of the current page and send a new message.",
   browser_binding_unavailable:"Reconnect to use browser control. Your message and files are kept.",
+  message_options_changed:"This message already has different saved settings or terminal context. Reconnect to check it.",
+  inference_catalog_unavailable:"Model choices are unavailable. Select Default or refresh models before sending.",
+  inference_model_unavailable:"That model is no longer available. Choose an available model or Default.",
+  inference_selection_changed:"The assistant’s model settings changed. Choose a model and send a new message.",
+  inference_selection_invalid:"Choose an available model and thinking setting before sending.",
+  inference_thinking_unavailable:"That thinking setting is no longer supported. Choose Default or refresh models.",
+  terminal_unavailable:"The terminal is unavailable. Your message is kept.",
+  terminal_context_unavailable:"Open the terminal before including its context, or turn off Include terminal context.",
 };
-let session=null, turns=new Map(), outbox=null, busy=false, polling=false, filesLoading=false;
+let session=null, turns=new Map(), outbox=null, busy=false, polling=false, filesLoading=false, capturingContext=false;
+let captureEpoch=0;
 let olderBefore=null, olderLoaded=false, openingHistory=false, followingLatest=true;
 let pendingLookup=null;
 const emptyDraft = () => ({text:"",attachments:[]});
@@ -46,8 +55,15 @@ const turnNodes=new Map(), previewUrls=new Map();
 const retainedSnapshots=new Map();
 const browserView=typeof window.BrowserView==="function" ? new window.BrowserView($("assistant-browser"),
   {persistent:true,request:browserRequest,onReturn:returnBrowser,tab:browserTab}) : null;
-let currentPage=typeof location!=="undefined" && ["/library","/browser"].includes(location.pathname) ? location.pathname : "/";
+const workspacePages=["/library","/browser","/terminal","/about-you"];
+let currentPage=typeof location!=="undefined" && workspacePages.includes(location.pathname) ? location.pathname : "/";
 const library=typeof window.RadhouseLibrary==="function" ? new window.RadhouseLibrary({request:api,card:fileCard,openMessage}) : null;
+const aboutYou=typeof window.RadhouseAboutYou==="function" ? new window.RadhouseAboutYou({container:$("about-you-content"),request:api,onAuthRequired:()=>showLogin(true)}) : null;
+const inferenceControls=typeof window.RadhouseInference==="function" ? new window.RadhouseInference({container:$("inference-controls"),request:api,onAuthRequired:()=>showLogin(true)}) : null;
+const ownerTerminal=typeof window.OwnerTerminalView==="function" ? new window.OwnerTerminalView($("owner-terminal"),
+  {request:(path,body,method="POST",signal)=>api(path,body,false,signal,method),tab:browserTab,
+    onAuthRequired:()=>showLogin(true),onContextChange:wanted=>{terminalContextWanted=Boolean(wanted);updateTerminalChip();}}) : null;
+let terminalContextWanted=false;
 let browserEpoch=0, browserStatusRequest=null, browserRequestId=null, browserSuspended=false;
 let browserTabId=null,lastBrowserStatus=null,browserContextWanted=true,lastBrowserActivity=0,browserHeartbeat=false;
 function browserTab() {
@@ -67,6 +83,11 @@ function updateBrowserChip() {
     $("browser-context-label").textContent=(current ? "Use current page: " : "Use previous page: ")+(page.title || page.url);
     $("use-browser-context").checked=browserContextWanted;
   }
+}
+function updateTerminalChip() {
+  const chip=$("terminal-context-chip"); if(!chip)return;
+  chip.hidden=!session || session.features?.terminal!==true;
+  $("use-terminal-context").checked=terminalContextWanted;
 }
 function outgoingBrowserContext() {
   const control=lastBrowserStatus?.control;
@@ -144,6 +165,8 @@ $("assistant-browser").addEventListener("browser-state",event=>{
 });
 $("use-browser-context").addEventListener("change",event=>{browserContextWanted=event.target.checked;lastBrowserActivity=Date.now();});
 $("open-browser-context").addEventListener("click",()=>{lastBrowserActivity=Date.now();showPage("/browser",true,true);});
+$("use-terminal-context").addEventListener("change",event=>{terminalContextWanted=event.target.checked;if(ownerTerminal)ownerTerminal.contextEnabled=terminalContextWanted;});
+$("open-terminal-context").addEventListener("click",()=>showPage("/terminal",true,true));
 for(const event of ["pointerdown","keydown","wheel"])document.addEventListener(event,()=>{
   if(session && (currentPage==="/browser" || currentPage==="/" && browserContextWanted))lastBrowserActivity=Date.now();
 },{passive:true});
@@ -175,22 +198,29 @@ let chatScroll=0, workspaceEpoch=0;
 function showPage(path, push=false, focus=false) {
   workspaceEpoch++;
   if (currentPage==="/" && path!=="/") { chatScroll=$("history-pane").scrollTop; }
-  currentPage=["/library","/browser"].includes(path) ? path : "/";
+  currentPage=workspacePages.includes(path) ? path : "/";
   if(currentPage==="/browser")lastBrowserActivity=Date.now();
   if (push && typeof history!=="undefined") { history.pushState(null,"",currentPage); }
   $("chat-view").hidden=!session || currentPage!=="/";
   $("library-view").hidden=!session || currentPage!=="/library";
   $("browser-page").hidden=!session || currentPage!=="/browser";
-  document.title=currentPage==="/" ? "Radhouse" : (currentPage==="/library" ? "Library" : "Browser")+" · Radhouse";
+  $("terminal-page").hidden=!session || currentPage!=="/terminal";
+  $("about-you-page").hidden=!session || currentPage!=="/about-you";
+  const pageTitles={"/library":"Library","/browser":"Browser","/terminal":"Terminal","/about-you":"About You"};
+  document.title=currentPage==="/" ? "Radhouse" : pageTitles[currentPage]+" · Radhouse";
   managementNavigation();
   if (currentPage!=="/library") { library?.cancel(); }
   else if (session && !openingHistory) { void library?.load(); }
   if (currentPage!=="/browser") { stopBrowser(); }
   else { void refreshBrowser(); }
+  if (currentPage!=="/terminal" || !session || openingHistory) { ownerTerminal?.hide(); }
+  else { void ownerTerminal?.show(); }
+  if (currentPage!=="/about-you" || !session || openingHistory) { aboutYou?.cancel(); }
+  else { void aboutYou?.load(); }
   if (currentPage==="/" && session) {
     resizeMessage(); $("history-pane").scrollTop=followingLatest ? $("history-pane").scrollHeight : chatScroll;
   }
-  if (focus) { $(currentPage==="/library" ? "library-title" : currentPage==="/browser" ? "browser-title" : "message").focus(); }
+  if (focus) { $(currentPage==="/" ? "message" : currentPage.slice(1)+"-title").focus(); }
 }
 async function openMessage(requestId, push=true) {
   if (!session) return;
@@ -268,7 +298,7 @@ $("management-nav").addEventListener("click",async event => {
   event.preventDefault();
   const destination=new URL(link.href);
   if (!session || openingHistory || managementLeaving) { return; }
-  if (["/","/library","/browser"].includes(destination.pathname)) {
+  if (["/",...workspacePages].includes(destination.pathname)) {
     void persist(); showPage(destination.pathname,true,true); return;
   }
   const leavingSession=session; managementLeaving=true;
@@ -287,9 +317,11 @@ $("management-nav").addEventListener("click",async event => {
 function releaseFile(file) { const url=previewUrls.get(file.file_id); if (url) { URL.revokeObjectURL(url); } previewUrls.delete(file.file_id); }
 function releasePreviews() { for (const url of previewUrls.values()) { URL.revokeObjectURL(url); } previewUrls.clear(); }
 function showLogin(expired=false) {
+  captureEpoch++; capturingContext=false;
   stopBrowser(); browserSuspended=false;
   lastBrowserStatus=null;updateBrowserChip();
   library?.clear();
+  aboutYou?.clear(); inferenceControls?.clear(); ownerTerminal?.dispose(); terminalContextWanted=false;
   if (session) {
     $("username").value=session.username;
     // Keep the only original in this tab when browser storage is unavailable.
@@ -303,12 +335,13 @@ function showLogin(expired=false) {
   $("messages").replaceChildren(); $("draft-files").replaceChildren(); $("message").value="";
   $("chat-view").hidden=true; $("logout").hidden=true; $("login-view").hidden=false; $("loading").hidden=true;
   $("library-view").hidden=true; $("browser-page").hidden=true;
+  $("terminal-page").hidden=true; $("about-you-page").hidden=true; updateTerminalChip();
   clearNotice(); if (expired) { tell("authentication_required"); }
 }
 async function api(path,body,initial=false,signal=undefined,method=undefined) {
   const requestingSession=session;
   const headers={};
-  if(session?.features?.browser_control===true)headers["X-Radhouse-Browser-Tab"]=browserTab();
+  if(session?.features?.browser_control===true || session?.features?.terminal===true)headers["X-Radhouse-Browser-Tab"]=browserTab();
   if (body!==undefined) { headers["Content-Type"]="application/json"; if (session) { headers["X-Radhouse-CSRF"]=session.csrf_token; } }
   let response;
   try { response=await fetch(path,{method:method || (body===undefined ? "GET" : "POST"),headers,body:body===undefined ? undefined : JSON.stringify(body),signal}); }
@@ -404,7 +437,8 @@ function fileCard(file,url,removable) {
   card.append(info);
   if (removable) {
     const remove=document.createElement("button"); remove.type="button"; remove.className="remove-file"; remove.textContent="×"; remove.setAttribute("aria-label","Remove "+file.name);
-    remove.addEventListener("click",() => { releaseFile(file); draft.attachments=draft.attachments.filter(a => a.file_id!==file.file_id); persist(); render(); $("attach").focus(); }); card.append(remove);
+    remove.dataset.removeFile="true"; remove.disabled=capturingContext;
+    remove.addEventListener("click",() => { if(capturingContext)return;releaseFile(file); draft.attachments=draft.attachments.filter(a => a.file_id!==file.file_id); persist(); render(); $("attach").focus(); }); card.append(remove);
   }
   return card;
 }
@@ -475,6 +509,16 @@ function makeTurn(turn) {
   const block=document.createElement("article"); block.className="turn"; block.dataset.requestId=turn.request_id;
   const label=document.createElement("p"), text=document.createElement("p"); label.className="message-label"; label.textContent="You";
   text.className="message-text"; text.textContent=turn.text; block.append(label,text);
+  if (turn.inference) {
+    const settings=document.createElement("p"); settings.className="message-label";
+    settings.textContent=(turn.inference.model || "Default model") + (turn.inference.thinking!=="default" ? " · Thinking: "+turn.inference.thinking : "");
+    block.append(settings);
+  }
+  if (turn.terminal_context) {
+    const details=document.createElement("details"), summary=document.createElement("summary"), excerpt=document.createElement("pre");
+    summary.textContent="Shared terminal excerpt"; excerpt.textContent=turn.terminal_context.text;
+    excerpt.className="message-text"; details.append(summary,excerpt); block.append(details);
+  }
   if (turn.attachments?.length) { block.append(attachmentList(turn)); }
   if (turn.output || turn.shared_files?.length) { block.append(assistantReply(turn)); }
   if (!turn.output && (turn.error || !terminal.has(turn.status) || !turn.shared_files?.length)) { pendingReply(block, turn); }
@@ -531,9 +575,11 @@ function replyStatus(pending) {
 }
 function controls() {
   const pending=pendingTurn(), tooLong=!messageFits($("message").value), hasContent=!!($("message").value.trim() || draft.attachments.length);
-  $("message").disabled=openingHistory;
+  $("message").disabled=openingHistory || capturingContext;
   $("send").disabled=busy || filesLoading || !!pending || !!outbox || tooLong || !hasContent || openingHistory;
-  $("attach").disabled=filesLoading || openingHistory; $("attach-text").disabled=filesLoading || openingHistory; $("long-text").hidden=!tooLong;
+  $("attach").disabled=filesLoading || openingHistory || capturingContext; $("attach-text").disabled=filesLoading || openingHistory || capturingContext; $("long-text").hidden=!tooLong;
+  inferenceControls?.setDisabled(busy || openingHistory);
+  document.querySelectorAll("[data-remove-file]").forEach(button=>{button.disabled=capturingContext;});
   if(window.RadhouseIcons){window.RadhouseIcons.decorate($("send"),"send",busy ? "Sending…" : "Send");window.RadhouseIcons.busy($("send"),busy);}
   else $("send").textContent=busy ? "Sending…" : "Send";
   const status=$("reply-status"),text=replyStatus(pending);
@@ -550,6 +596,7 @@ function controls() {
   document.querySelectorAll(".retry,#notice-action").forEach(button => { button.disabled=busy || openingHistory || button.dataset.outgoing==="true" && !!pending; });
   resizeMessage();
   updateBrowserChip();
+  updateTerminalChip();
 }
 function render(options) { renderHistory(options); renderDraft(); controls(); }
 function migrateFile(file) {
@@ -607,6 +654,7 @@ async function openConversation() {
   turns.clear(); turnNodes.clear(); $("messages").replaceChildren(); draftSignature=""; draft=emptyDraft(); outbox=null;
   $("login-view").hidden=true; $("logout").hidden=false; $("loading").hidden=true;
   showPage(currentPage);
+  if(session.features?.inference===true) { void inferenceControls?.load(); }
   controls();
   const storageKey=key(); let stored, fallback;
   try { stored=await draftOperation(storageKey); } catch { /* Recover through the text fallback or this tab’s retained originals. */ }
@@ -677,7 +725,9 @@ async function prepareOutgoingFiles(box, sendingSession) {
 async function recoverOutgoing(box, sendingSession, error) {
   if (session===sendingSession && outbox===box) {
     box.phase="failed"; box.error=error.message;
-    if ([413,422].includes(error.status) || error.message==="reply_pending") { box.transmitted=false; }
+    if ([413,422].includes(error.status) || ["reply_pending","inference_catalog_unavailable",
+      "inference_model_unavailable","inference_thinking_unavailable","inference_selection_changed",
+      "terminal_context_unavailable"].includes(error.message)) { box.transmitted=false; }
     await persist();
     if (["csrf_denied","request_origin_denied"].includes(error.message)) { tell(error.message,refreshHistory); }
     try { const data=await api("/chat/history"); if (session===sendingSession) { accept(data); } } catch { /* The failed outbox and its retry identity are already retained. */ }
@@ -696,6 +746,8 @@ async function transmit(box) {
     box.phase="sending"; box.transmitted=true; await saveState(); render();
     if (session!==sendingSession) { return; }
     const data=await api("/chat/messages",{request_id:box.request_id,text:box.text,attachments:box.attachments.map(a => a.file_id),
+      ...(box.inference ? {inference:box.inference} : {}),
+      ...(box.terminal_context ? {terminal_context:box.terminal_context} : {}),
       ...(box.browser_context ? {browser_context:box.browser_context} : {}),
       ...(box.use_previous_browser ? {use_previous_browser:true} : {})});
     if (session===sendingSession) { accept(data); }
@@ -724,7 +776,7 @@ function editOutgoing() {
   $("message").value=draft.text; persist(); render(); if (missingFiles) { tell("original_unavailable"); } $("message").focus();
 }
 async function addFiles(fileList) {
-  if (!session || filesLoading || openingHistory) { return; }
+  if (!session || filesLoading || openingHistory || capturingContext) { return; }
   const addingSession=session; filesLoading=true; clearNotice(); controls();
   try {
     draft.attachments.push(...[...fileList].map(file => ({name:file.name,blob:file,file_id:crypto.randomUUID(),kind:fileKind(file),type:file.type,size:file.size})));
@@ -751,13 +803,33 @@ $("compose").addEventListener("paste",event => { const files=[...(event.clipboar
 $("chat-view").addEventListener("dragover",event => { if ([...event.dataTransfer.types].includes("Files")) { event.preventDefault(); $("compose").classList.add("dragging"); } });
 $("chat-view").addEventListener("dragleave",event => { if (!$("chat-view").contains(event.relatedTarget)) { $("compose").classList.remove("dragging"); } });
 $("chat-view").addEventListener("drop",event => { event.preventDefault(); $("compose").classList.remove("dragging"); addFiles(event.dataTransfer.files); });
-$("compose").addEventListener("submit",event => {
+$("compose").addEventListener("submit",async event => {
   event.preventDefault();
   if ($("send").disabled) { return; }
-  outbox={request_id:crypto.randomUUID(),text:$("message").value,attachments:draft.attachments,phase:"sending",transmitted:false,error:null};
+  const sendingSession=session, text=$("message").value, attachments=[...draft.attachments],
+    selection=inferenceControls?.selection() || null, browser_context=outgoingBrowserContext(),
+    use_previous_browser=browserContextWanted && !browser_context && !!lastBrowserStatus?.page_context?.previous?.url;
+  let excerpt=null;
+  const capture=++captureEpoch;
+  busy=true; capturingContext=true; controls();
+  try {
+    if(terminalContextWanted) {
+      excerpt=await ownerTerminal?.prepareContext();
+      if(!excerpt)throw new Error("terminal_context_unavailable");
+    }
+    if(session!==sendingSession || capture!==captureEpoch)return;
+    outbox={request_id:crypto.randomUUID(),text,attachments,phase:"sending",transmitted:false,error:null,
+      ...(selection ? {inference:selection} : {}),...(excerpt ? {terminal_context:excerpt} : {})};
+  } catch(error) {
+    if(session===sendingSession)tell(error.message);
+    return;
+  } finally {
+    if(capture===captureEpoch) { capturingContext=false;if(session===sendingSession){busy=false;controls();} }
+  }
+  if(session!==sendingSession || capture!==captureEpoch)return;
   if(session?.features?.browser_control===true) {
-    outbox.browser_context=outgoingBrowserContext();
-    outbox.use_previous_browser=browserContextWanted && !outbox.browser_context && !!lastBrowserStatus?.page_context?.previous?.url;
+    outbox.browser_context=browser_context;
+    outbox.use_previous_browser=use_previous_browser;
   }
   draft=emptyDraft(); $("message").value=""; render({latest:true}); $("message").focus(); transmit(outbox);
 });
@@ -788,6 +860,8 @@ $("logout").addEventListener("click",async () => {
   browserSuspended=true; stopBrowser();
   const signingOutSession=session; let saved=true;
   try { await saveState(); } catch { saved=false; }
+  if (session!==signingOutSession) { return; }
+  try { await ownerTerminal?.close(); } catch { /* Native expiry cleans a disconnected shell. */ }
   if (session!==signingOutSession) { return; }
   try { await api("/auth/logout",{}); if (session===signingOutSession) { showLogin(); if (!saved) { tell("draft_recovery_in_tab"); } } }
   catch (error) { if (session===signingOutSession) { browserSuspended=false; void refreshBrowser(); tell(error.message); } }

@@ -6,24 +6,31 @@ import vm from "node:vm";
 import { fileURLToPath } from "node:url";
 
 class DOMNode {
-  constructor(tag, text = "") { this.tag = tag; this.text = text; this.children = []; this.dataset = {}; this.events = {}; }
+  constructor(tag, text = "") { this.tag = tag; this.text = text; this.children = []; this.dataset = {}; this.events = {}; this.attributes = new Map(); }
   append(...nodes) { this.children.push(...nodes); }
   set textContent(text) { this.children = []; this.text = text; }
   get textContent() { return this.text + this.children.map(node => node.textContent).join(""); }
   addEventListener(name, action) { this.events[name] = action; }
+  setAttribute(name, value) { this.attributes.set(name, String(value)); }
+  getAttribute(name) { return this.attributes.get(name) ?? null; }
+  removeAttribute(name) { this.attributes.delete(name); }
 }
 
 function formatter() {
   const copied = [];
+  const body = new DOMNode("body");
+  const byId = (node, id) => node.id === id ? node : node.children.map(child => byId(child, id)).find(Boolean);
   const context = vm.createContext({
     window: {}, URL,
     document: {
+      body,
+      getElementById: id => byId(body, id) || null,
       createElement: tag => new DOMNode(tag),
       createTextNode: text => new DOMNode("#text", text),
       createDocumentFragment: () => new DOMNode("#fragment"),
     },
     navigator: { clipboard: { async writeText(text) { copied.push(text); } } },
-    setTimeout() {},
+    setTimeout() {}, clearTimeout() {},
   });
   vm.runInContext(readFileSync(new URL("../src/radhouse/chat/static/format.js", import.meta.url), "utf8"), context, { filename: fileURLToPath(new URL("../src/radhouse/chat/static/format.js", import.meta.url)) });
   return { ...context.window.RadhouseFormat, copied };
@@ -64,9 +71,13 @@ test("headings, ordered lists and fenced code keep their display and copy contra
   assert.deepEqual(descendants(tree, "li").map(node => node.textContent), ["first", "second"]);
   assert.equal(descendants(tree, "pre")[0].textContent, "print('hello')");
   const button = descendants(tree, "button")[0];
+  assert.equal(button.textContent, "Copy");
+  assert.equal(button.getAttribute("aria-label"), "Copy code");
   await button.events.click();
   assert.deepEqual(copied, ["print('hello')"]);
   assert.equal(button.textContent, "Copied");
+  assert.equal(button.getAttribute("aria-label"), "Copied");
+  assert.equal(button.getAttribute("aria-busy"), "false");
 });
 
 test("unclosed markers, mixed list kinds and paragraph line breaks remain readable", () => {
