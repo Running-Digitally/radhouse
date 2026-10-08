@@ -56,6 +56,12 @@ progress and distinguishes remaining qualification from the live browser view.
 The complete README/roadmap and homepage link destinations were checked for
 contradictory current-state claims before the next exact-head review.
 
+The third cycle on `bb5acbdc2beafc1591717a30faee96b9c9eb7e11` identified missing
+browser opt-in guidance in the README setup example. The example now includes
+both optional feature flags with safe defaults, explains qualification before
+enabling them, and names the restricted-tool plus document/browser capability
+requirements checked by the source. No runtime defaults are changed.
+
 Publication requires the GitHub Codex review cycle to complete for the exact
 source head, then a normal merge. Upload `public/` from that merged source to
 the existing `radhouserunningdigitallycom` Worker. Verify all served public files

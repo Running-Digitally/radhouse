@@ -47,9 +47,20 @@ placeholders, not working credentials:
   "owner_id": "<existing owner principal ID>",
   "hermes_endpoint": "https://<pinned private Hermes endpoint>",
   "hermes_bearer": "<existing API bearer key>",
-  "transcript_path": "/<persistent private application data>/chat.sqlite3"
+  "transcript_path": "/<persistent private application data>/chat.sqlite3",
+  "document_access_enabled": false,
+  "browser_enabled": false
 }
 ```
+
+`document_access_enabled` and `browser_enabled` are optional booleans, both
+defaulting to `false`. After qualifying the matching Hermes private API, set the
+document flag to `true` for owner/session-scoped saved-file reads, and the browser
+flag to `true` for the live view and its Hide/Show control. The API must advertise
+the restricted-tool capability plus the corresponding saved-turn document scope
+or same-session, view-only browser capability. Enabling a flag cannot supply a
+missing runtime capability; requests fail closed if it is unavailable. Both are
+enabled in the qualified owner's pilot. This does not enable human browser input.
 
 Optional `transcription_endpoint` selects an existing OpenAI-compatible
 `/v1/audio/transcriptions` service; optional `transcription_bearer` belongs only to
