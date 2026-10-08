@@ -13,12 +13,23 @@ file. New original attachments are streamed to a private directory beside it. A 
 browser is closed; it only checks existing runs and never submits messages.
 Hermes owns the assistant's persistent session context and memory.
 
-**Status:** local source implementation with synthetic runtime verification.
-Real model behavior and deployment remain to be qualified. The earlier fleet,
-Buzz integration, work/task engine and software delivery code are retained for
-history and recovery. They are excluded from this app and are not first-release
-requirements. The current [roadmap](ROADMAP.md) and [principles](PRINCIPLES.md)
-replace their previous product scope.
+**Status:** deployed private pilot. Real conversation and restart continuity,
+selective reads from large PDF/DOCX originals with follow-up citations, and the
+assistant's live browser view have been qualified against the pinned Hermes
+runtime. The owner also confirmed that a 50 MB PDF and browser check worked as
+expected. This is evidence for the private pilot, not qualification of every
+self-hosted installation or model.
+
+The pilot supports selective access to searchable PDF and DOCX/XLSX/PPTX text,
+a live view of the same browser the assistant uses, and read-only **Settings**
+and **Infrastructure** pages. **Hide/Show** changes the browser view; the assistant
+keeps mouse and keyboard control. Human takeover, scanned-document OCR, audio
+transcription and editable administration settings remain future work.
+
+The earlier fleet, Buzz integration, work/task engine and software delivery code
+are retained for history and recovery. They are excluded from this app. The
+current [roadmap](ROADMAP.md) and [principles](PRINCIPLES.md) replace their previous
+product scope.
 
 ## Run the small app
 
@@ -36,9 +47,20 @@ placeholders, not working credentials:
   "owner_id": "<existing owner principal ID>",
   "hermes_endpoint": "https://<pinned private Hermes endpoint>",
   "hermes_bearer": "<existing API bearer key>",
-  "transcript_path": "/<persistent private application data>/chat.sqlite3"
+  "transcript_path": "/<persistent private application data>/chat.sqlite3",
+  "document_access_enabled": false,
+  "browser_enabled": false
 }
 ```
+
+`document_access_enabled` and `browser_enabled` are optional booleans, both
+defaulting to `false`. After qualifying the matching Hermes private API, set the
+document flag to `true` for owner/session-scoped saved-file reads, and the browser
+flag to `true` for the live view and its Hide/Show control. The API must advertise
+the restricted-tool capability plus the corresponding saved-turn document scope
+or same-session, view-only browser capability. Enabling a flag cannot supply a
+missing runtime capability; requests fail closed if it is unavailable. Both are
+enabled in the qualified owner's pilot. This does not enable human browser input.
 
 Optional `transcription_endpoint` selects an existing OpenAI-compatible
 `/v1/audio/transcriptions` service; optional `transcription_bearer` belongs only to
@@ -66,9 +88,10 @@ RADHOUSE_CHAT_CONFIG=/absolute/private/chat.json \
 ```
 
 Use this entry point for the new assistant; the older `radhouse` CLI still belongs
-to the retained platform. Do not alter a live ingress, service, database or
-runtime simply to run the source proof. The actual placement and activation
-remain a separate reviewed change.
+to the retained platform. For another installation, a local source proof does
+not authorize changes to a live ingress, service, database or runtime. Qualify
+that installation's runtime and review its placement and activation separately.
+The owner's private pilot has completed those qualification and activation steps.
 
 ## Attach files
 
@@ -120,11 +143,14 @@ inline-image client allows four images of up to 4 MiB each and 8 MiB combined;
 these constrain which images are provided to this run, **not which files can be
 uploaded**. The prepared prompt and reading outcome are frozen for retries.
 
-The current assistant connection still disables tools and does not provide
-arbitrary incoming-file handoff. Stored originals prepare for selective agent
-reading, but the agent cannot open them yet. That requires a separately reviewed
-file-access contract and qualification against the existing runtime. Upload size
-is no longer coupled to context length.
+The qualified private pilot enables the reviewed saved-file access contract.
+With `document_access_enabled` and the matching Hermes private API capability,
+the assistant can list saved turn files, search their text and read selected
+pages or document ranges, including earlier attachments in follow-up turns.
+Run/session ownership checks scope those reads to the conversation; an attachment
+does not automatically become the entire prompt. Installations must qualify the
+matching runtime before enabling this connection. Upload size is independent
+of context length.
 
 Downloads require the same signed-in owner. Images/audio support streaming range
 requests; other originals are forced downloads with content sniffing disabled.

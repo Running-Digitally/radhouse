@@ -15,6 +15,12 @@ the notebook stays in place. This is an illustration, not a live agent or a
 product screenshot. Future capabilities are framed as the direction of the
 build; current limitations sit in the pilot's native disclosure.
 
+The browser feature section reflects the deployed private pilot: one shared
+live view of the assistant's browser and Hide/Show controls. Its native disclosure
+illustrates hiding the view without requiring JavaScript; it is clearly labelled
+as an illustration, with no connected live session. Human takeover remains future
+work. The pilot note also describes selective access to large attached documents.
+
 ## Preview
 
 From the repository root:
