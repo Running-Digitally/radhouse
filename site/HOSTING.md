@@ -2,7 +2,9 @@
 
 Updated 6 October 2026. Owner: Satish. The owner approved the reviewed redesign,
 Personal PostHog verification, GitHub merge and Cloudflare public rollout.
-The frozen artifact is recorded in `release-manifest.json`.
+The frozen artifact is recorded in `release-manifest.json`. The owner requested
+the live-browser feature update on 7 October; its bounded source and publication
+scope is recorded in `RELEASE-2026-10-08-BROWSER.md` (UTC preparation date).
 
 ## Hosting contract
 
