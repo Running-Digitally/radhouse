@@ -6,7 +6,7 @@ issues, including overlapping impacts: 8 security, 11 reliability and 469
 maintainability. The passing gate does not resolve the baseline. Displayed
 0.0% coverage reflects no imported coverage report, not measured test coverage.
 
-Work is in progress on `codex/radhouse-sonarqube-remediation`, separate from
+Source remediation is complete on `codex/radhouse-sonarqube-remediation`, separate from
 setup PR #69. Issue retrieval uses the signed-in SonarQube UI; the existing
 analysis-only token correctly refuses issue-read API access. No finding status,
 rule, profile or exclusion has been changed. No feature-branch analysis is
@@ -117,7 +117,7 @@ The history pane remains keyboard-focusable and is explicitly a named region,
 consistent with [scroll-container accessibility guidance](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/overflow#accessibility).
 These two contextual findings remain open for review.
 
-The latest owned targeted fixture passed 98 tests, including authentication,
+An earlier owned targeted fixture passed 98 tests, including authentication,
 enrollment, conversation routing, guidance and the real chat walkthrough; cleanup
 completed. Focused provider/configuration/composition/chat checks passed 157
 tests. Web compilation and nine unit tests pass, as do the chat client/formatter
@@ -158,3 +158,25 @@ An opening-generation check now guards restore, history acceptance and final
 cleanup. The regression fails on the prior source and passes on the fix. The
 owned rerun passed all three browser tests and completed cleanup. A final full
 owned gate remains required after the remaining workflow refactors.
+
+## Workflow phases and closeout
+
+The inventory records 466 source corrections and 18 proposed contextual or
+false-positive dispositions. No genuine baseline finding remains pending in
+source. Scanner closure remains unverified until the later authorized main scan.
+
+Task dispatch separates current grant checks, durable submission, acceptance,
+runtime observation and terminal writes. Human controls retain their initial
+capability read, authorization recheck, non-replayable operation receipt and
+monotonic response reconciliation. Conversation ingress, guidance messages and
+signed outboxes retain exact parent-event correlation and their shared authorized
+transactions. Project routing separates addressed/reply/intent selection and
+review/deployment handoffs. A per-event state holder preserves the already saved
+revision if a later substep rejects the message. Exact preview, source and review
+revision predicates and the private-release opt-in remain unchanged.
+
+Owned workflow batches passed 71 and 65 tests, with cleanup complete. Local
+SonarJS checks report no findings across eight selected rules. The calibrated
+Python approximation reports no function above complexity 15 in affected
+modules, including new helpers. These local checks aid iteration; they do not
+claim equivalence to the main-only SonarQube analyzer.
