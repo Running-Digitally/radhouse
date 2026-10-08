@@ -80,6 +80,28 @@ try{
   assert.equal(browserRequests.length,initialRequests,"Specimen must use only its in-memory adapter");
   const sample=name=>page.locator(`[data-sample="${name}"]`);
   const animated=async locator=>locator.evaluate(node=>node.getAnimations({subtree:true}).filter(animation=>animation.playState==="running").map(animation=>({duration:animation.effect.getTiming().duration,frames:animation.effect.getKeyframes()})));
+  // Measure the center through a full pending turn, at real and enlarged sizes.
+  // CSS pixel pivots caused an orbit whenever the SVG was not exactly 24px.
+  const spinnerCenters=await page.locator('#states [data-state="pending"] .rh-icon').evaluate(svg=>{
+    const animation=svg.getAnimations()[0];animation.pause();
+    const result=[];
+    for(const size of [18,20,21,24,72]){
+      svg.style.width=svg.style.height=size+"px";const points=[];
+      for(const time of [0,225,450,675]){
+        animation.currentTime=time;getComputedStyle(svg).transform;
+        const center=new DOMPoint(12,12).matrixTransform(svg.getScreenCTM());points.push({x:center.x,y:center.y});
+      }
+      result.push({size,drift:Math.max(...points.map(point=>Math.hypot(point.x-points[0].x,point.y-points[0].y)))});
+    }
+    svg.style.removeProperty("width");svg.style.removeProperty("height");animation.play();return result;
+  });
+  for(const {size,drift} of spinnerCenters)assert.ok(drift<.1,`Pending spinner center drifts ${drift}px at ${size}px`);
+  for(const id of ["desktop-browser","desktop-terminal-context"]){
+    const icon=page.locator(`#${id} .rh-icon`);const rect=await icon.boundingBox();
+    assert.equal(rect.width,20);assert.equal(rect.height,20);
+  }
+  const share=sample("terminal-context");await share.click();
+  assert.ok((await animated(share.locator('[data-part="packet"]'))).length,"Simplified context icon still sends its packet");
   const refresh=sample("refresh");await refresh.hover();
   assert.ok((await animated(refresh)).some(a=>a.duration===500 && a.frames.some(frame=>frame.strokeDashoffset)),"Refresh hover re-inks the arc");
   await refresh.click();assert.ok((await animated(refresh)).some(a=>a.duration===760 && a.frames.some(frame=>frame.transform?.includes("360deg"))));

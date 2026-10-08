@@ -29,8 +29,15 @@ request is needed. Named SVG parts keep motion tied to the glyph's meaning.
   or **Copy code** so their context remains clear.
 
 Refresh is a clean single arc and corner arrow. The key has a round bow, a small
-hole and distinct stepped teeth. Browser has an active tab, navigation dot,
-address field and page lines. Keyboard has individually drawn keys.
+hole and distinct stepped teeth. Browser keeps an active tab and two clear
+strokes, leaving out the tiny address pill and navigation dot. Share terminal
+context uses a terminal prompt and an outgoing arrow, leaving out the second
+container. These same sparse drawings stay legible at desktop size and in the
+enlarged showcase. Keyboard has individually drawn keys.
+
+Whole-SVG rotation pivots use percentages of the rendered viewport. Refresh
+rotates around its center at every size; the key turns around its bow. Fixed
+pixel pivots on the root SVG drift when the 24-unit drawing is scaled.
 
 ## Meaningful motion
 
@@ -45,7 +52,7 @@ agent states. Actions run immediately and never wait for animation.
 | Chat | Write message lines | Trace the bubble, then write its lines |
 | Library | Write folder content lines | Lift the tab, then write the contents |
 | Copy | Write clipboard lines | A duplicate sheet peels away |
-| Browser | Load page lines | Trace the active tab and address field before the page |
+| Browser | Load page lines | Trace the active tab before the page |
 | Refresh | Re-ink the arc and tip | Full reload sweep; actual pending requests keep turning |
 | Key | Trace the hole and teeth | Insert, turn, withdraw |
 | Infrastructure | Blink LEDs and buzz two racks | Longer activity burst and vent strokes |
@@ -61,7 +68,7 @@ agent states. Actions run immediately and never wait for animation.
 | Take control | Contact pulse at the pointer tip | Larger contact pulse |
 | Warning | Trace the warning mark and pulse its dot | Two dot pulses |
 | Terminal | Prompt, blinking cursor and a short typed command | Longer typing sequence |
-| Share terminal context | Write output lines | Output packet travels toward the conversation |
+| Share terminal context | Draw the terminal prompt | Packet travels out along the sharing arrow |
 | About You | Write saved-memory lines | Trace the read-only note and its contents |
 
 Hover gestures take about 330–700ms; clicks take about 580–900ms. Staggered strokes
