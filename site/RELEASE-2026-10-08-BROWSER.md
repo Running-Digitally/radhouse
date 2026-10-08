@@ -23,7 +23,9 @@ The existing vision, conversation notebook, brand, security headers and approved
 public analytics policy are preserved. Existing project links now use main.
 
 Changes are limited to `site/public/index.html`, `site/public/styles.css`, the
-public-file release manifest and their site documentation. No extra Worker,
+public-file release manifest, their site documentation and a minimal root README
+current-status correction. That README now agrees with the advertised pilot,
+while preserving the requirement to qualify other installations. No extra Worker,
 DNS, access, bindings, VM or privileged runtime change is part of this release.
 
 ## Verification and release gate
@@ -36,6 +38,14 @@ illustration disclaimer. Widths 320, 390, 800 and 1280 have no horizontal page,
 feature-panel or disclosure-heading overflow. Desktop and narrow screenshots
 are retained in the task's temporary evidence. HTML IDs, ARIA/anchor references,
 local assets and safe external-link attributes are verified.
+
+The first GitHub Codex cycle on `34873fa2c7976dbdf4ce8f87a6b92103900c25aa`
+found two P2 issues: insufficient contrast in the new small eyebrow, and a
+contradictory current-build README destination. The eyebrow now uses `#934826`
+on `#f3efe5` (5.72:1); other new small-text colors reach at least 4.88:1.
+The README's stale tools-disabled and unqualified-deployment statements are
+corrected using the verified private-pilot evidence. A new exact-head GitHub
+Codex review is required after these corrections.
 
 Publication requires the GitHub Codex review cycle to complete for the exact
 source head, then a normal merge. Upload `public/` from that merged source to
