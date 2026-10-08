@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const source = readFileSync(new URL("../src/radhouse/chat/static/chat.js", import.meta.url), "utf8");
 
-async function client() {
+async function client({ browser = null } = {}) {
   const elements = new Map();
   const element = id => {
     if (!elements.has(id)) elements.set(id, {
@@ -19,9 +19,9 @@ async function client() {
   };
   const context = vm.createContext({
     document: { getElementById: element, addEventListener() {}, querySelectorAll() { return []; } },
-    window: { addEventListener() {} },
+    window: { addEventListener() {}, ...(browser ? {BrowserView:class {constructor(){return browser;}}} : {}) },
     ResizeObserver: class { observe() {} },
-    innerHeight: 800, setInterval() {},
+    innerHeight: 800, setInterval() {}, setTimeout, clearTimeout, AbortController,
     localStorage: { getItem() { return null; } },
     fetch: async () => ({ ok: false, status: 401, json: async () => ({ error: "authentication_required" }) }),
   });
@@ -33,11 +33,38 @@ async function client() {
     draftOperation=async () => null;
     controls=()=>{};
     render=()=>{};
+    actualRefreshBrowser=refreshBrowser;
     refreshBrowser=async ()=>{};
     matchMedia=()=>({matches:true});
   `, context);
   return context;
 }
+
+test("a current browser status timeout retains capability and offers recovery", async () => {
+  const updates=[];
+  const browser={run:null,stop(){},update:value=>updates.push(value)};
+  const context=await client({browser});
+  vm.runInContext(`
+    refreshBrowser=actualRefreshBrowser;
+    session={username:"alice",features:{browser:true,browser_control:true}};
+    currentPage="/browser";
+    api=(_path,_body,_anonymous,signal)=>new Promise((_resolve,reject)=>{
+      signal.addEventListener("abort",()=>reject(new Error("deadline")),{once:true});
+    });
+    timedOutStatus=refreshBrowser();
+    browserStatusRequest.controller.abort();
+  `,context);
+  await vm.runInContext("timedOutStatus",context);
+  assert.equal(browser.controlEnabled,true);
+  assert.equal(updates.at(-1)?.state,"unavailable");
+  // A navigation/sign-out cancellation is obsolete, so it cannot repaint.
+  vm.runInContext(`
+    cancelledStatus=refreshBrowser();
+    stopBrowser();
+  `,context);
+  await vm.runInContext("cancelledStatus",context);
+  assert.equal(updates.length,1);
+});
 
 test("history cleanup preserves an error when sign-out finishes during persistence", async () => {
   const context = await client();

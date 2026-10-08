@@ -3,11 +3,15 @@ import {readFile,mkdir} from "node:fs/promises";
 import {pathToFileURL} from "node:url";
 const moduleUrl=process.env.RADHOUSE_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.RADHOUSE_PLAYWRIGHT_MODULE).href : new URL("../web/node_modules/@playwright/test/index.mjs",import.meta.url).href;
 const {chromium,expect:baseExpect}=await import(moduleUrl),expect=baseExpect.configure({timeout:10000});
-const browser=await chromium.launch({headless:true}),origin="http://127.0.0.1:61484";
+const browser=await chromium.launch({headless:true,
+  ...(process.env.RADHOUSE_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.RADHOUSE_CHROMIUM_EXECUTABLE_PATH}:{})}),origin="http://127.0.0.1:61484";
 const staticRoot=new URL("../src/radhouse/chat/static/",import.meta.url);
 let native=null,cdp=null,jpeg=null,frame=0,mode="idle",revision=1,sequence=1,holder=null,site=null;
 let openCalls=0,inputCalls=0,frameCalls=0,active=true,controlSupported=true,turns=[],savedLogin=null;
 let loseInput=false,pendingInput=false,pauseCalls=0,takeCalls=0,leaseSerial=1;
+let statusUnavailable=true,statusCalls=0,reconnectMethods=[];
+let rejectFirstNavigation=true;
+let idleControl=null;
 const calls=[],errors=[],secret="SYNTHETIC-PASSWORD-NOT-IN-CHAT",draft="Keep my next message while browsing";
 const nativeContext=await browser.newContext({viewport:{width:960,height:540}});
 await nativeContext.route("https://example.org/**",route=>route.fulfill({contentType:"text/html",body:`<html><body style="font:20px system-ui;background:#f5f7f1;padding:36px"><h1>Example sign-in</h1><form id="login"><label>Account<input id="account" style="display:block;margin:12px 0"></label><label>Password<input id="password" type="password" style="display:block;margin:12px 0"></label><button>Sign in</button></form><p id="result"></p><script>document.getElementById('login').onsubmit=e=>{e.preventDefault();document.getElementById('password').value='';document.getElementById('result').textContent='Signed in';};</script></body></html>`}));
@@ -22,7 +26,7 @@ async function openNative(){
 }
 const state=tab=>({state:mode==="idle"?"idle":"live",generation:mode==="idle"?null:"generation-1",url:mode==="idle"?null:site,
   title:site?"Example sign-in":null,viewport:mode==="idle"?null:{width:960,height:540},
-  control:mode==="idle"?null:{mode,revision,can_take:["agent","paused"].includes(mode),
+  control:mode==="idle"?idleControl:{mode,revision,can_take:["agent","paused"].includes(mode),
     ...(holder===tab&&mode==="human"?{lease_id:"lease-"+leaseSerial,lease_expires_at:Date.now()/1000+60,next_sequence:sequence}:{})},
   page_context:{current:mode==="idle"?null:{url:site,title:site?"Example sign-in":null},previous:mode==="idle"&&site?{url:site,title:"Example sign-in"}:null},
   can_return:!turns.some(t=>t.status==="running"),vault_enabled:true});
@@ -34,7 +38,10 @@ await context.route(`${origin}/**`,async route=>{
   if(path==="/auth/logout"){active=false;return route.fulfill({status:204});}
   if(path==="/chat/history"||path==="/chat/reply")return json({turns,older_before:null});
   if(path==="/chat/library")return json({files:[],next_cursor:null});
-  if(path==="/chat/browser")return json(state(tab));
+  if(path==="/chat/browser"){
+    statusCalls++;reconnectMethods.push(request.method());
+    return statusUnavailable?json({error:"browser_unavailable"},503):json(state(tab));
+  }
   if(path==="/chat/browser/open"){
     calls.push([path,data]);openCalls++;await openNative();mode="human";holder=tab;revision=3;sequence=1;return json(state(tab));
   }
@@ -50,6 +57,7 @@ await context.route(`${origin}/**`,async route=>{
     if(mode!=="human"||tab!==holder||data.sequence!==sequence++||data.viewport.width!==960||data.viewport.height!==540)throw new Error("Input ownership/sequence/geometry mismatch");
     if(pendingInput)return json({outcome:"reserved",sequence:data.sequence});
     const args=data.arguments;
+    if(data.operation==="navigate"&&rejectFirstNavigation){rejectFirstNavigation=false;return json({outcome:"rejected",sequence:data.sequence});}
     if(data.operation==="click")await native.mouse.click(args.x,args.y);
     else if(data.operation==="text")await native.keyboard.insertText(args.text);
     else if(data.operation==="press")await native.keyboard.press(args.key);
@@ -67,7 +75,9 @@ await context.route(`${origin}/**`,async route=>{
   }
   if(path==="/chat/browser/control/heartbeat"){calls.push([path,data]);return json(state(tab));}
   if(path==="/chat/browser/control/close"){
-    calls.push([path,data]);await native.close();native=null;mode="idle";holder=null;return json(state(tab));
+    calls.push([path,data]);await native.close();native=null;mode="idle";holder=null;
+    // A positively closed native browser can retain paused controller metadata.
+    idleControl={mode:"paused",revision:++revision,can_take:true};return json(state(tab));
   }
   if(path==="/chat/browser/logins/list"){
     calls.push([path,data]);if(data.sequence!==sequence++)throw new Error("Vault sequence mismatch");
@@ -93,6 +103,7 @@ await context.route(`${origin}/**`,async route=>{
 const page=await context.newPage();page.on("pageerror",error=>errors.push(error.message));
 const navigate=async name=>{const link=page.getByRole("navigation",{name:"Main navigation"}).getByRole("link",{name,exact:true});if(!await link.isVisible())await page.getByRole("button",{name:"Open menu",exact:true}).click();await link.click();};
 async function clickNative(selector){
+  await expect(page.getByRole("button",{name:"Type",exact:true})).toBeEnabled();
   const before=inputCalls;
   const target=await native.locator(selector).boundingBox(),image=await page.locator("#assistant-browser img").boundingBox();
   const scale=Math.min(image.width/960,image.height/540);
@@ -103,13 +114,32 @@ async function clickNative(selector){
 }
 async function type(text){await page.getByLabel("Type into selected page field",{exact:true}).fill(text);await page.getByRole("button",{name:"Type",exact:true}).click();}
 try{
-  await page.goto(origin+"/browser");await expect(page.getByRole("button",{name:"Open browser",exact:true})).toBeVisible();
+  await page.goto(origin+"/browser");
+  await expect(page.getByRole("button",{name:"Reconnect browser",exact:true})).toBeVisible();
+  await expect(page.getByText("The browser connection is unavailable. Reconnect to check it again.",{exact:true})).toBeVisible();
+  if(!await page.evaluate(()=>browserView.controlEnabled))throw new Error("Initial status failure erased authenticated browser capability");
+  if(openCalls||native)throw new Error("Failed status check eagerly launched a native browser");
+  const failedChecks=statusCalls;statusUnavailable=false;
+  await page.getByRole("button",{name:"Reconnect browser",exact:true}).click();
+  await expect(page.getByRole("button",{name:"Open browser",exact:true})).toBeVisible();
+  await expect(page.getByRole("button",{name:"Open browser",exact:true})).toBeEnabled();
+  if(statusCalls<=failedChecks||reconnectMethods.some(method=>method!=="GET")||openCalls||native)throw new Error("Reconnection retried a browser action instead of checking status");
   await page.waitForTimeout(500);if(openCalls||native)throw new Error("Browser route eagerly launched a native page");
   await page.getByRole("button",{name:"Open browser window",exact:true}).click();
   await expect(page.locator("#assistant-browser img")).toBeVisible();
   if(openCalls!==1)throw new Error("Explicit open sent duplicate launches");
   await page.getByRole("textbox",{name:"Website URL",exact:true}).fill("https://example.org/login");
+  // The status request can finish after Go takes focus but before its submit.
+  await page.getByRole("button",{name:"Go",exact:true}).focus();
+  await page.evaluate(()=>refreshBrowser());
+  await expect(page.getByRole("textbox",{name:"Website URL",exact:true})).toHaveValue("https://example.org/login");
+  await page.getByRole("button",{name:"Go",exact:true}).click();
+  await expect(page.getByText("That action was not applied. Check the page before trying another action.",{exact:true})).toBeVisible();
+  await page.evaluate(()=>refreshBrowser());
+  await expect(page.getByRole("textbox",{name:"Website URL",exact:true})).toHaveValue("https://example.org/login");
+  if(inputCalls!==1||native.url()!=="about:blank")throw new Error("Rejected navigation was automatically retried");
   await page.getByRole("button",{name:"Go",exact:true}).click();await expect(native.getByRole("heading",{name:"Example sign-in"})).toBeVisible();
+  if(calls.find(([path,data])=>path==="/chat/browser/control/input"&&data.operation==="navigate")?.[1].arguments.url!=="https://example.org/login")throw new Error("Navigation did not submit the user's literal URL");
   await expect.poll(()=>page.locator(".browser-view-site").textContent()).toBe("https://example.org/login");
   // The same native page receives scaled clicks, text and key gestures.
   await clickNative("#account");await type("synthetic-account");await expect(native.locator("#account")).toHaveValue("synthetic-account");
@@ -171,6 +201,12 @@ try{
   if(process.env.RADHOUSE_BROWSER_SCREENSHOTS){await mkdir(process.env.RADHOUSE_BROWSER_SCREENSHOTS,{recursive:true});await page.screenshot({path:process.env.RADHOUSE_BROWSER_SCREENSHOTS+"/browser-control-mobile.png",fullPage:true});}
   await page.getByRole("button",{name:"Close browser",exact:true}).click();
   await expect(page.getByRole("button",{name:"Open browser",exact:true})).toBeVisible();await expect(page.locator("#assistant-browser img")).toBeHidden();
+  if(await page.evaluate(()=>lastBrowserStatus.control?.mode)!=="paused")throw new Error("Idle regression omitted retained paused controller metadata");
+  await expect(page.getByRole("button",{name:"Take control",exact:true})).toBeHidden();
+  await expect(page.locator(".browser-control-status")).toHaveText("");
+  await page.evaluate(()=>{browserView.actionNotice="That action was not applied. Check the page before trying another action.";browserView._renderControlState();});
+  await page.evaluate(()=>refreshBrowser());
+  await expect(page.locator(".browser-control-status")).toHaveText("");
   await expect(page.locator("#assistant-browser img")).not.toHaveAttribute("src",/.+/);
   const count=openCalls;await page.waitForTimeout(2200);if(openCalls!==count||native)throw new Error("Closed browser was automatically reopened");
   await navigate("Chat");await expect(page.locator("#browser-context-label")).toHaveText("Use previous page: Example sign-in");
