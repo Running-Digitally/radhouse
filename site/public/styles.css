@@ -188,6 +188,25 @@ h1 em { display: inline-block; font-family: var(--serif); font-weight: 400; font
 .browser-page-lines span:last-child { width: 70%; }
 .browser-pointer { position: absolute; width: 24px; height: 29px; right: 20%; bottom: 23%; color: var(--green); }
 .browser-caption { font-size: 9px; line-height: 1.7; color: var(--muted); margin-top: 14px; }
+.browser-handover { display: flex; flex-wrap: wrap; gap: 8px 16px; list-style: none; padding: 0; margin: 19px 0 0; font-size: 10px; color: var(--green-dark); }
+.browser-handover li { display: flex; align-items: center; gap: 6px; }
+.browser-handover li > span { font: italic 15px/1 var(--serif); color: #934826; }
+.workspace-feature { padding-top: 62px; }
+.workspace-heading { display: grid; grid-template-columns: 1fr 1.05fr; gap: 50px; align-items: end; margin-bottom: 28px; }
+.workspace-heading .eyebrow { color: #934826; margin-bottom: 16px; }
+.workspace-heading h2 { font-size: clamp(32px, 3.3vw, 44px); letter-spacing: -.04em; }
+.workspace-heading h2 em { color: var(--green); }
+.workspace-heading > p { max-width: 450px; font-size: 13px; color: var(--muted); line-height: 1.8; }
+.workspace-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.workspace-card { padding: 26px 24px 28px; background: var(--white); border: 1px solid var(--line); border-radius: 3px; }
+.workspace-number { display: block; font-size: 10px; color: #934826; margin-bottom: 21px; letter-spacing: .06em; }
+.workspace-card h3 { font-size: 25px; color: var(--green-dark); margin-bottom: 14px; }
+.workspace-card p { font-size: 12px; line-height: 1.8; color: var(--muted); }
+.workspace-status { font-size: 11px; line-height: 1.8; color: var(--muted); margin-top: 17px; }
+.workspace-status a { display: inline-block; color: var(--green-dark); margin-left: 5px; }
+.identity-note { display: grid; grid-template-columns: auto 1fr; gap: 20px; align-items: baseline; margin-top: 29px; padding-block: 19px; border-block: 1px solid var(--line); }
+.identity-note .eyebrow { color: #934826; }
+.identity-note > p { font: italic 17px/1.6 var(--serif); color: var(--green-dark); max-width: 700px; }
 .invitation { display: grid; grid-template-columns: 1fr 1.05fr; gap: 50px; padding-block: 65px; }
 .invitation .eyebrow { color: var(--clay); margin-bottom: 18px; }
 .invitation h2 { font-size: 44px; letter-spacing: -.035em; line-height: 1.1; }
@@ -245,7 +264,22 @@ h1 em { display: inline-block; font-family: var(--serif); font-weight: 400; font
   .invitation h2 { font-size: 36px; }
   .invitation-copy { font-size: 12px; }
 }
+@media (max-width: 800px) {
+  .workspace-feature { padding-top: 40px; }
+  .workspace-heading { gap: 30px; }
+  .workspace-card { padding: 23px 18px; }
+  .workspace-card h3 { font-size: 23px; }
+}
+@media (max-width: 700px) {
+  .workspace-heading { grid-template-columns: 1fr; gap: 18px; }
+  .workspace-cards { grid-template-columns: 1fr; gap: 12px; }
+}
 @media (max-width: 520px) {
+  .workspace-heading h2 { font-size: 34px; }
+  .workspace-card { padding: 23px 24px; }
+  .workspace-number { margin-bottom: 12px; }
+  .identity-note { grid-template-columns: 1fr; gap: 8px; }
+
   .wrap { width: calc(100% - 36px); }
   .site-header { align-items: flex-start; flex-wrap: wrap; padding-block: 18px 12px; gap: 14px; }
   .brand img { width: 170px; }

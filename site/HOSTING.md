@@ -6,6 +6,10 @@ The frozen artifact is recorded in `release-manifest.json`. The owner requested
 the live-browser feature update on 7 October; its bounded source and publication
 scope is recorded in `RELEASE-2026-10-08-BROWSER.md` (UTC preparation date).
 
+The owner requested a further current-build update on 8 October (Toronto).
+[Its release receipt](RELEASE-2026-10-08-WORKSPACE.md) records the browser-control
+evidence, prepared workspace status and publication checks.
+
 ## Hosting contract
 
 | Concern | Value |

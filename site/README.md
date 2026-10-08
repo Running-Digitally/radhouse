@@ -8,7 +8,11 @@ and release scope.
 
 The page leads with the vision: a private, always-on, open-source agent with
 clear security boundaries, running on infrastructure the owner controls.
-The smaller private web pilot is a compact development note below the vision.
+The private pilot is a compact development note below the vision. Browser
+now describes qualified owner control, return and saved logins. A separate
+workspace section labels Terminal, About You and model controls as prepared
+for the next pilot release; Agent Identity remains a design awaiting working
+settings. [The update receipt](RELEASE-2026-10-08-WORKSPACE.md) records the evidence.
 The hero keeps its original message and uses a tactile conversation notebook.
 Talk, Reply, Away and Return move the scene from day to night and back while
 the notebook stays in place. This is an illustration, not a live agent or a
