@@ -36,6 +36,43 @@ _RESUME = re.compile(r"\s*(?:resume|continue)(?:\s+(?:this|the))?(?:\s+(?:work|t
 _STOP = re.compile(r"\s*(?:stop|cancel)(?:\s+(?:this|the))?(?:\s+(?:work|task|project))?[?.! ]*", re.I)
 
 
+REPLY_PREFIX = "reply:"
+
+
+def _handoff_phase(role):
+    if "builder" in role:
+        return "building"
+    if "deploy" in role:
+        return "deployment"
+    if "research" in role:
+        return "research"
+    return "review"
+
+
+def _execution_phase(role):
+    if "research" in role:
+        return "research"
+    if "review" in role:
+        return "review"
+    if "deploy" in role:
+        return "deployment"
+    return "building"
+
+
+def _project_control(intent):
+    for action, pattern in (("pause", _PAUSE), ("resume", _RESUME), ("stop", _STOP)):
+        if pattern.fullmatch(intent):
+            return action
+    return None
+
+
+def _active_agent_name(state, bots):
+    if state.planning_task_id is not None:
+        return "Radhouse"
+    if state.active_bot_id in bots:
+        return bots[state.active_bot_id].display_name
+    return None
+
 class ProjectBuzzConversationCycle:
     """Route owner messages while specialists keep their normal task paths."""
 
@@ -479,10 +516,7 @@ class ProjectBuzzConversationCycle:
             active_task_id=task.task_id,
             latest_task_id=task.task_id,
             phase=(
-                "building" if "builder" in role else
-                "deployment" if "deploy" in role else
-                "research" if "research" in role else
-                "review"
+                _handoff_phase(role)
             ),
             handoff_bot_id=None,
             handoff_brief=None,
@@ -602,11 +636,7 @@ class ProjectBuzzConversationCycle:
                     else None
                 )
             name = (
-                "Radhouse"
-                if state.planning_task_id is not None
-                else bots.get(state.active_bot_id).display_name
-                if state.active_bot_id in bots
-                else None
+                _active_agent_name(state, bots)
             )
             return selected, status_text(
                 state,
@@ -681,10 +711,7 @@ class ProjectBuzzConversationCycle:
             )
             role = bots[task.bot_id].role_name.casefold()
             phase = (
-                "research" if "research" in role else
-                "review" if "review" in role else
-                "deployment" if "deploy" in role else
-                "building"
+                _execution_phase(role)
             )
             updated = state.evolve(
                 phase=phase,
@@ -727,10 +754,7 @@ class ProjectBuzzConversationCycle:
                     active_bot_id=task.bot_id, active_task_id=task.task_id,
                     latest_task_id=task.task_id, pending_message_id=None,
                     phase=(
-                        "research" if "research" in bots[task.bot_id].role_name.casefold() else
-                        "review" if "review" in bots[task.bot_id].role_name.casefold() else
-                        "deployment" if "deploy" in bots[task.bot_id].role_name.casefold() else
-                        "building"
+                        _execution_phase(bots[task.bot_id].role_name.casefold())
                     ),
                 ).validate()
                 self._save_state(old, state)
@@ -755,10 +779,7 @@ class ProjectBuzzConversationCycle:
                 state = self._reconcile(state, roles, bots)
                 intent = self._coordinator_content(event)
                 control = (
-                    "pause" if _PAUSE.fullmatch(intent) else
-                    "resume" if _RESUME.fullmatch(intent) else
-                    "stop" if _STOP.fullmatch(intent) else
-                    None
+                    _project_control(intent)
                 )
                 if control:
                     state, response = self._control(state, event, control, bots)
@@ -766,7 +787,7 @@ class ProjectBuzzConversationCycle:
                         event, files=files, task_id=state.active_task_id,
                         state="project_control:" + control,
                     )
-                    self._note("reply:" + event["id"], response, reply_to=event["id"])
+                    self._note(REPLY_PREFIX + event["id"], response, reply_to=event["id"])
                     continue
                 if self._planning_candidate(event, state, roles, bots):
                     state = self._start_planning(state, event, files, roles, bots)
@@ -780,11 +801,11 @@ class ProjectBuzzConversationCycle:
                         event, files=files, task_id=state.active_task_id,
                         state="status" if _STATUS.fullmatch(intent) else "coordination",
                     )
-                    self._note("reply:" + event["id"], response, reply_to=event["id"])
+                    self._note(REPLY_PREFIX + event["id"], response, reply_to=event["id"])
                     continue
                 if selected is None:
                     self._record_owner_event(event, files=files, task_id=state.active_task_id)
-                    self._note("reply:" + event["id"], "No assigned agent can take that step yet.", reply_to=event["id"])
+                    self._note(REPLY_PREFIX + event["id"], "No assigned agent can take that step yet.", reply_to=event["id"])
                     continue
                 selected_role = bots[selected.link.bot_id].role_name.casefold()
                 if ("reviewer" in selected_role
@@ -798,7 +819,7 @@ class ProjectBuzzConversationCycle:
                         except Rejected:
                             self._record_owner_event(event, files=files, state="review_waiting")
                             self._note(
-                                "reply:" + event["id"],
+                                REPLY_PREFIX + event["id"],
                                 "The current preview revision is not recorded yet, so I cannot send it to review.",
                                 reply_to=event["id"],
                             )
@@ -812,14 +833,14 @@ class ProjectBuzzConversationCycle:
                             or not state.pull_request):
                         self._record_owner_event(event, files=files, state="review_waiting")
                         self._note(
-                            "reply:" + event["id"],
+                            REPLY_PREFIX + event["id"],
                             "Review needs a current pull request and matching preview revision from Builder.",
                             reply_to=event["id"],
                         )
                         continue
                     previous = state.latest_task_id
                     if previous is None:
-                        self._note("reply:" + event["id"], "There is no preview task to review.", reply_to=event["id"])
+                        self._note(REPLY_PREFIX + event["id"], "There is no preview task to review.", reply_to=event["id"])
                         continue
                     with self.store.transaction() as tx:
                         tx.save_conversation_message(
@@ -847,14 +868,14 @@ class ProjectBuzzConversationCycle:
                     ):
                         self._record_owner_event(event, files=files, state="deployment_waiting")
                         self._note(
-                            "reply:" + event["id"],
+                            REPLY_PREFIX + event["id"],
                             "Deployment is waiting for a READY review of the current revision.",
                             reply_to=event["id"],
                         )
                         continue
                     previous = state.latest_task_id
                     if previous is None:
-                        self._note("reply:" + event["id"], "There is no reviewed task to deploy.", reply_to=event["id"])
+                        self._note(REPLY_PREFIX + event["id"], "There is no reviewed task to deploy.", reply_to=event["id"])
                         continue
                     prior_task = self._task(previous)
                     # A cancelled duplicate review is not valid follow-up
@@ -901,7 +922,7 @@ class ProjectBuzzConversationCycle:
                             state="pending_limit",
                         )
                         self._note(
-                            "reply:" + event["id"],
+                            REPLY_PREFIX + event["id"],
                             "One attachment follow-up is already saved behind the active task. Wait for that handoff before sending another file set.",
                             reply_to=event["id"],
                         )
@@ -931,10 +952,7 @@ class ProjectBuzzConversationCycle:
                     old = state
                     role = bots[task.bot_id].role_name.casefold()
                     phase = (
-                        "research" if "research" in role else
-                        "review" if "review" in role else
-                        "deployment" if "deploy" in role else
-                        "building"
+                        _execution_phase(role)
                     )
                     state = state.evolve(
                         active_bot_id=task.bot_id, active_task_id=task.task_id,
@@ -951,7 +969,7 @@ class ProjectBuzzConversationCycle:
             except Rejected as error:
                 self._record_owner_event(event, state="rejected:" + error.code)
                 self._note(
-                    "reply:" + event["id"],
+                    REPLY_PREFIX + event["id"],
                     "I could not safely route that project message. The project state is preserved; open Radhouse for details.",
                     reply_to=event["id"],
                 )

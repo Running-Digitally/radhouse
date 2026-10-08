@@ -199,30 +199,13 @@ class HermesRunsClient:
     ) -> HermesDispatch:
         if not input_text or len(input_text.encode("utf-8")) > MAX_INPUT_BYTES:
             raise ValueError("invalid_hermes_input")
-        if (type(allowed_tools) is not tuple or len(allowed_tools) > 32
-                or any(type(value) is not str for value in allowed_tools)
-                or len(set(allowed_tools)) != len(allowed_tools)
-                or any(re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value) is None for value in allowed_tools)
-                or disable_tools and allowed_tools):
-            raise ValueError("invalid_hermes_tool_restriction")
+        _validate_tool_restriction(allowed_tools, disable_tools)
         if document_scope_token is not None and (
                 type(document_scope_token) is not str
                 or re.fullmatch(r"[A-Za-z0-9_-]{43}", document_scope_token) is None
                 or disable_tools or not {"document_search", "document_read"} <= set(allowed_tools)):
             raise ValueError("invalid_hermes_document_scope")
-        if (type(images) is not tuple or len(images) > 4
-                or any(not isinstance(image, InputFile) or not image.is_image or image.encoding != "base64"
-                       for image in images)):
-            raise ValueError("invalid_hermes_images")
-        try:
-            image_bytes = tuple(image.bytes() for image in images)
-        except Rejected:
-            raise ValueError("invalid_hermes_images") from None
-        if (sum(map(len, image_bytes)) > 8 * 1024 * 1024
-                or any(len(data) > 4 * 1024 * 1024 for data in image_bytes)
-                or any(image.sha256 != hashlib.sha256(data).hexdigest()
-                       for image, data in zip(images, image_bytes))):
-            raise ValueError("invalid_hermes_images")
+        _validate_images(images)
         session_id = _validated_identifier(session_id, "session")
         dispatch_key = _validated_identifier(dispatch_key, "dispatch")
         payload, response_headers = self._request(
@@ -264,60 +247,10 @@ class HermesRunsClient:
         output = payload.get("output")
         if output is not None and not isinstance(output, str):
             raise HermesGatewayError("runtime_malformed_response")
-        permission = None
-        if payload.get("status") == "waiting_for_approval":
-            value = payload.get("approval")
-            if not isinstance(value, dict):
-                raise HermesGatewayError("runtime_malformed_response")
-            request_id = _response_identifier(value, "request_id")
-            command = value.get("command")
-            if not isinstance(command, str) or not command or len(command.encode()) > 8192:
-                raise HermesGatewayError("runtime_malformed_response")
-            permission = {"request_id": request_id, "command": command, "run_id": run_id}
-        receipts = None
-        if "guidance_receipts" in payload:
-            values = payload["guidance_receipts"]
-            if not isinstance(values, list) or len(values) > 64:
-                raise HermesGatewayError("runtime_malformed_guidance")
-            receipts = tuple(_guidance_receipt(value, run_id) for value in values)
-            if len({receipt.control_id for receipt in receipts}) != len(receipts):
-                raise HermesGatewayError("runtime_malformed_guidance")
+        permission = _approval_request(payload, run_id)
+        receipts = _guidance_receipts(payload, run_id)
         status = _response_state(payload)
-        event = payload.get("last_event")
-        updated_at = payload.get("updated_at")
-        created_at = payload.get("created_at")
-        if event is not None and not isinstance(event, str):
-            raise HermesGatewayError("runtime_malformed_response")
-        if (
-            any(isinstance(value, bool) for value in (updated_at, created_at))
-            or any(
-                value is not None and not isinstance(value, (int, float))
-                for value in (updated_at, created_at)
-            )
-        ):
-            raise HermesGatewayError("runtime_malformed_response")
-        label = _ACTIVITY_LABELS.get(event or "")
-        if label is None:
-            label = {
-                "queued": "Waiting to start",
-                "running": "Working on the assignment",
-                "waiting_for_approval": "Waiting for your permission decision",
-                "stopping": "Stopping the active work",
-                "completed": "Completed the assignment",
-                "failed": "The runtime reported a failure",
-                "cancelled": "The work was cancelled",
-                "interrupted": "The runtime was interrupted",
-            }[status]
-            event = status
-        timestamp = next(
-            (
-                value for value in (updated_at, created_at)
-                if value is not None
-                and math.isfinite(value)
-                and 0 < value < 4_102_444_800
-            ),
-            0,
-        )
+        activity = _runtime_activity(payload, run_id, status)
         session_id = _response_identifier(payload, "session_id") if "session_id" in payload else None
         dispatch_key = _response_identifier(payload, "dispatch_key") if "dispatch_key" in payload else None
         tools = payload.get("allowed_tools")
@@ -331,7 +264,7 @@ class HermesRunsClient:
             output=output,
             permission_request=permission,
             guidance_receipts=receipts,
-            activity=RuntimeActivity(run_id, event, label, int(timestamp)),
+            activity=activity,
             session_id=session_id, dispatch_key=dispatch_key,
             allowed_tools=tuple(tools) if tools is not None else None,
         )
@@ -422,22 +355,11 @@ def browser_network_policy(value):
     if (value["schema"] != "radhouse.browser-network-policy.v1" or type(value["verified"]) is not bool
             or value["enforcement"] != "vm_firewall"):
         return None
-    def summary(item):
-        return type(item) is str and 1 <= len(item) <= 256 and all(32 <= ord(c) < 127 for c in item)
-    if (value["source"] is not None and not summary(value["source"])) or any(
-            type(value[key]) is not list or len(value[key]) > 16 or not all(summary(item) for item in value[key])
-            for key in ("allowed", "denied")):
+    if not _valid_policy_summaries(value):
         return None
     stamp = value["verified_at"]
-    if stamp is not None:
-        try:
-            if type(stamp) is not str or len(stamp) > 64:
-                raise ValueError()
-            parsed = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
-            if parsed.tzinfo is None or parsed > datetime.now(timezone.utc) + timedelta(minutes=5):
-                raise ValueError()
-        except ValueError:
-            return None
+    if not _valid_policy_timestamp(stamp):
+        return None
     if value["verified"] and (not value["source"] or stamp is None):
         return None
     return {**value, "allowed": list(value["allowed"]), "denied": list(value["denied"])}
@@ -507,7 +429,7 @@ def _status_code(status: int, path: str) -> str:
     return "runtime_unexpected_status"
 
 
-class HermesAgentWorkAdapter:
+class HermesAgentWorkAdapter(AgentWorkPort):
     """Translate the pinned wire API into Radhouse's agent-work contract."""
 
     def __init__(
@@ -639,3 +561,117 @@ class RoutingAgentWork:
 
     def approve(self, task: Task, dispatch: RuntimeDispatch, request_id: str, choice: str) -> bool:
         return self._adapter(task).approve(task, dispatch, request_id, choice)
+
+def _validate_images(images):
+    if (type(images) is not tuple or len(images) > 4
+            or any(not isinstance(image, InputFile) or not image.is_image or image.encoding != "base64"
+                   for image in images)):
+        raise ValueError("invalid_hermes_images")
+    try:
+        image_bytes = tuple(image.bytes() for image in images)
+    except Rejected:
+        raise ValueError("invalid_hermes_images") from None
+    if (sum(map(len, image_bytes)) > 8 * 1024 * 1024
+            or any(len(data) > 4 * 1024 * 1024 for data in image_bytes)
+            or any(image.sha256 != hashlib.sha256(data).hexdigest()
+                   for image, data in zip(images, image_bytes))):
+        raise ValueError("invalid_hermes_images")
+
+
+def _approval_request(payload, run_id):
+    permission = None
+    if payload.get("status") == "waiting_for_approval":
+        value = payload.get("approval")
+        if not isinstance(value, dict):
+            raise HermesGatewayError("runtime_malformed_response")
+        request_id = _response_identifier(value, "request_id")
+        command = value.get("command")
+        if not isinstance(command, str) or not command or len(command.encode()) > 8192:
+            raise HermesGatewayError("runtime_malformed_response")
+        permission = {"request_id": request_id, "command": command, "run_id": run_id}
+    return permission
+
+
+def _guidance_receipts(payload, run_id):
+    receipts = None
+    if "guidance_receipts" in payload:
+        values = payload["guidance_receipts"]
+        if not isinstance(values, list) or len(values) > 64:
+            raise HermesGatewayError("runtime_malformed_guidance")
+        receipts = tuple(_guidance_receipt(value, run_id) for value in values)
+        if len({receipt.control_id for receipt in receipts}) != len(receipts):
+            raise HermesGatewayError("runtime_malformed_guidance")
+    return receipts
+
+
+def _runtime_activity(payload, run_id, status):
+    event = payload.get("last_event")
+    updated_at = payload.get("updated_at")
+    created_at = payload.get("created_at")
+    if event is not None and not isinstance(event, str):
+        raise HermesGatewayError("runtime_malformed_response")
+    if (
+        any(isinstance(value, bool) for value in (updated_at, created_at))
+        or any(
+            value is not None and not isinstance(value, (int, float))
+            for value in (updated_at, created_at)
+        )
+    ):
+        raise HermesGatewayError("runtime_malformed_response")
+    label = _ACTIVITY_LABELS.get(event or "")
+    if label is None:
+        label = {
+            "queued": "Waiting to start",
+            "running": "Working on the assignment",
+            "waiting_for_approval": "Waiting for your permission decision",
+            "stopping": "Stopping the active work",
+            "completed": "Completed the assignment",
+            "failed": "The runtime reported a failure",
+            "cancelled": "The work was cancelled",
+            "interrupted": "The runtime was interrupted",
+        }[status]
+        event = status
+    timestamp = next(
+        (
+            value for value in (updated_at, created_at)
+            if value is not None
+            and math.isfinite(value)
+            and 0 < value < 4_102_444_800
+        ),
+        0,
+    )
+    return RuntimeActivity(run_id, event, label, int(timestamp))
+
+
+def _valid_policy_timestamp(stamp):
+    if stamp is not None:
+        try:
+            if type(stamp) is not str or len(stamp) > 64:
+                raise ValueError()
+            parsed = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+            if parsed.tzinfo is None or parsed > datetime.now(timezone.utc) + timedelta(minutes=5):
+                raise ValueError()
+        except ValueError:
+            return False
+    return True
+
+
+def _valid_policy_summaries(value):
+    def summary(item):
+        return type(item) is str and 1 <= len(item) <= 256 and all(32 <= ord(c) < 127 for c in item)
+    if (value["source"] is not None and not summary(value["source"])) or any(
+            type(value[key]) is not list or len(value[key]) > 16 or not all(summary(item) for item in value[key])
+            for key in ("allowed", "denied")):
+        return False
+    return True
+
+
+def _validate_tool_restriction(allowed_tools, disable_tools):
+    if (type(allowed_tools) is not tuple or len(allowed_tools) > 32
+            or any(type(value) is not str for value in allowed_tools)
+            or len(set(allowed_tools)) != len(allowed_tools)
+            or any(re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value) is None for value in allowed_tools)
+            or disable_tools and allowed_tools):
+        raise ValueError("invalid_hermes_tool_restriction")
+
+

@@ -41,32 +41,7 @@ def install_conversation_routes(app, service, authenticate):
             if binding is None:
                 raise Rejected("binding_denied", 403)
             service._binding(tx, actor, envelope, binding.project_id)
-            result = []
-            for link in tx.conversation_links(actor.principal_id):
-                if link.project_id != binding.project_id:
-                    continue
-                try:
-                    conversations.authorize(tx, link)
-                except Rejected as error:
-                    if error.status == 403:
-                        continue
-                    raise
-                bot = next(
-                    (b for b in tx.bots(actor.principal_id) if b.bot_id == link.bot_id),
-                    None,
-                )
-                result.append(
-                    {
-                        "link_id": link.link_id,
-                        "bot_id": link.bot_id,
-                        "display_name": bot.display_name if bot else link.bot_id,
-                        "channel_id": link.channel_id,
-                        "error_code": tx.conversation_status(link.link_id)[
-                            "error_code"
-                        ],
-                    }
-                )
-            return result
+            return _listed_links(tx, conversations, actor, binding)
 
     @app.get("/conversations/{link_id}/messages")
     def history(
@@ -108,3 +83,33 @@ def install_conversation_routes(app, service, authenticate):
         )
         conversations.receive(link, message)
         return asdict(conversations.process(link, message.message_id))
+
+def _listed_links(tx, conversations, actor, binding):
+    result = []
+    for link in tx.conversation_links(actor.principal_id):
+        if link.project_id != binding.project_id:
+            continue
+        try:
+            conversations.authorize(tx, link)
+        except Rejected as error:
+            if error.status == 403:
+                continue
+            raise
+        bot = next(
+            (b for b in tx.bots(actor.principal_id) if b.bot_id == link.bot_id),
+            None,
+        )
+        result.append(
+            {
+                "link_id": link.link_id,
+                "bot_id": link.bot_id,
+                "display_name": bot.display_name if bot else link.bot_id,
+                "channel_id": link.channel_id,
+                "error_code": tx.conversation_status(link.link_id)[
+                    "error_code"
+                ],
+            }
+        )
+    return result
+
+

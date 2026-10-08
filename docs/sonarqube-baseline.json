@@ -3519,7 +3519,7 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 16 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -3533,7 +3533,7 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 19 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -3547,7 +3547,7 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 16 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -3561,7 +3561,7 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 20 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -3575,7 +3575,7 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 20 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -3589,7 +3589,7 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 20 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -3645,7 +3645,7 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 19 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -3659,7 +3659,7 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 25 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -3673,7 +3673,7 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 23 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -3883,7 +3883,7 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 20 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -3897,7 +3897,7 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 19 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -3911,7 +3911,7 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 45 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -3925,7 +3925,7 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 16 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -3939,7 +3939,7 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 16 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -3981,7 +3981,7 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 20 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4009,7 +4009,7 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 61 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4037,7 +4037,7 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 47 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4051,7 +4051,7 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 17 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4065,7 +4065,7 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 41 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4079,7 +4079,7 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 44 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4093,7 +4093,7 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 82 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4107,7 +4107,7 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 86 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4121,7 +4121,7 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 22 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4135,7 +4135,7 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 31 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4149,7 +4149,7 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 71 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4163,7 +4163,7 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 36 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4205,7 +4205,7 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 22 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4219,7 +4219,7 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 30 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4233,7 +4233,7 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 21 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4275,7 +4275,7 @@
       "message": "Refactor this function to reduce its Cognitive Complexity from 24 to the 15 allowed.",
       "rule": "python:S3776",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4289,7 +4289,7 @@
       "message": "Extract this nested conditional expression into an independent statement.",
       "rule": "python:S3358",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4303,7 +4303,7 @@
       "message": "Extract this nested conditional expression into an independent statement.",
       "rule": "python:S3358",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4317,7 +4317,7 @@
       "message": "Extract this nested conditional expression into an independent statement.",
       "rule": "python:S3358",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4331,7 +4331,7 @@
       "message": "Extract this nested conditional expression into an independent statement.",
       "rule": "python:S3358",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4345,7 +4345,7 @@
       "message": "Extract this nested conditional expression into an independent statement.",
       "rule": "python:S3358",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4359,7 +4359,7 @@
       "message": "Extract this nested conditional expression into an independent statement.",
       "rule": "python:S3358",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4373,7 +4373,7 @@
       "message": "Extract this nested conditional expression into an independent statement.",
       "rule": "python:S3358",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4387,7 +4387,7 @@
       "message": "Extract this nested conditional expression into an independent statement.",
       "rule": "python:S3358",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4401,7 +4401,7 @@
       "message": "Extract this nested conditional expression into an independent statement.",
       "rule": "python:S3358",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4415,7 +4415,7 @@
       "message": "Extract this nested conditional expression into an independent statement.",
       "rule": "python:S3358",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4429,7 +4429,7 @@
       "message": "Extract this nested conditional expression into an independent statement.",
       "rule": "python:S3358",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4443,7 +4443,7 @@
       "message": "Extract this nested conditional expression into an independent statement.",
       "rule": "python:S3358",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4457,7 +4457,7 @@
       "message": "Extract this nested conditional expression into an independent statement.",
       "rule": "python:S3358",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4471,7 +4471,7 @@
       "message": "Extract this nested conditional expression into an independent statement.",
       "rule": "python:S3358",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4485,7 +4485,7 @@
       "message": "Extract this nested conditional expression into an independent statement.",
       "rule": "python:S3358",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4499,7 +4499,7 @@
       "message": "Extract this nested conditional expression into an independent statement.",
       "rule": "python:S3358",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4513,7 +4513,7 @@
       "message": "Extract this nested conditional expression into an independent statement.",
       "rule": "python:S3358",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4527,7 +4527,7 @@
       "message": "Extract this nested conditional expression into an independent statement.",
       "rule": "python:S3358",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4541,7 +4541,7 @@
       "message": "Extract this nested conditional expression into an independent statement.",
       "rule": "python:S3358",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -4555,7 +4555,7 @@
       "message": "Extract this nested conditional expression into an independent statement.",
       "rule": "python:S3358",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -5171,7 +5171,7 @@
       "message": "Define a constant instead of duplicating this literal \"radhouse-api.service\" 3 times.",
       "rule": "python:S1192",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -5185,7 +5185,7 @@
       "message": "Define a constant instead of duplicating this literal \"radhouse-coordinator.timer\" 3 times.",
       "rule": "python:S1192",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -5199,7 +5199,7 @@
       "message": "Define a constant instead of duplicating this literal \"python3.14\" 3 times.",
       "rule": "python:S1192",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -5213,7 +5213,7 @@
       "message": "Define a constant instead of duplicating this literal \".venv/bin/radhouse\" 3 times.",
       "rule": "python:S1192",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -5227,7 +5227,7 @@
       "message": "Define a constant instead of duplicating this literal \"/events\" 3 times.",
       "rule": "python:S1192",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -5241,7 +5241,7 @@
       "message": "Define a constant instead of duplicating this literal \"reply:\" 10 times.",
       "rule": "python:S1192",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -5255,7 +5255,7 @@
       "message": "Define a constant instead of duplicating this literal \"text/javascript\" 3 times.",
       "rule": "python:S1192",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -5269,7 +5269,7 @@
       "message": "Define a constant instead of duplicating this literal \"BEGIN IMMEDIATE\" 7 times.",
       "rule": "python:S1192",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -5283,7 +5283,7 @@
       "message": "Define a constant instead of duplicating this literal \"SELECT * FROM turns WHERE owner=? AND request_id=?\" 3 times.",
       "rule": "python:S1192",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -5297,7 +5297,7 @@
       "message": "Define a constant instead of duplicating this literal \"SELECT * FROM turns WHERE seq=?\" 4 times.",
       "rule": "python:S1192",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -6111,7 +6111,7 @@
       "message": "Remove the unused function parameter \"attempt\".",
       "rule": "python:S1172",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -6398,8 +6398,9 @@
       "message": "Return a value of type \"LocalSession\" instead of \"DataclassInstance\" or update function \"reauthenticate\" type hint.",
       "rule": "python:S5886",
       "remediation": {
-        "status": "pending",
-        "verification": "Main-only SonarQube analysis pending owner-authorized merge."
+        "status": "proposed_false_positive",
+        "verification": "Main-only SonarQube analysis pending owner-authorized merge.",
+        "evidence": "Python 3.14 dataclasses.replace delegates to _replace, which returns self.__class__(**changes); it preserves LocalSession. Existing owned reauthentication and refresh tests verify principal/session binding. No cast or weaker return type is introduced."
       }
     },
     {
@@ -6412,8 +6413,9 @@
       "message": "Return a value of type \"LocalSession\" instead of \"DataclassInstance\" or update function \"refresh\" type hint.",
       "rule": "python:S5886",
       "remediation": {
-        "status": "pending",
-        "verification": "Main-only SonarQube analysis pending owner-authorized merge."
+        "status": "proposed_false_positive",
+        "verification": "Main-only SonarQube analysis pending owner-authorized merge.",
+        "evidence": "Python 3.14 dataclasses.replace delegates to _replace, which returns self.__class__(**changes); it preserves LocalSession. Existing owned reauthentication and refresh tests verify principal/session binding. No cast or weaker return type is introduced."
       }
     },
     {
@@ -6684,7 +6686,7 @@
       "message": "Function \"provision_local_user\" has 16 parameters, which is greater than the 13 authorized.",
       "rule": "python:S107",
       "remediation": {
-        "status": "pending",
+        "status": "corrected_in_source",
         "verification": "Main-only SonarQube analysis pending owner-authorized merge."
       }
     },
@@ -8327,7 +8329,7 @@
     }
   ],
   "remediation_status": {
-    "source_corrected": 388,
+    "source_corrected": 450,
     "external_status_changes": false,
     "feature_branch_analysis_published": false
   }

@@ -37,28 +37,7 @@ def create_app(
 
     app = FastAPI(title="Radhouse operator contract")
 
-    @app.middleware("http")
-    async def security_headers(request: Request, call_next):
-        response = await call_next(request)
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; "
-            "form-action 'self'; object-src 'none'"
-        )
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["Referrer-Policy"] = "no-referrer"
-        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-        if request.url.scheme == "https":
-            response.headers["Strict-Transport-Security"] = "max-age=31536000"
-        if (
-            request.url.path == "/app"
-            or request.url.path.startswith((
-                "/app/", "/auth/", "/tasks", "/reviews", "/work-home",
-                "/projects", "/conversations", "/agent-enrollment",
-            ))
-        ):
-            response.headers["Cache-Control"] = "no-store"
-        return response
-
+    _install_security_headers(app)
     @app.exception_handler(Rejected)
     async def rejected(_request: Request, error: Rejected) -> JSONResponse:
         return JSONResponse(status_code=error.status, content={"code": error.code})
@@ -81,60 +60,9 @@ def create_app(
     install_conversation_routes(app,service,authenticated)
     errors = {status: {"model": ErrorResponse} for status in (401, 403, 404, 409, 422)}
 
-    def session_response(session: "LocalSession") -> AuthSessionResponse:
-        return AuthSessionResponse(
-            principal_id=session.principal_id,
-            username=session.username,
-            assurance_until=session.assurance_until,
-            conversation_id=session.conversation_id,
-            binding_revision=session.binding_revision,
-            project_id=session.project_id,
-            csrf_token=session.csrf_token,
-        )
 
     if local_auth is not None:
-        @app.get("/healthz")
-        def health():
-            local_auth.health()
-            return {"status": "ready"}
-
-        @app.post("/auth/login", response_model=AuthSessionResponse, responses=errors)
-        def login(body: LoginRequest, request: Request, response: Response):
-            local_auth.verify_origin(request)
-            session = local_auth.login(
-                body.username, body.password, body.totp_code,
-                request.client.host if request.client is not None else "unknown",
-                remember_browser=body.remember_browser,
-            )
-            response.set_cookie(
-                local_auth.cookie_name, session.token,
-                max_age=(30 * 24 * 60 * 60 if body.remember_browser else 12 * 60 * 60),
-                secure=local_auth.secure_cookie, httponly=True, samesite="strict",
-                path="/",
-            )
-            response.headers["Cache-Control"] = "no-store"
-            return session_response(session)
-
-        @app.get("/auth/session", response_model=AuthSessionResponse, responses=errors)
-        def current_session(request: Request, response: Response):
-            response.headers["Cache-Control"] = "no-store"
-            return session_response(local_auth.refresh(request))
-
-        @app.post("/auth/logout", status_code=204, responses=errors)
-        def logout(request: Request, response: Response):
-            local_auth.revoke(request)
-            response.status_code = 204
-            response.delete_cookie(
-                local_auth.cookie_name, secure=local_auth.secure_cookie,
-                httponly=True, samesite="strict", path="/",
-            )
-            response.headers["Cache-Control"] = "no-store"
-            return response
-
-        @app.post("/auth/reauthenticate", response_model=AuthSessionResponse, responses=errors)
-        def reauthenticate(body: ReauthenticateRequest, request: Request):
-            return session_response(local_auth.reauthenticate(request, body.password, body.totp_code))
-
+        _install_auth_routes(app, local_auth, errors)
     def read_envelope(actor: AuthContext, conversation: str, revision: int) -> Envelope:
         # Reads check the same current binding, without adding a delivery receipt.
         return Envelope(actor.channel, "read", conversation, revision, "read")
@@ -244,3 +172,84 @@ def create_app(
         app.mount("/app", StaticFiles(directory=web_root, html=True), name="operator-app")
 
     return app
+
+def _install_security_headers(app):
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; "
+            "form-action 'self'; object-src 'none'"
+        )
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        if request.url.scheme == "https":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000"
+        if (
+            request.url.path == "/app"
+            or request.url.path.startswith((
+                "/app/", "/auth/", "/tasks", "/reviews", "/work-home",
+                "/projects", "/conversations", "/agent-enrollment",
+            ))
+        ):
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
+
+def _session_response(session: "LocalSession") -> AuthSessionResponse:
+    return AuthSessionResponse(
+        principal_id=session.principal_id,
+        username=session.username,
+        assurance_until=session.assurance_until,
+        conversation_id=session.conversation_id,
+        binding_revision=session.binding_revision,
+        project_id=session.project_id,
+        csrf_token=session.csrf_token,
+    )
+
+
+def _install_auth_routes(app, local_auth, errors):
+    @app.get("/healthz")
+    def health():
+        local_auth.health()
+        return {"status": "ready"}
+
+    @app.post("/auth/login", response_model=AuthSessionResponse, responses=errors)
+    def login(body: LoginRequest, request: Request, response: Response):
+        local_auth.verify_origin(request)
+        session = local_auth.login(
+            body.username, body.password, body.totp_code,
+            request.client.host if request.client is not None else "unknown",
+            remember_browser=body.remember_browser,
+        )
+        response.set_cookie(
+            local_auth.cookie_name, session.token,
+            max_age=(30 * 24 * 60 * 60 if body.remember_browser else 12 * 60 * 60),
+            secure=local_auth.secure_cookie, httponly=True, samesite="strict",
+            path="/",
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return _session_response(session)
+
+    @app.get("/auth/session", response_model=AuthSessionResponse, responses=errors)
+    def current_session(request: Request, response: Response):
+        response.headers["Cache-Control"] = "no-store"
+        return _session_response(local_auth.refresh(request))
+
+    @app.post("/auth/logout", status_code=204, responses=errors)
+    def logout(request: Request, response: Response):
+        local_auth.revoke(request)
+        response.status_code = 204
+        response.delete_cookie(
+            local_auth.cookie_name, secure=local_auth.secure_cookie,
+            httponly=True, samesite="strict", path="/",
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @app.post("/auth/reauthenticate", response_model=AuthSessionResponse, responses=errors)
+    def reauthenticate(body: ReauthenticateRequest, request: Request):
+        return _session_response(local_auth.reauthenticate(request, body.password, body.totp_code))
+
+

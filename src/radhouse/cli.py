@@ -109,30 +109,7 @@ def main(arguments: list[str] | None = None) -> int:
                 pass
             output = {**_summary(config), "result": "offline_ready"}
         elif args.command == "serve":
-            if config.authentication is None:
-                raise LocalAuthError("authentication_not_configured")
-            if bool(args.ssl_certfile) != bool(args.ssl_keyfile):
-                raise LocalAuthError("incomplete_tls_configuration")
-            with compose_controller(config) as controller:
-                auth = LocalAuthService(
-                    read_secret_file(config.database.dsn.path),
-                    expected_database=config.database.name,
-                    deployment_id=config.database.deployment_id,
-                    encryption_key=read_secret_file(config.authentication.encryption_key.path),
-                    expected_origin=config.authentication.expected_origin,
-                    cookie_name=config.authentication.cookie_name,
-                    secure_cookie=config.authentication.secure_cookie,
-                )
-                app = create_app(
-                    controller.service, auth.auth_context,
-                    web_root=controller.web_root, local_auth=auth,
-                )
-                uvicorn.run(
-                    app, host=args.host, port=args.port, proxy_headers=True,
-                    forwarded_allow_ips="127.0.0.1", access_log=False,
-                    ssl_certfile=args.ssl_certfile, ssl_keyfile=args.ssl_keyfile,
-                )
-            return 0
+            return _serve(args, config)
         elif args.command == "coordinator-once":
             with compose_controller(config) as controller:
                 ingress=[bridge.run("ingress") for bridge in controller.conversations]
@@ -145,72 +122,11 @@ def main(arguments: list[str] | None = None) -> int:
                 "conversation_errors":sum(receipt["error_code"] is not None for receipt in ingress+egress),
             }
         elif args.command == "buzz-bind":
-            if not args.apply:
-                output = {**_summary(config), "result": "apply_required"}
-            else:
-                from radhouse.channels.buzz_registry import bind_key
-                from radhouse.storage.postgres import ApplicationPostgresStore
-                conversation = next((item for item in config.buzz.conversations if item.channel_id == args.channel_id), None) if config.buzz else None
-                if conversation is None:
-                    raise Rejected("buzz_conversation_not_configured")
-                store = ApplicationPostgresStore(read_secret_file(config.database.dsn.path), config.database.name, config.database.deployment_id)
-                revision = bind_key(store, principal_id=args.principal_id, pubkey=args.pubkey,
-                                    conversation_id=conversation.conversation_id, project_id=args.project_id)
-                output = {"result": "bound", "principal_id": args.principal_id, "pubkey": args.pubkey,
-                          "conversation_id": conversation.conversation_id, "project_id": args.project_id, "revision": revision}
+            output = _bind_buzz(args, config)
         elif args.command == "local-user":
-            if not args.apply:
-                output = {**_summary(config), "result": "apply_required"}
-            elif config.authentication is None:
-                raise LocalAuthError("authentication_not_configured")
-            else:
-                bot = next((item for item in config.bots if item.bot_id == args.bot_id), None)
-                if bot is None:
-                    raise LocalAuthError("bot_not_configured")
-                provision_local_user(
-                    read_secret_file(config.database.dsn.path),
-                    expected_database=config.database.name,
-                    deployment_id=config.database.deployment_id,
-                    encryption_key=read_secret_file(config.authentication.encryption_key.path),
-                    principal_id=args.principal_id,
-                    username=args.username,
-                    role=args.role,
-                    password=read_secret_file(args.password_file),
-                    totp_secret=read_secret_file(args.totp_secret_file),
-                    project_id=args.project_id,
-                    project_name=args.project_name,
-                    bot_id=args.bot_id,
-                    bot_display_name=args.bot_display_name,
-                    bot_role_name=args.bot_role_name,
-                    provider_binding=bot.provider_binding,
-                )
-                output = {
-                    "result": "provisioned", "principal_id": args.principal_id,
-                    "username": args.username.lower(), "role": args.role,
-                    "project_id": args.project_id, "bot_id": args.bot_id,
-                }
+            output = _provision_user(args, config)
         elif args.command == "bot-grant":
-            if not args.apply:
-                output = {**_summary(config), "result": "apply_required"}
-            else:
-                bot = next((item for item in config.bots if item.bot_id == args.bot_id), None)
-                if bot is None:
-                    raise LocalAuthError("bot_not_configured")
-                provision_bot_grant(
-                    read_secret_file(config.database.dsn.path),
-                    expected_database=config.database.name,
-                    deployment_id=config.database.deployment_id,
-                    principal_id=args.principal_id,
-                    project_id=args.project_id,
-                    bot_id=args.bot_id,
-                    bot_display_name=args.bot_display_name,
-                    bot_role_name=args.bot_role_name,
-                    provider_binding=bot.provider_binding,
-                )
-                output = {
-                    "result": "granted", "principal_id": args.principal_id,
-                    "project_id": args.project_id, "bot_id": args.bot_id,
-                }
+            output = _grant_bot(args, config)
         elif not args.apply:
             output = {**_summary(config), "result": "apply_required"}
         else:
@@ -234,6 +150,113 @@ def main(arguments: list[str] | None = None) -> int:
         return 2
     print(json.dumps(output, sort_keys=True))
     return 0
+
+
+def _serve(args, config):
+    if config.authentication is None:
+        raise LocalAuthError("authentication_not_configured")
+    if bool(args.ssl_certfile) != bool(args.ssl_keyfile):
+        raise LocalAuthError("incomplete_tls_configuration")
+    with compose_controller(config) as controller:
+        auth = LocalAuthService(
+            read_secret_file(config.database.dsn.path),
+            expected_database=config.database.name,
+            deployment_id=config.database.deployment_id,
+            encryption_key=read_secret_file(config.authentication.encryption_key.path),
+            expected_origin=config.authentication.expected_origin,
+            cookie_name=config.authentication.cookie_name,
+            secure_cookie=config.authentication.secure_cookie,
+        )
+        app = create_app(
+            controller.service, auth.auth_context,
+            web_root=controller.web_root, local_auth=auth,
+        )
+        uvicorn.run(
+            app, host=args.host, port=args.port, proxy_headers=True,
+            forwarded_allow_ips="127.0.0.1", access_log=False,
+            ssl_certfile=args.ssl_certfile, ssl_keyfile=args.ssl_keyfile,
+        )
+    return 0
+
+
+
+def _bind_buzz(args, config):
+    if not args.apply:
+        output = {**_summary(config), "result": "apply_required"}
+    else:
+        from radhouse.channels.buzz_registry import bind_key
+        from radhouse.storage.postgres import ApplicationPostgresStore
+        conversation = next((item for item in config.buzz.conversations if item.channel_id == args.channel_id), None) if config.buzz else None
+        if conversation is None:
+            raise Rejected("buzz_conversation_not_configured")
+        store = ApplicationPostgresStore(read_secret_file(config.database.dsn.path), config.database.name, config.database.deployment_id)
+        revision = bind_key(store, principal_id=args.principal_id, pubkey=args.pubkey,
+                            conversation_id=conversation.conversation_id, project_id=args.project_id)
+        output = {"result": "bound", "principal_id": args.principal_id, "pubkey": args.pubkey,
+                  "conversation_id": conversation.conversation_id, "project_id": args.project_id, "revision": revision}
+    return output
+
+
+
+def _provision_user(args, config):
+    if not args.apply:
+        output = {**_summary(config), "result": "apply_required"}
+    elif config.authentication is None:
+        raise LocalAuthError("authentication_not_configured")
+    else:
+        bot = next((item for item in config.bots if item.bot_id == args.bot_id), None)
+        if bot is None:
+            raise LocalAuthError("bot_not_configured")
+        provision_local_user(
+            read_secret_file(config.database.dsn.path),
+            expected_database=config.database.name,
+            deployment_id=config.database.deployment_id,
+            encryption_key=read_secret_file(config.authentication.encryption_key.path),
+            principal_id=args.principal_id,
+            username=args.username,
+            role=args.role,
+            password=read_secret_file(args.password_file),
+            totp_secret=read_secret_file(args.totp_secret_file),
+            project_id=args.project_id,
+            project_name=args.project_name,
+            bot_id=args.bot_id,
+            bot_display_name=args.bot_display_name,
+            bot_role_name=args.bot_role_name,
+            provider_binding=bot.provider_binding,
+        )
+        output = {
+            "result": "provisioned", "principal_id": args.principal_id,
+            "username": args.username.lower(), "role": args.role,
+            "project_id": args.project_id, "bot_id": args.bot_id,
+        }
+    return output
+
+
+
+def _grant_bot(args, config):
+    if not args.apply:
+        output = {**_summary(config), "result": "apply_required"}
+    else:
+        bot = next((item for item in config.bots if item.bot_id == args.bot_id), None)
+        if bot is None:
+            raise LocalAuthError("bot_not_configured")
+        provision_bot_grant(
+            read_secret_file(config.database.dsn.path),
+            expected_database=config.database.name,
+            deployment_id=config.database.deployment_id,
+            principal_id=args.principal_id,
+            project_id=args.project_id,
+            bot_id=args.bot_id,
+            bot_display_name=args.bot_display_name,
+            bot_role_name=args.bot_role_name,
+            provider_binding=bot.provider_binding,
+        )
+        output = {
+            "result": "granted", "principal_id": args.principal_id,
+            "project_id": args.project_id, "bot_id": args.bot_id,
+        }
+    return output
+
 
 
 if __name__ == "__main__":

@@ -51,6 +51,23 @@ def runtime_request_fingerprint(task: Task, session_id: str) -> str:
     return fingerprint(body)
 
 
+def _start_unavailable_reason(can_write, ready, agents):
+    if not can_write:
+        return "read_only_role"
+    if ready:
+        return None
+    if agents:
+        return "agents_unavailable"
+    return "no_assigned_agents"
+
+
+def _terminal_outcome(blockers, result):
+    if "cancel_requested" in blockers:
+        return "cancelled"
+    if result.state == "completed":
+        return "completed"
+    return "failed"
+
 class Service:
     def __init__(self, store: Store, work: AgentWorkPort, provider: ProviderPort,
                  clock: Callable[[], datetime], *, approval_commands: dict[str, tuple[str, ...]] | None = None,
@@ -371,8 +388,7 @@ class Service:
         ready = any(agent.state == "ready" for agent in agents)
         start = ActionView(
             can_write and ready,
-            None if can_write and ready else "read_only_role" if not can_write
-            else "agents_unavailable" if agents else "no_assigned_agents",
+            _start_unavailable_reason(can_write, ready, agents),
         )
 
         def action(enabled: bool, reason: str) -> ActionView:
@@ -706,9 +722,7 @@ class Service:
                 return self._save(tx, task, task.evolve(
                     phase="queued", attempt_id=None, blockers=tuple(sorted(blockers))), "paused")
             terminal = (
-                "cancelled" if "cancel_requested" in blockers
-                else "completed" if result.state == "completed"
-                else "failed"
+                _terminal_outcome(blockers, result)
             )
             updated = task.evolve(
                 phase="closed", outcome=terminal, blockers=tuple(sorted(blockers)),
