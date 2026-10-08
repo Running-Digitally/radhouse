@@ -2,13 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Radhouse</title><link rel="stylesheet" href="/chat.css"><link rel="stylesheet" href="/browser-view.css"><link rel="stylesheet" href="/navigation.css">
-  <script src="/navigation.js" defer></script><script src="/format.js" defer></script><script src="/browser-view.js" defer></script><script src="/library.js" defer></script><script src="/chat.js" defer></script>
+  <title>Radhouse</title><link rel="stylesheet" href="/chat.css"><link rel="stylesheet" href="/browser-view.css"><link rel="stylesheet" href="/navigation.css"><link rel="stylesheet" href="/workspace-assets/about-you.css"><link rel="stylesheet" href="/workspace-assets/owner-terminal.css"><link rel="stylesheet" href="/workspace-assets/inference-controls.css">
+  <link rel="stylesheet" href="/workspace-vendor/xterm/xterm.css">
+  <script src="/navigation.js" defer></script><script src="/format.js" defer></script><script src="/browser-view.js" defer></script><script src="/library.js" defer></script><script src="/workspace-assets/about-you.js" defer></script><script src="/workspace-assets/inference-controls.js" defer></script><script src="/workspace-vendor/xterm/xterm.js" defer></script><script src="/workspace-vendor/xterm/addon-fit.js" defer></script><script src="/workspace-assets/owner-terminal.js" defer></script><script src="/chat.js" defer></script>
 </head>
 <body>
 <div class="shell">
   <header><a href="/" class="brand">Radhouse</a><button id="logout" hidden>Sign out</button></header>
-  <nav id="management-nav" aria-label="Main navigation" hidden><a href="/" id="chat-link" aria-current="page">Chat</a><a href="/library" id="library-link">Library</a><a href="/browser" id="browser-link">Browser</a><a href="/settings" id="settings-link" data-management hidden>Settings</a><a href="/infrastructure" id="infrastructure-link" data-management hidden>Infrastructure</a></nav>
+  <nav id="management-nav" aria-label="Main navigation" hidden><a href="/" id="chat-link" aria-current="page">Chat</a><a href="/library" id="library-link">Library</a><a href="/browser" id="browser-link">Browser</a><a href="/terminal" id="terminal-link">Terminal</a><a href="/about-you" id="about-you-link">About You</a><a href="/settings" id="settings-link" data-management hidden>Settings</a><a href="/infrastructure" id="infrastructure-link" data-management hidden>Infrastructure</a></nav>
   <main>
     <section id="login-view" hidden>
       <h1>Welcome to Radhouse</h1><p class="intro">Sign in to continue your conversation.</p>
@@ -30,6 +31,7 @@
       <form id="compose">
         <div id="draft-files" class="attachments" aria-label="Attached files"></div>
         <div id="browser-context-chip" class="browser-context-chip" hidden><label><input id="use-browser-context" type="checkbox" checked><span id="browser-context-label"></span></label><button id="open-browser-context" type="button">Open browser</button></div>
+        <div id="terminal-context-chip" class="browser-context-chip" hidden><label><input id="use-terminal-context" type="checkbox"><span>Include terminal context</span></label><button id="open-terminal-context" type="button">Open terminal</button></div>
         <label class="sr-only" for="message">Message your assistant</label>
         <textarea id="message" placeholder="Message your assistant…" rows="1" aria-describedby="long-text"></textarea>
         <div id="long-text" hidden><span>Your text is kept. Attach it as a file to send it.</span><button id="attach-text" type="button">Attach as text file</button></div>
@@ -40,6 +42,7 @@
           <output id="reply-status" aria-live="polite"></output>
           <button class="primary" id="send" type="submit" title="Send · Enter on desktop, Shift+Enter for a new line">Send ↗</button>
         </div>
+        <div id="inference-controls" aria-label="Settings for your next message"></div>
       </form>
     </section>
     <section id="library-view" class="workspace-page" aria-labelledby="library-title" hidden>
@@ -53,6 +56,14 @@
       <div class="workspace-heading"><div><h1 id="browser-title" tabindex="-1">Browser</h1><p class="intro">The same browser your assistant uses.</p></div></div>
       <section id="assistant-browser" aria-label="Assistant browser" hidden></section>
       <p id="browser-idle-hint" class="intro">A browser opens only when you choose to use it.</p>
+    </section>
+    <section id="terminal-page" class="workspace-page" aria-labelledby="terminal-title" hidden>
+      <div class="workspace-heading"><div><h1 id="terminal-title" tabindex="-1">Terminal</h1><p class="intro">Your own terminal on the agent VM.</p></div></div>
+      <div id="owner-terminal"></div>
+    </section>
+    <section id="about-you-page" class="workspace-page" aria-labelledby="about-you-title" hidden>
+      <div class="workspace-heading"><div><h1 id="about-you-title" tabindex="-1">About You</h1><p class="intro">Saved notes your assistant can read.</p></div></div>
+      <div id="about-you-content"></div>
     </section>
     <output id="loading">Opening your conversation…</output>
   </main>

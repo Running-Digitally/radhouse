@@ -14,6 +14,9 @@ from .transcription import Transcriber
 from .admin import AdminService, AssistantSignal, DocumentSignal, EffectiveSettings
 from .document_bridge import DocumentBridge
 from .browser import BrowserSessionService, HermesBrowserClient
+from .about_you import AboutYouService
+from .inference import InferenceService
+from .owner_terminal import HermesTerminalClient, OwnerTerminalService
 
 
 def app_factory():
@@ -27,6 +30,7 @@ def app_factory():
     hermes = HermesRunsClient(config["hermes_endpoint"], config["hermes_bearer"])
     status_client = HermesRunsClient(config["hermes_endpoint"], config["hermes_bearer"],
         connect_timeout=1, read_timeout=2, request_deadline=3)
+    terminal_client = HermesTerminalClient(config["hermes_endpoint"], config["hermes_bearer"])
     transcriber = Transcriber(config["transcription_endpoint"], bearer=config.get("transcription_bearer")) if "transcription_endpoint" in config else None
     store = ChatStore(Path(config["transcript_path"]))
     browser_client = HermesBrowserClient(config["hermes_endpoint"], config["hermes_bearer"]) if browser_enabled else None
@@ -57,7 +61,10 @@ def app_factory():
             chat_service=service, credential_vault=lambda: _browser_vault_available(status_client))
     app = create_app(auth, service, admin=admin,
         documents=DocumentBridge(store, status_client, owner_id=config["owner_id"]) if document_access else None,
-        browser=browser_service)
+        browser=browser_service,
+        about_you=AboutYouService(status_client, owner_id=config["owner_id"]),
+        inference=InferenceService(hermes),
+        owner_terminal=OwnerTerminalService(terminal_client, owner_id=config["owner_id"]))
 
     observe_lifespan = app.router.lifespan_context
 
@@ -69,6 +76,7 @@ def app_factory():
         finally:
             hermes.close()
             status_client.close()
+            terminal_client.close()
             if browser_client: browser_client.close()
             if transcriber: transcriber.close()
     app.router.lifespan_context = lifespan
