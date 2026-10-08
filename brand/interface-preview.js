@@ -15,7 +15,7 @@
     menu:["Menu","Hover · three lines are written in sequence","Click · the lines fan open and return"],
     chat:["Chat","Hover · two lines are written inside the bubble","Click · trace the conversation bubble, then write its lines"],
     library:["Library","Hover · the folder’s lines are written in sequence","Click · lift the folder tab, then write the contents"],
-    browser:["Browser","Hover · page lines load below the real tab and address field","Click · draw the active tab, address field, then the page"],
+    browser:["Browser","Hover · two clear strokes load below the active tab","Click · trace the active tab, then load the page"],
     settings:["Settings","Hover · the sliders adjust in opposite directions","Click · a wider adjustment returns to its setting"],
     back:["Back","Hover · draw the shaft toward the previous page","Click · the arrow travels farther in its direction"],
     forward:["Go","Hover · draw the shaft toward the next page","Click · the arrow travels farther in its direction"],
@@ -25,7 +25,7 @@
     pointer:["Take control","Hover · a small pulse appears at the pointer’s tip","Click · a stronger contact pulse"],
     warning:["Needs attention","Hover · draw the warning stroke and dot","Click · two dot pulses call attention to the message"],
     terminal:["Terminal","Hover · draw the prompt, blink the cursor, type a short command","Click · a longer phrase is typed as the cursor blinks"],
-    "terminal-context":["Share terminal context","Hover · write the terminal output","Click · an output packet travels into the conversation"],
+    "terminal-context":["Share terminal context","Hover · draw the terminal prompt","Click · a packet travels out of the terminal along the sharing arrow"],
     "about-you":["About You","Hover · write the saved memory’s lines","Click · trace the read-only note and write its contents"],
   };
   const choice=document.getElementById("motion-choice"),stage=document.getElementById("motion-stage"),description=document.getElementById("motion-description");
@@ -45,6 +45,8 @@
     }
   }
   choice.addEventListener("change",showMotion);showMotion();
+  icons.decorate(document.getElementById("desktop-browser"),"browser","Browser");
+  icons.decorate(document.getElementById("desktop-terminal-context"),"terminal-context","Share terminal context");
   for(const name of icons.names){
     const cell=document.createElement("div");cell.className="icon-cell";
     const button=document.createElement("button");button.type="button";
