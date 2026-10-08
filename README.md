@@ -78,8 +78,9 @@ document flag to `true` for owner/session-scoped saved-file reads, and the brows
 flag to `true` for Browser. The API must advertise the restricted-tool capability
 plus the corresponding document or browser capabilities. This source uses the
 qualified owner-session API for opening and controlling the browser; saved-login
-operations additionally require its qualified vault capability. An older
-view-only API retains its viewer. Enabling a flag cannot supply a missing runtime
+operations additionally require its qualified vault capability. Pair this app
+with that API; rolling back to a view-only gateway also requires the retained
+compatible app. Enabling a flag cannot supply a missing runtime
 capability; unavailable operations fail closed. Web startup and sign-in do not
 depend on the agent being reachable. Both flags are enabled in the existing
 pilot, whose older runtime still provides only its qualified live view.
