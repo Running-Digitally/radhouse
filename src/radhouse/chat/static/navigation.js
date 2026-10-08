@@ -223,10 +223,13 @@ window.RadhouseIcons = (() => {
 // Presentation only. Each page owns its session check and private content.
 (() => {
   const icons = window.RadhouseIcons;
-  for (const [id, name] of [["logout", "signout"], ["library-refresh", "refresh"], ["refresh", "refresh"]]) {
+  for (const [id, name] of [["logout", "signout"], ["library-refresh", "refresh"], ["refresh", "refresh"],
+      ["open-browser-context", "browser"], ["open-terminal-context", "terminal"]]) {
     const node = document.getElementById(id); if (node) icons.decorate(node, name);
   }
   const attach = document.getElementById("attach"); if (attach) icons.decorate(attach, "attach", "Attach files");
+  const terminalContext = document.querySelector("#terminal-context-chip label > span");
+  if (terminalContext) icons.decorate(terminalContext, "terminal-context", terminalContext.textContent);
   const shell = document.querySelector(".shell, .admin-shell");
   const nav = document.getElementById("management-nav");
   const header = shell?.querySelector("header");
@@ -252,7 +255,8 @@ window.RadhouseIcons = (() => {
   toggle.type = "button"; toggle.id = "navigation-toggle"; toggle.hidden = true;
   toggle.setAttribute("aria-controls", panel.id);
   icons.decorate(toggle, "menu", "Open menu", {compact: true}); header.prepend(toggle);
-  const destinations = {"/": "chat", "/library": "library", "/browser": "browser", "/settings": "settings", "/infrastructure": "infrastructure"};
+  const destinations = {"/": "chat", "/library": "library", "/browser": "browser", "/terminal": "terminal",
+    "/about-you": "about-you", "/settings": "settings", "/infrastructure": "infrastructure"};
   for (const link of nav.querySelectorAll("a[href]")) {
     const name = destinations[new URL(link.href).pathname]; if (name) icons.decorate(link, name);
   }

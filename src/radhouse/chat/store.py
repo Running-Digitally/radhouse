@@ -101,6 +101,8 @@ class ChatStore:
                 db.execute("ALTER TABLE turns ADD COLUMN tool_policy TEXT")
             if "browser_context" not in columns:
                 db.execute("ALTER TABLE turns ADD COLUMN browser_context TEXT")
+            if "request_options" not in columns:
+                db.execute("ALTER TABLE turns ADD COLUMN request_options TEXT")
             db.execute("UPDATE turns SET first_dispatch_at=created_at WHERE first_dispatch_at IS NULL AND retry_until>0")
             db.execute("""CREATE TABLE IF NOT EXISTS document_grants (
                 token TEXT PRIMARY KEY, turn_seq INTEGER UNIQUE NOT NULL REFERENCES turns(seq),
@@ -327,6 +329,20 @@ class ChatStore:
                      attachment.file_id, attachment.reading_state, attachment.reading_error))
             return dict(row)
 
+    def freeze_request_options(self, turn, value):
+        """Keep model choices and a scrubbed, explicitly shared excerpt per turn."""
+        encoded = json.dumps(value, separators=(",", ":"), sort_keys=True)
+        with self.connection() as db:
+            db.execute(BEGIN_WRITE)
+            db.execute("UPDATE turns SET request_options=? WHERE seq=? AND request_options IS NULL "
+                       "AND input_text IS NULL AND first_dispatch_at IS NULL", (encoded, turn["seq"]))
+            saved = dict(db.execute(TURN_BY_SEQUENCE, (turn["seq"],)).fetchone())
+            # Pre-feature turns with a prepared input preserve their default behaviour.
+            stored = json.loads(saved["request_options"]) if saved["request_options"] else {}
+            if stored != value:
+                raise Rejected("message_options_changed", 409)
+            return saved
+
     def begin_dispatch(self, turn, now, retention):
         with self.connection() as db:
             db.execute(BEGIN_WRITE)
@@ -491,11 +507,15 @@ class ChatStore:
 
     def history(self, owner, before=None, limit=50):
         with self.connection() as db:
-            rows = db.execute("SELECT seq,request_id,text,status,output,error,created_at FROM turns WHERE owner=? AND (? IS NULL OR seq<?) ORDER BY seq DESC LIMIT ?",
+            rows = db.execute("SELECT seq,request_id,text,status,output,error,created_at,request_options FROM turns WHERE owner=? AND (? IS NULL OR seq<?) ORDER BY seq DESC LIMIT ?",
                               (owner, before, before, limit + 1)).fetchall()
             more = len(rows) > limit
             page = [dict(row) for row in reversed(rows[:limit])]
             for turn in page:
+                options = json.loads(turn.pop("request_options")) if turn["request_options"] else {}
+                turn.pop("request_options", None)
+                turn["inference"] = options.get("selection")
+                turn["terminal_context"] = options.get("terminal_context")
                 rows = db.execute("SELECT position,a.name,a.media_type,a.kind,coalesce(u.size,length(a.data)) AS size,CASE WHEN a.kind='audio' THEN reference_text END AS reference_text,reading_state,reading_error FROM attachments a LEFT JOIN uploads u ON u.file_id=a.file_id WHERE turn_seq=? ORDER BY position", (turn["seq"],)).fetchall()
                 turn["attachments"] = [{"position":a["position"], "name":a["name"], "media_type":a["media_type"], "kind":a["kind"], "size":a["size"],
                     "transcript":a["reference_text"] if a["kind"] == "audio" else None,

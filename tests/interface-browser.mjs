@@ -14,6 +14,7 @@ page.on("pageerror",error=>errors.push(error.message));
 let replyState="completed";
 const answer="Begin with one small step.\n\n```js\nconst morning = 'quiet';\n```";
 const staticNames=["index.html","chat.css","chat.js","format.js","browser-view.js","browser-view.css","navigation.js","navigation.css","library.js"];
+const workspaceNames=["about-you.js","about-you.css","owner-terminal.js","owner-terminal.css","inference-controls.js","inference-controls.css"];
 await context.route(origin+"/**",async route=>{
   const path=new URL(route.request().url()).pathname;
   const json=value=>route.fulfill({contentType:"application/json",body:JSON.stringify(value)});
@@ -23,6 +24,8 @@ await context.route(origin+"/**",async route=>{
   let file=path==="/" ? "src/radhouse/chat/static/index.html" : null;
   const name=path.split("/").at(-1);
   if(staticNames.includes(name))file="src/radhouse/chat/static/"+name;
+  if(path.startsWith("/workspace-assets/") && workspaceNames.includes(name))file="src/radhouse/chat/static/"+name;
+  if(path.startsWith("/workspace-vendor/xterm/") && ["xterm.js","xterm.css","addon-fit.js"].includes(name))file="src/radhouse/chat/static/vendor/xterm/"+name;
   if(["interface-preview.html","interface-preview.js","radhouse-mark.svg","favicon.svg"].includes(name))file="brand/"+name;
   if(!file)return route.fulfill({status:404});
   return route.fulfill({contentType:name.endsWith(".js")?"text/javascript":name.endsWith(".css")?"text/css":name.endsWith(".svg")?"image/svg+xml":"text/html",body:await readFile(new URL(file,root))});
@@ -33,7 +36,7 @@ try{
   await expect(copy).toBeVisible();
   await expect(copy.locator(".rh-action-label")).toHaveText("Copy");
   await expect(page.locator(".message-label .rh-icon[data-icon=agent]")).toHaveAttribute("data-agent-state","complete");
-  for(const name of ["Chat","Library","Browser","Settings","Infrastructure"]){
+  for(const name of ["Chat","Library","Browser","Terminal","About You","Settings","Infrastructure"]){
     const link=page.getByRole("navigation",{name:"Main navigation"}).getByRole("link",{name,exact:true});
     await expect(link.locator("svg")).toHaveAttribute("aria-hidden","true");
   }

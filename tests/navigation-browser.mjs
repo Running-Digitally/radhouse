@@ -15,7 +15,7 @@ const fixture = `<!doctype html><html lang="en"><head><meta name="viewport" cont
   <script src="/navigation.js" defer></script></head><body><div class="shell">
   <header><a href="/" class="brand">Radhouse</a><button id="logout">Sign out</button></header>
   <nav id="management-nav" aria-label="Main navigation" hidden><a href="/">Chat</a><a href="/library">Library</a>
-  <a href="/browser">Browser</a><a href="/settings" id="settings-link" data-management>Settings</a>
+  <a href="/browser">Browser</a><a href="/terminal">Terminal</a><a href="/about-you">About You</a><a href="/settings" id="settings-link" data-management>Settings</a>
   <a href="/infrastructure" id="infrastructure-link" data-management>Infrastructure</a></nav>
   <main><label for="draft">Draft</label><textarea id="draft"></textarea><button id="main-action">Keep writing</button></main>
   </div></body></html>`;
@@ -60,7 +60,9 @@ try {
   await expect(menu()).toBeHidden(); await expect(panel()).toBeHidden();
   await update(session());
   await expect(panel()).toBeVisible(); await expect(menu()).toHaveAttribute("aria-expanded", "true");
-  for (const name of ["Chat", "Library", "Browser", "Settings", "Infrastructure"]) { await expect(link(name)).toBeVisible(); }
+  for (const name of ["Chat", "Library", "Browser", "Terminal", "About You", "Settings", "Infrastructure"]) { await expect(link(name)).toBeVisible(); }
+  await expect(link("Terminal").locator("svg")).toHaveAttribute("data-icon","terminal");
+  await expect(link("About You").locator("svg")).toHaveAttribute("data-icon","about-you");
   await expect(link("Chat")).toHaveAttribute("aria-current", "page");
   const positions = await page.evaluate(() => {
     const nav = document.getElementById("navigation-panel").getBoundingClientRect(), main = document.querySelector("main").getBoundingClientRect();
@@ -74,7 +76,7 @@ try {
   await page.reload(); await update(session()); await expect(panel()).toBeHidden();
   await menu().click(); await expect(panel()).toBeVisible();
   role = "viewer"; await update(session());
-  for (const name of ["Chat", "Library", "Browser"]) { await expect(link(name)).toBeVisible(); }
+  for (const name of ["Chat", "Library", "Browser", "Terminal", "About You"]) { await expect(link(name)).toBeVisible(); }
   await expect(page.locator("#settings-link")).toBeHidden(); await expect(page.locator("#infrastructure-link")).toBeHidden();
   role = "admin"; await update(session());
 

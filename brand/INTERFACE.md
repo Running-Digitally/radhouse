@@ -107,10 +107,12 @@ paused and error. Existing text remains the source of meaning and is available
 to assistive technology. Decorative SVGs remain `aria-hidden`.
 
 The showcase offers every state, a large selector and an illustrative journey.
-Terminal, Share terminal context and About You are future icon studies only.
-Their demo controls launch no VM session, send no terminal output and edit no
-memory. The demo context switch starts off; Hide and Close illustrate their
-separate meanings. Implementation of those features belongs to the next release.
+The showcase's Terminal, Share terminal context and About You controls are
+illustrations only. They launch no VM session, send no terminal output and edit
+no memory. The demo context switch starts off; Hide and Close illustrate their
+separate meanings. The owner-workspace release uses these same glyphs in its
+real Terminal and About You navigation, terminal actions and context opt-in.
+Their runtime contracts remain separate from this presentation fixture.
 
 ## Appearance and reduced motion
 
