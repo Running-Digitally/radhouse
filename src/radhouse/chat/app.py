@@ -39,6 +39,12 @@ class BrowserContextBody(BaseModel):
     lease_id: Annotated[str | None, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")] = None
 
 
+class InferenceSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    model: Annotated[str | None, Field(min_length=1, max_length=512)] = None
+    thinking: Annotated[str, Field(min_length=1, max_length=32)] = "default"
+
+
 class Message(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     request_id: Annotated[str, Field(pattern=r"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$")]
@@ -46,6 +52,8 @@ class Message(BaseModel):
     attachments: list[Annotated[str, Field(pattern=FILE_ID.pattern)]] = Field(default_factory=list)
     browser_context: BrowserContextBody | None = None
     use_previous_browser: bool = False
+    inference: InferenceSelection | None = None
+    terminal_context: dict | None = None
 
 
 def _recheck_browser_binding(auth, service, browser, request, before, tab):
@@ -58,7 +66,8 @@ def _recheck_browser_binding(auth, service, browser, request, before, tab):
         raise Rejected("browser_binding_changed", 409)
 
 
-def create_app(auth, service, *, admin=None, documents=None, browser=None):
+def create_app(auth, service, *, admin=None, documents=None, browser=None, about_you=None,
+               owner_terminal=None, inference=None):
     lifespan = _reply_lifespan(service)
     app = FastAPI(title="Radhouse", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
@@ -68,7 +77,10 @@ def create_app(auth, service, *, admin=None, documents=None, browser=None):
         payload = {"username": session.username, "csrf_token": session.csrf_token,
             "features": {"documents": getattr(service, "document_access", False) is True,
                          "browser": getattr(service, "browser_enabled", False) is True,
-                         "browser_control": getattr(browser, "control_enabled", False) is True}}
+                         "browser_control": getattr(browser, "control_enabled", False) is True,
+                         "about_you": about_you is not None,
+                         "terminal": owner_terminal is not None,
+                         "inference": inference is not None}}
         if admin is not None:
             try:
                 can_read = auth.management_role(session) in {"admin", "operator"}
@@ -79,6 +91,28 @@ def create_app(auth, service, *, admin=None, documents=None, browser=None):
 
     def owner(request):
         return service.authorize(auth.session(request))
+
+    def authenticated(request):
+        session = auth.session(request)
+        service.authorize(session)
+        return session
+
+    if about_you is not None:
+        from .about_you import create_router
+        app.include_router(create_router(about_you, authenticated))
+    if owner_terminal is not None:
+        from .owner_terminal import create_router
+        app.include_router(create_router(owner_terminal, authenticated))
+    if inference is not None:
+        @app.get("/chat/inference")
+        def inference_options(request: Request, refresh: bool = False):
+            before = authenticated(request)
+            payload = inference.options(refresh=refresh)
+            after = authenticated(request)
+            if (before.principal_id, before.conversation_id, before.binding_revision, before.token) != (
+                    after.principal_id, after.conversation_id, after.binding_revision, after.token):
+                raise Rejected("identity_binding_denied", 403)
+            return payload
 
     if documents is not None:
         from .document_bridge import create_document_router
@@ -108,6 +142,29 @@ def create_app(auth, service, *, admin=None, documents=None, browser=None):
     def send(body: Message, request: Request):
         session = auth.session(request)
         principal = service.authorize(session)
+        selection = body.inference.model_dump() if body.inference is not None else None
+        existing = service.store.find(principal, body.request_id)
+        if existing and existing.get("request_options"):
+            import json
+            request_options = json.loads(existing["request_options"])
+            if (selection != request_options.get("selection")
+                    or body.terminal_context != request_options.get("terminal_context")):
+                raise Rejected("message_options_changed", 409)
+        else:
+            if selection is not None and inference is None:
+                raise Rejected("inference_catalog_unavailable", 503)
+            request_options = {}
+            if selection is not None:
+                request_options.update(selection=selection, runtime=inference.resolve(selection))
+            if body.terminal_context is not None:
+                if owner_terminal is None:
+                    raise Rejected("terminal_unavailable", 503)
+                request_options["terminal_context"] = owner_terminal.scrub_context(session,
+                    request.headers.get("x-radhouse-browser-tab"), body.terminal_context)
+            after = authenticated(request)
+            if (session.principal_id, session.conversation_id, session.binding_revision, session.token) != (
+                    after.principal_id, after.conversation_id, after.binding_revision, after.token):
+                raise Rejected("identity_binding_denied", 403)
         browser_data = None
         if getattr(browser, "control_enabled", False):
             existing = service.store.find(principal, body.request_id)
@@ -128,7 +185,8 @@ def create_app(auth, service, *, admin=None, documents=None, browser=None):
             _recheck_browser_binding(auth, service, browser, request, session,
                 request.headers.get("x-radhouse-browser-tab"))
         result = service.send(principal, body.request_id, body.text,
-            tuple(service.store.upload(principal, file_id) for file_id in body.attachments), browser_data=browser_data)
+            tuple(service.store.upload(principal, file_id) for file_id in body.attachments), browser_data=browser_data,
+            request_options=request_options)
         if getattr(browser, "control_enabled", False):
             _recheck_browser_binding(auth, service, browser, request, session,
                 request.headers.get("x-radhouse-browser-tab"))
@@ -215,6 +273,8 @@ def _install_assets(app):
     @app.get("/")
     @app.get("/library")
     @app.get("/browser")
+    @app.get("/terminal")
+    @app.get("/about-you")
     def index():
         return FileResponse(STATIC / "index.html")
 
@@ -249,6 +309,21 @@ def _install_assets(app):
     @app.get("/library.js")
     def library_javascript():
         return FileResponse(STATIC / "library.js", media_type=JAVASCRIPT_MEDIA_TYPE)
+
+    @app.get("/workspace-assets/{name}")
+    def workspace_asset(name: str):
+        if name not in {"about-you.js", "about-you.css", "owner-terminal.js", "owner-terminal.css",
+                        "inference-controls.js", "inference-controls.css"}:
+            raise Rejected("asset_not_found", 404)
+        return FileResponse(STATIC / name,
+            media_type=JAVASCRIPT_MEDIA_TYPE if name.endswith(".js") else "text/css")
+
+    @app.get("/workspace-vendor/xterm/{name}")
+    def terminal_vendor_asset(name: str):
+        if name not in {"xterm.js", "xterm.css", "addon-fit.js"}:
+            raise Rejected("asset_not_found", 404)
+        return FileResponse(STATIC / "vendor" / "xterm" / name,
+            media_type=JAVASCRIPT_MEDIA_TYPE if name.endswith(".js") else "text/css")
 
 
 def _install_browser_routes(app, browser, owner, auth, service):

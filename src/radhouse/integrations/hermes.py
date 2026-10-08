@@ -58,6 +58,10 @@ class HermesBrowserAdmissionRejected(HermesGatewayError):
     """Positive, fixed proof that an expired browser handoff created no run."""
 
 
+class HermesInferenceAdmissionRejected(HermesGatewayError):
+    """A fixed catalog rejection with positive proof that no run was admitted."""
+
+
 @dataclass(frozen=True)
 class HermesDispatch:
     run_id: str
@@ -215,6 +219,7 @@ class HermesRunsClient:
         allowed_tools: tuple[str, ...] = (), images: tuple[InputFile, ...] = (),
         document_scope_token: str | None = None,
         browser_owner: dict | None = None, browser_context: dict | None = None,
+        model: str | None = None, provider: str | None = None, model_options: dict | None = None,
     ) -> HermesDispatch:
         if not input_text or len(input_text.encode("utf-8")) > MAX_INPUT_BYTES:
             raise ValueError("invalid_hermes_input")
@@ -225,6 +230,19 @@ class HermesRunsClient:
                 or disable_tools or not {"document_search", "document_read"} <= set(allowed_tools)):
             raise ValueError("invalid_hermes_document_scope")
         _validate_images(images)
+        for value in (model, provider):
+            if value is not None and (type(value) is not str or not value or len(value) > 512
+                                      or any(ord(c) < 32 for c in value)):
+                raise ValueError("invalid_hermes_model")
+        if model_options is not None and (type(model_options) is not dict
+                or set(model_options) - {"reasoning"}
+                or type(model_options.get("reasoning")) is not dict
+                or set(model_options["reasoning"]) - {"enabled", "effort"}
+                or type(model_options["reasoning"].get("enabled")) is not bool
+                or ("effort" in model_options["reasoning"] and (
+                    type(model_options["reasoning"]["effort"]) is not str
+                    or len(model_options["reasoning"]["effort"]) > 32))):
+            raise ValueError("invalid_hermes_model_options")
         if browser_owner is not None:
             if (type(browser_owner) is not dict or set(browser_owner) != {"principal_id", "conversation_id"}
                     or not all(type(v) is str and _IDENTIFIER.fullmatch(v) for v in browser_owner.values())
@@ -252,6 +270,10 @@ class HermesRunsClient:
                   **({"disable_tools": True} if disable_tools else {}),
                   **({"allowed_tools": list(allowed_tools)} if allowed_tools else {}),
                   **({"document_scope_token": document_scope_token} if document_scope_token else {}),
+                  **({"model": model} if model is not None else {}),
+                  **({"provider": provider} if provider is not None else {}),
+                  **({"model_options": model_options} if model_options is not None else {}),
+                  **({"radhouse_inference": True} if model is not None or provider is not None or model_options is not None else {}),
                   **({"browser_owner": browser_owner} if browser_owner is not None else {}),
                   **({"browser_context": browser_context} if browser_context is not None else {})},
             headers={"Idempotency-Key": dispatch_key},
@@ -361,6 +383,17 @@ class HermesRunsClient:
                     if len(data) > MAX_RESPONSE_BYTES:
                         raise HermesGatewayError("runtime_response_too_large")
                 if response.status_code != expected_status:
+                    if response.status_code == 409 and path == "v1/runs" and body is not None and body.get("radhouse_inference") is True:
+                        try:
+                            rejection = json.loads(data)
+                        except (UnicodeDecodeError, json.JSONDecodeError):
+                            rejection = None
+                        if (type(rejection) is dict and set(rejection) == {"error", "admitted"}
+                                and rejection["admitted"] is False and type(rejection["error"]) is str and rejection["error"] in {
+                                    "inference_catalog_unavailable", "inference_selection_changed",
+                                    "inference_selection_invalid", "inference_model_unavailable",
+                                    "inference_thinking_unavailable"}):
+                            raise HermesInferenceAdmissionRejected(rejection["error"])
                     if (response.status_code == 409 and path == "v1/runs"
                             and body is not None and body.get("browser_context") is not None):
                         try:

@@ -269,6 +269,56 @@ def test_native_admission_receipt_precedes_first_tool_and_private_token_fingerpr
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("later_change", ["catalog_unavailable", "route_conflict"])
+def test_selected_model_durable_replay_precedes_current_engine_checks(monkeypatch, later_change):
+    native = native_namespace(monkeypatch)
+    value, api = adapter(native), api_dependencies()
+    launches, checks = [], []
+    inference = ModuleType("radhouse_native_inference")
+
+    async def admission(owner, body):
+        checks.append(body["model"])
+        return None if len(checks) == 1 else "inference_catalog_unavailable"
+
+    inference.inference_admission_error = admission
+    monkeypatch.setitem(sys.modules, inference.__name__, inference)
+    api._request_agent_overrides = lambda body, **kwargs: {
+        "requested_model": body["model"], "requested_provider": body["provider"],
+        "model_options": body["model_options"],
+    }
+
+    async def execute(owner, launch, **kwargs):
+        launches.append(launch)
+        owner._set_run_status(launch.run_id, "completed", output="done")
+
+    native._execute_run = execute
+    body = {"input": "question", "session_id": "chat1", "disable_tools": True,
+            "model": "chosen-model", "provider": "custom",
+            "model_options": {"reasoning": {"enabled": True, "effort": "high"}},
+            "radhouse_inference": True}
+
+    async def run():
+        accepted = await native._handle_runs(value, request(body), _api_server=api)
+        assert accepted.status == 202
+        await asyncio.gather(*value._active_run_tasks.values())
+        assert len(launches) == 1
+        assert launches[0].agent_kwargs["confirmed_runtime_lock"] is True
+        assert launches[0].agent_kwargs["requested_model"] == "chosen-model"
+        if later_change == "route_conflict":
+            value._request_route_conflict_error = lambda **kwargs: "changed route"
+        replay = await native._handle_runs(value, request(body), _api_server=api)
+        assert replay.status == 202 and replay.value["replayed"] is True
+        assert replay.value["run_id"] == accepted.value["run_id"]
+        assert checks == ["chosen-model"] and len(launches) == 1
+        rejected = await native._handle_runs(value, request(body, key="new-key"), _api_server=api)
+        assert rejected.status == 409
+        assert rejected.value == {"error": "inference_selection_changed" if later_change == "route_conflict"
+                                  else "inference_catalog_unavailable", "admitted": False}
+        assert len(launches) == 1
+
+    asyncio.run(run())
+
+
 def test_native_worker_resets_context_after_exception(monkeypatch):
     native = native_namespace(monkeypatch)
     worker_dependencies(monkeypatch)
@@ -354,7 +404,9 @@ def test_maintenance_gate_is_before_native_first_await(monkeypatch):
     raw = (RUNTIME / "fixtures/api_server.snapshot").read_text()
     lock = json.loads((RUNTIME / "source-lock.json").read_text())
     assert hashlib.sha256(raw.encode()).hexdigest() == lock["files"]["gateway/platforms/api_server.py"]["snapshot_sha256"]
-    patched = overlay.patch_api(raw)
+    # This hash-pinned bounded fixture contains admission/routes, not disconnect.
+    # Full source render still requires and patches the real lifecycle function.
+    patched = overlay.patch_api(raw, include_lifecycle=False)
     import ast
     tree = ast.parse(patched)
     node = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "_admit_api_agent_request")
@@ -787,7 +839,8 @@ def test_declared_unchanged_thread_source_is_verified_and_passed_through(
     assert result == {"tools/thread_context.py": raw.decode()}
     # write() must include the passthrough in its install map, too.
     (package / "bridge.py").write_text("# bridge source\n")
-    for name in ("browser_control.py", "native_control.py", "vault_bridge.py"):
+    for name in ("browser_control.py", "native_control.py", "vault_bridge.py",
+                 "about_you.py", "native_inference.py", "owner_terminal.py"):
         (package / name).write_text("# source\n")
     (package / "plugin").mkdir()
     for name in ("__init__.py", "plugin.yaml"):

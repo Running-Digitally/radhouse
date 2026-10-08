@@ -21,13 +21,13 @@ expected. This is evidence for the private pilot, not qualification of every
 self-hosted installation or model.
 
 The pilot supports selective access to searchable PDF and DOCX/XLSX/PPTX text,
-a live view of the same browser the assistant uses, and read-only **Settings**
-and **Infrastructure** pages. **Hide/Show** changes the browser view; the assistant
-keeps mouse and keyboard control. Human takeover, scanned-document OCR, audio
-transcription and editable administration settings have not been activated in
-that deployed pilot.
+**Library**, the same browser the assistant uses, and read-only **Settings**
+and **Infrastructure** pages. Browser control and saved logins were activated
+on 8 October with the paired Hermes v0.21.6 runtime; production Open/Go/reload/Close
+acceptance passed after the web correction `7ac0630`. Scanned-document OCR,
+audio transcription and editable administration settings remain future work.
 
-**Next release source:** Browser can open before any chat. Its launcher starts
+Browser can open before any chat. Its launcher starts
 no Chromium process until **Open browser** is clicked. The owner can navigate,
 take control while the assistant finishes its reply, and **Return to agent**
 after that reply ends. **Close browser** ends the native process; only a clearly
@@ -38,12 +38,38 @@ Saved logins reuse the local Hermes credential vault. Explicit save/remove and
 exact-origin fill stay within the owned browser. Login tools return metadata and
 fill outcomes; credential form inputs are not saved in chat. This requires the
 qualified Hermes v0.21.6 private session-control API and its separate Python 3.14
-environment. Local native and
-UI proofs have passed; Linux browser/sandbox qualification and production
-activation remain deployment steps. Retain the paired old-runtime schema-31
+environment. Native, Linux sandbox and production UI proofs have passed for
+the private pilot. Retain the paired old-runtime schema-31
 compatibility patch for rollback; an unchanged old runtime can delete upgraded
 tool-definition blobs during ordinary prompt cleanup. Preserve newer chats and
 the separate vault rather than restoring an older database.
+
+**This branch, not yet activated:** **Terminal** opens an independent shell as
+the existing unprivileged VM user only after **Open terminal**. Leaving its page
+preserves the shell; **Close terminal** ends it. It has the user's ordinary VM
+access and shows raw terminal output. It does not enable agent shell tools or
+share control of an agent process. Abandoned terminals close after ten minutes
+without presence, or sooner when authentication expires.
+
+**Include terminal context** is off initially. When selected, Send captures the
+selected text or the last 20 rendered rows, up to 8 KiB, and masks registered
+secrets before handing the excerpt to the assistant or saving it in chat.
+**About You** separately shows the saved `USER.md` and `MEMORY.md` notes read-only.
+File-level dates describe saved files; they do not claim when a note was learned
+or whether it was included in the current reply.
+
+The next-message **Model** and **Thinking** controls read the configured engine's
+actual catalog. Model choices and supported thinking settings vary by engine;
+unknown capabilities remain unoffered. Thinking currently requires published
+settings that the qualified Custom or LM Studio adapter can carry; other
+adapters retain their defaults until qualified. Catalog reads are cached for
+60 seconds. **Refresh models** checks again without
+changing profile settings. Explicit choices and terminal context are frozen for
+that message and its retries. An explicit selected model uses Hermes' existing
+runtime lock and cannot silently fall back to another model. **Default** retains
+the existing engine behaviour and remains usable during catalog outages. Pair
+this source with its corresponding native overlay before activation; rollback
+must retain the saved runtime choices as well as frozen inputs.
 
 The earlier fleet, Buzz integration, work/task engine and software delivery code
 are retained for history and recovery. They are excluded from this app. The
@@ -83,7 +109,8 @@ with that API; rolling back to a view-only gateway also requires the retained
 compatible app. Enabling a flag cannot supply a missing runtime
 capability; unavailable operations fail closed. Web startup and sign-in do not
 depend on the agent being reachable. Both flags are enabled in the existing
-pilot, whose older runtime still provides only its qualified live view.
+pilot. About You, Terminal and inference controls use their corresponding fixed
+native API routes; opening pages does not create a shell or browser process.
 
 Optional `transcription_endpoint` selects an existing OpenAI-compatible
 `/v1/audio/transcriptions` service; optional `transcription_bearer` belongs only to
