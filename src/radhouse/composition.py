@@ -59,6 +59,91 @@ class ControllerComposition:
         self.close()
 
 
+def _provider_routes(config, provider_factory, clients):
+    providers = {}
+    for configured in config.providers:
+        token = (
+            read_secret_file(configured.token.path)
+            if configured.token is not None
+            else None
+        )
+        adapter = provider_factory(
+            configured.binding,
+            configured.endpoint,
+            configured.model,
+            ProviderRequirements(
+                required_capabilities=frozenset(configured.requirements.required),
+                admitted_capabilities=frozenset(configured.requirements.admitted),
+                minimum_context_tokens=configured.requirements.minimum_context_tokens,
+            ),
+            model_identity=configured.model_identity,
+            bearer_token=token,
+            allow_plaintext_private_network=(
+                configured.allow_plaintext_private_network
+            ),
+        )
+        clients.append(adapter)
+        providers[configured.binding] = adapter
+    return RoutingProvider(providers)
+
+
+def _configured_buzz_cycle(config, service, agent, clock, clients):
+    from radhouse.channels.buzz_relay import BuzzRelay
+    from radhouse.channels.buzz_enrollment import ConfiguredBuzzConversation
+    configured_conversation = next(
+        item for item in config.buzz.conversations
+        if item.conversation_id == agent.conversation_id
+        and (agent.channel_id is None or item.channel_id == agent.channel_id)
+    )
+    channel_agents = tuple(
+        candidate for candidate in config.buzz.agents
+        if agent.channel_id is not None
+        and candidate.channel_id == agent.channel_id
+    )
+    relay=BuzzRelay(config.buzz.relay_origin,config.buzz.relay_pubkey,
+        read_secret_file(agent.signing_key.path),clock=lambda:clock().timestamp())
+    clients.append(relay)
+    if relay.pubkey!=agent.agent_pubkey:
+        raise ValueError("buzz_agent_key_mismatch")
+    return ConfiguredBuzzConversation(
+        service,
+        relay,
+        agent,
+        member_pubkeys=(
+            tuple(sorted(item.agent_pubkey for item in channel_agents))
+            if len(channel_agents) > 1
+            else ()
+        ),
+        default_agent=(
+            True if len(channel_agents) <= 1 else agent.default_in_channel
+        ),
+        coordinator=agent.coordinator,
+        channel_kind=configured_conversation.kind,
+    )
+
+
+def _compose_conversations(config, service, clock, clients):
+    conversation_cycles = []
+    if not config.buzz:
+        return conversation_cycles
+    for agent in sorted(config.buzz.agents, key=lambda item: not item.coordinator):
+        conversation_cycles.append(_configured_buzz_cycle(config, service, agent, clock, clients))
+    for configured in conversation_cycles:
+        if configured.coordinator and configured.candidate.channel_id is not None:
+            configured.project_members = tuple(
+                item for item in conversation_cycles
+                if item.candidate.channel_id == configured.candidate.channel_id
+            )
+            release_config = next(
+                item
+                for item in config.buzz.conversations
+                if item.channel_id == configured.candidate.channel_id
+            )
+            configured.automatic_private_release = release_config.automatic_private_release
+            configured.private_deployment_url = release_config.private_deployment_url
+    return conversation_cycles
+
+
 def compose_controller(
     config: RadhouseConfig,
     provider: ProviderPort | None = None,
@@ -79,31 +164,7 @@ def compose_controller(
     adapters = {}
     try:
         if provider is None:
-            providers = {}
-            for configured in config.providers:
-                token = (
-                    read_secret_file(configured.token.path)
-                    if configured.token is not None
-                    else None
-                )
-                adapter = provider_factory(
-                    configured.binding,
-                    configured.endpoint,
-                    configured.model,
-                    ProviderRequirements(
-                        required_capabilities=frozenset(configured.requirements.required),
-                        admitted_capabilities=frozenset(configured.requirements.admitted),
-                        minimum_context_tokens=configured.requirements.minimum_context_tokens,
-                    ),
-                    model_identity=configured.model_identity,
-                    bearer_token=token,
-                    allow_plaintext_private_network=(
-                        configured.allow_plaintext_private_network
-                    ),
-                )
-                clients.append(adapter)
-                providers[configured.binding] = adapter
-            provider = RoutingProvider(providers)
+            provider = _provider_routes(config, provider_factory, clients)
         for bot in config.bots:
             token = read_secret_file(bot.token.path)
             client = client_factory(bot.endpoint, token)
@@ -121,54 +182,7 @@ def compose_controller(
             config.coordinator.worker_id,
             max_tasks_per_cycle=config.coordinator.max_tasks_per_cycle,
         )
-        conversation_cycles=[]
-        if config.buzz:
-            from radhouse.channels.buzz_relay import BuzzRelay
-            from radhouse.channels.buzz_enrollment import ConfiguredBuzzConversation
-            for agent in sorted(config.buzz.agents, key=lambda item: not item.coordinator):
-                configured_conversation = next(
-                    item for item in config.buzz.conversations
-                    if item.conversation_id == agent.conversation_id
-                    and (agent.channel_id is None or item.channel_id == agent.channel_id)
-                )
-                channel_agents = tuple(
-                    candidate for candidate in config.buzz.agents
-                    if agent.channel_id is not None
-                    and candidate.channel_id == agent.channel_id
-                )
-                relay=BuzzRelay(config.buzz.relay_origin,config.buzz.relay_pubkey,
-                    read_secret_file(agent.signing_key.path),clock=lambda:clock().timestamp())
-                clients.append(relay)
-                if relay.pubkey!=agent.agent_pubkey:
-                    raise ValueError("buzz_agent_key_mismatch")
-                conversation_cycles.append(ConfiguredBuzzConversation(
-                    service,
-                    relay,
-                    agent,
-                    member_pubkeys=(
-                        tuple(sorted(item.agent_pubkey for item in channel_agents))
-                        if len(channel_agents) > 1
-                        else ()
-                    ),
-                    default_agent=(
-                        True if len(channel_agents) <= 1 else agent.default_in_channel
-                    ),
-                    coordinator=agent.coordinator,
-                    channel_kind=configured_conversation.kind,
-                ))
-            for configured in conversation_cycles:
-                if configured.coordinator and configured.candidate.channel_id is not None:
-                    configured.project_members = tuple(
-                        item for item in conversation_cycles
-                        if item.candidate.channel_id == configured.candidate.channel_id
-                    )
-                    release_config = next(
-                        item
-                        for item in config.buzz.conversations
-                        if item.channel_id == configured.candidate.channel_id
-                    )
-                    configured.automatic_private_release = release_config.automatic_private_release
-                    configured.private_deployment_url = release_config.private_deployment_url
+        conversation_cycles = _compose_conversations(config, service, clock, clients)
         from radhouse.channels.buzz_enrollment import BuzzEnrollment
         # The same configured scope fences web sends/history and relay cycles.
         # Removing a candidate must not leave its old web composer operational.

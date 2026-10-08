@@ -9,10 +9,10 @@ export function guidanceStatus(receipt: TaskSummary["guidance"][number]): string
     unknown: "The runtime could not confirm whether this update was used. It will not be resent automatically.",
   };
   if (receipt.application_state) return labels[receipt.application_state];
-  return receipt.state === "accepted" ? "Received by the agent; application is not yet confirmed."
-    : receipt.state === "superseded" ? "The run advanced to a later decision; this earlier response is closed."
-    : ["submitted", "unknown"].includes(receipt.state) ? "Delivery outcome unknown. This instruction will not be sent again automatically."
-    : "The agent did not accept this instruction.";
+  if (receipt.state === "accepted") return "Received by the agent; application is not yet confirmed.";
+  if (receipt.state === "superseded") return "The run advanced to a later decision; this earlier response is closed.";
+  if (["submitted", "unknown"].includes(receipt.state)) return "Delivery outcome unknown. This instruction will not be sent again automatically.";
+  return "The agent did not accept this instruction.";
 }
 
 const phaseLabels: Record<Phase, string> = {

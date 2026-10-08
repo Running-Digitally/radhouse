@@ -57,6 +57,7 @@ class Preview(SimpleHTTPRequestHandler):
             self.wfile.write(body)
 
     def log_message(self, *_):
+        # Suppress access logs for the synthetic local preview.
         pass
 
 

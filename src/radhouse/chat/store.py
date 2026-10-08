@@ -12,6 +12,11 @@ from uuid import uuid4
 from radhouse.domain.tasks import Rejected
 from .attachments import Attachment, FILE_ID, validate_name
 
+
+BEGIN_WRITE = 'BEGIN IMMEDIATE'
+TURN_BY_REQUEST = 'SELECT * FROM turns WHERE owner=? AND request_id=?'
+TURN_BY_SEQUENCE = 'SELECT * FROM turns WHERE seq=?'
+
 TERMINAL = ("completed", "failed", "cancelled", "interrupted")
 
 
@@ -86,7 +91,7 @@ class ChatStore:
             # Additive metadata keeps schema-3 readers usable for rollback.
             # Legacy positive deadlines may represent an uncertain submission;
             # preserve their original window rather than granting a fresh one.
-            db.execute("BEGIN IMMEDIATE")
+            db.execute(BEGIN_WRITE)
             columns = {row["name"] for row in db.execute("PRAGMA table_info(turns)")}
             if "first_dispatch_at" not in columns:
                 db.execute("ALTER TABLE turns ADD COLUMN first_dispatch_at REAL")
@@ -119,7 +124,7 @@ class ChatStore:
         # The complete immutable file is durable before the DB publishes it.
         # A crash can leave an unpublished file, never a receipt for partial bytes.
         with self.connection() as db:
-            db.execute("BEGIN IMMEDIATE")
+            db.execute(BEGIN_WRITE)
             row = db.execute("SELECT * FROM uploads WHERE file_id=?", (file_id,)).fetchone()
             if row:
                 if (row["owner"], row["name"], row["sha256"], row["size"]) != (owner, name, sha256, size):
@@ -154,13 +159,13 @@ class ChatStore:
 
     def find(self, owner, request_id):
         with self.connection() as db:
-            row = db.execute("SELECT * FROM turns WHERE owner=? AND request_id=?", (owner, request_id)).fetchone()
+            row = db.execute(TURN_BY_REQUEST, (owner, request_id)).fetchone()
             return dict(row) if row else None
 
-    def reserve(self, owner, request_id, text, now, retention, attachments=()):
+    def reserve(self, owner, request_id, text, now, attachments=()):
         with self.connection() as db:
-            db.execute("BEGIN IMMEDIATE")
-            row = db.execute("SELECT * FROM turns WHERE owner=? AND request_id=?", (owner, request_id)).fetchone()
+            db.execute(BEGIN_WRITE)
+            row = db.execute(TURN_BY_REQUEST, (owner, request_id)).fetchone()
             if row:
                 self._match(db, row, text, attachments)
                 return dict(row)
@@ -169,7 +174,7 @@ class ChatStore:
             db.execute("INSERT OR IGNORE INTO conversations VALUES (?,?)", (owner, "chat:" + uuid4().hex))
             db.execute("INSERT INTO turns(owner,request_id,text,dispatch_key,created_at,retry_until,status) VALUES(?,?,?,?,?,?,?)",
                        (owner, request_id, text, "chat:" + uuid4().hex, now, 0, "awaiting_dispatch"))
-            row = db.execute("SELECT * FROM turns WHERE owner=? AND request_id=?", (owner, request_id)).fetchone()
+            row = db.execute(TURN_BY_REQUEST, (owner, request_id)).fetchone()
             for i, attachment in enumerate(attachments):
                 db.execute("INSERT INTO attachments VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                     (row["seq"], i, attachment.name, attachment.media_type, attachment.kind,
@@ -179,12 +184,12 @@ class ChatStore:
 
     def begin_dispatch(self, turn, now, retention):
         with self.connection() as db:
-            db.execute("BEGIN IMMEDIATE")
+            db.execute(BEGIN_WRITE)
             # Zero is reserved for a positively known, never-attempted turn.
             # Persist before the POST so a lost response cannot renew its window.
             db.execute("UPDATE turns SET first_dispatch_at=?,retry_until=? WHERE seq=? AND first_dispatch_at IS NULL AND retry_until=0",
                        (now, now + retention, turn["seq"]))
-            return dict(db.execute("SELECT * FROM turns WHERE seq=?", (turn["seq"],)).fetchone())
+            return dict(db.execute(TURN_BY_SEQUENCE, (turn["seq"],)).fetchone())
 
     def select_tools(self, turn, tools):
         """Freeze exact tool policy once, before any prompt or dispatch is saved."""
@@ -192,7 +197,7 @@ class ChatStore:
         with self.connection() as db:
             db.execute("UPDATE turns SET tool_policy=? WHERE seq=? AND tool_policy IS NULL "
                        "AND input_text IS NULL AND first_dispatch_at IS NULL", (encoded, turn["seq"]))
-            return dict(db.execute("SELECT * FROM turns WHERE seq=?", (turn["seq"],)).fetchone())
+            return dict(db.execute(TURN_BY_SEQUENCE, (turn["seq"],)).fetchone())
 
     @staticmethod
     def tools(turn):
@@ -212,10 +217,10 @@ class ChatStore:
     def document_grant_for_turn(self, turn):
         """Mint once after the dispatch deadline is durable; scope cannot grow on retry."""
         with self.connection() as db:
-            db.execute("BEGIN IMMEDIATE")
+            db.execute(BEGIN_WRITE)
             row = db.execute("SELECT * FROM document_grants WHERE turn_seq=?", (turn["seq"],)).fetchone()
             if row is None:
-                saved = dict(db.execute("SELECT * FROM turns WHERE seq=?", (turn["seq"],)).fetchone())
+                saved = dict(db.execute(TURN_BY_SEQUENCE, (turn["seq"],)).fetchone())
                 if saved["status"] in TERMINAL or saved["retry_until"] <= 0 or (
                         not {"document_search", "document_read"} <= set(self.tools(saved))):
                     raise Rejected("document_access_denied", 403)
@@ -245,7 +250,7 @@ class ChatStore:
 
     def bind_document_grant(self, token, run_id, session_id, dispatch_key, now):
         with self.connection() as db:
-            db.execute("BEGIN IMMEDIATE")
+            db.execute(BEGIN_WRITE)
             row = db.execute("""SELECT g.*,t.owner,t.dispatch_key,t.run_id,t.status,c.session_id
                 FROM document_grants g JOIN turns t ON t.seq=g.turn_seq JOIN conversations c ON c.owner=t.owner
                 WHERE g.token=? AND g.expires_at>? AND t.status NOT IN (?,?,?,?)""",
@@ -303,8 +308,8 @@ class ChatStore:
 
     def attach(self, turn, run_id, status):
         with self.connection() as db:
-            db.execute("BEGIN IMMEDIATE")
-            row = db.execute("SELECT * FROM turns WHERE seq=?", (turn["seq"],)).fetchone()
+            db.execute(BEGIN_WRITE)
+            row = db.execute(TURN_BY_SEQUENCE, (turn["seq"],)).fetchone()
             if row["run_id"] is not None and row["run_id"] != run_id:
                 raise Rejected("runtime_identity_changed", 503)
             if row["status"] not in TERMINAL:

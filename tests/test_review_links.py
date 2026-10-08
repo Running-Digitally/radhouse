@@ -104,7 +104,8 @@ def test_completion_and_publication_are_stable_across_recovery(review_link, serv
     token, done, configured, state, link = review_link
     assert configured.run("egress")["error_code"] is None
     completion = [e for e in state["published"].values() if ["radhouse-review", done.task_id] in e["tags"]]
-    assert len(completion) == 1 and "https://radhouse.test/app/#review=" in completion[0]["content"]
+    assert len(completion) == 1
+    assert 'https://radhouse.test/app/#review=' in completion[0]['content']
     assert "Review required" in completion[0]["content"]
     assert ["radhouse-result", done.result_digest] in completion[0]["tags"]
     url = completion[0]["content"].split("https://radhouse.test/app/#review=")[1]
@@ -119,7 +120,8 @@ def test_completion_and_publication_are_stable_across_recovery(review_link, serv
     with store.transaction() as tx:
         messages = [r["message"] for r in tx.conversation_history(link.link_id)]
         statuses = [m for m in messages if m.state == "publication"]
-        assert len(statuses) == 1 and statuses[0].message_id == "publication:" + publication.publication_id
+        assert len(statuses) == 1
+        assert statuses[0].message_id == 'publication:' + publication.publication_id
         assert tx.task(done.task_id).state_revision == done.state_revision
         anchor = tx.conversation_task_anchor(link, done.task_id)
     event = next(e for e in state["published"].values() if ["radhouse-mirror", "publication:" + publication.publication_id] in e["tags"])
@@ -134,7 +136,8 @@ def test_completion_and_publication_are_stable_across_recovery(review_link, serv
     app.process(link, status.message_id)
     with store.transaction() as tx:
         content = tx.conversation_message("reply:status-published")["message"].content
-    assert "Approved and published" in content and "#review=" not in content
+    assert 'Approved and published' in content
+    assert '#review=' not in content
 
 
 def test_expired_completion_is_not_rewritten_and_status_gets_fresh_link(review_link, service, store, alice, clock, fake_work):

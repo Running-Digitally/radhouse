@@ -42,8 +42,9 @@ def test_runtime_attach_and_stop_survive_adapter_recreation(tmp_path):
 
 
 def test_clock_rejects_ambiguous_naive_time():
+    prepared_argument_1 = datetime(2026, 9, 10)
     with pytest.raises(ValueError, match="aware UTC"):
-        FixedClock(datetime(2026, 9, 10))
+        FixedClock(prepared_argument_1)
 
 
 @pytest.mark.postgres
@@ -59,8 +60,10 @@ def test_same_task_across_channels_and_duplicate_delivery(service, store, alice,
     assert service.get(peer, task.task_id, envelope=envelope(destination)).task_id == task.task_id
     with store.transaction() as tx:
         assert len(tx.tasks()) == 1
+    prepared_argument_2 = envelope(source, command_key='same-command')
+    prepared_argument_3 = replace(start, brief='different intent')
     with pytest.raises(Rejected) as error:
-        service.admit(actor, envelope(source, command_key="same-command"), replace(start, brief="different intent"))
+        service.admit(actor, prepared_argument_2, prepared_argument_3)
     assert error.value.code == "command_conflict"
 
 
@@ -69,8 +72,9 @@ def test_same_task_across_channels_and_duplicate_delivery(service, store, alice,
 def test_no_implicit_private_content_access(service, alice, bob, viewer, admin, envelope, start, principal):
     task = service.admit(alice, envelope(), start)
     actor = {"bob": bob, "viewer": viewer, "admin": admin}[principal]
+    prepared_envelope = envelope(principal=principal)
     with pytest.raises(Rejected) as error:
-        service.get(actor, task.task_id, envelope=envelope(principal=principal))
+        service.get(actor, task.task_id, envelope=prepared_envelope)
     assert error.value.status == 403
 
 
@@ -115,12 +119,10 @@ def test_closed_task_does_not_depend_on_provider_availability(
 def test_task_cannot_override_the_bots_assigned_provider(
     service, store, alice, envelope, start,
 ):
+    prepared_argument_2_2 = envelope()
+    prepared_argument_3_2 = replace(start, provider_binding='unassigned-provider')
     with pytest.raises(Rejected) as error:
-        service.admit(
-            alice,
-            envelope(),
-            replace(start, provider_binding="unassigned-provider"),
-        )
+        service.admit(alice, prepared_argument_2_2, prepared_argument_3_2)
 
     assert error.value.code == "provider_binding_denied"
     assert error.value.status == 403
@@ -216,16 +218,19 @@ def test_restored_grant_does_not_silently_clear_withdrawal_hold(service, store, 
 
 @pytest.mark.postgres
 def test_viewer_cannot_admit_even_in_granted_context(service, viewer, envelope, start):
+    prepared_argument_2_3 = envelope(principal='viewer', project_id='project-shared')
+    prepared_argument_3_3 = replace(start, project_id='project-shared')
     with pytest.raises(Rejected) as error:
-        service.admit(viewer, envelope(principal="viewer", project_id="project-shared"), replace(start, project_id="project-shared"))
+        service.admit(viewer, prepared_argument_2_3, prepared_argument_3_3)
     assert error.value.code == "write_denied"
 
 
 @pytest.mark.postgres
 def test_same_project_and_bot_grants_do_not_expose_another_operators_history(service, alice, bob, envelope, start):
     task = service.admit(alice, envelope(project_id="project-shared"), replace(start, bot_id="bot-beta", project_id="project-shared"))
+    prepared_envelope_2 = envelope(principal='bob', project_id='project-shared')
     with pytest.raises(Rejected) as error:
-        service.get(bob, task.task_id, envelope=envelope(principal="bob", project_id="project-shared"))
+        service.get(bob, task.task_id, envelope=prepared_envelope_2)
     assert error.value.code == "private_task"
 
 

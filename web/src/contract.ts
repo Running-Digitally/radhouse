@@ -6,13 +6,13 @@ type RecordValue = Record<string, unknown>;
 
 function record(value: unknown): RecordValue {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error("invalid_work_home");
+    throw new TypeError("invalid_work_home");
   }
   return value as RecordValue;
 }
 
 function string(value: unknown): string {
-  if (typeof value !== "string") throw new Error("invalid_work_home");
+  if (typeof value !== "string") throw new TypeError("invalid_work_home");
   return value;
 }
 
@@ -22,26 +22,26 @@ function nullableString(value: unknown): string | null {
 
 function integer(value: unknown): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value)) {
-    throw new Error("invalid_work_home");
+    throw new TypeError("invalid_work_home");
   }
   return value;
 }
 
 function stringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) throw new Error("invalid_work_home");
+  if (!Array.isArray(value)) throw new TypeError("invalid_work_home");
   return value.map(string);
 }
 
 function oneOf<T extends string>(value: unknown, choices: readonly T[]): T {
   if (typeof value !== "string" || !choices.includes(value as T)) {
-    throw new Error("invalid_work_home");
+    throw new TypeError("invalid_work_home");
   }
   return value as T;
 }
 
 function action(value: unknown): ActionState {
   const item = record(value);
-  if (typeof item.enabled !== "boolean") throw new Error("invalid_work_home");
+  if (typeof item.enabled !== "boolean") throw new TypeError("invalid_work_home");
   return { enabled: item.enabled, reason: nullableString(item.reason) };
 }
 
@@ -135,7 +135,7 @@ const roles = ["admin", "operator", "viewer"] as const;
 export function parseWorkHome(value: unknown): WorkHome {
   const item = record(value);
   if (!Array.isArray(item.agents) || !Array.isArray(item.tasks)) {
-    throw new Error("invalid_work_home");
+    throw new TypeError("invalid_work_home");
   }
   return {
     principal_id: string(item.principal_id),

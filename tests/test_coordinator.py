@@ -38,8 +38,9 @@ def test_cycle_is_bounded_and_continues_after_one_sanitized_failure():
 
 @pytest.mark.parametrize("worker_id", ["", " worker", "worker/one", "x" * 129])
 def test_worker_identity_is_bounded(worker_id):
+    prepared_argument_1 = RecordingService()
     with pytest.raises(ValueError, match="invalid_worker_id"):
-        Coordinator(RecordingService(), worker_id)
+        Coordinator(prepared_argument_1, worker_id)
 
 
 @pytest.mark.postgres
@@ -89,19 +90,24 @@ def test_empty_runtime_completion_stays_unverified_without_redispatch(
     fake_work.result = lambda *_: RuntimeResult("completed", content)
     task = service.admit(alice, envelope(), start)
     first = service.run(task.task_id)
-    assert first.phase != "closed" and first.outcome is None
+    assert first.phase != 'closed'
+    assert first.outcome is None
     assert "operation_unknown" in first.blockers
-    assert first.result is None and first.result_digest is None
+    assert first.result is None
+    assert first.result_digest is None
     recovered = service.recover(task.task_id)
     assert recovered.attempt_id == first.attempt_id
-    assert recovered.phase != "closed" and recovered.outcome is None
+    assert recovered.phase != 'closed'
+    assert recovered.outcome is None
     assert fake_work.start_count == 1
     with store.transaction() as tx:
         assert tx.publication(task.task_id) is None
     fake_work.result = lambda *_: RuntimeResult("failed")
     failed = service.recover(task.task_id)
-    assert failed.phase == "closed" and failed.outcome == "failed"
-    assert failed.result is None and fake_work.start_count == 1
+    assert failed.phase == 'closed'
+    assert failed.outcome == 'failed'
+    assert failed.result is None
+    assert fake_work.start_count == 1
 
 
 @pytest.mark.postgres

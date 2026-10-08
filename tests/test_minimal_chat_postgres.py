@@ -95,7 +95,8 @@ def test_actual_browser_login_reload_lost_response_and_text_rendering(real_chat,
         assert "A small plan" in hermes.requests[4][1]["input"][0]["content"][0]["text"]
         assert "simulated voice note" in hermes.requests[4][1]["input"][0]["content"][0]["text"]
         assert hermes.requests[4][1]["input"][0]["content"][1]["type"] == "image_url"
-        assert "large.bin" in hermes.requests[6][1]["input"] and "original saved, not read" in hermes.requests[6][1]["input"]
+        assert 'large.bin' in hermes.requests[6][1]['input']
+        assert 'original saved, not read' in hermes.requests[6][1]['input']
         assert len({body["session_id"] for _, body in hermes.requests}) == 1
         print("MINIMAL_CHAT_SCREENSHOT", tmp_path / "minimal-chat.png")
     finally:

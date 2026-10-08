@@ -37,15 +37,62 @@ export interface ConversationDraft {
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text?: string): HTMLElementTagNameMap[K] {
   const result = document.createElement(tag);
   result.className = className;
-  if (text !== undefined) result.textContent = text;
+  if (text !== undefined) { result.textContent = text; }
   return result;
 }
 
+function authorLabel(message: ConversationMessage, owner: string, displayName: string): string {
+  if (message.author !== owner) return displayName;
+  return message.source === "buzz" ? "You · Buzz" : "You · Radhouse";
+}
+
+function conversationMessage(message: ConversationMessage, owner: string, link: ConversationLink,
+  review: (taskId: string) => void, onReply: (message: ConversationMessage) => void): HTMLElement {
+  const item = node("article", `conversation-message${message.author === owner ? " conversation-message--own" : ""}`);
+  item.append(node("p", "message-author", authorLabel(message, owner, link.display_name)),
+    node("p", "message-content", message.content));
+  for (const file of message.files) {
+    const details = node("details", "message-reference");
+    details.append(node("summary", "", file.name));
+    if (file.encoding === "base64" && file.media_type.startsWith("image/")) {
+      const image = node("img", "message-reference__image");
+      image.src = `data:${file.media_type};base64,${file.content}`;
+      image.alt = file.name; image.loading = "lazy";
+      details.append(image);
+    } else {
+      details.append(node("pre", "message-content", file.content));
+    }
+    item.append(details);
+  }
+  const controls = node("div", "message-controls");
+  const time = node("time", "muted", new Date(message.created_at * 1000).toLocaleString());
+  time.dateTime = new Date(message.created_at * 1000).toISOString(); controls.append(time);
+  if (message.task_id) {
+    const reply = node("button", "button button--secondary", "Reply"); reply.type = "button";
+    reply.onclick = () => onReply(message);
+    const details = node("button", "button button--secondary", message.state === "result" ? "Review result" : "Task details"); details.type = "button";
+    details.onclick = () => { if (message.task_id) { review(message.task_id); } };
+    controls.append(reply, details);
+  }
+  item.append(controls); return item;
+}
+
+function restoreScroll(list: HTMLElement, draft: ConversationDraft): void {
+  if (list.isConnected) list.scrollTop = draft.atBottom !== false ? list.scrollHeight : (draft.scroll ?? 0);
+}
+
 /** Shared owner conversation; all content is text, never executable markup. */
+export interface ConversationActions {
+  owner: string;
+  refresh: () => Promise<void>;
+  review: (taskId: string) => void;
+  run: (button: HTMLButtonElement, work: () => Promise<void>) => Promise<void>;
+  filePicker: (open: boolean) => void;
+}
+
 export function conversationPanel(api: RadhouseApi, link: ConversationLink, history: ConversationHistory,
-  draft: ConversationDraft, owner: string, refresh: () => Promise<void>, review: (taskId: string) => void,
-  run: (button: HTMLButtonElement, work: () => Promise<void>) => Promise<void>,
-  filePicker: (open: boolean) => void): HTMLElement {
+  draft: ConversationDraft, actions: ConversationActions): HTMLElement {
+  const { owner, refresh, review, run, filePicker } = actions;
   const panel = node("section", "conversation-panel");
   const heading = node("div", "conversation-heading");
   heading.append(node("span", "agent-avatar", link.display_name.slice(0, 1)),
@@ -58,7 +105,7 @@ export function conversationPanel(api: RadhouseApi, link: ConversationLink, hist
   const historyControls = node("div", "conversation-history-controls");
   if (history.messages.length === 100) {
     const older = node("button", "button button--secondary", "Earlier messages"); older.type = "button";
-    older.onclick = () => void run(older, async () => { const first = history.messages[0]; if (first) draft.before = first.sequence; await refresh(); });
+    older.onclick = () => void run(older, async () => { const first = history.messages[0]; if (first) { draft.before = first.sequence; } await refresh(); });
     historyControls.append(older);
   }
   if (draft.before !== undefined) {
@@ -70,37 +117,13 @@ export function conversationPanel(api: RadhouseApi, link: ConversationLink, hist
   const list = node("div", "conversation-messages");
   list.setAttribute("role", "log"); list.setAttribute("aria-label", `Conversation with ${link.display_name}`);
   list.onscroll = () => { draft.scroll = list.scrollTop; draft.atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 40; };
-  queueMicrotask(() => { if (list.isConnected) list.scrollTop = draft.atBottom !== false ? list.scrollHeight : (draft.scroll ?? 0); });
-  if (!history.messages.length) list.append(node("p", "empty", "Ask Researcher a question or give it an assignment. Its progress and result will stay in this conversation."));
+  queueMicrotask(() => restoreScroll(list, draft));
+  if (!history.messages.length) { list.append(node("p", "empty", "Ask Researcher a question or give it an assignment. Its progress and result will stay in this conversation.")); }
   for (const message of history.messages) {
-    const own = message.author === owner;
-    const item = node("article", `conversation-message${own ? " conversation-message--own" : ""}`);
-    item.append(node("p", "message-author", own ? `You · ${message.source === "buzz" ? "Buzz" : "Radhouse"}` : link.display_name),
-      node("p", "message-content", message.content));
-    for (const file of message.files) {
-      const details = node("details", "message-reference");
-      details.append(node("summary", "", file.name));
-      if (file.encoding === "base64" && file.media_type.startsWith("image/")) {
-        const image = node("img", "message-reference__image");
-        image.src = `data:${file.media_type};base64,${file.content}`;
-        image.alt = file.name; image.loading = "lazy";
-        details.append(image);
-      } else {
-        details.append(node("pre", "message-content", file.content));
-      }
-      item.append(details);
-    }
-    const controls = node("div", "message-controls");
-    const time = node("time", "muted", new Date(message.created_at * 1000).toLocaleString());
-    time.dateTime = new Date(message.created_at * 1000).toISOString(); controls.append(time);
-    if (message.task_id) {
-      const reply = node("button", "button button--secondary", "Reply"); reply.type = "button";
-      reply.onclick = () => { draft.reply = message; clearReply.hidden = false; replyLabel.textContent = `Replying to: ${message.content.slice(0, 100)}`; composer.focus(); };
-      const details = node("button", "button button--secondary", message.state === "result" ? "Review result" : "Task details"); details.type = "button";
-      details.onclick = () => { if (message.task_id) review(message.task_id); };
-      controls.append(reply, details);
-    }
-    item.append(controls); list.append(item);
+    list.append(conversationMessage(message, owner, link, review, selected => {
+      draft.reply = selected; clearReply.hidden = false;
+      replyLabel.textContent = `Replying to: ${selected.content.slice(0, 100)}`; composer.focus();
+    }));
   }
   panel.append(list);
   const form = node("form", "conversation-compose");
@@ -134,7 +157,7 @@ export function conversationPanel(api: RadhouseApi, link: ConversationLink, hist
   });
   form.append(replyLabel, clearReply, label, filesLabel, fileNames, submit);
   form.onsubmit = event => {
-    event.preventDefault(); if (!draft.content.trim()) return;
+    event.preventDefault(); if (!draft.content.trim()) { return; }
     void run(submit, async () => {
       await api.sendMessage(link.link_id, draft.content, draft.reply?.message_id ?? null, draft.files);
       draft.content = ""; draft.reply = null; draft.files = []; delete draft.before;

@@ -150,7 +150,9 @@ def test_local_login_requires_password_totp_origin_and_session_csrf(store):
         assert login.json()["principal_id"] == principal
         assert login.json()["project_id"] == project
         cookie = login.headers["set-cookie"].lower()
-        assert "httponly" in cookie and "secure" in cookie and "samesite=strict" in cookie
+        assert 'httponly' in cookie
+        assert 'secure' in cookie
+        assert 'samesite=strict' in cookie
 
         refreshed = client.get("/auth/session")
         assert refreshed.status_code == 200

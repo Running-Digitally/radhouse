@@ -43,7 +43,8 @@ def relay():
     state = {"response": [], "calls": [], "status": 200}
 
     def receive(request):
-        assert request.method == "POST" and request.url.host == "relay.test"
+        assert request.method == 'POST'
+        assert request.url.host == 'relay.test'
         auth, _ = nip98(
             request.headers["Authorization"],
             str(request.url),
@@ -225,8 +226,9 @@ def test_duplicate_delivery_reuses_signed_event_but_new_transport_nonce(relay):
 def test_delivery_requires_exact_acknowledgment(relay, response):
     client, _, state, *_ = relay
     state["response"] = response
+    prepared_argument_1 = client.event(9, 'reply')
     with pytest.raises(Rejected, match="buzz_delivery_unconfirmed"):
-        client.publish(client.event(9, "reply"))
+        client.publish(prepared_argument_1)
 
 
 @pytest.mark.parametrize(
@@ -256,8 +258,9 @@ def test_only_exact_ancestry_rejection_is_permanent(relay, path, status, body, e
 def test_ancestry_error_body_remains_bounded_and_validated(relay, raw, expected):
     client, _, state, *_ = relay
     state.update(status=400, raw=raw)
+    prepared_argument_1_2 = client.event(9, 'reply')
     with pytest.raises(Rejected, match=expected):
-        client.publish(client.event(9, "reply"))
+        client.publish(prepared_argument_1_2)
 
 
 def test_read_preserves_oldest_first_order_and_rejects_saturation(relay):
@@ -316,5 +319,6 @@ def test_relay_error_is_not_empty_history(relay, status):
     ],
 )
 def test_origin_is_pinned(origin):
+    prepared_argument_3 = PrivateKey().secret.hex()
     with pytest.raises(ValueError, match="invalid_relay_origin"):
-        BuzzRelay(origin, "0" * 64, PrivateKey().secret.hex())
+        BuzzRelay(origin, '0' * 64, prepared_argument_3)

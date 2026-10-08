@@ -1,6 +1,7 @@
 """One private Buzz project channel coordinated by the Radhouse identity."""
 
 import re
+from dataclasses import dataclass
 
 from radhouse.application.conversations import Conversations
 from radhouse.application.project_coordination import (
@@ -34,6 +35,49 @@ _BUILD = re.compile(r"\b(?:build|implement|fix|change|improve|update|feature|imp
 _PAUSE = re.compile(r"\s*(?:pause|hold)(?:\s+(?:this|the))?(?:\s+(?:work|task|project))?[?.! ]*", re.I)
 _RESUME = re.compile(r"\s*(?:resume|continue)(?:\s+(?:this|the))?(?:\s+(?:work|task|project))?[?.! ]*", re.I)
 _STOP = re.compile(r"\s*(?:stop|cancel)(?:\s+(?:this|the))?(?:\s+(?:work|task|project))?[?.! ]*", re.I)
+
+
+REPLY_PREFIX = "reply:"
+
+
+def _handoff_phase(role):
+    if "builder" in role:
+        return "building"
+    if "deploy" in role:
+        return "deployment"
+    if "research" in role:
+        return "research"
+    return "review"
+
+
+def _execution_phase(role):
+    if "research" in role:
+        return "research"
+    if "review" in role:
+        return "review"
+    if "deploy" in role:
+        return "deployment"
+    return "building"
+
+
+def _project_control(intent):
+    for action, pattern in (("pause", _PAUSE), ("resume", _RESUME), ("stop", _STOP)):
+        if pattern.fullmatch(intent):
+            return action
+    return None
+
+
+def _active_agent_name(state, bots):
+    if state.planning_task_id is not None:
+        return "Radhouse"
+    if state.active_bot_id in bots:
+        return bots[state.active_bot_id].display_name
+    return None
+
+
+@dataclass
+class _ProjectEventState:
+    state: ProjectCoordination
 
 
 class ProjectBuzzConversationCycle:
@@ -94,7 +138,7 @@ class ProjectBuzzConversationCycle:
         mentioned, addressed, _ = self._mentioned(event, bots)
         if addressed or mentioned or reply_target(event):
             return False
-        content = self._coordinator_content(event, bots)
+        content = self._coordinator_content(event)
         if (
             _STATUS.fullmatch(content)
             or _ACCEPT.search(content)
@@ -325,6 +369,93 @@ class ProjectBuzzConversationCycle:
                     processed=True,
                 )
 
+
+    def _automatic_review_ready(self, state, task, bot, roles):
+        return (
+            self.automatic_private_release
+            and task.outcome == "completed"
+            and task.result
+            and "builder" in bot.role_name.casefold()
+            and state.source_revision
+            and state.source_revision == state.preview_revision
+            and state.repository and state.pull_request and state.preview_digest
+            and state.preview_url and roles.get("reviewer") is not None
+        )
+
+    def _automatic_deployment_ready(self, state, task, bot, roles):
+        return (
+            self.automatic_private_release
+            and task.outcome == "completed"
+            and task.result
+            and "reviewer" in bot.role_name.casefold()
+            and state.reviewer_verdict == "READY"
+            and state.reviewed_revision == state.preview_revision == state.source_revision
+            and state.repository and state.pull_request and state.preview_digest
+            and state.preview_url and self.private_deployment_url
+            and (state.deployment_status != "healthy"
+            or state.deployment_url in (None, self.private_deployment_url))
+            and roles.get("deployer") is not None
+        )
+
+
+    def _handoff_after_result(self, state, task, bot, roles, bots):
+        # The project policy may admit one automatic private release after the
+        # owner accepted the exact preview and Reviewer approved the same head.
+        target = state.handoff_bot_id if task.outcome == "completed" and task.result else None
+        brief = state.handoff_brief if target else None
+        files = (
+            task.files
+            if target and "research" in bot.role_name.casefold()
+            else ()
+        )
+        if (
+            task.outcome == "completed"
+            and task.result
+            and "reviewer" in bot.role_name.casefold()
+            and state.reviewer_verdict == "CHANGES_NEEDED"
+        ):
+            target = roles.get("builder").link.bot_id if roles.get("builder") else None
+            brief = "Address the Reviewer findings against the same pull request and update the same preview."
+            files = ()
+        elif (
+            self._automatic_review_ready(state, task, bot, roles)
+        ):
+            target = roles["reviewer"].link.bot_id
+            brief = (
+                f"Review {state.repository} pull request {state.pull_request} at exact "
+                f"source and preview revision {state.preview_revision} "
+                f"(preview digest {state.preview_digest}) at {state.preview_url}. "
+                "Verify the pull request and preview correspond to that revision. "
+                "Run independent code, test, DOM and visual checks. End with READY or "
+                "CHANGES_NEEDED and a RADHOUSE_PROJECT_UPDATE report containing "
+                "reviewed_revision and reviewer_verdict."
+            )
+            files = ()
+        elif (
+            self._automatic_deployment_ready(state, task, bot, roles)
+        ):
+            target = roles["deployer"].link.bot_id
+            brief = (
+                f"The project is opted into automatic private release. Builder's preview "
+                f"revision {state.preview_revision} at {state.preview_url} "
+                f"(digest {state.preview_digest}) received a READY review for that "
+                f"exact revision. Release only {state.repository} PR "
+                f"{state.pull_request} at head {state.reviewed_revision} to the project's "
+                f"configured private target {self.private_deployment_url}. Recheck the PR head, "
+                "merge it, verify the merge tree matches the reviewed tree, deploy only the "
+                "immutable main revision, check health and rollback, and report the verified "
+                "deployment URL and revision. Stop on any mismatch or missing target."
+            )
+            files = ()
+        if target and brief:
+            selected = next((item for item in self.specialists if item.link.bot_id == target), None)
+            if selected is not None:
+                state = self._handoff(
+                    state, selected, task.task_id, brief, bots, files=files
+                )
+        return state
+
+
     def _reconcile(self, state, roles, bots):
         if state.active_task_id is None:
             return state
@@ -371,79 +502,7 @@ class ProjectBuzzConversationCycle:
             task_id=task.task_id,
         )
         state = updated
-        # The project policy may admit one automatic private release after the
-        # owner accepted the exact preview and Reviewer approved the same head.
-        target = state.handoff_bot_id if task.outcome == "completed" and task.result else None
-        brief = state.handoff_brief if target else None
-        files = (
-            task.files
-            if target and "research" in bot.role_name.casefold()
-            else ()
-        )
-        if (
-            task.outcome == "completed"
-            and task.result
-            and "reviewer" in bot.role_name.casefold()
-            and state.reviewer_verdict == "CHANGES_NEEDED"
-        ):
-            target = roles.get("builder").link.bot_id if roles.get("builder") else None
-            brief = "Address the Reviewer findings against the same pull request and update the same preview."
-            files = ()
-        elif (
-            self.automatic_private_release
-            and task.outcome == "completed"
-            and task.result
-            and "builder" in bot.role_name.casefold()
-            and state.source_revision
-            and state.source_revision == state.preview_revision
-            and state.repository and state.pull_request and state.preview_digest
-            and state.preview_url and roles.get("reviewer") is not None
-        ):
-            target = roles["reviewer"].link.bot_id
-            brief = (
-                f"Review {state.repository} pull request {state.pull_request} at exact "
-                f"source and preview revision {state.preview_revision} "
-                f"(preview digest {state.preview_digest}) at {state.preview_url}. "
-                "Verify the pull request and preview correspond to that revision. "
-                "Run independent code, test, DOM and visual checks. End with READY or "
-                "CHANGES_NEEDED and a RADHOUSE_PROJECT_UPDATE report containing "
-                "reviewed_revision and reviewer_verdict."
-            )
-            files = ()
-        elif (
-            self.automatic_private_release
-            and task.outcome == "completed"
-            and task.result
-            and "reviewer" in bot.role_name.casefold()
-            and state.reviewer_verdict == "READY"
-            and state.reviewed_revision == state.preview_revision == state.source_revision
-            and state.repository and state.pull_request and state.preview_digest
-            and state.preview_url and self.private_deployment_url
-            and (state.deployment_status != "healthy"
-                 or state.deployment_url in (None, self.private_deployment_url))
-            and roles.get("deployer") is not None
-        ):
-            target = roles["deployer"].link.bot_id
-            brief = (
-                f"The project is opted into automatic private release. Builder's preview "
-                f"revision {state.preview_revision} at {state.preview_url} "
-                f"(digest {state.preview_digest}) received a READY review for that "
-                f"exact revision. Release only {state.repository} PR "
-                f"{state.pull_request} at head {state.reviewed_revision} to the project's "
-                f"configured private target {self.private_deployment_url}. Recheck the PR head, "
-                "merge it, verify the merge tree matches the reviewed tree, deploy only the "
-                "immutable main revision, check health and rollback, and report the verified "
-                "deployment URL and revision. Stop on any mismatch or missing target."
-            )
-            files = ()
-        if target and brief:
-            selected = next((item for item in self.specialists if item.link.bot_id == target), None)
-            if selected is not None:
-                state = self._handoff(
-                    state, selected, task.task_id, brief, bots, files=files
-                )
-        return state
-
+        return self._handoff_after_result(state, task, bot, roles, bots)
     def _handoff(self, state, selected, previous_task_id, brief, bots, *, files=()):
         bot = bots[selected.link.bot_id]
         key = "project-handoff:" + fingerprint(
@@ -479,10 +538,7 @@ class ProjectBuzzConversationCycle:
             active_task_id=task.task_id,
             latest_task_id=task.task_id,
             phase=(
-                "building" if "builder" in role else
-                "deployment" if "deploy" in role else
-                "research" if "research" in role else
-                "review"
+                _handoff_phase(role)
             ),
             handoff_bot_id=None,
             handoff_brief=None,
@@ -511,7 +567,7 @@ class ProjectBuzzConversationCycle:
             # A message to Radhouse is a coordination request. Buzz may also
             # tag an agent named in that request; only visible @Agent addresses
             # after the coordinator name explicitly select a specialist.
-            content = self._coordinator_content(event, bots)
+            content = self._coordinator_content(event)
             matches = [
                 item for item in self.specialists
                 if (bot := bots.get(item.link.bot_id)) is not None
@@ -537,7 +593,7 @@ class ProjectBuzzConversationCycle:
                 matches.append(item)
         return matches, re.match(r"^\s*@[^\s,:]+", event["content"]) is not None, False
 
-    def _coordinator_content(self, event, bots):
+    def _coordinator_content(self, event):
         """Read intent after an owner-facing @Radhouse prefix; retain the signed source unchanged."""
         content = event["content"].strip()
         coordinator_name = self._coordinator_name()
@@ -553,19 +609,25 @@ class ProjectBuzzConversationCycle:
         candidate = getattr(self.coordinator, "candidate", None)
         return getattr(candidate, "display_name", None) or "Radhouse"
 
-    def _select(self, event, state, roles, bots):
-        mentioned, addressed, coordinator_addressed = self._mentioned(event, bots)
-        if addressed:
-            if len(mentioned) != 1:
-                return None, "Mention exactly one assigned project agent.", False, state
-            if (
-                state.active_bot_id is not None
-                and mentioned[0].link.bot_id != state.active_bot_id
-            ):
-                active = bots.get(state.active_bot_id)
-                name = active.display_name if active else "Another project agent"
-                return None, f"{name} is still working. Wait for that step to finish before starting another agent.", False, state
-            return mentioned[0], None, True, state
+
+    def _addressed_selection(self, mentioned, state, bots):
+        if len(mentioned) != 1:
+            return None, "Mention exactly one assigned project agent.", False, state
+        return self._selected_agent(mentioned[0], state, bots, True)
+
+
+    def _selected_agent(self, selected, state, bots, addressed):
+        if (
+            state.active_bot_id is not None
+            and selected.link.bot_id != state.active_bot_id
+        ):
+            active = bots.get(state.active_bot_id)
+            name = active.display_name if active else "Another project agent"
+            return None, f"{name} is still working. Wait for that step to finish before starting another agent.", False, state
+        return selected, None, addressed, state
+
+
+    def _reply_selection(self, event, state, bots, coordinator_addressed):
         parent_id = reply_target(event)
         if parent_id and not coordinator_addressed:
             with self.store.transaction() as tx:
@@ -576,48 +638,45 @@ class ProjectBuzzConversationCycle:
                      if item.link.link_id == parent["message"].link_id), None
                 )
                 if selected is not None:
-                    if (
-                        state.active_bot_id is not None
-                        and selected.link.bot_id != state.active_bot_id
-                    ):
-                        active = bots.get(state.active_bot_id)
-                        name = active.display_name if active else "Another project agent"
-                        return None, f"{name} is still working. Wait for that step to finish before starting another agent.", False, state
-                    return selected, None, False, state
-        content = self._coordinator_content(event, bots)
-        research, build = bool(_RESEARCH.search(content)), bool(_BUILD.search(content))
-        new_work = research or build
-        if _STATUS.fullmatch(content):
-            latest = self._task(state.latest_task_id) if state.latest_task_id else None
-            selected = next((item for item in self.specialists
-                             if item.link.bot_id == state.active_bot_id), None) or next(
-                (item for item in self.specialists
-                 if latest is not None and item.link.bot_id == latest.bot_id), None,
-            )
-            current = self._task(state.active_task_id) if state.active_task_id else latest
-            with self.store.transaction() as tx:
-                activity = (
-                    tx.latest_event(current.task_id, "runtime_activity")
-                    if current is not None
-                    else None
-                )
-            name = (
-                "Radhouse"
-                if state.planning_task_id is not None
-                else bots.get(state.active_bot_id).display_name
-                if state.active_bot_id in bots
+                    return self._selected_agent(selected, state, bots, False)
+        return None
+
+
+    def _status_selection(self, state, bots):
+        latest = self._task(state.latest_task_id) if state.latest_task_id else None
+        selected = next((item for item in self.specialists
+                         if item.link.bot_id == state.active_bot_id), None) or next(
+            (item for item in self.specialists
+             if latest is not None and item.link.bot_id == latest.bot_id), None,
+        )
+        current = self._task(state.active_task_id) if state.active_task_id else latest
+        with self.store.transaction() as tx:
+            activity = (
+                tx.latest_event(current.task_id, "runtime_activity")
+                if current is not None
                 else None
             )
-            return selected, status_text(
-                state,
-                name,
-                task=current,
-                activity=activity.data if activity else None,
-                now=int(self.service._now().timestamp()),
-            ), False, state
-        if state.active_bot_id:
-            selected = next((item for item in self.specialists if item.link.bot_id == state.active_bot_id), None)
-            return selected, None, False, state
+        name = (
+            _active_agent_name(state, bots)
+        )
+        return selected, status_text(
+            state,
+            name,
+            task=current,
+            activity=activity.data if activity else None,
+            now=int(self.service._now().timestamp()),
+        ), False, state
+
+
+    def _deployment_selection(self, state, roles):
+        if (state.reviewer_verdict != "READY"
+                or state.reviewed_revision != state.preview_revision
+                or state.preview_revision != state.source_revision):
+            return None, "Deployment is waiting for a READY review of the current revision.", False, state
+        return roles.get("deployer"), None, False, state
+
+
+    def _intent_selection(self, content, state, roles, research, build, new_work):
         if _ACCEPT.search(content):
             try:
                 state = accept_preview(state)
@@ -625,11 +684,7 @@ class ProjectBuzzConversationCycle:
                 return None, "The current preview revision is not recorded yet, so I cannot send it to review.", False, state
             return roles.get("reviewer"), None, False, state
         if _DEPLOY.search(content) and not new_work:
-            if (state.reviewer_verdict != "READY"
-                    or state.reviewed_revision != state.preview_revision
-                    or state.preview_revision != state.source_revision):
-                return None, "Deployment is waiting for a READY review of the current revision.", False, state
-            return roles.get("deployer"), None, False, state
+            return self._deployment_selection(state, roles)
         if _REVIEW.search(content) and not new_work:
             return roles.get("reviewer"), None, False, state
         if state.phase in {"preview_feedback", "correction"}:
@@ -643,6 +698,23 @@ class ProjectBuzzConversationCycle:
             return roles["researcher"], None, False, state
         return roles.get("builder") or roles.get("researcher"), None, False, state
 
+
+    def _select(self, event, state, roles, bots):
+        mentioned, addressed, coordinator_addressed = self._mentioned(event, bots)
+        if addressed:
+            return self._addressed_selection(mentioned, state, bots)
+        selection = self._reply_selection(event, state, bots, coordinator_addressed)
+        if selection is not None:
+            return selection
+        content = self._coordinator_content(event)
+        research, build = bool(_RESEARCH.search(content)), bool(_BUILD.search(content))
+        new_work = research or build
+        if _STATUS.fullmatch(content):
+            return self._status_selection(state, bots)
+        if state.active_bot_id:
+            selected = next((item for item in self.specialists if item.link.bot_id == state.active_bot_id), None)
+            return selected, None, False, state
+        return self._intent_selection(content, state, roles, research, build, new_work)
     def _task(self, task_id):
         with self.store.transaction() as tx:
             return tx.task(task_id)
@@ -676,15 +748,12 @@ class ProjectBuzzConversationCycle:
             ).validate()
             response = updated.status_note
         elif action == "resume":
-            controlled = self.service.resume(
+            self.service.resume(
                 actor, task.task_id, task.state_revision, envelope=envelope
             )
             role = bots[task.bot_id].role_name.casefold()
             phase = (
-                "research" if "research" in role else
-                "review" if "review" in role else
-                "deployment" if "deploy" in role else
-                "building"
+                _execution_phase(role)
             )
             updated = state.evolve(
                 phase=phase,
@@ -710,6 +779,231 @@ class ProjectBuzzConversationCycle:
         self._save_state(state, updated)
         return updated, response
 
+
+    def _request_review(self, context, event, files, selected, bots):
+        if (
+            _ACCEPT.search(event["content"])
+            and context.state.accepted_preview_revision != context.state.preview_revision
+        ):
+            try:
+                accepted = accept_preview(context.state)
+            except Rejected:
+                self._record_owner_event(event, files=files, state="review_waiting")
+                self._note(
+                    REPLY_PREFIX + event["id"],
+                    "The current preview revision is not recorded yet, so I cannot send it to review.",
+                    reply_to=event["id"],
+                )
+                return context.state
+            self._save_state(context.state, accepted)
+            context.state = accepted
+        if (not context.state.preview_revision
+                or context.state.preview_revision != context.state.source_revision
+                or not context.state.preview_digest
+                or not context.state.preview_url
+                or not context.state.pull_request):
+            self._record_owner_event(event, files=files, state="review_waiting")
+            self._note(
+                REPLY_PREFIX + event["id"],
+                "Review needs a current pull request and matching preview revision from Builder.",
+                reply_to=event["id"],
+            )
+            return context.state
+        previous = context.state.latest_task_id
+        if previous is None:
+            self._note(REPLY_PREFIX + event["id"], "There is no preview task to review.", reply_to=event["id"])
+            return context.state
+        with self.store.transaction() as tx:
+            tx.save_conversation_message(
+                ConversationMessage(
+                    event["id"], self.link.link_id, self.link.principal_id,
+                    event["content"], "buzz", event["created_at"],
+                    task_id=previous, reply_to=reply_target(event),
+                    state="preview_accepted" if _ACCEPT.search(event["content"]) else "review_requested",
+                ), event=event, processed=True,
+            )
+        brief = (
+            f"Review pull request {context.state.pull_request} at the exact recorded source and preview revision "
+            f"{context.state.preview_revision} (preview digest {context.state.preview_digest}) at {context.state.preview_url}. "
+            "Verify the pull request and preview correspond to that revision. "
+            "Run independent code, test, DOM and visual checks. End with READY or CHANGES_NEEDED and "
+            "a RADHOUSE_PROJECT_UPDATE report containing reviewed_revision and reviewer_verdict."
+        )
+        context.state = self._handoff(context.state, selected, previous, brief, bots)
+        return context.state
+
+
+    def _request_deployment(self, context, event, files, selected, bots):
+        if (
+            context.state.reviewer_verdict != "READY"
+            or context.state.reviewed_revision != context.state.preview_revision
+            or context.state.preview_revision != context.state.source_revision
+        ):
+            self._record_owner_event(event, files=files, state="deployment_waiting")
+            self._note(
+                REPLY_PREFIX + event["id"],
+                "Deployment is waiting for a READY review of the current revision.",
+                reply_to=event["id"],
+            )
+            return context.state
+        previous = context.state.latest_task_id
+        if previous is None:
+            self._note(REPLY_PREFIX + event["id"], "There is no reviewed task to deploy.", reply_to=event["id"])
+            return context.state
+        prior_task = self._task(previous)
+        # A cancelled duplicate review is not valid follow-up
+        # context. The exact READY revision still gates deployment.
+        if prior_task is None or prior_task.phase != "closed" or prior_task.result is None:
+            previous = None
+        with self.store.transaction() as tx:
+            tx.save_conversation_message(
+                ConversationMessage(
+                    event["id"], self.link.link_id, self.link.principal_id,
+                    event["content"], "buzz", event["created_at"],
+                    task_id=previous, reply_to=reply_target(event),
+                    state="deployment_approved",
+                ), event=event, processed=True,
+            )
+        target_instruction = (
+            f"Use the configured private target {self.private_deployment_url} "
+            "and existing authority."
+            if self.automatic_private_release
+            else "Use the project's existing target and authority."
+        )
+        brief = (
+            f"The owner approved merge and private deployment of reviewed revision {context.state.reviewed_revision} "
+            f"from {context.state.pull_request}. The recorded Reviewer verdict is READY for the matching "
+            f"preview at {context.state.preview_url} (digest {context.state.preview_digest}). "
+            f"{target_instruction} "
+            "Verify merge, deployment, health and rollback; "
+            "end with RADHOUSE_PROJECT_UPDATE containing only verified facts. "
+            "If merge or deployment did not happen, report deployment_status=failed "
+            "without a claimed merged_revision, deployed_revision or deployment_url."
+        )
+        context.state = self._handoff(context.state, selected, previous, brief, bots)
+        return context.state
+
+
+    def _defer_project_attachment(self, context, event, files, message):
+        if context.state.pending_message_id is not None:
+            self._record_owner_event(
+                event, files=files, task_id=context.state.active_task_id,
+                state="pending_limit",
+            )
+            self._note(
+                REPLY_PREFIX + event["id"],
+                "One attachment follow-up is already saved behind the active task. Wait for that handoff before sending another file set.",
+                reply_to=event["id"],
+            )
+            return context.state
+        with self.store.transaction() as tx:
+            tx.save_conversation_message(
+                message,
+                route=MessageRoute("start", follows_task_id=context.state.active_task_id),
+                event=event,
+            )
+        old = context.state
+        context.state = context.state.evolve(
+            pending_message_id=message.message_id,
+            status_note="Attachment feedback is saved behind the active task.",
+        ).validate()
+        self._save_state(old, context.state)
+        self._note(
+            "pending:" + event["id"],
+            "I saved these attachments with your feedback. They will become the next correlated step after the active task finishes.",
+            reply_to=event["id"],
+        )
+        return context.state
+
+
+    def _route_project_message(self, context, event, selected, addressed, bots, files):
+        parent = reply_target(event)
+        message = ConversationMessage(
+            event["id"], selected.link.link_id, selected.link.principal_id,
+            event["content"], "buzz", event["created_at"],
+            reply_to=parent, files=files, addressed=addressed,
+        )
+        if files and context.state.active_task_id:
+            return self._defer_project_attachment(context, event, files, message)
+        self.conversations.receive(selected.link, message, event=event)
+        completed = self.conversations.process(selected.link, message.message_id)
+        task = self._task(completed.task_id) if completed.task_id else None
+        if task and task.phase != "closed":
+            old = context.state
+            role = bots[task.bot_id].role_name.casefold()
+            phase = (
+                _execution_phase(role)
+            )
+            context.state = context.state.evolve(
+                active_bot_id=task.bot_id, active_task_id=task.task_id,
+                latest_task_id=task.task_id, phase=phase,
+                status_note=f"{bots[task.bot_id].display_name} is working.",
+            ).validate()
+            self._save_state(old, context.state)
+            if not addressed:
+                self._note(
+                    "coord-route:" + event["id"],
+                    f"I routed this step to {bots[task.bot_id].display_name}.",
+                    reply_to=event["id"], task_id=task.task_id,
+                )
+        return context.state
+
+
+    def _process_project_event(self, event, state, roles, bots):
+        context = _ProjectEventState(state)
+        files = ()
+        try:
+            files = reference_files(self.relay, event)
+            if not event["content"].strip() or len(event["content"]) > 4096:
+                raise Rejected("conversation_message_requires_brief", 422)
+            context.state = self._reconcile(context.state, roles, bots)
+            intent = self._coordinator_content(event)
+            control = (
+                _project_control(intent)
+            )
+            if control:
+                context.state, response = self._control(context.state, event, control, bots)
+                self._record_owner_event(
+                    event, files=files, task_id=context.state.active_task_id,
+                    state="project_control:" + control,
+                )
+                self._note(REPLY_PREFIX + event["id"], response, reply_to=event["id"])
+                return context.state
+            if self._planning_candidate(event, context.state, roles, bots):
+                context.state = self._start_planning(context.state, event, files, roles, bots)
+                return context.state
+            selected, response, addressed, selected_state = self._select(event, context.state, roles, bots)
+            if selected_state != context.state:
+                self._save_state(context.state, selected_state)
+                context.state = selected_state
+            if response:
+                self._record_owner_event(
+                    event, files=files, task_id=context.state.active_task_id,
+                    state="status" if _STATUS.fullmatch(intent) else "coordination",
+                )
+                self._note(REPLY_PREFIX + event["id"], response, reply_to=event["id"])
+                return context.state
+            if selected is None:
+                self._record_owner_event(event, files=files, task_id=context.state.active_task_id)
+                self._note(REPLY_PREFIX + event["id"], "No assigned agent can take that step yet.", reply_to=event["id"])
+                return context.state
+            selected_role = bots[selected.link.bot_id].role_name.casefold()
+            if ("reviewer" in selected_role
+                    and (_ACCEPT.search(event["content"]) or _REVIEW.search(event["content"]))):
+                return self._request_review(context, event, files, selected, bots)
+            if "deployer" in selected_role and _DEPLOY.search(event["content"]):
+                return self._request_deployment(context, event, files, selected, bots)
+            return self._route_project_message(context, event, selected, addressed, bots, files)
+        except Rejected as error:
+            self._record_owner_event(event, state="rejected:" + error.code)
+            self._note(
+                REPLY_PREFIX + event["id"],
+                "I could not safely route that project message. The project state is preserved; open Radhouse for details.",
+                reply_to=event["id"],
+            )
+        return context.state
+
+
     def ingress(self):
         self._authorize()
         roles, bots = self._roles()
@@ -727,10 +1021,7 @@ class ProjectBuzzConversationCycle:
                     active_bot_id=task.bot_id, active_task_id=task.task_id,
                     latest_task_id=task.task_id, pending_message_id=None,
                     phase=(
-                        "research" if "research" in bots[task.bot_id].role_name.casefold() else
-                        "review" if "review" in bots[task.bot_id].role_name.casefold() else
-                        "deployment" if "deploy" in bots[task.bot_id].role_name.casefold() else
-                        "building"
+                        _execution_phase(bots[task.bot_id].role_name.casefold())
                     ),
                 ).validate()
                 self._save_state(old, state)
@@ -747,214 +1038,7 @@ class ProjectBuzzConversationCycle:
             with self.store.transaction() as tx:
                 if tx.conversation_message(event["id"]) is not None:
                     continue
-            files = ()
-            try:
-                files = reference_files(self.relay, event)
-                if not event["content"].strip() or len(event["content"]) > 4096:
-                    raise Rejected("conversation_message_requires_brief", 422)
-                state = self._reconcile(state, roles, bots)
-                intent = self._coordinator_content(event, bots)
-                control = (
-                    "pause" if _PAUSE.fullmatch(intent) else
-                    "resume" if _RESUME.fullmatch(intent) else
-                    "stop" if _STOP.fullmatch(intent) else
-                    None
-                )
-                if control:
-                    state, response = self._control(state, event, control, bots)
-                    self._record_owner_event(
-                        event, files=files, task_id=state.active_task_id,
-                        state="project_control:" + control,
-                    )
-                    self._note("reply:" + event["id"], response, reply_to=event["id"])
-                    continue
-                if self._planning_candidate(event, state, roles, bots):
-                    state = self._start_planning(state, event, files, roles, bots)
-                    continue
-                selected, response, addressed, selected_state = self._select(event, state, roles, bots)
-                if selected_state != state:
-                    self._save_state(state, selected_state)
-                    state = selected_state
-                if response:
-                    self._record_owner_event(
-                        event, files=files, task_id=state.active_task_id,
-                        state="status" if _STATUS.fullmatch(intent) else "coordination",
-                    )
-                    self._note("reply:" + event["id"], response, reply_to=event["id"])
-                    continue
-                if selected is None:
-                    self._record_owner_event(event, files=files, task_id=state.active_task_id)
-                    self._note("reply:" + event["id"], "No assigned agent can take that step yet.", reply_to=event["id"])
-                    continue
-                selected_role = bots[selected.link.bot_id].role_name.casefold()
-                if ("reviewer" in selected_role
-                        and (_ACCEPT.search(event["content"]) or _REVIEW.search(event["content"]))):
-                    if (
-                        _ACCEPT.search(event["content"])
-                        and state.accepted_preview_revision != state.preview_revision
-                    ):
-                        try:
-                            accepted = accept_preview(state)
-                        except Rejected:
-                            self._record_owner_event(event, files=files, state="review_waiting")
-                            self._note(
-                                "reply:" + event["id"],
-                                "The current preview revision is not recorded yet, so I cannot send it to review.",
-                                reply_to=event["id"],
-                            )
-                            continue
-                        self._save_state(state, accepted)
-                        state = accepted
-                    if (not state.preview_revision
-                            or state.preview_revision != state.source_revision
-                            or not state.preview_digest
-                            or not state.preview_url
-                            or not state.pull_request):
-                        self._record_owner_event(event, files=files, state="review_waiting")
-                        self._note(
-                            "reply:" + event["id"],
-                            "Review needs a current pull request and matching preview revision from Builder.",
-                            reply_to=event["id"],
-                        )
-                        continue
-                    previous = state.latest_task_id
-                    if previous is None:
-                        self._note("reply:" + event["id"], "There is no preview task to review.", reply_to=event["id"])
-                        continue
-                    with self.store.transaction() as tx:
-                        tx.save_conversation_message(
-                            ConversationMessage(
-                                event["id"], self.link.link_id, self.link.principal_id,
-                                event["content"], "buzz", event["created_at"],
-                                task_id=previous, reply_to=reply_target(event),
-                                state="preview_accepted" if _ACCEPT.search(event["content"]) else "review_requested",
-                            ), event=event, processed=True,
-                        )
-                    brief = (
-                        f"Review pull request {state.pull_request} at the exact recorded source and preview revision "
-                        f"{state.preview_revision} (preview digest {state.preview_digest}) at {state.preview_url}. "
-                        "Verify the pull request and preview correspond to that revision. "
-                        "Run independent code, test, DOM and visual checks. End with READY or CHANGES_NEEDED and "
-                        "a RADHOUSE_PROJECT_UPDATE report containing reviewed_revision and reviewer_verdict."
-                    )
-                    state = self._handoff(state, selected, previous, brief, bots)
-                    continue
-                if "deployer" in selected_role and _DEPLOY.search(event["content"]):
-                    if (
-                        state.reviewer_verdict != "READY"
-                        or state.reviewed_revision != state.preview_revision
-                        or state.preview_revision != state.source_revision
-                    ):
-                        self._record_owner_event(event, files=files, state="deployment_waiting")
-                        self._note(
-                            "reply:" + event["id"],
-                            "Deployment is waiting for a READY review of the current revision.",
-                            reply_to=event["id"],
-                        )
-                        continue
-                    previous = state.latest_task_id
-                    if previous is None:
-                        self._note("reply:" + event["id"], "There is no reviewed task to deploy.", reply_to=event["id"])
-                        continue
-                    prior_task = self._task(previous)
-                    # A cancelled duplicate review is not valid follow-up
-                    # context. The exact READY revision still gates deployment.
-                    if prior_task is None or prior_task.phase != "closed" or prior_task.result is None:
-                        previous = None
-                    with self.store.transaction() as tx:
-                        tx.save_conversation_message(
-                            ConversationMessage(
-                                event["id"], self.link.link_id, self.link.principal_id,
-                                event["content"], "buzz", event["created_at"],
-                                task_id=previous, reply_to=reply_target(event),
-                                state="deployment_approved",
-                            ), event=event, processed=True,
-                        )
-                    target_instruction = (
-                        f"Use the configured private target {self.private_deployment_url} "
-                        "and existing authority."
-                        if self.automatic_private_release
-                        else "Use the project's existing target and authority."
-                    )
-                    brief = (
-                        f"The owner approved merge and private deployment of reviewed revision {state.reviewed_revision} "
-                        f"from {state.pull_request}. The recorded Reviewer verdict is READY for the matching "
-                        f"preview at {state.preview_url} (digest {state.preview_digest}). "
-                        f"{target_instruction} "
-                        "Verify merge, deployment, health and rollback; "
-                        "end with RADHOUSE_PROJECT_UPDATE containing only verified facts. "
-                        "If merge or deployment did not happen, report deployment_status=failed "
-                        "without a claimed merged_revision, deployed_revision or deployment_url."
-                    )
-                    state = self._handoff(state, selected, previous, brief, bots)
-                    continue
-                parent = reply_target(event)
-                message = ConversationMessage(
-                    event["id"], selected.link.link_id, selected.link.principal_id,
-                    event["content"], "buzz", event["created_at"],
-                    reply_to=parent, files=files, addressed=addressed,
-                )
-                if files and state.active_task_id:
-                    if state.pending_message_id is not None:
-                        self._record_owner_event(
-                            event, files=files, task_id=state.active_task_id,
-                            state="pending_limit",
-                        )
-                        self._note(
-                            "reply:" + event["id"],
-                            "One attachment follow-up is already saved behind the active task. Wait for that handoff before sending another file set.",
-                            reply_to=event["id"],
-                        )
-                        continue
-                    with self.store.transaction() as tx:
-                        tx.save_conversation_message(
-                            message,
-                            route=MessageRoute("start", follows_task_id=state.active_task_id),
-                            event=event,
-                        )
-                    old = state
-                    state = state.evolve(
-                        pending_message_id=message.message_id,
-                        status_note="Attachment feedback is saved behind the active task.",
-                    ).validate()
-                    self._save_state(old, state)
-                    self._note(
-                        "pending:" + event["id"],
-                        "I saved these attachments with your feedback. They will become the next correlated step after the active task finishes.",
-                        reply_to=event["id"],
-                    )
-                    continue
-                self.conversations.receive(selected.link, message, event=event)
-                completed = self.conversations.process(selected.link, message.message_id)
-                task = self._task(completed.task_id) if completed.task_id else None
-                if task and task.phase != "closed":
-                    old = state
-                    role = bots[task.bot_id].role_name.casefold()
-                    phase = (
-                        "research" if "research" in role else
-                        "review" if "review" in role else
-                        "deployment" if "deploy" in role else
-                        "building"
-                    )
-                    state = state.evolve(
-                        active_bot_id=task.bot_id, active_task_id=task.task_id,
-                        latest_task_id=task.task_id, phase=phase,
-                        status_note=f"{bots[task.bot_id].display_name} is working.",
-                    ).validate()
-                    self._save_state(old, state)
-                    if not addressed:
-                        self._note(
-                            "coord-route:" + event["id"],
-                            f"I routed this step to {bots[task.bot_id].display_name}.",
-                            reply_to=event["id"], task_id=task.task_id,
-                        )
-            except Rejected as error:
-                self._record_owner_event(event, state="rejected:" + error.code)
-                self._note(
-                    "reply:" + event["id"],
-                    "I could not safely route that project message. The project state is preserved; open Radhouse for details.",
-                    reply_to=event["id"],
-                )
+            state = self._process_project_event(event, state, roles, bots)
         with self.store.transaction() as tx:
             tx.conversation_progress(
                 self.link.link_id,

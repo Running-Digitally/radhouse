@@ -119,17 +119,8 @@ class Run:
             raise FixtureError("container ownership mismatch; resource retained")
         return info
 
-    def start(self):
-        import psycopg
-        from psycopg.conninfo import make_conninfo
-        from psycopg import sql
 
-        self.docker("pull", self.manifest["image"])
-        image = json.loads(self.docker("image", "inspect", self.manifest["image"]).stdout)[0]
-        digest = self.manifest["image"].split("@", 1)[1]
-        if not any(item.endswith("@" + digest) for item in image.get("RepoDigests", [])):
-            raise FixtureError("local image does not match the requested immutable registry digest")
-        self.manifest["image_id"] = image["Id"]
+    def _create_owned_volume(self):
         volume_name = self.manifest["volume_name"]
         existing = self.docker("volume", "ls", "--filter", f"name={volume_name}", "--format", "{{.Name}}").stdout.splitlines()
         if volume_name in existing:
@@ -142,6 +133,33 @@ class Run:
             raise FixtureError("new fixture volume ownership mismatch; no container created")
         self.manifest["volume_verified_before_mount"] = True
         self.save()
+
+
+    def _checked_port_mappings(self, info):
+        host = info["HostConfig"]
+        if host["Privileged"] or host["NetworkMode"] == "host" or host["NanoCpus"] != 1_000_000_000 or host["Memory"] != 512 * 1024**2:
+            raise FixtureError("container resource/isolation settings differ from the bounded fixture")
+        mounts = info["Mounts"]
+        if len(mounts) != 1 or mounts[0]["Type"] != "volume" or mounts[0]["Name"] != self.manifest["volume_name"]:
+            raise FixtureError("container has an unexpected mount")
+        mappings = info["NetworkSettings"]["Ports"]["5432/tcp"]
+        if len(mappings) != 1 or mappings[0]["HostIp"] != "127.0.0.1":
+            raise FixtureError("database port is not exclusively bound to loopback")
+        return mappings
+
+
+    def start(self):
+        import psycopg
+        from psycopg.conninfo import make_conninfo
+        from psycopg import sql
+
+        self.docker("pull", self.manifest["image"])
+        image = json.loads(self.docker("image", "inspect", self.manifest["image"]).stdout)[0]
+        digest = self.manifest["image"].split("@", 1)[1]
+        if not any(item.endswith("@" + digest) for item in image.get("RepoDigests", [])):
+            raise FixtureError("local image does not match the requested immutable registry digest")
+        self.manifest["image_id"] = image["Id"]
+        self._create_owned_volume()
         self.env["POSTGRES_PASSWORD"] = secrets.token_urlsafe(32)
         container = self.docker("create", "--name", self.manifest["container_name"],
             "--label", f"{LABEL}={self.run_id}", "--cpus", "1", "--memory", "512m", "--memory-swap", "512m",
@@ -153,15 +171,7 @@ class Run:
         self.save()
         self.docker("start", self.manifest["container_id"])
         info = self.inspect_owned()
-        host = info["HostConfig"]
-        if host["Privileged"] or host["NetworkMode"] == "host" or host["NanoCpus"] != 1_000_000_000 or host["Memory"] != 512 * 1024**2:
-            raise FixtureError("container resource/isolation settings differ from the bounded fixture")
-        mounts = info["Mounts"]
-        if len(mounts) != 1 or mounts[0]["Type"] != "volume" or mounts[0]["Name"] != self.manifest["volume_name"]:
-            raise FixtureError("container has an unexpected mount")
-        mappings = info["NetworkSettings"]["Ports"]["5432/tcp"]
-        if len(mappings) != 1 or mappings[0]["HostIp"] != "127.0.0.1":
-            raise FixtureError("database port is not exclusively bound to loopback")
+        mappings = self._checked_port_mappings(info)
         port = int(mappings[0]["HostPort"])
         owner_dsn = make_conninfo(host="127.0.0.1", hostaddr="127.0.0.1", port=port, dbname=self.manifest["database"],
                                  user="fixture_owner", password=self.env.pop("POSTGRES_PASSWORD"), connect_timeout=2, sslmode="disable")
@@ -278,44 +288,12 @@ def demonstration(run: Run):
 
     service, work = service_for_environment(run.env)
     with service.store.transaction():
+        # Entering the transaction verifies the owned fixture identity.
         pass
     seed_fixture(run.env["RADHOUSE_VS0_DSN"])
     clock = FixedClock()
     for index, (source, destination) in enumerate((("radhouse", "buzz"), ("buzz", "radhouse")), 1):
-        def client_for(channel):
-            actor = AuthContext("alice", channel, f"alice@{channel}", clock() + timedelta(minutes=10))
-            return TestClient(create_app(service, authenticate=lambda request: actor))
-        with client_for(source) as source_client, client_for(destination) as destination_client:
-            sender, receiver = SimulatedChannelDriver(source_client, source), SimulatedChannelDriver(destination_client, destination)
-            admission = make_envelope(source, project_id="project-shared")
-            start = StartTask("bot-beta", "project-shared", "Prepare the synthetic offline report.", "fake-local")
-            response = sender.admit(admission, start)
-            if response.status_code not in (200, 201):
-                raise FixtureError("demo admission failed")
-            task = response.json()
-            task_id = task["task_id"]
-            duplicate = sender.admit(admission, start)
-            if duplicate.json()["task_id"] != task_id:
-                raise FixtureError("duplicate admission created another task")
-            print(f"TRACE channel={source} task={task_id} attempt=none state={task['phase']} decision=admitted runs={work.start_count}")
-            run.command([sys.executable, str(Path(__file__)), "_controller", "run", task_id], env=run.env, accepted=(73,))
-            run.command([sys.executable, str(Path(__file__)), "_controller", "recover", task_id], env=run.env)
-            envelope = make_envelope(destination, project_id="project-shared")
-            current = receiver.get(task_id, envelope)
-            if current.status_code != 200:
-                raise FixtureError("reverse-channel task read failed")
-            task = current.json()
-            if task["outcome"] != "completed" or work.start_count != index:
-                raise FixtureError("fresh-process recovery did not confirm exactly one agent run")
-            reviewed = receiver.review(task_id, envelope, expected_state_revision=task["state_revision"], audience=["alice", "bob"])
-            if reviewed.status_code not in (200, 201):
-                raise FixtureError("reverse-channel protected review failed")
-            review = reviewed.json()
-            released = receiver.publish(review["review_id"], make_envelope(destination, project_id="project-shared"),
-                expected_revision=review["revision"], content=task["result"], audience=["alice", "bob"])
-            if released.status_code not in (200, 201):
-                raise FixtureError("reverse-channel protected publication failed")
-            print(f"TRACE channel={destination} task={task_id} attempt={task['attempt_id']} state={task['phase']} decision=published runs={work.start_count}")
+        _demonstrate_direction(run, service, work, clock, index, source, destination)
     # Missing runtime evidence stays blocked and never becomes permission for a new run.
     from tests.fakes import FakeAgentWork
     actor = AuthContext("alice", "radhouse", "alice@radhouse", clock() + timedelta(minutes=10))
@@ -349,23 +327,7 @@ def main():
         run.start()
         demonstration(run)
         if args.mode == "verify":
-            report = run.output / "pytest.xml"
-            result = run.command([sys.executable, "-m", "pytest", "-q", "--tb=short", f"--junitxml={report}"], env=run.env, accepted=(0, 1, 2, 3, 4, 5))
-            import xml.etree.ElementTree as ET
-            if not report.exists():
-                raise FixtureError("pytest did not produce a verification report")
-            # Retain test identities/status without captured tracebacks, DSNs or vendor output.
-            suites = ET.parse(report).getroot()
-            counts = {key: sum(int(node.get(key, "0")) for node in suites.iter("testsuite")) for key in ("tests", "failures", "errors", "skipped")}
-            for node in suites.iter():
-                if node.tag in {"failure", "error", "system-out", "system-err"}:
-                    node.text = "Details omitted from sanitized fixture evidence."
-                    node.attrib.pop("message", None)
-            ET.ElementTree(suites).write(report, encoding="unicode")
-            run.manifest["tests"] = counts
-            print("TESTS: " + ", ".join(f"{key}={value}" for key, value in counts.items()))
-            if result.returncode != 0 or not counts["tests"] or any(counts[key] for key in ("failures", "errors", "skipped")):
-                raise FixtureError("verification requires executed tests with no failures, errors or skips")
+            _verify_tests(run)
         run.manifest["result"] = "passed"
         succeeded = True
     except Exception as exc:
@@ -379,7 +341,73 @@ def main():
         print(f"Sanitized run manifest: {run.manifest_path.relative_to(ROOT)}")
     if succeeded:
         print(f"PASS: offline {args.mode}; Python {run.manifest['python']}; source {run.manifest['source_commit']}; image {run.manifest['image']}")
-    return 2 if prerequisite_missing else (0 if succeeded and run.manifest.get("cleanup") == "complete" else 1)
+    if prerequisite_missing:
+        return 2
+    if succeeded and run.manifest.get("cleanup") == "complete":
+        return 0
+    return 1
+
+
+def _demonstrate_direction(run, service, work, clock, index, source, destination):
+    from fastapi.testclient import TestClient
+    from radhouse.api.app import create_app
+    from radhouse.domain.access import AuthContext
+    from radhouse.domain.tasks import StartTask
+    from tests.fakes import SimulatedChannelDriver, make_envelope
+    def client_for(channel):
+        actor = AuthContext("alice", channel, f"alice@{channel}", clock() + timedelta(minutes=10))
+        return TestClient(create_app(service, authenticate=lambda request: actor))
+    with client_for(source) as source_client, client_for(destination) as destination_client:
+        sender, receiver = SimulatedChannelDriver(source_client, source), SimulatedChannelDriver(destination_client, destination)
+        admission = make_envelope(source, project_id="project-shared")
+        start = StartTask("bot-beta", "project-shared", "Prepare the synthetic offline report.", "fake-local")
+        response = sender.admit(admission, start)
+        if response.status_code not in (200, 201):
+            raise FixtureError("demo admission failed")
+        task = response.json()
+        task_id = task["task_id"]
+        duplicate = sender.admit(admission, start)
+        if duplicate.json()["task_id"] != task_id:
+            raise FixtureError("duplicate admission created another task")
+        print(f"TRACE channel={source} task={task_id} attempt=none state={task['phase']} decision=admitted runs={work.start_count}")
+        run.command([sys.executable, str(Path(__file__)), "_controller", "run", task_id], env=run.env, accepted=(73,))
+        run.command([sys.executable, str(Path(__file__)), "_controller", "recover", task_id], env=run.env)
+        envelope = make_envelope(destination, project_id="project-shared")
+        current = receiver.get(task_id, envelope)
+        if current.status_code != 200:
+            raise FixtureError("reverse-channel task read failed")
+        task = current.json()
+        if task["outcome"] != "completed" or work.start_count != index:
+            raise FixtureError("fresh-process recovery did not confirm exactly one agent run")
+        reviewed = receiver.review(task_id, envelope, expected_state_revision=task["state_revision"], audience=["alice", "bob"])
+        if reviewed.status_code not in (200, 201):
+            raise FixtureError("reverse-channel protected review failed")
+        review = reviewed.json()
+        released = receiver.publish(review["review_id"], make_envelope(destination, project_id="project-shared"),
+            expected_revision=review["revision"], content=task["result"], audience=["alice", "bob"])
+        if released.status_code not in (200, 201):
+            raise FixtureError("reverse-channel protected publication failed")
+        print(f"TRACE channel={destination} task={task_id} attempt={task['attempt_id']} state={task['phase']} decision=published runs={work.start_count}")
+
+
+def _verify_tests(run):
+    report = run.output / "pytest.xml"
+    result = run.command([sys.executable, "-m", "pytest", "-q", "--tb=short", f"--junitxml={report}"], env=run.env, accepted=(0, 1, 2, 3, 4, 5))
+    import xml.etree.ElementTree as ET
+    if not report.exists():
+        raise FixtureError("pytest did not produce a verification report")
+    # Retain test identities/status without captured tracebacks, DSNs or vendor output.
+    suites = ET.parse(report).getroot()
+    counts = {key: sum(int(node.get(key, "0")) for node in suites.iter("testsuite")) for key in ("tests", "failures", "errors", "skipped")}
+    for node in suites.iter():
+        if node.tag in {"failure", "error", "system-out", "system-err"}:
+            node.text = "Details omitted from sanitized fixture evidence."
+            node.attrib.pop("message", None)
+    ET.ElementTree(suites).write(report, encoding="unicode")
+    run.manifest["tests"] = counts
+    print("TESTS: " + ", ".join(f"{key}={value}" for key, value in counts.items()))
+    if result.returncode != 0 or not counts["tests"] or any(counts[key] for key in ("failures", "errors", "skipped")):
+        raise FixtureError("verification requires executed tests with no failures, errors or skips")
 
 
 if __name__ == "__main__":

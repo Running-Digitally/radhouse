@@ -50,7 +50,8 @@ def test_legacy_upgrade_preserves_tasks_and_requires_exact_version_digest(store,
     with pytest.raises(ApplicationStorageError, match="database_identity_mismatch"):
         with runtime.transaction(): pass
     receipt = initialize_database(owner, **arguments)
-    assert receipt.result == "upgraded" and receipt.schema_version == 7
+    assert receipt.result == 'upgraded'
+    assert receipt.schema_version == 7
     with runtime.transaction() as tx:
         assert tx.task(task.task_id) == task
         assert tx.task_title(task.task_id).title == "Prepare the synthetic offline report."

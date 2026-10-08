@@ -125,10 +125,12 @@ class AdminService:
             signal = self.document_probe()
             if not isinstance(signal, DocumentSignal) or type(signal.available) is not bool or type(signal.connected) is not bool:
                 raise ValueError("invalid_signal")
-            state = "unavailable" if not signal.available else "healthy" if signal.connected else "unverified"
-            detail = ("Document reader is available and selective reads are connected." if state == "healthy"
-                else "Document reader is available; full-document access is not connected." if state == "unverified"
-                else "The document reader is unavailable.")
+            if not signal.available:
+                state, detail = "unavailable", "The document reader is unavailable."
+            elif signal.connected:
+                state, detail = "healthy", "Document reader is available and selective reads are connected."
+            else:
+                state, detail = "unverified", "Document reader is available; full-document access is not connected."
             return {"id": "documents", "state": state, "detail": detail, "version": _version(signal.version)}
         except Exception:
             return {"id": "documents", "state": "unavailable", "detail": "The document reader could not be checked.", "version": None}
@@ -159,8 +161,12 @@ class AdminService:
                 info.st_mode & directory_access == directory_access for info in (parent_info, directory_info))
             writable = writable and all(not space.f_flag & os.ST_RDONLY for space in spaces)
             state = "healthy" if writable and free_bytes > 0 else "unavailable"
-            detail = ("Conversation storage and originals directory are readable." if state == "healthy"
-                else "Application storage is read only." if not writable else "Application storage has no free space.")
+            if state == "healthy":
+                detail = "Conversation storage and originals directory are readable."
+            elif not writable:
+                detail = "Application storage is read only."
+            else:
+                detail = "Application storage has no free space."
             return {"id": "storage", "state": state, "detail": detail,
                 "schema_version": schema, "database_bytes": file_info.st_size,
                 "free_bytes": free_bytes}

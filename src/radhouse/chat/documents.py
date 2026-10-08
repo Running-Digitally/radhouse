@@ -67,32 +67,10 @@ def _presentation_slides(archive):
 
 def _extract(data, extension):
     if extension == ".pdf":
-        from pypdf import PdfReader
-        reader = PdfReader(data if isinstance(data, Path) else BytesIO(data), strict=True)
-        if reader.is_encrypted:
-            raise ValueError("document_encrypted")
-        if len(reader.pages) > 100:
-            raise ValueError("document_too_complex")
-        parts, has_text = [], False
-        for i, page in enumerate(reader.pages):
-            content = page.get_contents()
-            if content is not None and len(content.get_data()) > 2 * 1024 * 1024:
-                raise ValueError("document_too_complex")
-            page_text = page.extract_text() or ""
-            has_text = has_text or bool(page_text.strip())
-            parts.append(f"Page {i + 1}\n" + page_text)
-        text = "\n\n".join(parts)
-        if not has_text:
-            raise ValueError("document_needs_ocr")
+        text = _pdf_text(data)
     else:
         with ZipFile(data if isinstance(data, Path) else BytesIO(data)) as archive:
-            entries = archive.infolist()
-            if (len(entries) > 2000 or sum(e.file_size for e in entries) > 32 * 1024 * 1024
-                    or any(e.flag_bits & 1 or e.file_size / max(e.compress_size, 1) > 200 for e in entries)):
-                raise ValueError("document_too_complex")
-            names = archive.namelist()
-            if len(set(names)) != len(names) or any("vbaproject" in n.lower() for n in names):
-                raise ValueError("document_unreadable")
+            names = _checked_archive_names(archive)
             if extension == ".docx":
                 xml = _xml(archive, "word/document.xml")
                 text = "\n".join(_word_paragraphs(xml))
@@ -100,35 +78,7 @@ def _extract(data, extension):
                 slides = _presentation_slides(archive)
                 text = "\n\n".join(f"Slide {i+1}\n" + "\n".join(n.text or "" for n in _xml(archive, name).iter() if n.tag.endswith("}t")) for i,name in enumerate(slides))
             else:
-                strings = []
-                if "xl/sharedStrings.xml" in names:
-                    strings = ["".join(n.itertext()) for n in _xml(archive, "xl/sharedStrings.xml").iter() if n.tag.endswith("}si")]
-                workbook = _xml(archive, "xl/workbook.xml")
-                rels = _xml(archive, "xl/_rels/workbook.xml.rels")
-                targets = {r.attrib["Id"]:r.attrib["Target"] for r in rels}
-                parts = []
-                for sheet in workbook.iter():
-                    if not sheet.tag.endswith("}sheet"): continue
-                    rid = sheet.attrib.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
-                    target = targets.get(rid, "")
-                    target = target.lstrip("/") if target.startswith("/xl/") else "xl/" + target
-                    if not target.startswith("xl/worksheets/") or ".." in target:
-                        raise ValueError("document_unreadable")
-                    rows = []
-                    for row in _xml(archive, target).iter():
-                        if not row.tag.endswith("}row"): continue
-                        values = []
-                        for cell in row:
-                            value = next((n.text or "" for n in cell if n.tag.endswith("}v")), "")
-                            if cell.attrib.get("t") == "s": value = strings[int(value)]
-                            if cell.attrib.get("t") == "inlineStr": value = "".join(n.text or "" for n in cell.iter() if n.tag.endswith("}t"))
-                            formula = next((n.text for n in cell if n.tag.endswith("}f")), None)
-                            # Never execute formulas or follow external links.
-                            if formula: value = f"{value} [formula: {formula}]"
-                            values.append(f"{cell.attrib.get('r','cell')}: {value}")
-                        rows.append(" | ".join(values))
-                    parts.append(sheet.attrib.get("name", "Sheet") + "\n" + "\n".join(rows))
-                text = "\n\n".join(parts)
+                text = _spreadsheet_text(archive, names)
     if not text.strip(): raise ValueError("document_unreadable")
     # This is an automatic excerpt, not a condition for retaining an original.
     return text.encode()[:MAX_TEXT].decode("utf-8", errors="ignore")
@@ -165,6 +115,81 @@ def _main():
     except Exception as exc:
         code = str(exc) if isinstance(exc,ValueError) and str(exc) in {"document_unreadable","document_encrypted","document_too_complex","document_needs_ocr","attachment_text_too_large"} else "document_unreadable"
         print(json.dumps({"error":code}))
+
+
+def _pdf_text(data):
+    from pypdf import PdfReader
+    reader = PdfReader(data if isinstance(data, Path) else BytesIO(data), strict=True)
+    if reader.is_encrypted:
+        raise ValueError("document_encrypted")
+    if len(reader.pages) > 100:
+        raise ValueError("document_too_complex")
+    parts, has_text = [], False
+    for i, page in enumerate(reader.pages):
+        content = page.get_contents()
+        if content is not None and len(content.get_data()) > 2 * 1024 * 1024:
+            raise ValueError("document_too_complex")
+        page_text = page.extract_text() or ""
+        has_text = has_text or bool(page_text.strip())
+        parts.append(f"Page {i + 1}\n" + page_text)
+    text = "\n\n".join(parts)
+    if not has_text:
+        raise ValueError("document_needs_ocr")
+    return text
+
+
+def _checked_archive_names(archive):
+    entries = archive.infolist()
+    if (len(entries) > 2000 or sum(e.file_size for e in entries) > 32 * 1024 * 1024
+            or any(e.flag_bits & 1 or e.file_size / max(e.compress_size, 1) > 200 for e in entries)):
+        raise ValueError("document_too_complex")
+    names = archive.namelist()
+    if len(set(names)) != len(names) or any("vbaproject" in n.lower() for n in names):
+        raise ValueError("document_unreadable")
+    return names
+
+
+def _spreadsheet_cell_value(cell, strings):
+    value = next((n.text or "" for n in cell if n.tag.endswith("}v")), "")
+    if cell.attrib.get("t") == "s": value = strings[int(value)]
+    if cell.attrib.get("t") == "inlineStr": value = "".join(n.text or "" for n in cell.iter() if n.tag.endswith("}t"))
+    formula = next((n.text for n in cell if n.tag.endswith("}f")), None)
+    # Never execute formulas or follow external links.
+    if formula: value = f"{value} [formula: {formula}]"
+    return value
+
+
+def _spreadsheet_rows(archive, target, strings):
+    rows = []
+    for row in _xml(archive, target).iter():
+        if not row.tag.endswith("}row"): continue
+        values = []
+        for cell in row:
+            value = _spreadsheet_cell_value(cell, strings)
+            values.append(f"{cell.attrib.get('r','cell')}: {value}")
+        rows.append(" | ".join(values))
+    return rows
+
+
+def _spreadsheet_text(archive, names):
+    strings = []
+    if "xl/sharedStrings.xml" in names:
+        strings = ["".join(n.itertext()) for n in _xml(archive, "xl/sharedStrings.xml").iter() if n.tag.endswith("}si")]
+    workbook = _xml(archive, "xl/workbook.xml")
+    rels = _xml(archive, "xl/_rels/workbook.xml.rels")
+    targets = {r.attrib["Id"]:r.attrib["Target"] for r in rels}
+    parts = []
+    for sheet in workbook.iter():
+        if not sheet.tag.endswith("}sheet"): continue
+        rid = sheet.attrib.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
+        target = targets.get(rid, "")
+        target = target.lstrip("/") if target.startswith("/xl/") else "xl/" + target
+        if not target.startswith("xl/worksheets/") or ".." in target:
+            raise ValueError("document_unreadable")
+        rows = _spreadsheet_rows(archive, target, strings)
+        parts.append(sheet.attrib.get("name", "Sheet") + "\n" + "\n".join(rows))
+    text = "\n\n".join(parts)
+    return text
 
 
 if __name__ == "__main__":

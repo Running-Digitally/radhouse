@@ -102,8 +102,9 @@ def test_changed_original_denied_even_when_upload_and_grant_digests_agree(stack,
     scope = bridge.grant(token(runtime))
     assert service.store.upload("alice", attachment.file_id).sha256 == scope["files"][attachment.file_id]
     call = context(runtime, file_id=attachment.file_id, **({"query": "answer"} if operation == "search" else {}))
+    prepared_argument_1 = token(runtime)
     with pytest.raises(Rejected, match="document_source_changed") as denial:
-        bridge.execute(token(runtime), call, operation)
+        bridge.execute(prepared_argument_1, call, operation)
     assert denial.value.status == 409
 
 
@@ -174,12 +175,15 @@ def test_lost_ack_reuses_saved_grant_and_hmac_cursors_after_restart(stack):
     first_token = token(runtime)
     service = ChatService(ChatStore(service.store.path), runtime.client, owner_id="alice", clock=lambda: 1001, document_access=True)
     service.retry("alice", key)
-    assert token(runtime) == first_token and runtime.requests[0] == runtime.requests[1]
+    assert token(runtime) == first_token
+    assert runtime.requests[0] == runtime.requests[1]
     first = bridge.execute(first_token, context(runtime, file_id=attachment.file_id), "read")
-    assert first["next_cursor"] and not first["complete"]
+    assert first['next_cursor']
+    assert not first['complete']
     reopened = DocumentBridge(ChatStore(service.store.path), runtime.client, owner_id="alice", clock=lambda: 1002)
     second = reopened.execute(first_token, context(runtime, file_id=attachment.file_id, cursor=first["next_cursor"]), "read")
-    assert second["passages"] and second != first
+    assert second['passages']
+    assert second != first
 
 
 def test_catalog_contains_prior_attachments_but_not_unattached_foreign_or_future_files(stack):
@@ -195,10 +199,12 @@ def test_catalog_contains_prior_attachments_but_not_unattached_foreign_or_future
     future = original(service.store, name="future.txt")
     catalog = bridge.execute(grant_token, call, "read")
     assert {f["file_id"] for f in catalog["files"]} == {prior.file_id, current.file_id}
-    assert "storage_name" not in json.dumps(catalog) and str(service.store.files_path) not in json.dumps(catalog)
+    assert 'storage_name' not in json.dumps(catalog)
+    assert str(service.store.files_path) not in json.dumps(catalog)
     for attachment in (unattached, foreign, future):
+        prepared_argument_2 = context(runtime, file_id=attachment.file_id)
         with pytest.raises(Rejected, match="attachment_not_found"):
-            bridge.execute(grant_token, context(runtime, file_id=attachment.file_id), "read")
+            bridge.execute(grant_token, prepared_argument_2, 'read')
     # Even a later saved attachment cannot grow an older turn's immutable scope.
     complete(service, runtime)
     service.send("alice", str(uuid4()), "Third", (future,))
@@ -211,15 +217,20 @@ def test_catalog_pages_are_bounded_and_signed(stack):
     files = tuple(original(service.store, name=f"file{i}.txt") for i in range(21))
     service.send("alice", str(uuid4()), "List", files)
     first = bridge.execute(token(runtime), context(runtime), "read")
-    assert len(first["files"]) == 16 and first["next_cursor"] and not first["complete"]
+    assert len(first['files']) == 16
+    assert first['next_cursor']
+    assert not first['complete']
     second = bridge.execute(token(runtime), context(runtime, cursor=first["next_cursor"]), "read")
-    assert len(second["files"]) == 5 and second["complete"]
+    assert len(second['files']) == 5
+    assert second['complete']
     assert len({f["file_id"] for f in first["files"] + second["files"]}) == 21
     altered = json.loads(base64.urlsafe_b64decode(first["next_cursor"]))
     altered["body"]["offset"] = 0
     cursor = base64.urlsafe_b64encode(json.dumps(altered).encode()).decode()
+    prepared_argument_1_2 = token(runtime)
+    prepared_argument_2_2 = context(runtime, cursor=cursor)
     with pytest.raises(Rejected, match="document_cursor_invalid"):
-        bridge.execute(token(runtime), context(runtime, cursor=cursor), "read")
+        bridge.execute(prepared_argument_1_2, prepared_argument_2_2, 'read')
 
 
 @pytest.mark.parametrize("field,value", [("session_id", "different"), ("dispatch_key", "different"), ("run_id", "different")])
@@ -227,8 +238,9 @@ def test_model_claimed_context_cannot_replace_saved_context(stack, field, value)
     service, runtime, bridge, _ = stack
     service.send("alice", str(uuid4()), "Read")
     call = context(runtime).model_copy(update={field: value})
+    prepared_argument_1_3 = token(runtime)
     with pytest.raises(Rejected, match="document_access_denied"):
-        bridge.execute(token(runtime), call, "read")
+        bridge.execute(prepared_argument_1_3, call, 'read')
     assert runtime.probes == []
 
 
@@ -239,8 +251,9 @@ def test_callback_requires_live_exact_runtime_context(stack, field, value):
     service.send("alice", str(uuid4()), "Read")
     call = context(runtime)
     list(runtime.runs.values())[-1][field] = value
+    prepared_argument_1_4 = token(runtime)
     with pytest.raises(Rejected, match="document_access_denied"):
-        bridge.execute(token(runtime), call, "read")
+        bridge.execute(prepared_argument_1_4, call, 'read')
 
 
 @pytest.mark.parametrize("invalidate", ["terminal", "expired"])
@@ -265,8 +278,10 @@ def test_cancel_during_read_discards_passages(stack, monkeypatch):
         service.store.observe(service.store.pending("alice"), "cancelled")
         return result
     monkeypatch.setattr(bridge, "_catalog", cancelled)
+    prepared_argument_1_5 = token(runtime)
+    prepared_argument_2_3 = context(runtime)
     with pytest.raises(Rejected, match="document_access_denied"):
-        bridge.execute(token(runtime), context(runtime), "read")
+        bridge.execute(prepared_argument_1_5, prepared_argument_2_3, 'read')
 
 
 def test_no_automatic_tool_upgrade_for_an_uncertain_legacy_turn(stack):
@@ -285,7 +300,8 @@ def test_missing_runtime_document_capability_refuses_before_reservation(stack):
     runtime.doc_capability = False
     with pytest.raises(Rejected, match="document_capability_unavailable"):
         service.send("alice", str(uuid4()), "Read")
-    assert not runtime.requests and service.store.history("alice")["turns"] == []
+    assert not runtime.requests
+    assert service.store.history('alice')['turns'] == []
 
 
 def test_concurrent_retries_share_dispatch_without_holding_callback_lock(stack):
@@ -319,10 +335,12 @@ def test_http_callback_uses_grant_before_body_and_rejects_extra_identity(stack):
             headers = {"Authorization": "Bearer " + token(runtime)}
             body = context(runtime).model_dump(exclude_none=True)
             denied = await client.post(path, json={**body, "owner": "alice"}, headers=headers)
-            assert denied.status_code == 422 and "alice" not in denied.text
+            assert denied.status_code == 422
+            assert 'alice' not in denied.text
             assert runtime.probes == []
             response = await client.post(path, json=body, headers=headers)
-            assert response.status_code == 200 and response.json()["kind"] == "catalog"
+            assert response.status_code == 200
+            assert response.json()['kind'] == 'catalog'
             assert response.headers["cache-control"] == "no-store"
             assert token(runtime) not in response.text
             assert (await client.post(path, content=b"x" * 17000, headers=headers)).status_code == 422

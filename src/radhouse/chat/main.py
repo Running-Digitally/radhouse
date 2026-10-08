@@ -17,17 +17,7 @@ from .browser import BrowserService, HermesBrowserClient
 
 
 def app_factory():
-    path = Path(os.environ["RADHOUSE_CHAT_CONFIG"])
-    if not path.is_file() or path.stat().st_mode & 0o077:
-        raise ValueError("chat_config_requires_private_file")
-    config = json.loads(path.read_text())
-    required = {"auth_dsn", "auth_database", "deployment_id", "auth_encryption_key",
-                "origin", "owner_id", "hermes_endpoint", "hermes_bearer", "transcript_path"}
-    optional = {"transcription_endpoint", "transcription_bearer", "document_access_enabled", "browser_enabled"}
-    if not required <= set(config) or set(config) - required - optional or ("transcription_bearer" in config and "transcription_endpoint" not in config):
-        raise ValueError("invalid_chat_config")
-    if any(type(config.get(key, False)) is not bool for key in ("document_access_enabled", "browser_enabled")):
-        raise ValueError("invalid_chat_config")
+    config = _load_chat_config()
     document_access = config.get("document_access_enabled", False)
     browser_enabled = config.get("browser_enabled", False)
     auth = LocalAuthService(config["auth_dsn"], expected_database=config["auth_database"],
@@ -41,13 +31,7 @@ def app_factory():
     store = ChatStore(Path(config["transcript_path"]))
     browser_client = HermesBrowserClient(config["hermes_endpoint"], config["hermes_bearer"]) if browser_enabled else None
 
-    def assistant_status():
-        capabilities = status_client.capabilities()
-        return AssistantSignal(ready=capabilities.disable_tools
-            and capabilities.idempotency_retention_seconds > 60
-            and (not document_access or capabilities.allowed_tools and capabilities.document_scope)
-            and (not browser_enabled or capabilities.allowed_tools and capabilities.browser_view))
-
+    assistant_status = lambda: _assistant_status(status_client, document_access, browser_enabled)
     def document_status():
         available = (importlib.util.find_spec("radhouse.chat.document_parser") is not None
             and importlib.util.find_spec("pypdf") is not None)
@@ -82,3 +66,27 @@ def app_factory():
             if transcriber: transcriber.close()
     app.router.lifespan_context = lifespan
     return app
+
+def _load_chat_config():
+    path = Path(os.environ["RADHOUSE_CHAT_CONFIG"])
+    if not path.is_file() or path.stat().st_mode & 0o077:
+        raise ValueError("chat_config_requires_private_file")
+    config = json.loads(path.read_text())
+    required = {"auth_dsn", "auth_database", "deployment_id", "auth_encryption_key",
+                "origin", "owner_id", "hermes_endpoint", "hermes_bearer", "transcript_path"}
+    optional = {"transcription_endpoint", "transcription_bearer", "document_access_enabled", "browser_enabled"}
+    if not required <= set(config) or set(config) - required - optional or ("transcription_bearer" in config and "transcription_endpoint" not in config):
+        raise ValueError("invalid_chat_config")
+    if any(type(config.get(key, False)) is not bool for key in ("document_access_enabled", "browser_enabled")):
+        raise ValueError("invalid_chat_config")
+    return config
+
+
+def _assistant_status(status_client, document_access, browser_enabled):
+    capabilities = status_client.capabilities()
+    return AssistantSignal(ready=capabilities.disable_tools
+        and capabilities.idempotency_retention_seconds > 60
+        and (not document_access or capabilities.allowed_tools and capabilities.document_scope)
+        and (not browser_enabled or capabilities.allowed_tools and capabilities.browser_view))
+
+
