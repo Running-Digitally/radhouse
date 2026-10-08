@@ -125,3 +125,9 @@ regressions. Local SonarJS checks have removed the baseline JavaScript complexit
 nested-conditional and ambiguous-block findings. A local Python approximation
 matches 51 of the 55 baseline complexity values exactly and is only an iteration
 aid; the authoritative verification remains the later main analysis.
+
+The work-home UI separates timeline, task and project rendering from session and
+review-target loading. Every awaited helper is followed by a request-generation
+check before its result is used. The owned targeted fixture passed 77 tests,
+including browser walkthroughs, guidance, review links and chat; cleanup completed.
+Local SonarJS checks report no findings across the selected eight rules.
