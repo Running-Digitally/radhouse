@@ -8,12 +8,13 @@
     "analytics-policy.js": "d5b738af73f6c5c2e693d374b0ca1bf61af5b5eb6da4d48ad61a3c1abaecbd8d",
     "analytics.js": "a9eabbb1698b8f2326f2559c5a7d9ff5327443fafd3325ebe681bfd7c150a28d",
     "favicon.svg": "177b88ce1a3f24b3a9fd38043aa34f7a17906d6c7c14cfab813545df07204439",
-    "index.html": "1d199e9173758198f5504191265c6f19f667790651363d0b1e7207a07d7a921a",
+    "index.html": "d1be38081665d6c59e4240eda98719ffec1597391b4a4eab4f67e8097a62f16c",
     "journey.js": "5fa424bf679f55f9826c5e81c3df5aec9cac4e2d78057b56b46b45c4d9988da3",
     "radhouse-logo.svg": "beed231d18d2f86008e6fce8fc83efa2ea270f7ce1dec26e5c5169824d5cd121",
     "radhouse-mark.svg": "1047da30a00e6d2383133a2dd8dea305d8387fc8cfa44372323b31c5aff969f5",
-    "styles.css": "7a7cc265dc65f160cf3818a7894b1d4277e78d88089f9911d2a5f6df4f0a4f96",
+    "styles.css": "377cae2924780ba812778820d6f1e65f88c3afefebc4fd94183b215ef40a76b5",
     "vendor/POSTHOG-LICENSE.txt": "a360188f33c72af7aef768e1e65825d91c8a9bd8a0db6d30a7a3c551937a3aef",
     "vendor/posthog-1.436.1.js": "2c14307d97092d9587b5fdde4858437a8c970682d2c35a6158a3fb0afa6ccb96"
-  }
+  },
+  "release": "2026-10-08-workspace"
 }
