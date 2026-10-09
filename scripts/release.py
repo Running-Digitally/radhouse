@@ -165,7 +165,7 @@ def privacy_check(raw, private_identifiers=()):
     if any(item and item.encode() in raw for item in private_identifiers):
         raise Refusal("private_identifier_in_public_source")
     text = raw.decode("utf-8", errors="ignore")
-    if re.search(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\bAKIA[A-Z0-9]{16}\b|\bgh[pousr]_[A-Za-z0-9]{30,}", text):
+    if re.search(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----|\bAKIA[A-Z0-9]{16}\b|\b(?:gh[pousr]_|github_pat_|sk_live_|sk-proj-)[A-Za-z0-9_-]{20,}", text):
         raise Refusal("credential_in_public_source")
     if re.search(r"/(?:Users|home)/[A-Za-z][A-Za-z0-9_.-]*/", text):
         raise Refusal("personal_path_in_public_source")
@@ -657,7 +657,8 @@ def operate(verb, packet, pin, profile_path, authority_path=None, authority_pin=
         state = json.loads(read_file(journal, private=True)) if journal.exists() else {"phase": "prepared", "attempts": 0, "manifest_sha256": pin, "profile_sha256": profile_pin}
         if state.get("manifest_sha256") != pin or state.get("profile_sha256") != profile_pin or state.get("integrity_stop"):
             raise Refusal("prior_drift_requires_explicit_reconciliation")
-        if verb == "apply" and state["phase"] == "verified":
+        completed_release = state["phase"] == "verified"
+        if verb == "apply" and completed_release:
             # A journal is historical evidence, not a fresh runtime/integrity proof.
             verb = "verify"
         if verb == "apply" and state["attempts"]:
@@ -741,10 +742,23 @@ def operate(verb, packet, pin, profile_path, authority_path=None, authority_pin=
                 raise Refusal("prior_apply_retention_proof_required")
             live()
             tree(root / manifest["source_revision"], candidate_mapping)
+            snapshot_path = evidence / ("snapshot-" + str(state["attempts"]) + ".sqlite3")
+            try:
+                historical_snapshot = read_file(snapshot_path, private=True, owner=os.getuid(), maximum=MAX_PACKET)
+            except OSError:
+                raise Refusal("historical_snapshot_integrity_failed") from None
+            if sha(historical_snapshot) != state["snapshot_sha256"]:
+                raise Refusal("historical_snapshot_integrity_failed")
             result = host.verify(manifest)
-            retention(state["owner_before"], inventory(profile))
+            # After completion, owner data legitimately evolve. The retained snapshot
+            # and successful release journal prove the original retention check;
+            # rechecking code/service integrity must not freeze subsequent owner work.
+            if not completed_release:
+                retention(state["owner_before"], inventory(profile))
             save("verified")
-            receipt.update(state="verified", result=result, completed_at=utcnow().isoformat(), phase=state["phase"])
+            receipt.update(state="verified", result=result, completed_at=utcnow().isoformat(), phase=state["phase"],
+                           retention_scope="historical-release-proof" if completed_release else "current-release-retention",
+                           snapshot_sha256=state["snapshot_sha256"])
             atomic(receipt_path, encoded(receipt))
             return {"state": "verified", "source_revision": manifest["source_revision"], "receipt_sha256": sha(encoded(receipt)), "private_settings": "redacted"}
         except Exception as error:

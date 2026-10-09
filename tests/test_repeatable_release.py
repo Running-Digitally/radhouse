@@ -429,3 +429,41 @@ def test_verified_journal_cannot_hide_later_source_drift(target):
     result = apply(target)
     assert result["state"] == "failed" and result["reason"] == "release_source_drift"
     assert target["host"].events.count("stop-api") == 1
+
+
+def test_completed_release_reverification_allows_new_owner_work_and_uploads(target):
+    assert apply(target)["state"] == "verified"
+    with sqlite3.connect(target["db"]) as connection:
+        connection.execute("INSERT INTO turns VALUES('running','new-run',1,0,NULL)")
+    write(target["originals"] / "new-original.txt", b"new owner attachment")
+    # A current upload must not block a read-only integrity check of a completed release.
+    write(target["originals"] / "upload-new.partial", b"new pending upload")
+    assert apply(target)["state"] == "verified"
+    assert target["host"].events.count("stop-api") == 1
+    with sqlite3.connect(target["db"]) as connection:
+        assert connection.execute("SELECT count(*) FROM turns").fetchone() == (2,)
+    assert (target["originals"] / "new-original.txt").read_bytes() == b"new owner attachment"
+    receipts = [json.loads(p.read_bytes()) for p in (target["evidence"] / target["pin"]).glob("*-verify.json")]
+    assert receipts and receipts[-1]["retention_scope"] == "historical-release-proof"
+
+
+@pytest.mark.parametrize("change", ["tamper", "remove"])
+def test_completed_release_reverification_requires_unchanged_snapshot_proof(target, change):
+    assert apply(target)["state"] == "verified"
+    evidence = target["evidence"] / target["pin"]
+    snapshot = next(evidence.glob("snapshot-*.sqlite3"))
+    if change == "remove":
+        snapshot.unlink()
+    else:
+        write(snapshot, b"tampered snapshot")
+    result = apply(target)
+    assert result["state"] == "failed" and result["reason"] == "historical_snapshot_integrity_failed"
+    assert not result["retryable"] and target["host"].events.count("stop-api") == 1
+
+
+@pytest.mark.parametrize("prefix", [b"github_pat_", b"sk-proj-", b"sk_live_", b"ghp_", b"gho_"])
+def test_standalone_packaging_rejects_supported_token_signatures_without_echo(prefix):
+    synthetic = prefix + b"A" * 32
+    with pytest.raises(release.Refusal, match="credential_in_public_source") as result:
+        release.privacy_check(synthetic)
+    assert synthetic.decode() not in str(result.value)

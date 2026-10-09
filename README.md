@@ -237,6 +237,24 @@ For security and code-quality analysis after a merge, run the
 [local SonarQube launcher](docs/sonarqube.md) on the development laptop. It tests and scans
 a clean copy of remote `main` and waits for the quality gate.
 
+For a committed static web update, discover the fixed release gates and then run
+one offline qualification/package command. It uses the current clean `HEAD`:
+
+```sh
+python3 scripts/release_candidate.py --baseline FULL_BASELINE_COMMIT --plan-only
+python3 scripts/release_candidate.py --baseline FULL_BASELINE_COMMIT
+```
+
+The baseline must be the reviewed deployed source revision. The runner requires
+existing Python 3.14 project/test dependencies, Node.js and pinned Playwright with
+Chromium. Its explicit location flags support shared existing installations. It
+executes synthetic API/browser checks, rejects failed or skipped required checks,
+and writes timed evidence plus a checked packet under ignored `.release-private/`.
+It never approves or applies a deployment. See the [release workflow](docs/deployment/repeatable-releases.md)
+for dependency flags, the complete gate list and private authority.
+
+Individual checks remain useful during editing:
+
 ```sh
 PYTHONPATH=src:. python -m pytest -q tests/test_minimal_chat.py tests/test_chat_attachments.py
 node --check src/radhouse/chat/static/chat.js

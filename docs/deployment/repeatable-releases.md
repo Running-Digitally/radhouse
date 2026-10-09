@@ -88,6 +88,79 @@ unchanged in the supported lane. Application-level data remain private and are n
 printed. Root onboarding, service confinement and the original baseline's runtime
 qualification must be established separately; this tool does not create them.
 
+## Run the offline candidate workflow
+
+For a committed static web change, `scripts/release_candidate.py` runs the reviewed
+conservative gate plan and packages the resulting source. `--plan-only` identifies
+required gates without checking dependencies, creating evidence or executing tests.
+Both modes require clean exact `HEAD` descended from the specified baseline; the
+running runner and helper must match their frozen committed bytes.
+
+```sh
+python3 scripts/release_candidate.py --baseline FULL_BASELINE_COMMIT --plan-only
+python3 scripts/release_candidate.py --baseline FULL_BASELINE_COMMIT
+```
+
+Every static candidate runs the same conservative plan:
+
+- Portable synthetic chat/API tests covering chat continuity, attachments, saved
+  profile, Library, browser, terminal, About You and inference; release/helper,
+  privacy and candidate-runner tests are included.
+- Syntax checks for every tracked first-party static JavaScript file, plus the
+  chat-client and formatting Node unit tests.
+- Existing synthetic browser journeys for the interface, navigation, saved profile,
+  appearance/readability, Library, owner terminal, inference controls, About You
+  and browser session control. These exercise fixtures and loopback servers;
+  they never contact deployed Hermes, a provider or an installation target.
+- The existing public-source privacy gate, with an optional ignored private policy.
+  This checks current candidate source and honors that policy; it does not reopen
+  the owner's accepted historical metadata disposition or rewrite history.
+
+The runner preflights existing dependencies and never downloads or installs them.
+It requires Python 3.14 with project/test imports (including `pypdf` for attachment
+proofs), Node.js 20.19 or newer, the repository-pinned Playwright version and an
+existing Chromium binary/cache. Supply explicit existing locations when they live
+outside the checkout:
+
+```sh
+python3 scripts/release_candidate.py --baseline FULL_BASELINE_COMMIT \
+  --python /absolute/existing/python \
+  --node /absolute/existing/node \
+  --playwright-module /absolute/existing/playwright/index.mjs \
+  --chromium /absolute/existing/chromium \
+  --private-policy .release-private/public-source-policy.json
+```
+
+`--browsers-path` can select an existing Playwright cache instead of an explicit
+Chromium binary. `--profile .env` optionally validates private release settings
+and their baseline offline; its values are never inherited by test processes.
+Production configuration, provider keys, proxies, fixture/database grants, Node
+options and pytest/plugin options are excluded from the child's environment.
+Required pytest skips, empty test results, Node skips/todos/cancellations, missing
+journeys, nonzero exits and timeouts prevent qualification.
+
+By default, the output is `.release-private/candidate-<full-candidate-commit>/`.
+`--output` may choose an exclusive ignored or external directory; an existing run
+is never overwritten. The private directory is mode 0700 and its evidence/logs
+are mode 0600. An explicit private privacy policy is frozen into a mode-0600 snapshot before
+execution and its hash is checked before/after gates; the original file is never
+reread by the privacy child. Policy and private-identifier digests are retained
+only in private qualification evidence.
+It contains `qualification.json`, timed per-gate logs/results,
+`packet/source.tar`, `packet/manifest.json`, and `candidate.json` with consolidated
+qualification/manifest/archive/runner/helper pins. Console output contains bounded
+gate progress, duration and the final source/pin summary, without local tool paths
+or installation details. This is executed local evidence, not a CI-authenticated
+attestation.
+
+The runner rechecks exact clean source and tool custody before and after gates and
+before returning a ready result. A source change or failed mandatory gate records
+failure and never returns a ready candidate. Unsupported backend, native, schema,
+dependency and deployment changes are routed to separate qualification before
+executing this static plan. No authority template is approved, no privilege is
+granted and no apply command runs. Use the emitted packet and pins in the existing
+private owner-authority workflow below.
+
 ## Freeze and qualify a source revision
 
 Use a clean checkout at a full 40-character commit descended from the reviewed
@@ -233,8 +306,15 @@ Unknown drift, integrity errors, schema changes and unexpected failures fence th
 journal and require explicit reconciliation. If the API has already stopped or the
 new unit was selected, the failed receipt names that phase; it stays there for
 attended diagnosis. A new source revision or profile requires new qualification and
-authority. `verify` can recheck a previously applied candidate with the same exact
-pins and authority; it never fabricates a missing snapshot or retention proof.
+authority. Incomplete deployment retries retain exact original-state comparisons.
+After successful completion, `verify` (or a repeated `apply`) checks the immutable
+code/unit/private controls, served assets and retained
+snapshot digest while preserving the historical release retention proof. Legitimate
+subsequent owner messages, attachments and in-flight uploads do not falsely invalidate
+that completed proof. Private receipts identify `retention_scope` as
+`current-release-retention` during deployment or `historical-release-proof` for
+completed rechecks, and retain `snapshot_sha256`. Rechecking never fabricates a
+missing snapshot or retention proof.
 
 Post-release operational records belong in the private deployment repository. Use
 the receipt digest and frozen source revision to link them to the public source;
