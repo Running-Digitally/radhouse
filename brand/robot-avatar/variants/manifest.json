@@ -1,0 +1,34 @@
+{
+  "poster": "v2/robot-poster-256.png",
+  "wait_min_seconds": 2,
+  "wait_max_seconds": 6,
+  "clips": [
+    {
+      "id": "a",
+      "name": "A \u00b7 Curious",
+      "description": "A quick glance, a curious tilt, and a blink back to you.",
+      "mp4": "v2/robot-idle-256.mp4",
+      "webm": "v2/robot-idle-256.webm",
+      "blend": "v2/robot-avatar.blend",
+      "duration": 6
+    },
+    {
+      "id": "b",
+      "name": "B \u00b7 Thoughtful",
+      "description": "A downward glance, a considering pause, and a gentle nod.",
+      "mp4": "variants/robot-b-thoughtful-256.mp4",
+      "webm": "variants/robot-b-thoughtful-256.webm",
+      "blend": "variants/robot-b-thoughtful.blend",
+      "duration": 5
+    },
+    {
+      "id": "c",
+      "name": "C \u00b7 Playful",
+      "description": "A little double-take, an opposite tilt, and an antenna bounce.",
+      "mp4": "variants/robot-c-playful-256.mp4",
+      "webm": "variants/robot-c-playful-256.webm",
+      "blend": "variants/robot-c-playful.blend",
+      "duration": 5
+    }
+  ]
+}

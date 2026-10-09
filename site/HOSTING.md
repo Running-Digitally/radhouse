@@ -6,6 +6,15 @@ The frozen artifact is recorded in `release-manifest.json`. The owner requested
 the live-browser feature update on 7 October; its bounded source and publication
 scope is recorded in `RELEASE-2026-10-08-BROWSER.md` (UTC preparation date).
 
+The owner requested a further current-build update on 8 October (Toronto).
+[Its release receipt](RELEASE-2026-10-08-WORKSPACE.md) records the browser-control
+evidence, activated workspace status, platform icons, character gallery and
+publication checks.
+
+For this 8 October release, the owner explicitly requested an independent
+self-review instead of GitHub Codex review. The completed review is recorded in
+[REVIEW-2026-10-08-WORKSPACE.md](REVIEW-2026-10-08-WORKSPACE.md).
+
 ## Hosting contract
 
 | Concern | Value |
@@ -33,7 +42,7 @@ changes to DNS, access, bindings or any other Worker.
 
 ## Validate the artifact
 
-There is no compilation. HTML, CSS, JavaScript, SVGs and the pinned, licensed
+There is no compilation. HTML, CSS, JavaScript, SVGs, PNG screenshots, WebP portraits and the pinned, licensed
 PostHog SDK are committed as the deployable artifact. Run the targeted checks
 in [README.md](README.md), review desktop and narrow layouts and exercise
 keyboard, reduced-motion, disclosures, error recovery and external links.
@@ -58,7 +67,7 @@ database, runtime variables or application server are needed.
    Worker. Confirm its custom domain is `radhouse.runningdigitally.com`.
 3. Retain the current deployment ID for rollback.
 4. Direct-upload all contents of `public/` as a new deployment, preserving the
-   relative paths, including `vendor/`, `_headers` and `404.html`.
+   relative paths, including `characters/`, `vendor/`, `_headers` and `404.html`.
 5. Verify the Worker endpoint first, then the custom domain. Compare every
    served artifact to the frozen manifest, including the response headers.
 6. Check public interactions, anonymous project links, 404 status, PostHog

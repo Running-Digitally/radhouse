@@ -1,0 +1,5 @@
+frames/
+*.blend[0-9]*
+*.log
+*.pid
+__pycache__/

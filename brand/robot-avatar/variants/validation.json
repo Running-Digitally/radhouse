@@ -1,0 +1,115 @@
+{
+  "keeper_unchanged": true,
+  "clips": {
+    "b-thoughtful": {
+      "name": "B / Thoughtful",
+      "description": "Looks slightly down, considers, gives a small nod, reconnects and softly blinks.",
+      "blend": "robot-b-thoughtful.blend",
+      "duration_seconds": 5.0,
+      "fps": 24,
+      "frames": 120,
+      "neutral_match_errors": {
+        "1": 0.0,
+        "120": 0.0,
+        "121": 0.0
+      },
+      "antenna_circle_radius_max": 0.4816588267505937,
+      "gaze_leads_head": true,
+      "iris_inside_aperture": true,
+      "markers": [
+        [
+          1,
+          "NEUTRAL"
+        ],
+        [
+          15,
+          "EYES DOWN"
+        ],
+        [
+          24,
+          "HEAD FOLLOWS"
+        ],
+        [
+          37,
+          "CONSIDER"
+        ],
+        [
+          51,
+          "SMALL NOD"
+        ],
+        [
+          65,
+          "LOOK BACK"
+        ],
+        [
+          73,
+          "SOFT BLINK"
+        ],
+        [
+          106,
+          "NEUTRAL HOLD"
+        ]
+      ],
+      "hero_frame": 55
+    },
+    "c-playful": {
+      "name": "C / Playful",
+      "description": "Glances the opposite way, double-takes, tilts playfully, then returns with an antenna bounce.",
+      "blend": "robot-c-playful.blend",
+      "duration_seconds": 5.0,
+      "fps": 24,
+      "frames": 120,
+      "neutral_match_errors": {
+        "1": 0.0,
+        "120": 0.0,
+        "121": 0.0
+      },
+      "antenna_circle_radius_max": 0.4924755365346367,
+      "gaze_leads_head": true,
+      "iris_inside_aperture": true,
+      "markers": [
+        [
+          1,
+          "NEUTRAL"
+        ],
+        [
+          14,
+          "FIRST GLANCE"
+        ],
+        [
+          23,
+          "HEAD FOLLOWS"
+        ],
+        [
+          38,
+          "LOOK BACK"
+        ],
+        [
+          45,
+          "DOUBLE TAKE / EYES FIRST"
+        ],
+        [
+          51,
+          "PLAYFUL TILT"
+        ],
+        [
+          62,
+          "ANTENNA BOUNCE"
+        ],
+        [
+          82,
+          "BLINK"
+        ],
+        [
+          95,
+          "RECONNECT"
+        ],
+        [
+          113,
+          "NEUTRAL HOLD"
+        ]
+      ],
+      "hero_frame": 64
+    }
+  }
+}
