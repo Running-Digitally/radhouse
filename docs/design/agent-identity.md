@@ -207,3 +207,9 @@ neutral still. Hidden pages and off-screen portraits cancel playback, release
 the decoder and resume with a fresh rest interval when visible. Selecting a
 different character or signing out removes the player and its listeners. Video
 failures retain the neutral still. No animation asset loads for other characters.
+
+The saved Portrait size choice offers 48, 80 and 128 CSS pixels, with 80 as the
+default. Header and identity preview follow this choice; menu thumbnails remain
+26px. Compact layouts put the portrait below the toolbar to prevent overlap.
+Existing profile records read as 80 without a database rewrite; older clients
+may omit this field when saving and receive the same default.

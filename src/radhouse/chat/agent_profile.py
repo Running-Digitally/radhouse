@@ -14,7 +14,7 @@ from radhouse.domain.tasks import Rejected
 PROFILE_SCHEMA = "radhouse.agent-profile.v1"
 DEFAULT_PROFILE = {"schema": PROFILE_SCHEMA, "revision": 0, "name": "", "intro": "",
     "theme": "hearthside", "portrait": "ember", "accent": "fern", "surface": "paper",
-    "stateMotion": True, "iconMotion": True}
+    "stateMotion": True, "iconMotion": True, "portraitSize": 80}
 CATALOG_PATH = Path(__file__).with_name("static") / "agent-profile" / "catalog.json"
 CATALOG_ID = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
 BIDI_FORMATTING = frozenset(chr(code) for code in (*range(0x202A, 0x202F), *range(0x2066, 0x206A)))
@@ -51,6 +51,14 @@ class AgentProfileBody(BaseModel):
     surface: Literal["paper", "night", "system"]
     stateMotion: bool
     iconMotion: bool
+    portraitSize: Literal[48, 80, 128] = 80
+
+    @field_validator("portraitSize", mode="before")
+    @classmethod
+    def pixel_size(cls, value):
+        if type(value) is not int:
+            raise ValueError("invalid_portrait_size")
+        return value
 
     @field_validator("name", "intro", mode="before")
     @classmethod

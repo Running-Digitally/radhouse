@@ -8,7 +8,7 @@ const {chromium,expect:baseExpect}=await import(moduleUrl);
 const expect=baseExpect.configure({timeout:10000});
 const root=new URL("../src/radhouse/chat/static/",import.meta.url),origin="http://127.0.0.1:61393";
 const catalog=JSON.parse(await readFile(new URL("agent-profile/catalog.json",root),"utf8"));
-const initial={schema:"radhouse.agent-profile.v1",revision:0,name:"",intro:"",theme:"hearthside",portrait:"ember",accent:"fern",surface:"paper",stateMotion:true,iconMotion:true};
+const initial={schema:"radhouse.agent-profile.v1",revision:0,name:"",intro:"",theme:"hearthside",portrait:"ember",accent:"fern",surface:"paper",stateMotion:true,iconMotion:true,portraitSize:80};
 let saved={...initial},failure=null,posts=[],profileReads=0,authenticated=true;
 const fixture=`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="stylesheet" href="/chat.css"><link rel="stylesheet" href="/navigation.css"><link rel="stylesheet" href="/browser-view.css"><link rel="stylesheet" href="/owner-terminal.css"><link rel="stylesheet" href="/admin.css"><link rel="stylesheet" href="/workspace-assets/agent-profile.css">
@@ -67,7 +67,13 @@ try{
   await radio("Nori").check();await page.locator("#agent-profile-name").fill("Bramble");
   await expect(page.locator(".rh-header-name")).toHaveText("Bramble");
   await expect(page.locator("#agent-profile-link .rh-action-label")).toHaveText("Bramble");
-  await appearance().click();await radio("Clay").check();await radio("Evening").check();
+  await appearance().click();
+  for(const size of [48,80,128]){
+    await radio(size+" px").check();
+    expect((await page.locator(".rh-header-portrait").boundingBox()).width).toBe(size);
+    expect((await page.locator(".agent-profile-preview>img").boundingBox()).width).toBe(size);
+  }
+  await radio("80 px").check();await radio("Clay").check();await radio("Evening").check();
   await page.getByRole("switch",{name:"Playful interface icons"}).uncheck();
   await expect(page.locator("html")).toHaveAttribute("data-icon-animation","off");
   await expect(page.locator("html")).toHaveAttribute("data-agent-state-motion","on");
@@ -127,6 +133,14 @@ try{
   await page.locator("#agent-profile-name").fill("Mobile companion");
   for(const width of [390,320]){
     await page.setViewportSize({width,height:844});await noOverflow();
+    await appearance().click();
+    for(const size of [48,80,128]){
+      await radio(size+" px").check();await noOverflow();
+      const portrait=await page.locator(".rh-header-portrait").boundingBox();
+      expect(portrait.width).toBe(size);
+      const brand=await page.locator("header .brand").boundingBox();expect(portrait.y).toBeGreaterThanOrEqual(brand.y+brand.height);
+    }
+    await radio("80 px").check();await identity().click();
     const geometry=await page.locator(".rh-header-portrait").boundingBox();
     expect(Math.abs(geometry.x+geometry.width/2-width/2)).toBeLessThan(1);
     await page.locator("#navigation-toggle").click();await expect(page.locator("#agent-profile-link")).toBeFocused();
@@ -143,8 +157,25 @@ try{
   expect(await page.locator("#agent-profile-link").evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);
   await page.locator("#agent-profile-name").fill("🙂".repeat(32));await expect(save()).toBeEnabled();
   await page.locator("#agent-profile-name").fill("🙂".repeat(33));await expect(save()).toBeDisabled();await expect(status()).toHaveText("Use up to 32 characters.");
+  // Echo has the same selectable dimensions as static portraits, with durable Save.
+  await page.getByRole("button",{name:"Discard",exact:true}).click();await identity().click();
+  await radio("Signal Station").check();await radio("Echo").check();await appearance().click();
+  await page.emulateMedia({reducedMotion:"reduce"});
+  for(const width of [1280,390,320]){
+    await page.setViewportSize({width,height:900});
+    for(const size of [48,80,128]){
+      await radio(size+" px").check();await noOverflow();
+      expect((await page.locator(".rh-header-portrait").boundingBox()).width).toBe(size);
+      expect((await page.locator(".agent-profile-preview>.rh-animated-portrait").boundingBox()).width).toBe(size);
+    }
+  }
+  await save().click();await expect(status()).toHaveText("Saved.");
+  await page.evaluate(()=>profile.load());await appearance().click();await expect(radio("128 px")).toBeChecked();
+  await radio("80 px").check();await save().click();await expect(status()).toHaveText("Saved.");
+  await page.setViewportSize({width:1280,height:900});await page.screenshot({path:"/private/tmp/radhouse-echo-profile-desktop.png",fullPage:true});
+  await page.setViewportSize({width:390,height:844});await page.screenshot({path:"/private/tmp/radhouse-echo-profile-mobile.png",fullPage:true});
   // An expired session clears identity/drafts and hides the shared shell.
-  await page.getByRole("button",{name:"Discard",exact:true}).click();authenticated=false;
+  authenticated=false;
   await page.evaluate(()=>profile.load());await expect(page.locator("#profile .agent-profile-editor")).toBeEmpty();
   await expect(page.locator(".rh-header-identity")).toBeHidden();expect(await page.evaluate(()=>profile.profile)).toBeNull();
   // A response arriving after sign-out cannot put private profile text back into the shell.
@@ -154,6 +185,6 @@ try{
     const pending=profile.load();profile.clear();complete(value);await pending;
   },saved);
   await expect(page.locator("#profile .agent-profile-editor")).toBeEmpty();
-  expect(await page.evaluate(()=>profile.profile)).toBeNull();await expect(page.locator(".rh-header-name")).toHaveText("Your Agent");
+  expect(await page.evaluate(()=>profile.profile)).toBeNull();expect(await page.locator("video").count()).toBe(0);await expect(page.locator(".rh-header-name")).toHaveText("Your Agent");
   expect(errors).toEqual([]);console.log("Saved agent identity/appearance: persistence, safe text, conflicts, two-tab drafts, motion, keyboard/focus, eight dark-surface contrast checks, 390/320px and auth races passed.");
 }finally{await closeBrowser(browser);}

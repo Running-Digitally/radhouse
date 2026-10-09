@@ -124,22 +124,26 @@
   .rh-icon,.rh-icon path{animation:none!important;transform:none!important}
 }
 
+:root{--rh-portrait-size:80px}
+:root[data-rh-portrait-size="48"]{--rh-portrait-size:48px}
+:root[data-rh-portrait-size="128"]{--rh-portrait-size:128px}
+
 /* The portrait stays centered; the separate house mark reflects actual state. */
-.navigation-shell>header{position:relative;min-height:86px}
+.navigation-shell>header{position:relative;min-height:calc(var(--rh-portrait-size) + 42px)}
 .rh-header-identity{position:absolute;left:50%;top:8px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:3px}
-.rh-header-portrait{display:grid;place-items:center;min-width:44px;width:44px;height:44px;border-radius:50%;border:2px solid var(--rh-accent,#456d55);background:var(--panel);color:var(--rh-accent,#456d55);text-decoration:none;transition:box-shadow 160ms ease;overflow:hidden}
+.rh-header-portrait{display:grid;place-items:center;min-width:var(--rh-portrait-size);width:var(--rh-portrait-size);height:var(--rh-portrait-size);border-radius:50%;border:2px solid var(--rh-accent,#456d55);background:var(--panel);color:var(--rh-accent,#456d55);text-decoration:none;transition:box-shadow 160ms ease;overflow:hidden}
 .rh-header-portrait img{width:100%;height:100%;object-fit:cover}
 .rh-header-portrait>.rh-icon{width:24px;height:24px}
 .rh-header-portrait:hover{box-shadow:0 0 0 4px var(--rh-accent-soft,#eaf0e6)}
 .rh-header-portrait:focus-visible{outline:3px solid var(--rh-focus);outline-offset:4px}
 .rh-header-name{font-size:11px;line-height:1.5;max-width:150px;text-overflow:ellipsis;overflow:hidden;white-space:nowrap;color:var(--muted);font-weight:600}
-.rh-header-status{position:absolute;left:calc(50% + 34px);top:2px;display:grid;place-items:center;min-width:32px;height:40px;color:var(--rh-accent,#456d55)}
+.rh-header-status{position:absolute;left:calc(50% + var(--rh-portrait-size)/2 + 10px);top:2px;display:grid;place-items:center;min-width:32px;height:40px;color:var(--rh-accent,#456d55)}
 .rh-header-status>.rh-icon{width:26px;height:26px}
 .rh-nav-portrait{width:26px;height:26px;border-radius:50%;object-fit:cover;flex:none;border:1px solid var(--rh-accent,#456d55)}
 .navigation-shell #management-nav .rh-agent-nav{margin-bottom:12px;color:var(--rh-accent,#456d55)}
 .navigation-shell #management-nav .rh-agent-nav .rh-action-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-@media(max-width:760px){.navigation-shell>header{min-height:82px}.navigation-shell>header .brand{font-size:21px}.rh-header-name{max-width:110px}.rh-header-status{left:calc(50% + 28px);min-width:28px}.rh-header-status>.rh-icon{width:23px;height:23px}}
-@media(max-width:380px){.navigation-shell>header{gap:5px}.navigation-shell>header .brand{font-size:16px;letter-spacing:-.3px}.rh-header-name{max-width:86px}.rh-header-status{left:calc(50% + 26px);min-width:26px}.rh-header-status>.rh-icon{width:21px;height:21px}}
+@media(max-width:760px){.navigation-shell>header{min-height:0;flex-wrap:wrap}.rh-header-identity{position:relative;left:auto;top:auto;transform:none;flex-basis:100%;order:1;margin:0 0 6px}.navigation-shell>header .brand{font-size:21px}.rh-header-name{max-width:110px}.rh-header-status{left:calc(50% + var(--rh-portrait-size)/2 + 10px);min-width:28px}.rh-header-status>.rh-icon{width:23px;height:23px}}
+@media(max-width:380px){.navigation-shell>header{gap:5px}.navigation-shell>header .brand{font-size:16px;letter-spacing:-.3px}.rh-header-name{max-width:86px}.rh-header-status{left:calc(50% + var(--rh-portrait-size)/2 + 10px);min-width:26px}.rh-header-status>.rh-icon{width:21px;height:21px}}
 @media(prefers-reduced-motion:reduce){.rh-header-portrait{transition:none}}
 
 /* Echo uses the same crop and layout as the still portrait. */
