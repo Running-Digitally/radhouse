@@ -175,18 +175,11 @@ h1 em { display: inline-block; font-family: var(--serif); font-weight: 400; font
 .browser-hide, .browser-show { white-space: nowrap; font-size: 10px; }
 .browser-hide > span, .browser-show > span { margin-left: 5px; }
 .browser-preview:not([open]) .browser-hide, .browser-preview[open] .browser-show { display: none; }
-.browser-window { margin: 0 13px 13px; background: var(--white); border: 1px solid #c5ccb6; border-radius: 2px; }
+.browser-window { margin: 0 13px 13px; background: var(--white); border: 1px solid #c5ccb6; border-radius: 2px; overflow: hidden; }
 .browser-address { display: flex; align-items: center; gap: 11px; padding: 11px 12px; border-bottom: 1px solid var(--line); font-size: 10px; color: var(--muted); }
 .browser-dots { font-size: 7px; color: #a9b49a; white-space: nowrap; }
 .browser-owner { margin-left: auto; color: var(--green); font-size: 9px; white-space: nowrap; }
-.browser-paper { position: relative; padding: 28px 24px 32px; min-height: 245px; }
-.browser-page-label { display: block; font-size: 9px; text-transform: uppercase; letter-spacing: .1em; color: var(--clay); margin-bottom: 17px; }
-.browser-paper h3 { font: italic 30px/1.2 var(--serif); color: var(--green); letter-spacing: -.025em; }
-.browser-paper p { font-size: 12px; line-height: 1.8; margin-top: 12px; color: var(--muted); }
-.browser-page-lines { width: 63%; margin-top: 24px; }
-.browser-page-lines span { display: block; height: 3px; background: #e5e8d9; margin-top: 7px; }
-.browser-page-lines span:last-child { width: 70%; }
-.browser-pointer { position: absolute; width: 24px; height: 29px; right: 20%; bottom: 23%; color: var(--green); }
+.browser-search-image { display: block; width: 100%; height: auto; }
 .browser-caption { font-size: 9px; line-height: 1.7; color: var(--muted); margin-top: 14px; }
 .browser-handover { display: flex; flex-wrap: wrap; gap: 8px 16px; list-style: none; padding: 0; margin: 19px 0 0; font-size: 10px; color: var(--green-dark); }
 .browser-handover li { display: flex; align-items: center; gap: 6px; }
@@ -324,8 +317,6 @@ h1 em { display: inline-block; font-family: var(--serif); font-weight: 400; font
   .browser-preview summary { padding-inline: 12px; }
   .browser-address { flex-wrap: wrap; gap: 8px; }
   .browser-owner { width: 100%; margin-left: 0; }
-  .browser-paper { padding-inline: 18px; }
-  .browser-paper h3 { font-size: 28px; }
   .invitation { grid-template-columns: 1fr; gap: 22px; }
   .invitation h2 { font-size: 38px; }
   .invitation h2 br { display: none; }

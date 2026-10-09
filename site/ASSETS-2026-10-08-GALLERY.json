@@ -99,5 +99,15 @@
     "module_js_sha256": "2ac31fd495d3dafb40eb6ea78c8913687f153d51aa803b15c68ff2c2fa360bdd",
     "source_css_sha256": "2d5a026fb7aa2dac89a14ed191b32da694c1f27909b3e25616f725d5bb956a9a",
     "extraction": "Exact RadhouseIcons module; page navigation bootstrap excluded."
+  },
+  "browser_preview": {
+    "source": "Owner-supplied Google search screenshot for Running Digitally",
+    "received_date": "2026-10-08",
+    "file": "running-digitally-google-search.png",
+    "sha256": "34827543ae19347d63d39cf307e22a9cfb694b50ab5f4df5eecb86e41012bfe2",
+    "width": 2202,
+    "height": 1170,
+    "bytes": 315746,
+    "export": "Original PNG copied unchanged."
   }
 }

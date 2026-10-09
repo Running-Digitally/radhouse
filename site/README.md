@@ -23,8 +23,9 @@ build; current limitations sit in the pilot's native disclosure.
 
 The browser feature section reflects the deployed private pilot: one shared
 live view of the assistant's browser and Hide/Show controls. Its native disclosure
-illustrates hiding the view without requiring JavaScript; it is clearly labelled
-as an illustration, with no connected live session. The page explains qualified
+shows the owner's real Google search screenshot for Running Digitally, unchanged
+and at its original aspect ratio. Hide/Show works without JavaScript; the caption
+identifies it as a preview. The page explains qualified
 human takeover, return and page sharing. The pilot note also describes selective
 access to large attached documents.
 
