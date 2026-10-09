@@ -1,0 +1,146 @@
+{
+  "keeper_a_unchanged": true,
+  "media": {
+    "b-thoughtful": [
+      {
+        "file": "robot-b-thoughtful-256.mp4",
+        "bytes": 52174,
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "codec_type": "video",
+            "width": 256,
+            "height": 256,
+            "avg_frame_rate": "24/1",
+            "nb_read_frames": "120"
+          }
+        ],
+        "format": {
+          "duration": "5.000000"
+        }
+      },
+      {
+        "file": "robot-b-thoughtful-256.webm",
+        "bytes": 43341,
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "vp9",
+            "codec_type": "video",
+            "width": 256,
+            "height": 256,
+            "avg_frame_rate": "24/1",
+            "nb_read_frames": "120"
+          }
+        ],
+        "format": {
+          "duration": "5.000000"
+        }
+      }
+    ],
+    "c-playful": [
+      {
+        "file": "robot-c-playful-256.mp4",
+        "bytes": 64939,
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "codec_type": "video",
+            "width": 256,
+            "height": 256,
+            "avg_frame_rate": "24/1",
+            "nb_read_frames": "120"
+          }
+        ],
+        "format": {
+          "duration": "5.000000"
+        }
+      },
+      {
+        "file": "robot-c-playful-256.webm",
+        "bytes": 49904,
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "vp9",
+            "codec_type": "video",
+            "width": 256,
+            "height": 256,
+            "avg_frame_rate": "24/1",
+            "nb_read_frames": "120"
+          }
+        ],
+        "format": {
+          "duration": "5.000000"
+        }
+      }
+    ]
+  },
+  "encoded_neutral_comparison": {
+    "b-thoughtful": {
+      "first_vs_approved_a": {
+        "mean_8bit_channel_difference": 0.9475,
+        "max_channel_difference": 27
+      },
+      "first_vs_last": {
+        "mean_8bit_channel_difference": 1.1108,
+        "max_channel_difference": 27
+      }
+    },
+    "c-playful": {
+      "first_vs_approved_a": {
+        "mean_8bit_channel_difference": 0.952,
+        "max_channel_difference": 25
+      },
+      "first_vs_last": {
+        "mean_8bit_channel_difference": 1.2232,
+        "max_channel_difference": 30
+      }
+    }
+  },
+  "browser_verification": {
+    "autoplay_sequence_verified": true,
+    "observed_history_latest_first": [
+      {
+        "clip": "b",
+        "rest": 4.267
+      },
+      {
+        "clip": "a",
+        "rest": 3.746
+      },
+      {
+        "clip": "c",
+        "rest": 5.908
+      },
+      {
+        "clip": "a",
+        "rest": 5.0
+      },
+      {
+        "clip": "b",
+        "rest": 5.65
+      },
+      {
+        "clip": "a",
+        "rest": 5.9
+      }
+    ],
+    "no_immediate_repeats_in_observation": true,
+    "waits_within_2_to_6_seconds": true,
+    "video_loop_attribute": false,
+    "video_errors": 0,
+    "display_sizes_visually_inspected": [
+      48,
+      80,
+      128
+    ],
+    "manual_input_checks": "Not confirmed; preview opening was queued because the chat was not focused."
+  }
+}

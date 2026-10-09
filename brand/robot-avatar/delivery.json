@@ -1,0 +1,85 @@
+{
+  "state": "generic_idle",
+  "loop": true,
+  "alpha": false,
+  "display_sizes_css_px": [
+    48,
+    80,
+    128
+  ],
+  "media": [
+    {
+      "file": "robot-idle-256.mp4",
+      "bytes": 40549,
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "h264",
+          "codec_type": "video",
+          "width": 256,
+          "height": 256,
+          "pix_fmt": "yuv420p",
+          "avg_frame_rate": "24/1",
+          "nb_read_frames": "96"
+        }
+      ],
+      "format": {
+        "duration": "4.000000"
+      }
+    },
+    {
+      "file": "robot-idle-256.webm",
+      "bytes": 39195,
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "vp9",
+          "codec_type": "video",
+          "width": 256,
+          "height": 256,
+          "pix_fmt": "yuv420p",
+          "avg_frame_rate": "24/1",
+          "nb_read_frames": "96"
+        }
+      ],
+      "format": {
+        "duration": "4.000000"
+      }
+    },
+    {
+      "file": "robot-idle-master.mp4",
+      "bytes": 149998,
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "h264",
+          "codec_type": "video",
+          "width": 384,
+          "height": 384,
+          "pix_fmt": "yuv420p",
+          "avg_frame_rate": "24/1",
+          "nb_read_frames": "96"
+        }
+      ],
+      "format": {
+        "duration": "4.000000"
+      }
+    }
+  ],
+  "browser_verification": {
+    "browser": "Codex in-app browser",
+    "video_duration_seconds": 4,
+    "all_four_videos_ready": true,
+    "all_four_videos_pause": true,
+    "circle_and_rounded_square_controls": true,
+    "display_sizes_visually_inspected": [
+      48,
+      80,
+      128
+    ],
+    "video_errors": 0
+  }
+}
