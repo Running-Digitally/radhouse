@@ -116,9 +116,28 @@
 .rh-appearance-switch input:focus-visible{outline:2px solid var(--rh-focus);outline-offset:4px}
 .rh-appearance-note{font-size:13px;color:#526357;margin:4px 0 0;line-height:1.6}
 /* Manual preference and OS reduced motion stop loops and in-flight Web Animations. */
-:root[data-icon-animation="off"] .rh-icon,:root[data-icon-animation="off"] .rh-icon path{animation:none!important;transform:none!important}
+:root[data-icon-animation="off"] .rh-icon:not([data-icon="agent"]),:root[data-icon-animation="off"] .rh-icon:not([data-icon="agent"]) path{animation:none!important;transform:none!important}
+:root[data-agent-state-motion="off"] .rh-icon[data-icon="agent"],:root[data-agent-state-motion="off"] .rh-icon[data-icon="agent"] path{animation:none!important;transform:none!important}
 :root[data-icon-animation="off"] .rh-action{transition:none}
 @media(prefers-reduced-motion:reduce){
   .rh-action{transition:none}
   .rh-icon,.rh-icon path{animation:none!important;transform:none!important}
 }
+
+/* The portrait stays centered; the separate house mark reflects actual state. */
+.navigation-shell>header{position:relative;min-height:86px}
+.rh-header-identity{position:absolute;left:50%;top:8px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:3px}
+.rh-header-portrait{display:grid;place-items:center;min-width:44px;width:44px;height:44px;border-radius:50%;border:2px solid var(--rh-accent,#456d55);background:var(--panel);color:var(--rh-accent,#456d55);text-decoration:none;transition:box-shadow 160ms ease;overflow:hidden}
+.rh-header-portrait img{width:100%;height:100%;object-fit:cover}
+.rh-header-portrait>.rh-icon{width:24px;height:24px}
+.rh-header-portrait:hover{box-shadow:0 0 0 4px var(--rh-accent-soft,#eaf0e6)}
+.rh-header-portrait:focus-visible{outline:3px solid var(--rh-focus);outline-offset:4px}
+.rh-header-name{font-size:11px;line-height:1.5;max-width:150px;text-overflow:ellipsis;overflow:hidden;white-space:nowrap;color:var(--muted);font-weight:600}
+.rh-header-status{position:absolute;left:calc(50% + 34px);top:2px;display:grid;place-items:center;min-width:32px;height:40px;color:var(--rh-accent,#456d55)}
+.rh-header-status>.rh-icon{width:26px;height:26px}
+.rh-nav-portrait{width:26px;height:26px;border-radius:50%;object-fit:cover;flex:none;border:1px solid var(--rh-accent,#456d55)}
+.navigation-shell #management-nav .rh-agent-nav{margin-bottom:12px;color:var(--rh-accent,#456d55)}
+.navigation-shell #management-nav .rh-agent-nav .rh-action-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:760px){.navigation-shell>header{min-height:82px}.navigation-shell>header .brand{font-size:21px}.rh-header-name{max-width:110px}.rh-header-status{left:calc(50% + 28px);min-width:28px}.rh-header-status>.rh-icon{width:23px;height:23px}}
+@media(max-width:380px){.navigation-shell>header{gap:5px}.navigation-shell>header .brand{font-size:16px;letter-spacing:-.3px}.rh-header-name{max-width:86px}.rh-header-status{left:calc(50% + 26px);min-width:26px}.rh-header-status>.rh-icon{width:21px;height:21px}}
+@media(prefers-reduced-motion:reduce){.rh-header-portrait{transition:none}}

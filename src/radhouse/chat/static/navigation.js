@@ -33,11 +33,13 @@ window.RadhouseIcons = (() => {
   const preferenceKey="radhouse.appearance.icon-animation";
   const reduced=matchMedia("(prefers-reduced-motion: reduce)");
   const agentStates=Object.freeze(["ready","idle","thinking","working","waiting","paused","complete","error"]);
-  let enabled=true, preferenceSaved=true;
+  let enabled=true, stateEnabled=true, managedMotion=false, preferenceSaved=true;
   try {enabled=localStorage.getItem(preferenceKey)!=="off";} catch (_) { preferenceSaved=false; }
+  stateEnabled=enabled;
   function effective(){return enabled && !reduced.matches;}
   function applyPreference(){
     document.documentElement.dataset.iconAnimation=effective()?"on":"off";
+    document.documentElement.dataset.agentStateMotion=stateEnabled && !reduced.matches?"on":"off";
     if(!effective())for(const animation of [...running])animation.cancel();
     for(const input of document.querySelectorAll('[data-icon-animation-toggle]'))input.checked=enabled;
     for(const note of document.querySelectorAll('.rh-appearance-note'))note.textContent=
@@ -48,13 +50,19 @@ window.RadhouseIcons = (() => {
   }
   function setEnabled(value){
     enabled=Boolean(value);let saved=true;
+    if(!managedMotion)stateEnabled=enabled;
     try {localStorage.setItem(preferenceKey,enabled?"on":"off");}catch(_){saved=false;}
     preferenceSaved=saved;applyPreference();return saved;
   }
+  function setMotionPreferences({iconMotion=true,stateMotion=true}={}){
+    managedMotion=true;enabled=Boolean(iconMotion);stateEnabled=Boolean(stateMotion);applyPreference();
+  }
   reduced.addEventListener("change",applyPreference);
   window.addEventListener("storage",event=>{
+    if(managedMotion)return;
     if(event.key===preferenceKey || event.key===null){
       try {enabled=localStorage.getItem(preferenceKey)!=="off";}catch(_){return;}
+      stateEnabled=enabled;
       applyPreference();
     }
   });
@@ -217,7 +225,7 @@ window.RadhouseIcons = (() => {
   function busy(node,pending){node.setAttribute("aria-busy",String(pending));if(pending)node.dataset.state="pending";else delete node.dataset.state;}
   applyPreference();
   return Object.freeze({create,decorate,busy,press:node=>motion(node,true),hover:node=>motion(node),setAgentState,agentStates,
-    names:Object.freeze(Object.keys(paths)),appearanceControl,setEnabled,enabled:()=>enabled,effective,reduced:()=>reduced.matches});
+    names:Object.freeze(Object.keys(paths)),appearanceControl,setEnabled,setMotionPreferences,enabled:()=>enabled,effective,reduced:()=>reduced.matches});
 })();
 
 // Presentation only. Each page owns its session check and private content.
@@ -255,7 +263,30 @@ window.RadhouseIcons = (() => {
   toggle.type = "button"; toggle.id = "navigation-toggle"; toggle.hidden = true;
   toggle.setAttribute("aria-controls", panel.id);
   icons.decorate(toggle, "menu", "Open menu", {compact: true}); header.prepend(toggle);
-  const destinations = {"/": "chat", "/library": "library", "/browser": "browser", "/terminal": "terminal",
+  let agentLink=nav.querySelector('a[href="/agent"]');
+  if(!agentLink){agentLink=document.createElement("a");agentLink.href="/agent";agentLink.textContent="Your Agent";nav.prepend(agentLink);}
+  agentLink.id="agent-profile-link";agentLink.classList.add("rh-agent-nav");
+  const identity=document.createElement("div");identity.className="rh-header-identity";identity.hidden=true;
+  const portraitLink=document.createElement("a");portraitLink.href="/agent";portraitLink.className="rh-header-portrait";portraitLink.setAttribute("aria-label","Customize Your Agent");
+  const portrait=document.createElement("img");portrait.alt="";portrait.width=portrait.height=44;portrait.decoding="async";portrait.hidden=true;
+  const fallbackPortrait=icons.create("agent");portraitLink.append(fallbackPortrait,portrait);
+  const identityName=document.createElement("span");identityName.className="rh-header-name";identityName.textContent="Your Agent";
+  const liveStatus=document.createElement("span");liveStatus.className="rh-header-status";liveStatus.setAttribute("role","img");liveStatus.setAttribute("aria-label","Agent status unavailable");liveStatus.hidden=true;
+  liveStatus.append(icons.create("agent"));identity.append(portraitLink,identityName,liveStatus);header.append(identity);
+  let profile=null,profileEntry=null,agentStatus=null;
+  function renderProfile(){
+    const name=profile?.name || "Your Agent";identityName.textContent=name;portraitLink.setAttribute("aria-label","Customize "+name);
+    icons.decorate(agentLink,"agent",name);
+    let navPortrait=agentLink.querySelector(".rh-nav-portrait");
+    if(profileEntry){
+      portrait.src=profileEntry.asset;portrait.hidden=false;fallbackPortrait.setAttribute("hidden","");
+      if(!navPortrait){navPortrait=document.createElement("img");navPortrait.alt="";navPortrait.className="rh-nav-portrait";navPortrait.width=navPortrait.height=26;navPortrait.decoding="async";agentLink.prepend(navPortrait);}
+      navPortrait.src=profileEntry.asset;agentLink.querySelector(".rh-icon").setAttribute("hidden","");
+    }else{
+      portrait.removeAttribute("src");portrait.hidden=true;fallbackPortrait.removeAttribute("hidden");navPortrait?.remove();agentLink.querySelector(".rh-icon").removeAttribute("hidden");
+    }
+  }
+  const destinations = {"/agent": "agent", "/": "chat", "/library": "library", "/browser": "browser", "/terminal": "terminal",
     "/about-you": "about-you", "/settings": "settings", "/infrastructure": "infrastructure"};
   for (const link of nav.querySelectorAll("a[href]")) {
     const name = destinations[new URL(link.href).pathname]; if (name) icons.decorate(link, name);
@@ -280,6 +311,7 @@ window.RadhouseIcons = (() => {
   function render() {
     const open = authenticated && (mobile.matches ? drawerOpen : !collapsed);
     toggle.hidden = !authenticated; nav.hidden = !authenticated; panel.hidden = !open;
+    identity.hidden=!authenticated;
     toggle.setAttribute("aria-expanded", String(open));
     const toggleLabel = open ? "Close menu" : "Open menu";
     toggle.setAttribute("aria-label", toggleLabel); toggle.dataset.tooltip = toggleLabel;
@@ -353,9 +385,16 @@ window.RadhouseIcons = (() => {
         if (new URL(link.href).pathname === location.pathname) { link.setAttribute("aria-current", "page"); }
         else { link.removeAttribute("aria-current"); }
       }
-      if (!authenticated) { drawerOpen = false; }
+      if (!authenticated) { drawerOpen = false;profile=null;profileEntry=null;agentStatus=null;liveStatus.hidden=true;renderProfile(); }
       render();
     },
+    setProfile(value,entry=null){profile=value;profileEntry=entry;renderProfile();},
+    setAgentState(state,text){
+      if(!icons.agentStates.includes(state)){agentStatus=null;liveStatus.hidden=true;return;}
+      agentStatus={state,text:String(text || state)};icons.setAgentState(liveStatus,state);liveStatus.setAttribute("aria-label",agentStatus.text);liveStatus.hidden=false;
+      document.dispatchEvent(new CustomEvent("radhouse-agent-state",{detail:{...agentStatus}}));
+    },
+    agentStatus:()=>agentStatus ? {...agentStatus} : null,
     close,
     isOpen: () => !panel.hidden,
   });

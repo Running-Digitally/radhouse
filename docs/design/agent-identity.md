@@ -130,3 +130,60 @@ VM/service.
 | Adopt the owner shell | Add authenticated `/agent`, the first navigation item and centered portrait to the shared chat/admin layout. Retain Chat, Library, Browser, Terminal and About You. Reuse the canonical icons and actual reply-state adapter. | Save/Discard, keyboard focus, 320/390px layouts, cross-tab appearance and device reduced motion work. Synthetic preview states never issue runtime commands or report invented live states. |
 | Package assets | Generate small production renditions of the approved catalog portraits and package their immutable catalog under existing static assets. Load visible/selected portraits; retain original artwork and prompts here. Custom uploaded portraits need a validated raster asset endpoint before adoption. | Runtime pages serve the optimized assets and stable IDs; no full artwork preloading or browser-local data URL persistence is required. |
 | Release | Qualify persistence, owner/CSRF isolation, safe rendering, navigation and existing browser/terminal regressions; freeze a new web package and deploy on deployment-target. Keep the current release and its native/browser pins intact until that package is ready. | Actual web retention/health and authenticated UI checks pass. Runtime IDs, prompts, memory, tool permissions and model choices remain unchanged. |
+
+### Saved identity and quiet chat implementation
+
+The owner authorized this functional adoption and a quieter chat composer on
+8 October. This is D2 structural work because it adds a presentation save
+contract. The existing authenticated web application and SQLite `ChatStore`
+remain the only components involved; no new service or Hermes change is needed.
+
+`GET /chat/agent-profile` returns `radhouse.agent-profile.v1`, a revision and
+`name`, `intro`, `theme`, `portrait`, `accent`, `surface`, `stateMotion` and
+`iconMotion`. An absent owner record returns defaults without creating a chat
+or calling the inference engine. `POST` accepts the complete same shape with
+the current revision. Existing session authorization derives the immutable
+principal and enforces Origin/CSRF; clients cannot choose an owner or runtime ID.
+Names are at most 32 characters and introductions at most 160. Theme/portrait
+pairs come from the packaged approved catalog, appearance values are closed
+choices, and motion values are strict booleans. Unknown fields are rejected.
+An atomic revision comparison returns a conflict rather than overwriting edits
+from another tab. The UI keeps the draft and offers review of the saved version.
+
+The store adds one owner-keyed table using the existing additive schema-3
+initialization. Application profile code may depend on authentication and
+`ChatStore`; neither the agent gateway nor memory/model contracts depend on
+presentation. Saving or renaming never dispatches a message or changes prompts,
+permissions, memory, files or the runtime binding. Original artwork remains in
+the documentation reference; production packages only small WebP renditions
+and a fixed catalog through explicit static routes. Custom uploads are outside
+this first functional slice.
+
+The shell adds `/agent`, a first navigation item and centered portrait with a
+separate actual reply-status mark. Identity and Appearance use explicit Save
+and Discard; draft preview is reversible, saved choices survive reload, and
+cross-tab updates cannot silently replace an unsaved edit. Device reduced
+motion takes precedence over both saved motion switches. The existing shared
+icon controller owns motion; profile code does not create another icon family
+or expose the mock's synthetic runtime controls.
+
+Chat retains the message box, attachment action and Send as its primary row.
+A compact Message options disclosure holds browser/terminal context and
+configured-engine choices, refresh and availability information. Selected
+context remains visible as short removable chips; full page titles and engine
+details stay in the disclosure. Copy actions remain keyboard/touch accessible
+while becoming visually quieter. This changes presentation only: current
+message acceptance, retry identity and browser/terminal context capture remain
+unchanged; sending during an active reply belongs to its separately researched
+slice.
+
+Call paths are `authenticated session → profile GET/POST → validated catalog
+and revision → owner-keyed store → saved shell presentation`, and `composer
+options → existing context/model selection → existing durable message send`.
+Invalid requests write nothing, stale saves preserve the draft, and unavailable
+profile loading leaves chat usable with the default presentation. Focused API
+tests cover owner/CSRF isolation, persistence, concurrent saves and invalid
+inputs. Browser checks cover Save/Discard/reload, safe text, saved surfaces,
+320/390px layouts, keyboard/reduced motion, quiet composer disclosures and
+existing Browser/Terminal navigation. The final deployment-target package must enumerate
+the new static assets and preserve current native pins and owner data.
