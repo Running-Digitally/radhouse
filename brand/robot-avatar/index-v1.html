@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Robot avatar — idle proof of concept</title>
+<style>
+  :root{color-scheme:dark;font:15px/1.5 system-ui,sans-serif;background:#151b1d;color:#edf0e9}
+  *{box-sizing:border-box} body{margin:0} main{max-width:930px;margin:auto;padding:44px 30px}
+  .eyebrow{color:#b7c69b;font-size:11px;letter-spacing:.16em;text-transform:uppercase;font-weight:650}
+  h1{font-size:38px;line-height:1.15;letter-spacing:-.04em;margin:12px 0}
+  .intro{color:#aeb8b9;margin:0;max-width:630px;font-size:16px}
+  .toolbar{display:flex;align-items:center;gap:10px;margin:28px 0 24px;flex-wrap:wrap}
+  button,a.download{font:inherit;border:1px solid #475352;border-radius:9px;padding:8px 16px;background:#222c2d;color:#edf0e9;cursor:pointer;text-decoration:none}
+  button:hover,a.download:hover{background:#344140}button:focus-visible,a:focus-visible{outline:2px solid #d7dda0;outline-offset:4px}
+  button[aria-pressed=true]{background:#b6c493;border-color:#b6c493;color:#1b2417}
+  #play{min-width:86px}.spacer{flex:1}.tag{font-size:12px;color:#c0cdab;border:1px solid #506048;padding:5px 10px;border-radius:20px}
+  .comparison{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  .panel{border:1px solid #354140;border-radius:18px;background:#1d2627;padding:22px}
+  .label{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:13px;color:#c5ceca;margin-bottom:20px}
+  .label span{color:#7f9190;font-size:11px}
+  .portrait{width:256px;height:256px;max-width:100%;display:block;object-fit:cover;margin:0 auto 12px}
+  .rounded{border-radius:50%}.square .rounded{border-radius:16%}
+  .caption{font-size:12px;color:#95a5a2;text-align:center;margin:18px 0 0}
+  .sizes{margin-top:20px;padding:24px 28px}.sizes h2{font-size:16px;font-weight:550;margin:0}
+  .sizes>p{font-size:12px;color:#95a5a2;margin:5px 0 20px}
+  .size-grid{display:flex;justify-content:space-around;align-items:flex-end;gap:20px}
+  .size-grid figure{margin:0;text-align:center}.size-grid video{display:block;margin:0 auto}
+  figcaption{font-size:12px;color:#aeb9b4;margin-top:12px;font-variant-numeric:tabular-nums}
+  footer{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:24px 0 0;font-size:12px;color:#98aaa4}
+  footer a{color:#c2cdb3}a.download{font-size:12px;padding:7px 12px}
+  #error{color:#ffc0aa;min-height:1em;font-size:12px}
+  @media(max-width:650px){main{padding:28px 16px}h1{font-size:30px}.comparison{gap:10px}.panel{padding:14px}.portrait{height:auto;aspect-ratio:1}.label{display:block}.label span{display:block}.size-grid{gap:8px}.sizes{padding:20px 12px}}
+</style>
+<main>
+  <div class="eyebrow">Character study / 01</div>
+  <h1>A little life in the avatar.</h1>
+  <p class="intro">A reusable 3D robot, rendered as a small video loop. Gentle head movement, a curious glance, and one blink.</p>
+  <div class="toolbar">
+    <button id="play" type="button">Pause</button>
+    <button id="circle" type="button" aria-pressed="true">Circle</button>
+    <button id="square" type="button" aria-pressed="false">Rounded square</button>
+    <span class="spacer"></span><span class="tag">Generic / idle · 4 seconds</span>
+  </div>
+  <div class="comparison">
+    <section class="panel">
+      <div class="label">Original reference <span>Supplied image</span></div>
+      <img class="portrait rounded" src="reference.png" alt="Original orange robot reference" width="256" height="256">
+      <p class="caption">The visual starting point</p>
+    </section>
+    <section class="panel">
+      <div class="label">Blender proof of concept <span>256 px preview</span></div>
+      <video class="portrait rounded" id="hero" width="256" height="256" muted loop playsinline preload="auto" poster="robot-poster-256.png" aria-label="Robot idle loop: head tilt, eye movement and blink">
+        <source src="robot-idle-256.webm" type="video/webm"><source src="robot-idle-256.mp4" type="video/mp4">
+      </video>
+      <p class="caption">Simplified for a small profile picture</p>
+    </section>
+  </div>
+  <section class="panel sizes">
+    <h2>At actual avatar sizes</h2>
+    <p>These are 48, 80 and 128 CSS pixels, with no enlargement.</p>
+    <div class="size-grid">
+      <figure><video class="rounded" width="48" height="48" muted loop playsinline preload="auto" poster="robot-poster-128.png" aria-label="48 pixel robot avatar"><source src="robot-idle-256.webm" type="video/webm"><source src="robot-idle-256.mp4" type="video/mp4"></video><figcaption>48 px</figcaption></figure>
+      <figure><video class="rounded" width="80" height="80" muted loop playsinline preload="auto" poster="robot-poster-128.png" aria-label="80 pixel robot avatar"><source src="robot-idle-256.webm" type="video/webm"><source src="robot-idle-256.mp4" type="video/mp4"></video><figcaption>80 px</figcaption></figure>
+      <figure><video class="rounded" width="128" height="128" muted loop playsinline preload="auto" poster="robot-poster-256.png" aria-label="128 pixel robot avatar"><source src="robot-idle-256.webm" type="video/webm"><source src="robot-idle-256.mp4" type="video/mp4"></video><figcaption>128 px</figcaption></figure>
+    </div>
+  </section>
+  <footer>
+    <a class="download" href="robot-idle-256.mp4" download>MP4 loop</a>
+    <a class="download" href="robot-idle-256.webm" download>WebM loop</a>
+    <a class="download" href="robot-avatar.blend" download>Blender model</a>
+    <span>One model. New animation clips for future states.</span>
+  </footer>
+  <p id="error" role="status"></p>
+</main>
+<script>
+  const videos=[...document.querySelectorAll('video')], play=document.querySelector('#play');
+  const motion=matchMedia('(prefers-reduced-motion: reduce)');
+  let playing=!motion.matches;
+  async function update(){
+    play.textContent=playing?'Pause':'Play';
+    for(const v of videos){
+      if(playing&&!document.hidden){try{await v.play()}catch{playing=false;play.textContent='Play'}}
+      else v.pause();
+    }
+  }
+  play.addEventListener('click',()=>{playing=!playing;update()});
+  motion.addEventListener('change',e=>{if(e.matches){playing=false;update()}});
+  document.addEventListener('visibilitychange',update);
+  for(const shape of ['circle','square'])document.querySelector('#'+shape).addEventListener('click',()=>{
+    document.body.classList.toggle('square',shape==='square');
+    for(const other of ['circle','square'])document.querySelector('#'+other).setAttribute('aria-pressed',String(shape===other));
+  });
+  videos.forEach(v=>v.addEventListener('error',()=>{document.querySelector('#error').textContent='The video could not load. The still image remains available.'}));
+  update();
+</script>
+</html>
