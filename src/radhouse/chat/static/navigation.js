@@ -279,11 +279,11 @@ window.RadhouseIcons = (() => {
     icons.decorate(agentLink,"agent",name);
     let navPortrait=agentLink.querySelector(".rh-nav-portrait");
     if(profileEntry){
-      portrait.src=profileEntry.asset;portrait.hidden=false;fallbackPortrait.setAttribute("hidden","");
+      portrait.src=profileEntry.asset;portrait.hidden=false;window.RadhousePortrait?.update(portrait,profile,profileEntry);fallbackPortrait.setAttribute("hidden","");
       if(!navPortrait){navPortrait=document.createElement("img");navPortrait.alt="";navPortrait.className="rh-nav-portrait";navPortrait.width=navPortrait.height=26;navPortrait.decoding="async";agentLink.prepend(navPortrait);}
-      navPortrait.src=profileEntry.asset;agentLink.querySelector(".rh-icon").setAttribute("hidden","");
+      navPortrait.src=profileEntry.asset;window.RadhousePortrait?.update(navPortrait,profile,profileEntry);agentLink.querySelector(".rh-icon").setAttribute("hidden","");
     }else{
-      portrait.removeAttribute("src");portrait.hidden=true;fallbackPortrait.removeAttribute("hidden");navPortrait?.remove();agentLink.querySelector(".rh-icon").removeAttribute("hidden");
+      window.RadhousePortrait?.clear(portrait);if(navPortrait)window.RadhousePortrait?.clear(navPortrait);portrait.removeAttribute("src");portrait.hidden=true;fallbackPortrait.removeAttribute("hidden");navPortrait?.remove();agentLink.querySelector(".rh-icon").removeAttribute("hidden");
     }
   }
   const destinations = {"/agent": "agent", "/": "chat", "/library": "library", "/browser": "browser", "/terminal": "terminal",

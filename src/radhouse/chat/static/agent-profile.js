@@ -43,7 +43,7 @@
 
     clear() {
       this.epoch++;this.abort?.abort();this.abort=null;this.busy=false;this.saved=null;this.current=null;this.remoteChanged=false;this.activeTab=0;
-      this.editor.replaceChildren();this.status.textContent="";this.retry.hidden=true;
+      if(this.previewImage)window.RadhousePortrait?.clear(this.previewImage);this.editor.replaceChildren();this.status.textContent="";this.retry.hidden=true;
       applyAppearance(null);window.RadhouseNavigation?.setProfile(null);this.onChange?.(null);
     }
 
@@ -96,14 +96,14 @@
       const profile=this.current, entry=this.catalog.profiles.find(item=>item.id===profile.portrait);
       applyAppearance(profile);window.RadhouseNavigation?.setProfile(profile,entry);this.onChange?.(clone(profile));
       if(!this.previewImage)return;
-      this.previewImage.src=entry.asset;this.previewName.textContent=profile.name || "Your Agent";
+      this.previewImage.src=entry.asset;window.RadhousePortrait?.update(this.previewImage,profile,entry);this.previewName.textContent=profile.name || "Your Agent";
       this.previewIntro.textContent=profile.intro || entry.intro;this.previewRole.textContent=entry.role;
       this.storySummary.textContent="About "+entry.name;this.storyText.textContent=entry.story;
       this.suggest.textContent="Use "+entry.name;this.suggest.setAttribute("aria-label","Use "+entry.name+" as agent name");
     }
 
     render() {
-      this.editor.replaceChildren();this.editor.className="agent-profile-editor";
+      if(this.previewImage)window.RadhousePortrait?.clear(this.previewImage);this.editor.replaceChildren();this.editor.className="agent-profile-editor";
       const tabs=node("div",undefined,"agent-profile-tabs");tabs.setAttribute("role","tablist");tabs.setAttribute("aria-label","Customize your agent");
       const identity=node("button","Identity"), appearance=node("button","Appearance");
       identity.type=appearance.type="button";identity.id="agent-identity-tab";appearance.id="agent-appearance-tab";
@@ -169,7 +169,7 @@
         radio.addEventListener("change",()=>{this.current.surface=id;this.changed();});label.append(radio,node("span",name));surface.append(label);
       }
       this.appearancePanel.append(accent,surface);
-      for(const [key,title,detail] of [["stateMotion","Agent state animation","The house mark shows your agent’s actual status."],["iconMotion","Playful interface icons","Small responses to hover and click."]]){
+      for(const [key,title,detail] of [["stateMotion","Agent state animation","Animate the portrait and show your agent’s actual status in the house mark."],["iconMotion","Playful interface icons","Small responses to hover and click."]]){
         const label=node("label",undefined,"agent-motion-toggle"),text=node("span"),input=node("input");text.append(node("strong",title),node("small",detail));input.type="checkbox";input.setAttribute("role","switch");input.checked=this.current[key];input.addEventListener("change",()=>{this.current[key]=input.checked;this.changed();});label.append(text,input);this.appearancePanel.append(label);
       }
       this.appearancePanel.append(node("p","Your device’s reduced motion setting always takes priority.","agent-profile-note"));
