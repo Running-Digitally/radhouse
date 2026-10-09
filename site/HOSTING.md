@@ -11,6 +11,10 @@ The owner requested a further current-build update on 8 October (Toronto).
 evidence, activated workspace status, platform icons, character gallery and
 publication checks.
 
+For this 8 October release, the owner explicitly requested an independent
+self-review instead of GitHub Codex review. The completed review is recorded in
+[REVIEW-2026-10-08-WORKSPACE.md](REVIEW-2026-10-08-WORKSPACE.md).
+
 ## Hosting contract
 
 | Concern | Value |
