@@ -95,11 +95,15 @@ verified against public `main`. The pre-release archive is retained outside
 Git at `/private/tmp/radhouse-public-pre-workspace-20261008.tar`, SHA-256
 `4fcb24f6aea7f95490a7622d95f9eea5d3ac86a062b82458fc18df09b5e2454a`.
 Retain the existing deployment identity before upload. Follow the existing
-hosting contract: exact-source-head GitHub Codex review, normal merge, then
+hosting contract: review the final source, perform a normal merge, then
 upload only `public/` from merged source. Verify both endpoints, served hashes,
 headers, actual 404 status and visible browser interactions after publication.
 
 PR79 holds the prepared update. The owner authorized the final commit, push,
 draft/review, merge, local fast-forward and Cloudflare public rollout on 8 October
-(Toronto). The required exact-head GitHub Codex review and post-publication
-verification remain release gates. This preparation is not a public deployment.
+(Toronto). The owner then explicitly waived GitHub Codex review for this release
+and requested a fresh independent self-review. That review found no blocking
+issues; its evidence is in `REVIEW-2026-10-08-WORKSPACE.md`. This owner-directed
+review replaces the earlier Codex review requirement for this release.
+Post-publication verification remains required. This preparation is not a
+public deployment.
