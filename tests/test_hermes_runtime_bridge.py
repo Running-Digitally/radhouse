@@ -804,6 +804,47 @@ def test_stationary_native_relay_retains_frame_with_unknown_capture_time(monkeyp
     asyncio.run(run())
 
 
+def test_native_input_accepts_displayed_frame_but_fences_page_age_and_viewport(monkeypatch):
+    from types import SimpleNamespace
+    import base64
+    async def idle(self):
+        await asyncio.Event().wait()
+    monkeypatch.setattr(bridge.NativeRelay, "listen", idle)
+    calls = []
+    ack = SimpleNamespace(execute=True, outcome="reserved", command_id="input1", sequence=1)
+    controller = SimpleNamespace(reserve_input=lambda *_:ack,
+        complete_input=lambda *_, outcome:SimpleNamespace(outcome=outcome, sequence=1))
+    monkeypatch.setattr(bridge, "_controller", controller)
+    monkeypatch.setattr(bridge, "_control_modules", lambda:(SimpleNamespace(ControlRejected=ValueError),
+        SimpleNamespace(human_commands=lambda *_:None, NativeRejected=RuntimeError)))
+    owned = SimpleNamespace(identity=SimpleNamespace(session_id="chat1", generation="generation1"),
+        operation_lock=threading.Lock(), viewport={"width":100,"height":100},
+        channel=SimpleNamespace(submit_input=lambda *args:calls.append(args)),
+        handle=lambda _:SimpleNamespace(outcome="applied"))
+    async def run():
+        relay = bridge.NativeRelay("chat1", 8123, "generation1")
+        monkeypatch.setattr(bridge, "_relays", {"chat1":relay})
+        relay.ingest({"type":"frame", "data":base64.b64encode(b"\xff\xd8\xfffirst").decode()})
+        first = relay.frame["frame_id"]
+        relay.ingest({"type":"frame", "data":base64.b64encode(b"\xff\xd8\xffsecond").decode()})
+        body = {"lease_id":"lease1", "revision":1,"sequence":1,"viewport":owned.viewport,
+            "frame_id":first,"operation":"click","arguments":{"x":20,"y":20}}
+        assert bridge._human_input(owned,None,body)["outcome"] == "applied"
+        assert bridge._human_input(owned,None,{**body,"operation":"navigate","frame_id":"older-untracked",
+            "arguments":{"url":"https://example.org"}})["outcome"] == "applied"
+        assert bridge._human_input(owned,None,{**body,"frame_id":"foreign-frame"})["outcome"] == "rejected"
+        assert bridge._human_input(owned,None,{**body,"viewport":{"width":101,"height":100}})["outcome"] == "rejected"
+        assert len(calls) == 2
+        relay.ingest({"type":"url","url":"https://example.org/new-page"})
+        relay.ingest({"type":"frame", "data":base64.b64encode(b"\xff\xd8\xffnew-page").decode()})
+        assert bridge._human_input(owned,None,body)["outcome"] == "rejected"
+        relay.frame["received_at"] -= 31
+        assert bridge._human_input(owned,None,{**body,"operation":"press","arguments":{"key":"Enter"}})["outcome"] == "rejected"
+        relay.task.cancel()
+        with suppress(asyncio.CancelledError):await relay.task
+    asyncio.run(run())
+
+
 def test_overlay_refuses_modified_source_and_preserves_existing_controls(tmp_path):
     with pytest.raises((ValueError, FileNotFoundError)):
         overlay.render(tmp_path)

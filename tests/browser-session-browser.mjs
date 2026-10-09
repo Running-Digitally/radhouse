@@ -37,6 +37,7 @@ await context.route(`${origin}/**`,async route=>{
   if(path==="/auth/session")return active?json({username:"alice",csrf_token:"synthetic-csrf",features:{browser:true,browser_control:controlSupported,documents:true}}):json({error:"authentication_required"},401);
   if(path==="/auth/logout"){active=false;return route.fulfill({status:204});}
   if(path==="/chat/history"||path==="/chat/reply")return json({turns,older_before:null});
+  if(path==="/chat/browser/preferences")return json({revision:0,search_engine:"google",history:[]});
   if(path==="/chat/library")return json({files:[],next_cursor:null});
   if(path==="/chat/browser"){
     statusCalls++;reconnectMethods.push(request.method());
@@ -128,15 +129,15 @@ try{
   await page.getByRole("button",{name:"Open browser window",exact:true}).click();
   await expect(page.locator("#assistant-browser img")).toBeVisible();
   if(openCalls!==1)throw new Error("Explicit open sent duplicate launches");
-  await page.getByRole("textbox",{name:"Website URL",exact:true}).fill("https://example.org/login");
+  await page.getByRole("combobox",{name:"Search or enter address",exact:true}).fill("https://example.org/login");
   // The status request can finish after Go takes focus but before its submit.
   await page.getByRole("button",{name:"Go",exact:true}).focus();
   await page.evaluate(()=>refreshBrowser());
-  await expect(page.getByRole("textbox",{name:"Website URL",exact:true})).toHaveValue("https://example.org/login");
+  await expect(page.getByRole("combobox",{name:"Search or enter address",exact:true})).toHaveValue("https://example.org/login");
   await page.getByRole("button",{name:"Go",exact:true}).click();
   await expect(page.getByText("That action was not applied. Check the page before trying another action.",{exact:true})).toBeVisible();
   await page.evaluate(()=>refreshBrowser());
-  await expect(page.getByRole("textbox",{name:"Website URL",exact:true})).toHaveValue("https://example.org/login");
+  await expect(page.getByRole("combobox",{name:"Search or enter address",exact:true})).toHaveValue("https://example.org/login");
   if(inputCalls!==1||native.url()!=="about:blank")throw new Error("Rejected navigation was automatically retried");
   await page.getByRole("button",{name:"Go",exact:true}).click();await expect(native.getByRole("heading",{name:"Example sign-in"})).toBeVisible();
   if(calls.find(([path,data])=>path==="/chat/browser/control/input"&&data.operation==="navigate")?.[1].arguments.url!=="https://example.org/login")throw new Error("Navigation did not submit the user's literal URL");
@@ -180,6 +181,7 @@ try{
   await expect(page.locator(".browser-control-status")).toHaveText("Login saved for this website.");
   if(await page.locator(".browser-logins input[type=password]").inputValue())throw new Error("Saved login password remained in form");
   await navigate("Chat");await page.getByRole("textbox",{name:"Message your assistant"}).fill("Use this current page");
+  await page.locator("#message-options summary").click();await page.locator("#use-browser-context").check();
   await expect(page.locator("#browser-context-chip")).toBeVisible();await page.getByRole("button",{name:"Send",exact:true}).click();
   await expect.poll(()=>calls.some(([path])=>path==="/chat/messages")).toBe(true);
   const message=calls.find(([path])=>path==="/chat/messages")[1];
@@ -211,6 +213,7 @@ try{
   await expect(page.locator("#assistant-browser img")).not.toHaveAttribute("src",/.+/);
   const count=openCalls;await page.waitForTimeout(2200);if(openCalls!==count||native)throw new Error("Closed browser was automatically reopened");
   await navigate("Chat");await expect(page.locator("#browser-context-label")).toHaveText("Use previous page: Example sign-in");
+  await page.locator("#message-options summary").click();
   await page.locator("#use-browser-context").check();await page.getByRole("textbox",{name:"Message your assistant"}).fill("About that previous page");
   await page.getByRole("button",{name:"Send",exact:true}).click();await expect.poll(()=>turns.length).toBe(3);
   const lastMessage=calls.filter(([path])=>path==="/chat/messages").at(-1)[1];

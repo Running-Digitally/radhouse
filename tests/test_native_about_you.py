@@ -23,7 +23,9 @@ def load(name, filename):
 
 
 memory = load("radhouse_about_you_test", "about_you.py")
-load("radhouse_hermes_bridge", "bridge.py")
+# Keep the bridge instance used by native fixtures and patched handler imports.
+if "radhouse_hermes_bridge" not in sys.modules:
+    load("radhouse_hermes_bridge", "bridge.py")
 NOW = datetime(2026, 10, 8, 17, tzinfo=timezone.utc)
 
 

@@ -12,6 +12,8 @@ const explanations = {
   assistant_unavailable:"The assistant is unavailable. Your message is kept; retry to check whether it was received.",
   conversation_unavailable:"Your conversation couldn’t be loaded. Your draft is kept.",
   reply_pending:"A reply is already in progress. You can keep writing your next message.",
+  followup_cancelled:"Follow-up cancelled before it was sent.",
+  message_already_dispatching:"This follow-up has started. It can no longer be cancelled as a waiting message.",
   reply_dispatch_uncertain:"The connection was lost. Your message is kept; retry to check whether it was received.",
   reply_recovery_required:"This saved message needs recovery before another can be sent. You can keep your next draft here.",
   reply_status_unavailable:"Your message is saved. We couldn’t check the reply just now.",
@@ -522,7 +524,7 @@ function agentMark(state) {
 function replyAgentState(turn) {
   if(turn.error || ["failed","interrupted","cancelled"].includes(turn.status))return "error";
   if(turn.status==="completed")return "complete";
-  return turn.status==="awaiting_dispatch" ? "waiting" : "thinking";
+  return ["awaiting_dispatch","waiting"].includes(turn.status) ? "waiting" : "thinking";
 }
 function assistantReply(turn) {
   const reply=document.createElement("div"); reply.className="assistant";
@@ -549,6 +551,7 @@ function turnStatusText(turn) {
     if (turn.phase === "checking") return "Checking your saved message…";
     return "Sending…";
   }
+  if (turn.status === "waiting") return turn.error ? "Your follow-up is saved. Waiting for the assistant to become available…" : "Saved · Waiting for the current reply to finish…";
   if (turn.status === "awaiting_dispatch") return "Your message is saved. Preparing the reply…";
   return "Radhouse is replying…";
 }
@@ -561,6 +564,15 @@ function pendingReply(block, turn) {
   if (turn.local && turn.error) {
     const retry=document.createElement("button"); retry.className="retry"; retry.dataset.outgoing="true"; retry.textContent="Retry message"; retry.addEventListener("click",retryOutgoing); block.append(retry);
     if (!turn.transmitted) { const edit=document.createElement("button"); edit.className="retry"; edit.textContent="Edit message"; edit.addEventListener("click",editOutgoing); block.append(edit); }
+  } else if (!turn.local && turn.status==="waiting") {
+    const cancel=document.createElement("button"); cancel.className="retry"; cancel.textContent="Cancel follow-up";
+    cancel.addEventListener("click",async () => {
+      const cancellingSession=session;
+      cancel.disabled=true;
+      try { const data=await api("/chat/messages/"+turn.request_id+"/cancel",{}); if(session===cancellingSession)accept(data); }
+      catch(error) { if(session===cancellingSession)tell(error.message,refreshHistory); }
+      finally { cancel.disabled=false; }
+    }); block.append(cancel);
   } else if (!turn.local && turn.status==="awaiting_dispatch" && turn.error!=="reply_recovery_required") {
     const retry=document.createElement("button"); retry.className="retry"; retry.textContent="Retry message"; retry.addEventListener("click",() => retrySaved(turn.request_id)); block.append(retry);
   }
@@ -631,12 +643,12 @@ function resizeMessage() { const input=$("message"); input.style.height="auto"; 
 function replyStatus(pending) {
   if (filesLoading) return "Adding files…";
   if (busy) return outbox?.phase === "uploading" ? "Uploading…" : "Sending…";
-  return pending ? assistantDisplayName+" is replying…" : "";
+  return pending ? pending.status==="waiting" ? "Follow-ups are waiting…" : assistantDisplayName+" is replying…" : "";
 }
 function controls() {
   const pending=pendingTurn(), tooLong=!messageFits($("message").value), hasContent=!!($("message").value.trim() || draft.attachments.length);
   $("message").disabled=openingHistory || capturingContext;
-  $("send").disabled=busy || filesLoading || !!pending || !!outbox || tooLong || !hasContent || openingHistory;
+  $("send").disabled=busy || filesLoading || !!outbox || tooLong || !hasContent || openingHistory;
   $("attach").disabled=filesLoading || openingHistory || capturingContext; $("attach-text").disabled=filesLoading || openingHistory || capturingContext; $("long-text").hidden=!tooLong;
   inferenceControls?.setDisabled(busy || openingHistory);
   $("inference-controls").hidden=session?.features?.inference!==true;
@@ -658,7 +670,7 @@ function controls() {
     if(icon)window.RadhouseIcons.setAgentState(icon,replyAgentState(pending));
   }else icon?.remove();
   if(!$("empty").querySelector('.rh-icon')){const idle=agentMark("idle");if(idle)$("empty").prepend(idle);}
-  document.querySelectorAll(".retry,#notice-action").forEach(button => { button.disabled=busy || openingHistory || button.dataset.outgoing==="true" && !!pending; });
+  document.querySelectorAll(".retry,#notice-action").forEach(button => { button.disabled=busy || openingHistory; });
   resizeMessage();
   updateBrowserChip();
   updateTerminalChip();
@@ -821,7 +833,7 @@ async function transmit(box) {
     await recoverOutgoing(box, sendingSession, error);
   } finally { if (session===sendingSession) { busy=false; render(); } }
 }
-function retryOutgoing() { if (outbox && !pendingTurn()) { transmit(outbox); } }
+function retryOutgoing() { if (outbox) { transmit(outbox); } }
 async function retrySaved(requestId) {
   if (busy || !session) { return; }
   const sendingSession=session; busy=true; clearNotice(); controls();

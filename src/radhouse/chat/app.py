@@ -9,6 +9,7 @@ import os
 import hashlib
 from urllib.parse import quote
 from typing import Annotated
+from typing import Literal
 
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -55,6 +56,12 @@ class Message(BaseModel):
     use_previous_browser: bool = False
     inference: InferenceSelection | None = None
     terminal_context: dict | None = None
+
+
+class BrowserPreferencesBody(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    revision: Annotated[int, Field(ge=0)]
+    search_engine: Literal["google", "duckduckgo"]
 
 
 def _recheck_browser_binding(auth, service, browser, request, before, tab):
@@ -143,6 +150,20 @@ def create_app(auth, service, *, admin=None, documents=None, browser=None, about
     def save_agent_profile(body: AgentProfileBody, request: Request):
         return service.store.save_agent_profile(owner(request), body.presentation())
 
+    @app.get("/chat/browser/preferences")
+    def browser_preferences(request: Request):
+        return service.store.browser_preferences(owner(request))
+
+    @app.post("/chat/browser/preferences")
+    def save_browser_preferences(body: BrowserPreferencesBody, request: Request):
+        return service.store.save_browser_preferences(owner(request), body.revision, body.search_engine)
+
+    @app.post("/chat/browser/history/clear")
+    def clear_browser_history(request: Request):
+        principal = owner(request)
+        service.store.clear_browser_history(principal)
+        return service.store.browser_preferences(principal)
+
     @app.get("/chat/history")
     def history(request: Request, before: Annotated[int | None, Field(gt=0)] = None):
         return service.store.history(owner(request), before)
@@ -208,6 +229,12 @@ def create_app(auth, service, *, admin=None, documents=None, browser=None, about
         if turn is None: raise Rejected("message_not_found", 404)
         return {"turn": service.store.history(principal, before=turn["seq"] + 1, limit=1)["turns"][0]}
 
+    @app.post("/chat/messages/{request_id}/cancel")
+    def cancel_followup(request_id: str, request: Request):
+        principal = owner(request)
+        service.store.cancel_waiting(principal, request_id)
+        return service.store.history(principal)
+
     _install_file_routes(app, service, owner)
     @app.get("/chat/library")
     def library(request: Request,
@@ -235,7 +262,8 @@ def _reply_lifespan(service):
         stop = asyncio.Event()
 
         async def observe_reply():
-            # Save completion even when the browser is closed. Never dispatch.
+            # Save completion and advance already-authorized queued follow-ups,
+            # including when the browser is closed. Unknown dispatch stays held.
             while not stop.is_set():
                 try:
                     await asyncio.to_thread(service.poll, service.owner_id)
@@ -560,7 +588,13 @@ def _install_controlled_browser_routes(app, browser, auth, service):
 
     @app.post("/chat/browser/control/input")
     async def browser_input(body: BrowserInputBody, request: Request):
-        return await call(request, browser.control, "input", body.model_dump(exclude_none=True))
+        result = await call(request, browser.control, "input", body.model_dump(exclude_none=True))
+        if body.operation == "navigate" and result.get("outcome") == "applied":
+            try:
+                service.store.record_browser_visit(owner(request), body.arguments["url"], service.clock())
+            except (sqlite3.Error, ValueError, KeyError):
+                logging.getLogger(__name__).warning("Browser history storage unavailable")
+        return result
 
     @app.post("/chat/browser/control/pause")
     async def browser_pause(body: BrowserControlBody, request: Request):
