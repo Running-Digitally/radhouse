@@ -297,7 +297,8 @@ class ChatStore:
         from .agent_profile import DEFAULT_PROFILE
         with self.connection() as db:
             row = db.execute("SELECT revision,profile FROM agent_profiles WHERE owner=?", (owner,)).fetchone()
-            return {**json.loads(row["profile"]), "revision": row["revision"]} if row else dict(DEFAULT_PROFILE)
+            return {"portraitSize": DEFAULT_PROFILE["portraitSize"], **json.loads(row["profile"]),
+                    "revision": row["revision"]} if row else dict(DEFAULT_PROFILE)
 
     def save_agent_profile(self, owner, profile):
         """Compare and save one full validated draft under the SQLite lock."""

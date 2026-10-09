@@ -12,7 +12,7 @@ const page=await context.newPage(),errors=[],requests=[];
 page.on("pageerror",error=>errors.push(error.message));
 const profile={schema:"radhouse.agent-profile.v1",revision:0,name:"",intro:"",theme:"hearthside",portrait:"ember",accent:"fern",surface:"paper",stateMotion:true,iconMotion:true};
 let browserMode="human",previousPage=null;
-const staticNames=new Set(["index.html","chat.css","chat.js","format.js","navigation.js","navigation.css","library.js","browser-view.js","browser-view.css","about-you.js","about-you.css","owner-terminal.js","owner-terminal.css","inference-controls.js","inference-controls.css","agent-profile.js","agent-profile.css"]);
+const staticNames=new Set(["index.html","chat.css","chat.js","format.js","navigation.js","navigation.css","library.js","browser-view.js","browser-view.css","about-you.js","about-you.css","owner-terminal.js","owner-terminal.css","inference-controls.js","inference-controls.css","agent-profile.js","agent-profile.css","agent-portrait.js"]);
 await context.route(origin+"/**",async route=>{
   const path=new URL(route.request().url()).pathname;requests.push(path);
   const json=value=>route.fulfill({contentType:"application/json",body:JSON.stringify(value)});

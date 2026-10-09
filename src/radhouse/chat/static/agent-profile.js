@@ -1,13 +1,13 @@
 "use strict";
 (() => {
   const schema="radhouse.agent-profile.v1";
-  const defaults=Object.freeze({schema,revision:0,name:"",intro:"",theme:"hearthside",portrait:"ember",accent:"fern",surface:"paper",stateMotion:true,iconMotion:true});
+  const defaults=Object.freeze({schema,revision:0,name:"",intro:"",theme:"hearthside",portrait:"ember",accent:"fern",surface:"paper",stateMotion:true,iconMotion:true,portraitSize:80});
   const accents=Object.freeze({fern:"Fern",clay:"Clay",tide:"Tide",plum:"Plum"});
   const surfaces=Object.freeze({paper:"Warm paper",night:"Evening",system:"Follow device"});
   const signalKey="radhouse.agent-profile.saved";
   const clone=value=>({...value});
   const node=(tag,text,className)=>{const result=document.createElement(tag);if(text!==undefined)result.textContent=text;if(className)result.className=className;return result;};
-  const profileFields=["name","intro","theme","portrait","accent","surface","stateMotion","iconMotion"];
+  const profileFields=["name","intro","theme","portrait","accent","surface","stateMotion","iconMotion","portraitSize"];
   const same=(a,b)=>a && b && profileFields.every(key=>a[key]===b[key]);
   const unsafeText=/[\p{Cc}\p{Cs}\p{Zl}\p{Zp}\u202a-\u202e\u2066-\u2069]/u;
   const textError=(value,limit,multiline=false)=> typeof value!=="string" || unsafeText.test(multiline?value.replaceAll("\n",""):value)
@@ -17,6 +17,7 @@
   function applyAppearance(profile) {
     activePresentation=profile;
     const value=profile || defaults;
+    document.documentElement.dataset.rhPortraitSize=String(value.portraitSize);
     document.documentElement.dataset.rhAccent=value.accent;
     document.documentElement.dataset.rhSurface=value.surface==="system" ? (colorScheme.matches?"night":"paper") : value.surface;
     window.RadhouseIcons?.setMotionPreferences({iconMotion:value.iconMotion,stateMotion:value.stateMotion});
@@ -52,7 +53,7 @@
         !textError(value.name,32) && !textError(value.intro,160,true) &&
         this.catalog?.profiles.some(entry=>entry.id===value.portrait && entry.theme===value.theme) &&
         this.catalog?.themes.some(entry=>entry.id===value.theme) && Object.hasOwn(accents,value.accent) && Object.hasOwn(surfaces,value.surface) &&
-        typeof value.stateMotion==="boolean" && typeof value.iconMotion==="boolean";
+        typeof value.stateMotion==="boolean" && typeof value.iconMotion==="boolean" && [48,80,128].includes(value.portraitSize);
     }
 
     async load() {
@@ -61,7 +62,7 @@
       this.status.textContent="Opening your agent…";this.retry.hidden=true;
       try {
         if(!this.catalog)this.catalog=await this.request("/workspace-assets/agent-profile/catalog.json",undefined,false,this.abort.signal);
-        const value=await this.request("/chat/agent-profile",undefined,false,this.abort.signal);
+        const value={portraitSize:80,...await this.request("/chat/agent-profile",undefined,false,this.abort.signal)};
         if(epoch!==this.epoch)return;
         if(!this.valid(value))throw new Error("invalid_agent_profile");
         this.saved=clone(value);this.current=clone(value);this.remoteChanged=false;
@@ -168,7 +169,12 @@
         const label=node("label"),radio=node("input");radio.type="radio";radio.name="agent-surface";radio.value=id;radio.checked=id===this.current.surface;
         radio.addEventListener("change",()=>{this.current.surface=id;this.changed();});label.append(radio,node("span",name));surface.append(label);
       }
-      this.appearancePanel.append(accent,surface);
+      const size=node("fieldset",undefined,"agent-size-options");size.append(node("legend","Portrait size"));
+      for(const pixels of [48,80,128]){
+        const label=node("label"),radio=node("input");radio.type="radio";radio.name="agent-size";radio.value=String(pixels);radio.checked=pixels===this.current.portraitSize;
+        radio.addEventListener("change",()=>{this.current.portraitSize=pixels;this.changed();});label.append(radio,node("span",pixels+" px"));size.append(label);
+      }
+      this.appearancePanel.append(accent,surface,size);
       for(const [key,title,detail] of [["stateMotion","Agent state animation","Animate the portrait and show your agent’s actual status in the house mark."],["iconMotion","Playful interface icons","Small responses to hover and click."]]){
         const label=node("label",undefined,"agent-motion-toggle"),text=node("span"),input=node("input");text.append(node("strong",title),node("small",detail));input.type="checkbox";input.setAttribute("role","switch");input.checked=this.current[key];input.addEventListener("change",()=>{this.current[key]=input.checked;this.changed();});label.append(text,input);this.appearancePanel.append(label);
       }
@@ -211,7 +217,7 @@
       if(this.busy || !this.dirty || !this.valid(this.current))return;
       const epoch=this.epoch;this.busy=true;this.abort=new AbortController();this.status.textContent="Saving…";this.updateActions();
       try {
-        const value=await this.request("/chat/agent-profile",clone(this.current),false,this.abort.signal);
+        const value={portraitSize:80,...await this.request("/chat/agent-profile",clone(this.current),false,this.abort.signal)};
         if(epoch!==this.epoch)return;
         if(!this.valid(value))throw new Error("invalid_agent_profile");
         this.saved=clone(value);this.current=clone(value);this.remoteChanged=false;this.present();this.status.textContent="Saved.";
