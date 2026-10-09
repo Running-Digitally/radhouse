@@ -65,6 +65,9 @@ handover text and no private browser connection.
   containment, Escape, backdrop dismissal and focus return to the opener.
 - The compact card has four theme links, each with three 44px portraits. All
   four open their matching popup collection and return focus to the opener.
+  Hover and keyboard focus fan out all three portraits with staggered,
+  spring-like movement; all twelve participate. Reduced motion keeps their
+  resting transforms and removes transitions.
 - Four static disclosures expose thirteen portraits without JavaScript.
   Reduced-motion checks confirm disabled glyph motion, no dialog animation,
   zero portrait transition and automatic scrolling.
