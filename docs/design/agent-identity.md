@@ -213,3 +213,16 @@ default. Header and identity preview follow this choice; menu thumbnails remain
 26px. Compact layouts put the portrait below the toolbar to prevent overlap.
 Existing profile records read as 80 without a database rewrite; older clients
 may omit this field when saving and receive the same default.
+
+### Appearance readability and choice previews
+
+Primary actions use a deliberate foreground/background pair for each surface
+and accent, including disabled, hover and pressed states. Disabled labels stay
+readable rather than fading the complete button. Accent choices preview buttons,
+highlights and portrait frames in miniature windows; the three appearance cards
+show light, dark and a split device-matched view. These are decorative CSS shapes
+inside native radio labels, with no extra focus stops, images or browser sessions.
+
+The owner terminal keeps its own dark palette in either page appearance. Its
+foreground, cursor and selection colours are explicit, and xterm maintains at
+least 7:1 contrast for low-contrast ANSI text. This changes presentation only.

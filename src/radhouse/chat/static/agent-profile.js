@@ -7,6 +7,18 @@
   const signalKey="radhouse.agent-profile.saved";
   const clone=value=>({...value});
   const node=(tag,text,className)=>{const result=document.createElement(tag);if(text!==undefined)result.textContent=text;if(className)result.className=className;return result;};
+  // Decorative miniatures share the real palette without adding controls or players.
+  function windowPreview(surface,accent) {
+    const preview=node("span",undefined,"agent-window-preview");preview.setAttribute("aria-hidden","true");
+    if(surface)preview.dataset.previewSurface=surface;
+    if(accent)preview.dataset.previewAccent=accent;
+    const bar=node("span",undefined,"agent-window-bar");
+    for(let i=0;i<3;i++)bar.append(node("span"));
+    const body=node("span",undefined,"agent-window-body"), sidebar=node("span",undefined,"agent-window-sidebar"), chat=node("span",undefined,"agent-window-chat");
+    sidebar.append(node("span",undefined,"agent-window-avatar"),node("span",undefined,"agent-window-nav"));
+    chat.append(node("span",undefined,"agent-window-line"),node("span",undefined,"agent-window-line agent-window-line--short"),node("span",undefined,"agent-window-message"),node("span",undefined,"agent-window-send"));
+    body.append(sidebar,chat);preview.append(bar,body);return preview;
+  }
   const profileFields=["name","intro","theme","portrait","accent","surface","stateMotion","iconMotion","portraitSize"];
   const same=(a,b)=>a && b && profileFields.every(key=>a[key]===b[key]);
   const unsafeText=/[\p{Cc}\p{Cs}\p{Zl}\p{Zp}\u202a-\u202e\u2066-\u2069]/u;
@@ -161,19 +173,21 @@
     renderAppearance() {
       const accent=node("fieldset",undefined,"agent-accent-options");accent.append(node("legend","A color to call your own"));
       for(const [id,name] of Object.entries(accents)){
-        const label=node("label"),radio=node("input"),swatch=node("span",undefined,"agent-accent-swatch");radio.type="radio";radio.name="agent-accent";radio.value=id;radio.checked=id===this.current.accent;swatch.dataset.accent=id;swatch.setAttribute("aria-hidden","true");
-        radio.addEventListener("change",()=>{this.current.accent=id;this.changed();});label.append(radio,swatch,node("span",name));accent.append(label);
+        const label=node("label"),radio=node("input"),caption=node("span",undefined,"agent-choice-caption");radio.type="radio";radio.name="agent-accent";radio.value=id;radio.checked=id===this.current.accent;
+        radio.addEventListener("change",()=>{this.current.accent=id;this.changed();});caption.append(radio,node("span",name));label.append(windowPreview(null,id),caption);accent.append(label);
       }
       const surface=node("fieldset",undefined,"agent-surface-options");surface.append(node("legend","Interface appearance"));
       for(const [id,name] of Object.entries(surfaces)){
-        const label=node("label"),radio=node("input");radio.type="radio";radio.name="agent-surface";radio.value=id;radio.checked=id===this.current.surface;
-        radio.addEventListener("change",()=>{this.current.surface=id;this.changed();});label.append(radio,node("span",name));surface.append(label);
+        const label=node("label"),radio=node("input"),caption=node("span",undefined,"agent-choice-caption");radio.type="radio";radio.name="agent-surface";radio.value=id;radio.checked=id===this.current.surface;
+        radio.addEventListener("change",()=>{this.current.surface=id;this.changed();});caption.append(radio,node("span",name));label.append(windowPreview(id),caption);surface.append(label);
       }
       const size=node("fieldset",undefined,"agent-size-options");size.append(node("legend","Portrait size"));
       for(const pixels of [48,80,128]){
         const label=node("label"),radio=node("input");radio.type="radio";radio.name="agent-size";radio.value=String(pixels);radio.checked=pixels===this.current.portraitSize;
         radio.addEventListener("change",()=>{this.current.portraitSize=pixels;this.changed();});label.append(radio,node("span",pixels+" px"));size.append(label);
       }
+      accent.append(node("p","Buttons, highlights and your portrait’s frame.","agent-choice-help"));
+      surface.append(node("p","Light, dark, or matched to your device.","agent-choice-help"));
       this.appearancePanel.append(accent,surface,size);
       for(const [key,title,detail] of [["stateMotion","Agent state animation","Animate the portrait and show your agent’s actual status in the house mark."],["iconMotion","Playful interface icons","Small responses to hover and click."]]){
         const label=node("label",undefined,"agent-motion-toggle"),text=node("span"),input=node("input");text.append(node("strong",title),node("small",detail));input.type="checkbox";input.setAttribute("role","switch");input.checked=this.current[key];input.addEventListener("change",()=>{this.current[key]=input.checked;this.changed();});label.append(text,input);this.appearancePanel.append(label);
