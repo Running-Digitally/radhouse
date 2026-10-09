@@ -19,11 +19,10 @@ Library and selective document reads remain part of the pilot description.
 
 PR77's owner-workspace release adds About You, Terminal, opt-in terminal context
 and engine-driven model/thinking choices. Its source qualification recorded
-1,072 tests and 11 browser journeys. The VM220 and VM270 normalized post-release
-status receipts both completed at 22:50 UTC on 8 October with
-`baseline_source_verified: true`, `phase: released`, `variant: candidate` and
-source revision `e8ce1e24ef01aa413a0d197a078374a06f972f0f`. These read-only
-receipts supersede the earlier pending-deployment status. The workspace cards
+1,072 tests and 11 browser journeys. Release qualification completed on
+8 October for source revision `e8ce1e24ef01aa413a0d197a078374a06f972f0f`.
+The verified activation supersedes the earlier pending-deployment status.
+The workspace cards
 say “New in the private pilot”. Thinking choices depend on the connected engine.
 Read-only memory does not imply editing or proof that every saved note was used
 in a reply. No private runtime operation is part of this website change.
