@@ -49,15 +49,18 @@ implementation in `main` is not changed by this content release.
 
 ## Scope and verification
 
-Public HTML/CSS, two gallery/glyph scripts, thirteen portraits, the 29-file
-release manifest, preview fixtures and site documentation change. The notebook,
+Public HTML/CSS, two gallery/glyph scripts, thirteen portraits, the supplied
+Google search screenshot, the 30-file release manifest, preview fixtures and site
+documentation change. The notebook,
 house SVGs, analytics and response headers retain their existing bytes. The
-browser illustration remains a native Hide/Show disclosure with explanatory
-handover text and no private browser connection.
+browser preview uses the owner's real Google search screenshot for Running
+Digitally. The 2202 × 1170 PNG is copied unchanged (315,746 bytes), preserves its
+aspect ratio and has descriptive alternative text. Native Hide/Show controls
+remain available without JavaScript, with explanatory handover text below.
 
 - JavaScript syntax checks pass; four analytics-policy and three brand tests pass.
 - HTML IDs, ARIA/anchor references, local assets and external-link attributes pass.
-- All 28 preview-served assets match the frozen manifest; applied security
+- All 29 preview-served assets match the frozen manifest; applied security
   headers and the real missing-path 404 response pass.
 - Browser checks cover all thirteen portrait selections, collection changes,
   previous/next wrapping, group arrow/Home/End navigation, native modal focus
@@ -73,6 +76,8 @@ handover text and no private browser connection.
   zero portrait transition and automatic scrolling.
 - Widths 320, 390, 521, 700, 800 and 1280 have no page overflow. The narrow
   popup scrolls vertically with a sticky close button and no horizontal overflow.
+- The Google screenshot loads at its original dimensions, stays within the
+  card at desktop and phone widths, and Hide/Show responds to click and keyboard.
 - Chrome reports no site console errors; extension warnings are unrelated.
   Desktop and phone screenshots are retained in the chat's visualization folder.
 

@@ -38,7 +38,7 @@ changes to DNS, access, bindings or any other Worker.
 
 ## Validate the artifact
 
-There is no compilation. HTML, CSS, JavaScript, SVGs, WebP portraits and the pinned, licensed
+There is no compilation. HTML, CSS, JavaScript, SVGs, PNG screenshots, WebP portraits and the pinned, licensed
 PostHog SDK are committed as the deployable artifact. Run the targeted checks
 in [README.md](README.md), review desktop and narrow layouts and exercise
 keyboard, reduced-motion, disclosures, error recovery and external links.
