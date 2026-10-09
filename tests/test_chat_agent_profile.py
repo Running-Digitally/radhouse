@@ -140,7 +140,7 @@ def test_strict_invalid_body_is_not_saved_or_echoed(profile_app, change):
     assert hermes.requests == []
 
 
-@pytest.mark.parametrize("field", list(DEFAULT_PROFILE))
+@pytest.mark.parametrize("field", [field for field in DEFAULT_PROFILE if field != "portraitSize"])
 def test_save_requires_full_profile_including_schema_and_revision(profile_app, field):
     client, store, _, _, _ = profile_app
     body = saved(); body.pop(field)
@@ -256,3 +256,47 @@ def test_missing_catalog_fails_closed_without_private_diagnostics(profile_app, m
         assert store.agent_profile("alice") == DEFAULT_PROFILE
     finally:
         portrait_themes.cache_clear()
+
+
+def test_echo_media_uses_fixed_public_assets_and_supports_video_ranges(profile_app):
+    client, _, _, _, _ = profile_app
+    for name in ("neutral.png", "a-curious.mp4", "b-thoughtful.mp4", "c-playful.mp4"):
+        path = "/workspace-assets/agent-profile/echo/" + name
+        response = client.get(path)
+        assert response.status_code == 200
+        assert response.headers["content-type"] == ("image/png" if name.endswith("png") else "video/mp4")
+        if name.endswith("mp4"):
+            part = client.get(path, headers={"Range": "bytes=0-31"})
+            assert part.status_code == 206
+            assert part.content == response.content[:32]
+    for name in ("private.json", "unknown.mp4", "a-curious.webm", "%2e%2e%2fprivate.mp4"):
+        assert client.get("/workspace-assets/agent-profile/echo/" + name).status_code == 404
+
+
+@pytest.mark.parametrize("size", [48,80,128])
+def test_portrait_size_is_saved_per_owner(profile_app, size):
+    client, store, _, _, hermes = profile_app
+    assert post(client, saved(portraitSize=size)).json()["portraitSize"] == size
+    assert ChatStore(store.path).agent_profile("alice")["portraitSize"] == size
+    assert store.agent_profile("bob")["portraitSize"] == 80
+    assert hermes.requests == []
+
+
+@pytest.mark.parametrize("size", [0,44,96,256,80.0,True,"80",None])
+def test_portrait_size_rejects_unlisted_or_non_integer_values(profile_app, size):
+    client, store, _, _, _ = profile_app
+    assert post(client, saved(portraitSize=size)).status_code == 422
+    assert store.agent_profile("alice") == DEFAULT_PROFILE
+
+
+def test_old_profile_defaults_to_80_without_rewriting_saved_data(profile_app):
+    client, store, _, _, _ = profile_app
+    old=saved();old.pop("portraitSize")
+    assert post(client,old).json()["portraitSize"] == 80
+    with store.connection() as db:
+        raw=json.loads(db.execute("SELECT profile FROM agent_profiles WHERE owner='alice'").fetchone()[0])
+        raw.pop("portraitSize")
+        db.execute("UPDATE agent_profiles SET profile=? WHERE owner='alice'",(json.dumps(raw),))
+    before=table_rows(store)
+    assert client.get("/chat/agent-profile").json()["portraitSize"] == 80
+    assert table_rows(store) == before

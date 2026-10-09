@@ -187,3 +187,29 @@ inputs. Browser checks cover Save/Discard/reload, safe text, saved surfaces,
 320/390px layouts, keyboard/reduced motion, quiet composer disclosures and
 existing Browser/Terminal navigation. The final VM220 package must enumerate
 the new static assets and preserve current native pins and owner data.
+
+## Echo portrait motion
+
+Echo's live header, menu portrait and identity preview use the neutral pose and
+A (Curious), B (Thoughtful), C (Playful) clips from
+[the robot prototype](../../brand/robot-avatar/README.md). The shipped MP4s and
+poster in `src/radhouse/chat/static/agent-profile/echo/` are byte-for-byte copies
+of the approved v2 A and B/C assets. The picker keeps its static character cards.
+
+A visible portrait rests for a random 2–6 seconds, plays one complete clip, then
+returns to neutral before beginning the next rest. Shuffled bags include all
+three clips and prevent adjacent repeats across bag boundaries. Each visible
+portrait runs independently. This is character idle motion, not an inference
+status signal; the house mark continues to show runtime status.
+
+Device reduced motion and the saved Agent state animation preference keep the
+neutral still. Hidden pages and off-screen portraits cancel playback, release
+the decoder and resume with a fresh rest interval when visible. Selecting a
+different character or signing out removes the player and its listeners. Video
+failures retain the neutral still. No animation asset loads for other characters.
+
+The saved Portrait size choice offers 48, 80 and 128 CSS pixels, with 80 as the
+default. Header and identity preview follow this choice; menu thumbnails remain
+26px. Compact layouts put the portrait below the toolbar to prevent overlap.
+Existing profile records read as 80 without a database rewrite; older clients
+may omit this field when saving and receive the same default.

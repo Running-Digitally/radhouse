@@ -175,19 +175,31 @@ h1 em { display: inline-block; font-family: var(--serif); font-weight: 400; font
 .browser-hide, .browser-show { white-space: nowrap; font-size: 10px; }
 .browser-hide > span, .browser-show > span { margin-left: 5px; }
 .browser-preview:not([open]) .browser-hide, .browser-preview[open] .browser-show { display: none; }
-.browser-window { margin: 0 13px 13px; background: var(--white); border: 1px solid #c5ccb6; border-radius: 2px; }
+.browser-window { margin: 0 13px 13px; background: var(--white); border: 1px solid #c5ccb6; border-radius: 2px; overflow: hidden; }
 .browser-address { display: flex; align-items: center; gap: 11px; padding: 11px 12px; border-bottom: 1px solid var(--line); font-size: 10px; color: var(--muted); }
 .browser-dots { font-size: 7px; color: #a9b49a; white-space: nowrap; }
 .browser-owner { margin-left: auto; color: var(--green); font-size: 9px; white-space: nowrap; }
-.browser-paper { position: relative; padding: 28px 24px 32px; min-height: 245px; }
-.browser-page-label { display: block; font-size: 9px; text-transform: uppercase; letter-spacing: .1em; color: var(--clay); margin-bottom: 17px; }
-.browser-paper h3 { font: italic 30px/1.2 var(--serif); color: var(--green); letter-spacing: -.025em; }
-.browser-paper p { font-size: 12px; line-height: 1.8; margin-top: 12px; color: var(--muted); }
-.browser-page-lines { width: 63%; margin-top: 24px; }
-.browser-page-lines span { display: block; height: 3px; background: #e5e8d9; margin-top: 7px; }
-.browser-page-lines span:last-child { width: 70%; }
-.browser-pointer { position: absolute; width: 24px; height: 29px; right: 20%; bottom: 23%; color: var(--green); }
+.browser-search-image { display: block; width: 100%; height: auto; }
 .browser-caption { font-size: 9px; line-height: 1.7; color: var(--muted); margin-top: 14px; }
+.browser-handover { display: flex; flex-wrap: wrap; gap: 8px 16px; list-style: none; padding: 0; margin: 19px 0 0; font-size: 10px; color: var(--green-dark); }
+.browser-handover li { display: flex; align-items: center; gap: 6px; }
+.browser-handover li > span { font: italic 15px/1 var(--serif); color: #934826; }
+.workspace-feature { padding-top: 62px; }
+.workspace-heading { display: grid; grid-template-columns: 1fr 1.05fr; gap: 50px; align-items: end; margin-bottom: 28px; }
+.workspace-heading .eyebrow { color: #934826; margin-bottom: 16px; }
+.workspace-heading h2 { font-size: clamp(32px, 3.3vw, 44px); letter-spacing: -.04em; }
+.workspace-heading h2 em { color: var(--green); }
+.workspace-heading > p { max-width: 450px; font-size: 13px; color: var(--muted); line-height: 1.8; }
+.workspace-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.workspace-card { padding: 26px 24px 28px; background: var(--white); border: 1px solid var(--line); border-radius: 3px; }
+.workspace-number { display: block; font-size: 10px; color: #934826; margin-bottom: 21px; letter-spacing: .06em; }
+.workspace-card h3 { font-size: 25px; color: var(--green-dark); margin-bottom: 14px; }
+.workspace-card p { font-size: 12px; line-height: 1.8; color: var(--muted); }
+.workspace-status { font-size: 11px; line-height: 1.8; color: var(--muted); margin-top: 17px; }
+.workspace-status a { display: inline-block; color: var(--green-dark); margin-left: 5px; }
+.identity-note { display: grid; grid-template-columns: auto 1fr; gap: 20px; align-items: baseline; margin-top: 29px; padding-block: 19px; border-block: 1px solid var(--line); }
+.identity-note .eyebrow { color: #934826; }
+.identity-note > p { font: italic 17px/1.6 var(--serif); color: var(--green-dark); max-width: 700px; }
 .invitation { display: grid; grid-template-columns: 1fr 1.05fr; gap: 50px; padding-block: 65px; }
 .invitation .eyebrow { color: var(--clay); margin-bottom: 18px; }
 .invitation h2 { font-size: 44px; letter-spacing: -.035em; line-height: 1.1; }
@@ -245,7 +257,22 @@ h1 em { display: inline-block; font-family: var(--serif); font-weight: 400; font
   .invitation h2 { font-size: 36px; }
   .invitation-copy { font-size: 12px; }
 }
+@media (max-width: 800px) {
+  .workspace-feature { padding-top: 40px; }
+  .workspace-heading { gap: 30px; }
+  .workspace-card { padding: 23px 18px; }
+  .workspace-card h3 { font-size: 23px; }
+}
+@media (max-width: 700px) {
+  .workspace-heading { grid-template-columns: 1fr; gap: 18px; }
+  .workspace-cards { grid-template-columns: 1fr; gap: 12px; }
+}
 @media (max-width: 520px) {
+  .workspace-heading h2 { font-size: 34px; }
+  .workspace-card { padding: 23px 24px; }
+  .workspace-number { margin-bottom: 12px; }
+  .identity-note { grid-template-columns: 1fr; gap: 8px; }
+
   .wrap { width: calc(100% - 36px); }
   .site-header { align-items: flex-start; flex-wrap: wrap; padding-block: 18px 12px; gap: 14px; }
   .brand img { width: 170px; }
@@ -290,8 +317,6 @@ h1 em { display: inline-block; font-family: var(--serif); font-weight: 400; font
   .browser-preview summary { padding-inline: 12px; }
   .browser-address { flex-wrap: wrap; gap: 8px; }
   .browser-owner { width: 100%; margin-left: 0; }
-  .browser-paper { padding-inline: 18px; }
-  .browser-paper h3 { font-size: 28px; }
   .invitation { grid-template-columns: 1fr; gap: 22px; }
   .invitation h2 { font-size: 38px; }
   .invitation h2 br { display: none; }

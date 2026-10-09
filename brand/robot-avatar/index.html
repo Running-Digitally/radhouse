@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Robot avatar — three reactions</title>
+<style>
+:root{color-scheme:dark;font:15px/1.5 system-ui,sans-serif;background:#151b1d;color:#edf0e9}*{box-sizing:border-box}body{margin:0}main{max-width:1050px;padding:32px 24px;margin:auto}.eyebrow{font-size:11px;color:#b7c69b;letter-spacing:.16em;text-transform:uppercase;font-weight:650}h1{font-size:38px;line-height:1.15;letter-spacing:-.04em;margin:12px 0}.intro{color:#aeb8b9;margin:0;max-width:720px}.toolbar{display:flex;gap:10px;align-items:center;margin:24px 0;flex-wrap:wrap}button,.download{font:inherit;border:1px solid #475352;border-radius:9px;padding:8px 16px;background:#222c2d;color:#edf0e9;cursor:pointer;text-decoration:none}button:hover,.download:hover{background:#344140}button:focus-visible,a:focus-visible{outline:2px solid #d7dda0;outline-offset:4px}button[aria-pressed=true]{background:#b6c493;border-color:#b6c493;color:#1b2417}.spacer{flex:1}.tag{font-size:12px;color:#c0cdab;border:1px solid #506048;padding:5px 10px;border-radius:20px}.panel{border:1px solid #354140;border-radius:18px;background:#1d2627;padding:24px}.hero{display:flex;gap:44px;align-items:center}.avatar{position:relative;width:256px;height:256px;flex:0 0 256px;overflow:hidden;background:#a2ad99 url('v2/robot-poster-256.png') center/cover}.rounded{border-radius:50%}.square .rounded{border-radius:16%}.avatar-slot{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;pointer-events:none}.avatar-slot.active{opacity:1}.hero-copy{flex:1}.small-label{color:#afbea0;font-size:11px;text-transform:uppercase;letter-spacing:.12em}h2{font-weight:550;font-size:24px;line-height:1.25;margin:8px 0 10px}#countdown{font-variant-numeric:tabular-nums;color:#b6c493}p.muted{color:#96a6a2;font-size:13px;max-width:440px}.sizes{display:flex;gap:34px;align-items:flex-end;margin-top:24px}.sizes figure{margin:0;text-align:center}.size-preview{display:block;background:url('v2/robot-poster-256.png') center/cover}figcaption{font-size:11px;color:#aeb9b4;margin-top:8px}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:20px}.card{padding:20px}.card-head{display:flex;gap:14px;align-items:center}.card img{width:64px;height:64px;border-radius:15px}.card h3{font-size:17px;margin:0}.duration{font-size:12px;color:#afbea0}.card p{font-size:13px;color:#a8b6b1;min-height:58px}.card-actions{display:flex;align-items:center;gap:14px}.card-actions button{font-size:13px;padding:7px 13px}.card-actions a{font-size:12px;color:#bdcbb0}.history{margin-top:20px;padding:18px 22px}.history h3{margin:0 0 9px;font-size:12px;font-weight:500;color:#98aaa4}#history{list-style:none;padding:0;margin:0;display:flex;gap:8px 20px;flex-wrap:wrap;min-height:20px}#history li{font-size:12px;color:#b5c2b7}footer{font-size:12px;color:#96a6a2;margin-top:20px;display:flex;gap:18px;flex-wrap:wrap}footer a{color:#becbb3}#error{color:#ffc0aa;font-size:12px}#toggle{min-width:90px}@media(max-width:750px){main{padding:24px 16px}h1{font-size:30px}.hero{flex-direction:column;gap:24px}.hero-copy{width:100%}.cards{grid-template-columns:1fr}.card p{min-height:0}.sizes{justify-content:space-around;gap:12px}.panel{padding:20px}.card-head{justify-content:flex-start}}
+</style>
+<main>
+<div class="eyebrow">Robot avatar / three reactions</div>
+<h1>Curious. Thoughtful. Playful.</h1>
+<p class="intro">A shuffled reaction, then a quiet pause. The approved robot now has three ways to move, with the same neutral expression between them.</p>
+<div class="toolbar">
+<button id="toggle" type="button">Pause</button>
+<button id="circle" type="button" aria-pressed="true">Circle</button>
+<button id="square" type="button" aria-pressed="false">Rounded square</button>
+<span class="spacer"></span><span class="tag">Random rest · 2–6 seconds · No immediate repeats</span>
+</div>
+<section class="panel hero" id="stage" data-phase="loading">
+<div class="avatar rounded" aria-label="Animated robot avatar">
+<video class="avatar-slot" id="slot0" muted playsinline preload="auto" aria-hidden="true" poster="v2/robot-poster-256.png"></video>
+<video class="avatar-slot" id="slot1" muted playsinline preload="auto" aria-hidden="true" poster="v2/robot-poster-256.png"></video>
+</div>
+<div class="hero-copy">
+<div class="small-label">Automatic sequence</div>
+<h2 id="status" aria-live="polite">Getting ready</h2>
+<div id="countdown">Loading</div>
+<p class="muted">Each animation plays once. The robot then holds its neutral frame while the next reaction gets ready. Select a clip below to see it immediately.</p>
+<div class="sizes">
+<figure><canvas class="size-preview rounded" data-size="48" width="96" height="96" style="width:48px;height:48px" role="img" aria-label="Same animation at 48 pixels"></canvas><figcaption>48 px</figcaption></figure>
+<figure><canvas class="size-preview rounded" data-size="80" width="160" height="160" style="width:80px;height:80px" role="img" aria-label="Same animation at 80 pixels"></canvas><figcaption>80 px</figcaption></figure>
+<figure><canvas class="size-preview rounded" data-size="128" width="256" height="256" style="width:128px;height:128px" role="img" aria-label="Same animation at 128 pixels"></canvas><figcaption>128 px</figcaption></figure>
+</div>
+</div>
+</section>
+<div class="cards">
+<section class="panel card">
+<div class="card-head"><img src="v2/robot-curious.png" alt="Curious tilt"><div><h3>A · Curious</h3><span class="duration">6 seconds · Approved keeper</span></div></div>
+<p>A quick glance, an inquisitive head tilt, and a blink back to you.</p>
+<div class="card-actions"><button data-play="a" type="button">Play A</button><a href="v2/robot-idle-256.mp4" download>MP4</a><a href="v2/robot-idle-256.webm" download>WebM</a></div>
+</section>
+<section class="panel card">
+<div class="card-head"><img src="variants/b-thoughtful-nod.png" alt="Thoughtful downward nod"><div><h3>B · Thoughtful</h3><span class="duration">5 seconds · New</span></div></div>
+<p>A downward glance, a considering pause, a small nod and a soft blink.</p>
+<div class="card-actions"><button data-play="b" type="button">Play B</button><a href="variants/robot-b-thoughtful-256.mp4" download>MP4</a><a href="variants/robot-b-thoughtful-256.webm" download>WebM</a></div>
+</section>
+<section class="panel card">
+<div class="card-head"><img src="variants/c-playful-double-take.png" alt="Playful tilt"><div><h3>C · Playful</h3><span class="duration">5 seconds · New</span></div></div>
+<p>A little double-take, a tilt the other way, and an antenna bounce.</p>
+<div class="card-actions"><button data-play="c" type="button">Play C</button><a href="variants/robot-c-playful-256.mp4" download>MP4</a><a href="variants/robot-c-playful-256.webm" download>WebM</a></div>
+</section>
+</div>
+<section class="panel history"><h3>Recent reactions · latest first</h3><ul id="history"></ul></section>
+<footer><a href="index-v2.html">Reference and earlier comparison</a><a href="variants/robot-b-thoughtful.blend" download>Blender B</a><a href="variants/robot-c-playful.blend" download>Blender C</a><a href="v2/robot-poster-256.png" download>Neutral still</a><span>Motion pauses when this tab is hidden.</span></footer>
+<p id="error" role="status"></p>
+</main>
+<script type="module" src="variants/player.mjs"></script>
+</html>
