@@ -47,8 +47,7 @@ All nine generated portraits were visually inspected before integration.
 | echo.png | exec-e7c9d5b8-2c04-454e-89b8-0c673555e6fa.png |
 | orbit.png | exec-a1d03b8b-9d52-4468-af0c-e9b47176d251.png |
 
-Original files remain under
-`/path/to/private-workspace`.
+Original reference files remain in private local storage.
 
 ## miro
 

@@ -1,4 +1,4 @@
-"""Fixed browser release lifecycle source. Running it on deployment-target requires a separate live gate.
+"""Browser release lifecycle source. Activation requires a separately approved target.
 
 No npm lifecycle scripts, model calls, new keys or permanent service. Network downloads
 are official HTTPS metadata/artifacts; every promoted release is immutable and qualified.

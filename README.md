@@ -4,7 +4,7 @@ A private web assistant on your own infrastructure.
 
 The current first slice is deliberately small: sign in, talk to one Hermes
 assistant, close the browser, and return to the same conversation. Use the
-existing Warp connection for private access.
+configured private access connection.
 
 The new app is `radhouse.chat`, independent of the earlier platform composition.
 It reuses local password/TOTP authentication and the pinned Hermes HTTP client.
@@ -12,6 +12,11 @@ It saves the displayed transcript and pending reply receipt in one private SQLit
 file. New original attachments are streamed to a private directory beside it. A small observer within the web process saves the reply even while the
 browser is closed; it only checks existing runs and never submits messages.
 Hermes owns the assistant's persistent session context and memory.
+
+For source qualification and repeatable static web updates, see
+[the release workflow](docs/deployment/repeatable-releases.md). Installation
+settings belong in an ignored `.env`; `.env.example` contains synthetic placeholders.
+Run the public-source privacy gate before sharing changes.
 
 **Status:** deployed private pilot. Real conversation and restart continuity,
 selective reads from large PDF/DOCX originals with follow-up citations, and the
