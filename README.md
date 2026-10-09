@@ -112,6 +112,21 @@ depend on the agent being reachable. Both flags are enabled in the existing
 pilot. About You, Terminal and inference controls use their corresponding fixed
 native API routes; opening pages does not create a shell or browser process.
 
+Your Agent is a separate profile page with the approved character collections,
+an optional display name/introduction and saved Appearance choices. Save keeps
+these choices for the authenticated owner across reloads and devices; Discard
+restores the saved version. Evening/device surfaces and separate icon/status
+motion settings respect device reduced motion. These are presentation choices;
+they do not rename the runtime agent or change its prompts, memory or authority.
+The existing SQLite schema-3 initialization adds an independent owner profile
+table, without creating a conversation. A stale Save from another tab keeps the
+draft and asks you to review the saved version.
+
+Chat keeps occasional browser/terminal context and model/thinking controls in
+Message options. Included context appears as short removable chips. The current
+configured engine still determines which models and thinking choices are
+available; opening the options does not start a browser, terminal or reply.
+
 Optional `transcription_endpoint` selects an existing OpenAI-compatible
 `/v1/audio/transcriptions` service; optional `transcription_bearer` belongs only to
 that endpoint. Leave both absent until the service connection is qualified.

@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from radhouse.domain.tasks import Rejected
 from .attachments import FILE_ID, classify
+from .agent_profile import AgentProfileBody, portrait_themes
 
 
 JAVASCRIPT_MEDIA_TYPE = 'text/javascript'
@@ -134,6 +135,14 @@ def create_app(auth, service, *, admin=None, documents=None, browser=None, about
     _install_browser_routes(app, browser, owner, auth, service)
     _install_icon_route(app)
     _install_auth_routes(app, auth, session_payload)
+    @app.get("/chat/agent-profile")
+    def agent_profile(request: Request):
+        return service.store.agent_profile(owner(request))
+
+    @app.post("/chat/agent-profile")
+    def save_agent_profile(body: AgentProfileBody, request: Request):
+        return service.store.save_agent_profile(owner(request), body.presentation())
+
     @app.get("/chat/history")
     def history(request: Request, before: Annotated[int | None, Field(gt=0)] = None):
         return service.store.history(owner(request), before)
@@ -275,6 +284,7 @@ def _install_assets(app):
     @app.get("/browser")
     @app.get("/terminal")
     @app.get("/about-you")
+    @app.get("/agent")
     def index():
         return FileResponse(STATIC / "index.html")
 
@@ -313,10 +323,20 @@ def _install_assets(app):
     @app.get("/workspace-assets/{name}")
     def workspace_asset(name: str):
         if name not in {"about-you.js", "about-you.css", "owner-terminal.js", "owner-terminal.css",
-                        "inference-controls.js", "inference-controls.css"}:
+                        "inference-controls.js", "inference-controls.css", "agent-profile.js", "agent-profile.css"}:
             raise Rejected("asset_not_found", 404)
         return FileResponse(STATIC / name,
             media_type=JAVASCRIPT_MEDIA_TYPE if name.endswith(".js") else "text/css")
+
+    @app.get("/workspace-assets/agent-profile/catalog.json")
+    def agent_catalog():
+        return FileResponse(STATIC / "agent-profile" / "catalog.json", media_type="application/json")
+
+    @app.get("/workspace-assets/agent-profile/portraits/{name}.webp")
+    def agent_portrait(name: str):
+        if name not in portrait_themes():
+            raise Rejected("asset_not_found", 404)
+        return FileResponse(STATIC / "agent-profile" / "portraits" / (name + ".webp"), media_type="image/webp")
 
     @app.get("/workspace-vendor/xterm/{name}")
     def terminal_vendor_asset(name: str):

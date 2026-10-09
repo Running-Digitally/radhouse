@@ -4,7 +4,7 @@ import {pathToFileURL} from "node:url";
 import assert from "node:assert/strict";
 const modulePath=process.env.RADHOUSE_PLAYWRIGHT_MODULE || new URL("../web/node_modules/@playwright/test/index.mjs",import.meta.url).pathname;
 const {chromium,expect}=await import(pathToFileURL(modulePath).href);
-const browser=await chromium.launch({headless:true});
+const browser=await chromium.launch({headless:true,...(process.env.RADHOUSE_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.RADHOUSE_CHROMIUM_EXECUTABLE_PATH}:{})});
 const origin="http://127.0.0.1:61486",root=new URL("../",import.meta.url);
 const evidence=process.env.RADHOUSE_DESIGN_EVIDENCE;
 if(evidence)await mkdir(evidence,{recursive:true});
@@ -14,21 +14,25 @@ page.on("pageerror",error=>errors.push(error.message));
 let replyState="completed";
 const answer="Begin with one small step.\n\n```js\nconst morning = 'quiet';\n```";
 const staticNames=["index.html","chat.css","chat.js","format.js","browser-view.js","browser-view.css","navigation.js","navigation.css","library.js"];
-const workspaceNames=["about-you.js","about-you.css","owner-terminal.js","owner-terminal.css","inference-controls.js","inference-controls.css"];
+const workspaceNames=["about-you.js","about-you.css","owner-terminal.js","owner-terminal.css","inference-controls.js","inference-controls.css","agent-profile.js","agent-profile.css"];
+const catalog=JSON.parse(await readFile(new URL("src/radhouse/chat/static/agent-profile/catalog.json",root),"utf8"));
 await context.route(origin+"/**",async route=>{
   const path=new URL(route.request().url()).pathname;
   const json=value=>route.fulfill({contentType:"application/json",body:JSON.stringify(value)});
   if(path==="/auth/session")return json({username:"alice",csrf_token:"fixture",management:{read:true,write:false},features:{browser:true,browser_control:true,documents:true}});
   if(path==="/chat/history" || path==="/chat/reply")return json({turns:[{seq:1,request_id:"fixture-answer",text:"Help me begin the morning with a little more space.",status:replyState,output:replyState==="completed"?answer:"",attachments:[]}],older_before:null});
+  if(path==="/chat/agent-profile")return json({schema:"radhouse.agent-profile.v1",revision:0,name:"",intro:"",theme:"hearthside",portrait:"ember",accent:"fern",surface:"paper",stateMotion:true,iconMotion:true});
+  if(path==="/workspace-assets/agent-profile/catalog.json")return json(catalog);
   if(path.startsWith("/chat/browser")){browserRequests.push(path);return json({state:"idle"});}
   let file=path==="/" ? "src/radhouse/chat/static/index.html" : null;
   const name=path.split("/").at(-1);
   if(staticNames.includes(name))file="src/radhouse/chat/static/"+name;
   if(path.startsWith("/workspace-assets/") && workspaceNames.includes(name))file="src/radhouse/chat/static/"+name;
+  if(catalog.profiles.some(entry=>entry.asset===path))file="src/radhouse/chat/static/"+path.slice("/workspace-assets/".length);
   if(path.startsWith("/workspace-vendor/xterm/") && ["xterm.js","xterm.css","addon-fit.js"].includes(name))file="src/radhouse/chat/static/vendor/xterm/"+name;
   if(["interface-preview.html","interface-preview.js","radhouse-mark.svg","favicon.svg"].includes(name))file="brand/"+name;
   if(!file)return route.fulfill({status:404});
-  return route.fulfill({contentType:name.endsWith(".js")?"text/javascript":name.endsWith(".css")?"text/css":name.endsWith(".svg")?"image/svg+xml":"text/html",body:await readFile(new URL(file,root))});
+  return route.fulfill({contentType:name.endsWith(".js")?"text/javascript":name.endsWith(".css")?"text/css":name.endsWith(".svg")?"image/svg+xml":name.endsWith(".webp")?"image/webp":"text/html",body:await readFile(new URL(file,root))});
 });
 try{
   await page.goto(origin);

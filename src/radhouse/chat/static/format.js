@@ -164,7 +164,7 @@ window.RadhouseFormat = (() => {
     const label = button.dataset.label || "Copy";
     const accessibleLabel = button.dataset.accessibleLabel || label;
     const show = (icon, text, name=text) => {
-      if (window.RadhouseIcons) window.RadhouseIcons.decorate(button, icon, text, {accessibleLabel:name});
+      if (window.RadhouseIcons) window.RadhouseIcons.decorate(button, icon, text, {compact:button.dataset.copyKind === "answer",accessibleLabel:name});
       else { button.textContent = text; button.setAttribute("aria-label",name); }
     };
     let status = document.getElementById("radhouse-copy-status");
