@@ -1,0 +1,26 @@
+{
+  "objects": 77,
+  "mesh_objects": 61,
+  "controls": [
+    "CTRL_Antenna",
+    "CTRL_Blink_L",
+    "CTRL_Blink_R",
+    "CTRL_Body",
+    "CTRL_Gaze_L",
+    "CTRL_Gaze_R",
+    "CTRL_Head",
+    "CTRL_Robot",
+    "CTRL_Shoulder_L",
+    "CTRL_Shoulder_R"
+  ],
+  "frames": 144,
+  "fps": 24,
+  "duration_seconds": 6,
+  "loop_boundary_max_transform_error": 0.0,
+  "antenna_center_max_circle_radius": 0.46403484518497257,
+  "external_images": [],
+  "circle_radius_including_antenna_tip": 0.4830431090485199,
+  "blink_shutters_preserve_eye_scale": true,
+  "gaze_leads_head": true,
+  "blender_version": "5.2.1 LTS"
+}
