@@ -256,3 +256,18 @@ def test_missing_catalog_fails_closed_without_private_diagnostics(profile_app, m
         assert store.agent_profile("alice") == DEFAULT_PROFILE
     finally:
         portrait_themes.cache_clear()
+
+
+def test_echo_media_uses_fixed_public_assets_and_supports_video_ranges(profile_app):
+    client, _, _, _, _ = profile_app
+    for name in ("neutral.png", "a-curious.mp4", "b-thoughtful.mp4", "c-playful.mp4"):
+        path = "/workspace-assets/agent-profile/echo/" + name
+        response = client.get(path)
+        assert response.status_code == 200
+        assert response.headers["content-type"] == ("image/png" if name.endswith("png") else "video/mp4")
+        if name.endswith("mp4"):
+            part = client.get(path, headers={"Range": "bytes=0-31"})
+            assert part.status_code == 206
+            assert part.content == response.content[:32]
+    for name in ("private.json", "unknown.mp4", "a-curious.webm", "%2e%2e%2fprivate.mp4"):
+        assert client.get("/workspace-assets/agent-profile/echo/" + name).status_code == 404

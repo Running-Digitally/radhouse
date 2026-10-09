@@ -323,7 +323,7 @@ def _install_assets(app):
     @app.get("/workspace-assets/{name}")
     def workspace_asset(name: str):
         if name not in {"about-you.js", "about-you.css", "owner-terminal.js", "owner-terminal.css",
-                        "inference-controls.js", "inference-controls.css", "agent-profile.js", "agent-profile.css"}:
+                        "inference-controls.js", "inference-controls.css", "agent-profile.js", "agent-profile.css", "agent-portrait.js"}:
             raise Rejected("asset_not_found", 404)
         return FileResponse(STATIC / name,
             media_type=JAVASCRIPT_MEDIA_TYPE if name.endswith(".js") else "text/css")
@@ -337,6 +337,14 @@ def _install_assets(app):
         if name not in portrait_themes():
             raise Rejected("asset_not_found", 404)
         return FileResponse(STATIC / "agent-profile" / "portraits" / (name + ".webp"), media_type="image/webp")
+
+    @app.get("/workspace-assets/agent-profile/echo/{name}")
+    def echo_animation(name: str):
+        assets = {"neutral.png": "image/png", "a-curious.mp4": "video/mp4",
+                  "b-thoughtful.mp4": "video/mp4", "c-playful.mp4": "video/mp4"}
+        if name not in assets:
+            raise Rejected("asset_not_found", 404)
+        return FileResponse(STATIC / "agent-profile" / "echo" / name, media_type=assets[name])
 
     @app.get("/workspace-vendor/xterm/{name}")
     def terminal_vendor_asset(name: str):

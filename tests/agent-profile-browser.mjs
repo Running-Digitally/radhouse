@@ -12,7 +12,7 @@ const initial={schema:"radhouse.agent-profile.v1",revision:0,name:"",intro:"",th
 let saved={...initial},failure=null,posts=[],profileReads=0,authenticated=true;
 const fixture=`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="stylesheet" href="/chat.css"><link rel="stylesheet" href="/navigation.css"><link rel="stylesheet" href="/browser-view.css"><link rel="stylesheet" href="/owner-terminal.css"><link rel="stylesheet" href="/admin.css"><link rel="stylesheet" href="/workspace-assets/agent-profile.css">
-<script src="/navigation.js" defer></script><script src="/workspace-assets/agent-profile.js" defer></script><script src="/fixture.js" defer></script></head>
+<script src="/workspace-assets/agent-portrait.js" defer></script><script src="/navigation.js" defer></script><script src="/workspace-assets/agent-profile.js" defer></script><script src="/fixture.js" defer></script></head>
 <body><div class="shell"><header><a class="brand" href="/">Radhouse</a><button id="logout">Sign out</button></header>
 <nav id="management-nav" aria-label="Main navigation" hidden><a href="/">Chat</a><a href="/library">Library</a><a href="/browser">Browser</a><a href="/terminal">Terminal</a><a href="/about-you">About You</a><a href="/settings" id="settings-link" data-management>Settings</a><a href="/infrastructure" data-management>Infrastructure</a></nav>
 <main class="workspace-page"><h1>Your Agent</h1><div id="profile"></div></main></div></body></html>`;
@@ -38,9 +38,9 @@ await context.route(`${origin}/**`,async route=>{
     saved={...body,name:body.name.trim(),intro:body.intro.trim(),revision:saved.revision+1};await route.fulfill(json(saved));return;
   }
   const filename=path.startsWith("/workspace-assets/")?path.slice("/workspace-assets/".length):path.slice(1);
-  if(!["chat.css","navigation.css","navigation.js","browser-view.css","owner-terminal.css","admin.css","agent-profile.js","agent-profile.css","agent-profile/catalog.json",...catalog.profiles.map(entry=>"agent-profile/portraits/"+entry.id+".webp")].includes(filename)){await route.fulfill({status:404});return;}
+  if(!["chat.css","navigation.css","navigation.js","browser-view.css","owner-terminal.css","admin.css","agent-portrait.js","agent-profile.js","agent-profile.css","agent-profile/catalog.json","agent-profile/echo/neutral.png","agent-profile/echo/a-curious.mp4","agent-profile/echo/b-thoughtful.mp4","agent-profile/echo/c-playful.mp4",...catalog.profiles.map(entry=>"agent-profile/portraits/"+entry.id+".webp")].includes(filename)){await route.fulfill({status:404});return;}
   if(filename.endsWith(".webp"))loadedPortraits.add(filename.split("/").at(-1));
-  await route.fulfill({status:200,contentType:filename.endsWith(".js")?"text/javascript":filename.endsWith(".css")?"text/css":filename.endsWith(".json")?"application/json":"image/webp",body:await readFile(new URL(filename,root)),
+  await route.fulfill({status:200,contentType:filename.endsWith(".js")?"text/javascript":filename.endsWith(".css")?"text/css":filename.endsWith(".json")?"application/json":filename.endsWith(".mp4")?"video/mp4":filename.endsWith(".png")?"image/png":"image/webp",body:await readFile(new URL(filename,root)),
     headers:{"Content-Security-Policy":"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'","Cache-Control":"no-store"}});
 });
 const page=await context.newPage();await cover(page);page.on("pageerror",error=>errors.push(error.message));
