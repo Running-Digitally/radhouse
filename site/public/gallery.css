@@ -13,11 +13,14 @@
 .visual-theme { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; color: var(--green-dark); text-decoration: none; font-size: 10px; line-height: 1.4; }
 .visual-theme:hover > span:last-child { text-decoration: underline; }
 .portrait-trio { display: block; position: relative; width: 92px; height: 52px; }
-.portrait-trio img { position: absolute; width: 44px; height: 44px; border: 2px solid var(--white); border-radius: 50%; object-fit: cover; box-shadow: 0 2px 5px #202b2518; transform: var(--portrait-rest); transition: transform 320ms cubic-bezier(.18,.85,.3,1.32); }
-.portrait-trio img:nth-child(1) { left: 0; top: 4px; --portrait-rest: rotate(-7deg); --portrait-play: translate(-4px, -3px) rotate(-14deg); --portrait-delay: 0ms; }
-.portrait-trio img:nth-child(2) { right: 0; top: 8px; --portrait-rest: rotate(7deg); --portrait-play: translate(4px, -2px) rotate(14deg); --portrait-delay: 80ms; }
-.portrait-trio img:nth-child(3) { left: 24px; top: 0; z-index: 1; --portrait-rest: none; --portrait-play: translateY(-6px) rotate(3deg) scale(1.06); --portrait-delay: 40ms; }
-.visual-theme:is(:hover, :focus-visible) .portrait-trio img { transform: var(--portrait-play); transition-delay: var(--portrait-delay); }
+/* Fixed hit areas keep each portrait's hover response independent. */
+.portrait-item { position: absolute; width: 44px; height: 44px; }
+.portrait-item img { width: 44px; height: 44px; border: 2px solid var(--white); border-radius: 50%; object-fit: cover; box-shadow: 0 2px 5px #202b2518; pointer-events: none; transform: var(--portrait-rest); transition: transform 300ms cubic-bezier(.18,.85,.3,1.32); }
+.portrait-item:nth-child(1) { left: 0; top: 4px; --portrait-rest: rotate(-7deg); --portrait-play: translate(-4px, -3px) rotate(-14deg) scale(1.05); }
+.portrait-item:nth-child(2) { right: 0; top: 8px; --portrait-rest: rotate(7deg); --portrait-play: translate(4px, -2px) rotate(14deg) scale(1.05); }
+.portrait-item:nth-child(3) { left: 24px; top: 0; z-index: 1; --portrait-rest: none; --portrait-play: translateY(-6px) rotate(3deg) scale(1.06); }
+.portrait-item:hover { z-index: 2; }
+.portrait-item:hover img { transform: var(--portrait-play); }
 .visuals-card .gallery-boundary { font-size: 10px; line-height: 1.5; margin-top: 16px; }
 .gallery-fallback { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
 .gallery-fallback summary { cursor: pointer; font-size: 11px; color: var(--green-dark); }
@@ -59,7 +62,7 @@ body.gallery-is-open { overflow: hidden; }
 .gallery-dialog-note { border-top: 1px solid #c9cebd; padding: 16px 30px; color: #526357; font-size: 11px; line-height: 1.8; }
 @keyframes gallery-arrive { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
 :root[data-icon-animation="off"] .gallery-dialog, :root[data-icon-animation="off"] .portrait-trio img { animation: none; transition: none; }
-:root[data-icon-animation="off"] .visual-theme:is(:hover, :focus-visible) .portrait-trio img { transform: var(--portrait-rest); }
+:root[data-icon-animation="off"] .portrait-item:hover img { transform: var(--portrait-rest); }
 @media (max-width: 700px) {
   .gallery-dialog { width: calc(100% - 24px); max-height: calc(100dvh - 24px); }
   .gallery-dialog-header { padding: 18px 20px 16px; }
@@ -76,6 +79,6 @@ body.gallery-is-open { overflow: hidden; }
 @media (max-width: 520px) { .site-header nav { gap: 12px; } }
 @media (prefers-reduced-motion: reduce) {
   .portrait-trio img { transition: none; }
-  .visual-theme:is(:hover, :focus-visible) .portrait-trio img { transform: var(--portrait-rest); }
+  .portrait-item:hover img { transform: var(--portrait-rest); }
   .gallery-dialog[open] { animation: none; }
 }
