@@ -781,20 +781,67 @@ def test_stationary_native_relay_retains_frame_with_unknown_capture_time(monkeyp
         relay.ingest({"type": "tabs", "tabs": [{"active": True, "url": "https://example.com/page?secret=1"}]})
         relay.ingest({"type": "frame", "data": __import__("base64").b64encode(b"\xff\xd8\xffactual-frame").decode(), "metadata": {"timestamp": 0}})
         first = await relay.snapshot(True)
+        relay.ingest({"type": "frame", "data": __import__("base64").b64encode(b"\xff\xd8\xffnewer-frame").decode()})
+        assert relay.accepts_frame(first["frame_id"], first["received_at"] + 1)
+        assert not relay.accepts_frame(first["frame_id"], first["received_at"] + 31)
+        assert not relay.accepts_frame("foreign-frame", first["received_at"] + 1)
         second = await relay.snapshot(True)
-        assert first == second
+        assert first["frame_id"] != second["frame_id"]
+        assert second == await relay.snapshot(True)
         assert first['captured_at'] is None
         assert first['received_at'] > 0
         assert first["url"] == "https://example.com/page"
         relay.ingest({"type": "url", "url": "http://192.0.2.10/second?token=hidden"})
         assert relay.url == 'http://192.0.2.10/second'
         assert relay.frame is None
+        assert not relay.accepts_frame(first["frame_id"], first["received_at"] + 1)
         relay.ingest({"type": "frame", "data": __import__("base64").b64encode(b"\xff\xd8\xffsecond-frame").decode()})
         assert (await relay.snapshot(True))["frame_id"] != first["frame_id"]
         relay.ingest({"type": "status", "connected": False})
         assert relay.frame is None
         relay.task.cancel()
         with suppress(asyncio.CancelledError): await relay.task
+    asyncio.run(run())
+
+
+def test_native_input_accepts_displayed_frame_but_fences_page_age_and_viewport(monkeypatch):
+    from types import SimpleNamespace
+    import base64
+    async def idle(self):
+        await asyncio.Event().wait()
+    monkeypatch.setattr(bridge.NativeRelay, "listen", idle)
+    calls = []
+    ack = SimpleNamespace(execute=True, outcome="reserved", command_id="input1", sequence=1)
+    controller = SimpleNamespace(reserve_input=lambda *_:ack,
+        complete_input=lambda *_, outcome:SimpleNamespace(outcome=outcome, sequence=1))
+    monkeypatch.setattr(bridge, "_controller", controller)
+    monkeypatch.setattr(bridge, "_control_modules", lambda:(SimpleNamespace(ControlRejected=ValueError),
+        SimpleNamespace(human_commands=lambda *_:None, NativeRejected=RuntimeError)))
+    owned = SimpleNamespace(identity=SimpleNamespace(session_id="chat1", generation="generation1"),
+        operation_lock=threading.Lock(), viewport={"width":100,"height":100},
+        channel=SimpleNamespace(submit_input=lambda *args:calls.append(args)),
+        handle=lambda _:SimpleNamespace(outcome="applied"))
+    async def run():
+        relay = bridge.NativeRelay("chat1", 8123, "generation1")
+        monkeypatch.setattr(bridge, "_relays", {"chat1":relay})
+        relay.ingest({"type":"frame", "data":base64.b64encode(b"\xff\xd8\xfffirst").decode()})
+        first = relay.frame["frame_id"]
+        relay.ingest({"type":"frame", "data":base64.b64encode(b"\xff\xd8\xffsecond").decode()})
+        body = {"lease_id":"lease1", "revision":1,"sequence":1,"viewport":owned.viewport,
+            "frame_id":first,"operation":"click","arguments":{"x":20,"y":20}}
+        assert bridge._human_input(owned,None,body)["outcome"] == "applied"
+        assert bridge._human_input(owned,None,{**body,"operation":"navigate","frame_id":"older-untracked",
+            "arguments":{"url":"https://example.org"}})["outcome"] == "applied"
+        assert bridge._human_input(owned,None,{**body,"frame_id":"foreign-frame"})["outcome"] == "rejected"
+        assert bridge._human_input(owned,None,{**body,"viewport":{"width":101,"height":100}})["outcome"] == "rejected"
+        assert len(calls) == 2
+        relay.ingest({"type":"url","url":"https://example.org/new-page"})
+        relay.ingest({"type":"frame", "data":base64.b64encode(b"\xff\xd8\xffnew-page").decode()})
+        assert bridge._human_input(owned,None,body)["outcome"] == "rejected"
+        relay.frame["received_at"] -= 31
+        assert bridge._human_input(owned,None,{**body,"operation":"press","arguments":{"key":"Enter"}})["outcome"] == "rejected"
+        relay.task.cancel()
+        with suppress(asyncio.CancelledError):await relay.task
     asyncio.run(run())
 
 

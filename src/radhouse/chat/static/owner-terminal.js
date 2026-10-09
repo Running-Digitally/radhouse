@@ -245,12 +245,13 @@
       }
       const lines = text.split("\n");
       if (lines.length > 20) { text = lines.slice(-20).join("\n"); truncated = true; }
-      let bytes = new TextEncoder().encode(text);
-      if (bytes.length > 8192) {
-        let start = bytes.length - 8192;
-        while (start < bytes.length && (bytes[start] & 0xc0) === 0x80) start++;
-        text = new TextDecoder().decode(bytes.slice(start)); truncated = true;
+      // Keep complete logical lines: cutting a byte suffix can leave a secret
+      // fragment that the native exact-value scrubber cannot recognize.
+      const retained = text.split("\n");
+      while (new TextEncoder().encode(retained.join("\n")).length > 8192) {
+        retained.shift(); truncated = true;
       }
+      text = retained.join("\n");
       const epoch = this.epoch, identity = this.binding;
       const value = await this._request("context-scrub", {terminal_id: identity.terminal_id,
         generation: identity.generation, captured_at: new Date().toISOString(), source, text, truncated});

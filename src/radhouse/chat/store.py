@@ -10,6 +10,7 @@ import tempfile
 import json
 import secrets
 from uuid import NAMESPACE_URL, uuid4, uuid5
+from urllib.parse import urlsplit
 
 from radhouse.domain.tasks import Rejected
 from .attachments import Attachment, FILE_ID, validate_name
@@ -103,6 +104,8 @@ class ChatStore:
                 db.execute("ALTER TABLE turns ADD COLUMN browser_context TEXT")
             if "request_options" not in columns:
                 db.execute("ALTER TABLE turns ADD COLUMN request_options TEXT")
+            if "queued_followup" not in columns:
+                db.execute("ALTER TABLE turns ADD COLUMN queued_followup INTEGER NOT NULL DEFAULT 0")
             db.execute("UPDATE turns SET first_dispatch_at=created_at WHERE first_dispatch_at IS NULL AND retry_until>0")
             db.execute("""CREATE TABLE IF NOT EXISTS document_grants (
                 token TEXT PRIMARY KEY, turn_seq INTEGER UNIQUE NOT NULL REFERENCES turns(seq),
@@ -116,6 +119,11 @@ class ChatStore:
             db.execute("""CREATE TABLE IF NOT EXISTS agent_profiles (
                 owner TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK(revision>0),
                 profile TEXT NOT NULL)""")
+            db.execute("""CREATE TABLE IF NOT EXISTS browser_preferences (
+                owner TEXT PRIMARY KEY, revision INTEGER NOT NULL, search_engine TEXT NOT NULL)""")
+            db.execute("""CREATE TABLE IF NOT EXISTS browser_history (
+                owner TEXT NOT NULL, url TEXT NOT NULL, visited_at REAL NOT NULL,
+                PRIMARY KEY(owner,url))""")
             db.execute("CREATE INDEX IF NOT EXISTS uploads_owner ON uploads(owner)")
             db.execute("CREATE INDEX IF NOT EXISTS attachments_file ON attachments(file_id,turn_seq,position)")
         self.files_path = self.path.with_name(self.path.name + ".files")
@@ -323,6 +331,43 @@ class ChatStore:
             row = db.execute("SELECT session_id FROM conversations WHERE owner=?", (owner,)).fetchone()
             return row["session_id"] if row else None
 
+    def browser_preferences(self, owner):
+        with self.connection() as db:
+            row = db.execute("SELECT revision,search_engine FROM browser_preferences WHERE owner=?", (owner,)).fetchone()
+            history = [dict(item) for item in db.execute(
+                "SELECT url,visited_at FROM browser_history WHERE owner=? ORDER BY visited_at DESC,rowid DESC LIMIT 40", (owner,))]
+            return {**(dict(row) if row else {"revision": 0, "search_engine": "google"}), "history": history}
+
+    def save_browser_preferences(self, owner, revision, search_engine):
+        if type(revision) is not int or revision < 0 or search_engine not in {"google", "duckduckgo"}:
+            raise Rejected("browser_preferences_invalid", 422)
+        with self.connection() as db:
+            db.execute(BEGIN_WRITE)
+            row = db.execute("SELECT revision,search_engine FROM browser_preferences WHERE owner=?", (owner,)).fetchone()
+            if revision != (row["revision"] if row else 0):
+                if row is None or row["search_engine"] != search_engine:
+                    raise Rejected("browser_preferences_changed", 409)
+            else:
+                db.execute("INSERT INTO browser_preferences VALUES(?,?,?) ON CONFLICT(owner) DO UPDATE SET revision=excluded.revision,search_engine=excluded.search_engine",
+                    (owner, revision + 1, search_engine))
+        return self.browser_preferences(owner)
+
+    def record_browser_visit(self, owner, url, now):
+        # Suggestions retain destinations, not authentication/search parameters.
+        parts = urlsplit(url)
+        if parts.scheme not in {"http", "https"} or not parts.hostname or parts.username is not None or parts.password is not None:
+            return
+        url = parts._replace(query="", fragment="").geturl()
+        with self.connection() as db:
+            db.execute(BEGIN_WRITE)
+            db.execute("INSERT INTO browser_history VALUES(?,?,?) ON CONFLICT(owner,url) DO UPDATE SET visited_at=excluded.visited_at", (owner, url, now))
+            db.execute("""DELETE FROM browser_history WHERE owner=? AND url NOT IN (
+                SELECT url FROM browser_history WHERE owner=? ORDER BY visited_at DESC,rowid DESC LIMIT 40)""", (owner, owner))
+
+    def clear_browser_history(self, owner):
+        with self.connection() as db:
+            db.execute("DELETE FROM browser_history WHERE owner=?", (owner,))
+
     def freeze_browser_context(self, turn, value):
         """Freeze dispatch identity only. Human input and passwords never enter this table."""
         encoded = json.dumps(value, separators=(",", ":"), sort_keys=True)
@@ -334,18 +379,20 @@ class ChatStore:
                 raise Rejected("browser_context_changed", 409)
             return saved
 
-    def reserve(self, owner, request_id, text, now, attachments=()):
+    def reserve(self, owner, request_id, text, now, attachments=(), *, request_options=None, browser_data=None):
         with self.connection() as db:
             db.execute(BEGIN_WRITE)
             row = db.execute(TURN_BY_REQUEST, (owner, request_id)).fetchone()
             if row:
                 self._match(db, row, text, attachments)
                 return dict(row)
-            if db.execute("SELECT 1 FROM turns WHERE owner=? AND status NOT IN (?,?,?,?)", (owner, *TERMINAL)).fetchone():
-                raise Rejected("reply_pending", 409)
+            waiting = bool(db.execute("SELECT 1 FROM turns WHERE owner=? AND status NOT IN (?,?,?,?)", (owner, *TERMINAL)).fetchone())
             db.execute("INSERT OR IGNORE INTO conversations VALUES (?,?)", (owner, "chat:" + uuid4().hex))
-            db.execute("INSERT INTO turns(owner,request_id,text,dispatch_key,created_at,retry_until,status) VALUES(?,?,?,?,?,?,?)",
-                       (owner, request_id, text, "chat:" + uuid4().hex, now, 0, "awaiting_dispatch"))
+            db.execute("INSERT INTO turns(owner,request_id,text,dispatch_key,created_at,retry_until,status,queued_followup,request_options,browser_context) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                       (owner, request_id, text, "chat:" + uuid4().hex, now, 0,
+                        "waiting" if waiting else "awaiting_dispatch", int(waiting),
+                        json.dumps(request_options, sort_keys=True, separators=(",", ":")) if request_options is not None else None,
+                        json.dumps(browser_data, sort_keys=True, separators=(",", ":")) if browser_data is not None else None))
             row = db.execute(TURN_BY_REQUEST, (owner, request_id)).fetchone()
             for i, attachment in enumerate(attachments):
                 db.execute("INSERT INTO attachments VALUES(?,?,?,?,?,?,?,?,?,?,?)",
@@ -353,6 +400,28 @@ class ChatStore:
                      attachment.sha256, b"" if attachment.file_id else attachment.data, attachment.reference_text,
                      attachment.file_id, attachment.reading_state, attachment.reading_error))
             return dict(row)
+
+    def promote_waiting(self, turn):
+        """Only the oldest unfinished message may reserve a runtime dispatch."""
+        with self.connection() as db:
+            db.execute(BEGIN_WRITE)
+            db.execute("""UPDATE turns SET status='awaiting_dispatch' WHERE seq=? AND status='waiting'
+                AND NOT EXISTS (SELECT 1 FROM turns earlier WHERE earlier.owner=?
+                    AND earlier.seq<? AND earlier.status NOT IN (?,?,?,?))""",
+                (turn["seq"], turn["owner"], turn["seq"], *TERMINAL))
+            return dict(db.execute(TURN_BY_SEQUENCE, (turn["seq"],)).fetchone())
+
+    def cancel_waiting(self, owner, request_id):
+        with self.connection() as db:
+            db.execute(BEGIN_WRITE)
+            turn = db.execute(TURN_BY_REQUEST, (owner, request_id)).fetchone()
+            if turn is None:
+                raise Rejected("message_not_found", 404)
+            if turn["status"] == "cancelled" and turn["run_id"] is None:
+                return
+            if turn["status"] != "waiting" or turn["first_dispatch_at"] is not None or turn["run_id"]:
+                raise Rejected("message_already_dispatching", 409)
+            db.execute("UPDATE turns SET status='cancelled',error='followup_cancelled' WHERE seq=?", (turn["seq"],))
 
     def freeze_request_options(self, turn, value):
         """Keep model choices and a scrubbed, explicitly shared excerpt per turn."""

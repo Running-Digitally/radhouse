@@ -4,6 +4,25 @@
     idle: "Browser is idle", unavailable: "Browser view is unavailable"};
   const identifier = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
   const maxFrame = 512 * 1024;
+  function resolveAddress(value, engine="google") {
+    const text=value.trim();
+    if(!text)throw new Error("Enter an address or search.");
+    if(!["google","duckduckgo"].includes(engine))throw new Error("Choose a supported search engine.");
+    const web=/^https?:\/\//i.test(text);
+    const host=/^(?:localhost|(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9-]+|\[[0-9a-f:]+\])(?::\d+)?(?:[/?#].*)?$/i.test(text);
+    if(web || host) {
+      const url=new URL(web ? text : "https://"+text);
+      if(!["http:","https:"].includes(url.protocol) || !url.hostname || url.username || url.password)
+        throw new Error("Use a web address without embedded login details.");
+      return {url:url.href,kind:"navigation"};
+    }
+    if(/^[a-z][a-z0-9+.-]*:/i.test(text) || text.startsWith("//"))
+      throw new Error("Use an HTTP or HTTPS address.");
+    const url=new URL(engine==="duckduckgo" ? "https://duckduckgo.com/" : "https://www.google.com/search");
+    url.searchParams.set("q",text);
+    return {url:url.href,kind:"search"};
+  }
+  window.RadhouseAddress={resolve:resolveAddress};
 
   class BrowserView {
     constructor(container, {persistent = false, request = null, onReturn = null, tab = null} = {}) {
@@ -18,6 +37,7 @@
       this.controlEnabled = false; this.control = null; this.sequence = 0;
       this.displayedFrame = null; this.actionPending = false; this.lease = null;
       this.inputUnconfirmed = false;
+      this.preferences=null;
       const header = document.createElement("div"); header.className = "browser-view-header"; this.header = header;
       const heading = document.createElement("h2"); heading.textContent = "Assistant browser";
       this.toggle = document.createElement("button"); this.toggle.type = "button";
@@ -157,6 +177,8 @@
       this._clearSecrets(); this.control = null; this.lease = null; this.actionNotice=null;
       this.inputUnconfirmed=false;
       this.addressEdited=false;
+      this.preferences=null;
+      this.suggestions?.replaceChildren();
       this.active = false; this.run = null; this.generation = null;
       this.site.textContent = ""; this._label(""); this.container.hidden = true;
     }
@@ -190,8 +212,12 @@
       this.reconnectBrowser = this._button("Reconnect browser",()=>this._act("/chat/browser",undefined,{method:"GET"}),"refresh");
       this.launcher.append(this.illustration,this.launchCaption,this.openButton,this.reconnectBrowser);
       this.toolbar = document.createElement("form"); this.toolbar.className = "browser-address";
-      this.address = document.createElement("input"); this.address.type="url";
-      this.address.placeholder="Enter a website URL…"; this.address.setAttribute("aria-label","Website URL");
+      this.address = document.createElement("input"); this.address.type="text";
+      this.address.placeholder="Search or enter address"; this.address.setAttribute("aria-label","Search or enter address");
+      this.address.inputMode="search";this.address.enterKeyHint="go";this.address.autocapitalize="none";
+      this.suggestions=document.createElement("datalist");this.suggestions.id="browser-address-"+crypto.randomUUID();
+      this.address.setAttribute("list",this.suggestions.id);
+      this.address.addEventListener("focus",()=>{void this._loadPreferences();});
       this.address.autocomplete="off"; this.address.spellcheck=false;
       this.addressEdited=false;
       this.address.addEventListener("input",()=>{this.addressEdited=true;});
@@ -199,8 +225,8 @@
       this.reload = this._button("Refresh",()=>this._input("reload",{}),"refresh",true);
       this.go = document.createElement("button"); this.go.type="submit"; this.go.textContent="Go";
       this._decorate(this.go,"forward","Go",true);
-      this.toolbar.append(this.back,this.reload,this.address,this.go);
-      this.toolbar.addEventListener("submit",event=>{event.preventDefault();void this._input("navigate",{url:this.address.value});});
+      this.toolbar.append(this.back,this.reload,this.address,this.go,this.suggestions);
+      this.toolbar.addEventListener("submit",event=>{event.preventDefault();void this._navigateAddress();});
       this.actions = document.createElement("div"); this.actions.className="browser-actions";
       this.owner = document.createElement("span"); this.owner.className="browser-owner";
       this.connection = document.createElement("span"); this.connection.className="browser-connection";
@@ -397,6 +423,37 @@
       else if(operation==="navigate" && this.address.value===args.url)this.addressEdited=false;
       this._renderControlState();
       this._cancel();this._schedule(0);
+      return value;
+    }
+
+    async _loadPreferences() {
+      const epoch=this.epoch;
+      try {
+        const value=await this.request("/chat/browser/preferences",undefined,"GET");
+        if(epoch!==this.epoch || !["google","duckduckgo"].includes(value?.search_engine))return false;
+        this.preferences=value;
+        this.suggestions.replaceChildren();
+        for(const entry of value.history || []) {
+          const option=document.createElement("option");option.value=entry.url;this.suggestions.append(option);
+        }
+        return true;
+      } catch {return false;}
+    }
+
+    async _navigateAddress() {
+      const original=this.address.value;
+      try {
+        let target=resolveAddress(original);
+        if(target.kind==="search") {
+          if(!await this._loadPreferences())throw new Error("Your browser settings could not be loaded. Try again.");
+          target=resolveAddress(original,this.preferences.search_engine);
+        }
+        const result=await this._input("navigate",{url:target.url});
+        if(result?.outcome==="applied" && this.address.value===original) {
+          this.address.value=target.url;this.addressEdited=false;
+          void this._loadPreferences();
+        }
+      } catch(error) {this.actionNotice=error.message;this._renderControlState();}
     }
 
     async _reconnectControls() {

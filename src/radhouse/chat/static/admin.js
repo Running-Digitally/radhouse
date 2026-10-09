@@ -48,7 +48,62 @@ function renderSettings(data) {
       ["Agent browser", data.browser?.enabled ? (data.browser.mode === "owner_session"
         ? "Open Browser to browse or take control" : "Enabled with a live view in Chat") : "Not connected"],
       ["Message text", `${data.messages.character_limit.toLocaleString()} characters`]]),
-    element("p", "Instance settings are read only. Your agent’s appearance is saved separately.", "admin-note"));
+    element("p", "Instance configuration is read only. Browser preferences and agent appearance are saved for your account.", "admin-note"));
+  if(data.browser?.enabled)void renderBrowserSettings(generation);
+}
+async function renderBrowserSettings(current) {
+  const panel=element("section",undefined,"admin-section browser-settings");
+  const title=element("h2","Browser Settings"),form=element("form"),group=element("fieldset"),legend=element("legend","Search engine");
+  group.append(legend);
+  for(const [id,label] of [["google","Google"],["duckduckgo","DuckDuckGo"]]) {
+    const row=element("label"),radio=document.createElement("input");radio.type="radio";radio.name="search-engine";radio.value=id;
+    row.append(radio,document.createTextNode(label));group.append(row);
+  }
+  const save=element("button","Save browser settings"),clear=element("button","Clear browsing history"),status=element("p", "Loading browser settings…");
+  save.type="submit";clear.type="button";status.setAttribute("role","status");status.setAttribute("aria-live","polite");
+  save.disabled=true;clear.disabled=true;
+  form.append(group,save,clear);panel.append(title,form,element("p","Recent destinations stay in your private Radhouse store. Search queries and URL fragments are excluded from suggestions.","admin-note"),status);
+  $("content").append(panel);
+  let saved=null;
+  function apply(value) {
+    saved=value;form.querySelector(`input[value="${value.search_engine}"]`).checked=true;
+    save.disabled=false;clear.disabled=false;
+  }
+  try {
+    const value=await request("/chat/browser/preferences");if(current!==generation)return;
+    apply(value);status.textContent="";
+  } catch(error) {
+    if(current!==generation)return;
+    if(error.status===401){failed(error.message);return;}
+    status.textContent="Browser settings could not be loaded. Refresh to try again.";
+  }
+  form.addEventListener("submit",async event=>{
+    event.preventDefault();if(!saved||save.disabled)return;
+    save.disabled=true;status.textContent="Saving…";
+    try {
+      const value=await request("/chat/browser/preferences",undefined,{revision:saved.revision,search_engine:form.querySelector("input:checked").value});
+      if(current!==generation)return;
+      apply(value);status.textContent="Browser settings saved.";
+    } catch(error) {
+      if(current!==generation)return;
+      if(error.status===401){failed(error.message);return;}
+      status.textContent=error.message==="browser_preferences_changed" ? "Settings changed in another tab. Refresh before saving." : "Settings were not confirmed. Refresh to check them.";
+    } finally {if(current===generation)save.disabled=false;}
+  });
+  clear.addEventListener("click",async()=>{
+    clear.disabled=true;
+    try {
+      const value=await request("/chat/browser/history/clear",undefined,{});
+      if(current!==generation)return;
+      saved=value;status.textContent="Browsing history cleared.";
+    } catch(error) {
+      if(current===generation) {
+        if(error.status===401){failed(error.message);return;}
+        status.textContent="History clearing was not confirmed. Refresh to check it.";
+      }
+    }
+    finally {if(current===generation)clear.disabled=false;}
+  });
 }
 function infrastructureComponent(component) {
   const node = element("section", undefined, "admin-section"), heading = element("div", undefined, "component-heading");

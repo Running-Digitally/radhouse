@@ -10,7 +10,8 @@ The new app is `radhouse.chat`, independent of the earlier platform composition.
 It reuses local password/TOTP authentication and the pinned Hermes HTTP client.
 It saves the displayed transcript and pending reply receipt in one private SQLite
 file. New original attachments are streamed to a private directory beside it. A small observer within the web process saves the reply even while the
-browser is closed; it only checks existing runs and never submits messages.
+browser is closed and advances already-authorized queued follow-ups in order.
+An uncertain runtime admission holds later messages until explicitly reconciled.
 Hermes owns the assistant's persistent session context and memory.
 
 **Status:** deployed private pilot. Real conversation and restart continuity,
@@ -181,6 +182,20 @@ the outgoing request. Byte progress describes the upload, not assistant reading.
 An uncertain delivery keeps the same request ID for recovery. In-place retry and,
 when transmission has not happened, editing preserve the message and files.
 Signing in again restores the outgoing request and the separate next draft.
+
+You can send a follow-up while the assistant replies. It appears as **Saved ·
+Waiting** and runs after earlier messages finish, using the same conversation.
+**Cancel follow-up** removes waiting work before dispatch; it does not stop an
+active reply. Queued text, files, model choices and captured context survive
+reload/restart without being replaced by later draft edits.
+
+The Browser address bar accepts a bare domain, an HTTP/HTTPS URL or search text.
+**Settings → Browser Settings** saves Google or DuckDuckGo as your search engine
+and lets you clear recent destinations. History suggestions stay owner-scoped;
+query strings and fragments are excluded. Non-web schemes and embedded login
+credentials are rejected. These controls use the existing browser permissions.
+This source slice is locally qualified; its paired native frame correction
+requires a reviewed runtime deployment before production use.
 
 Long pasted text is never truncated by the input. Above the message endpoint's
 16,000-character text contract, **Attach as text file** explicitly saves the whole

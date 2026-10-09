@@ -387,9 +387,11 @@ def test_human_input_applied_retry_keeps_saved_ack_after_frame_changes(session):
     session.bind()
     state = session.human()
     session.owned.viewport = {"width": 1280, "height": 720}
-    bridge._relays["session"] = SimpleNamespace(
-        generation="generation-1", frame={"frame_id": "f1", "received_at": time.time()}
-    )
+    relay = bridge.NativeRelay.__new__(bridge.NativeRelay)
+    relay.generation = "generation-1"
+    relay.frame = {"frame_id": "f1", "received_at": time.time()}
+    relay.recent_frames = bridge.deque([("f1", relay.frame["received_at"])], maxlen=256)
+    bridge._relays["session"] = relay
     body = {
         **session.body(state),
         "sequence": 1,

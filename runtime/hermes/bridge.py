@@ -10,6 +10,7 @@ import re
 import ssl
 import stat
 import time
+from collections import deque
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -824,6 +825,7 @@ class NativeRelay:
     def __init__(self, session_id, port, generation, *, current=None):
         self.session_id, self.port, self.generation = session_id, port, generation
         self.connected, self.screencasting, self.url, self.frame = False, False, None, None
+        self.recent_frames = deque(maxlen=256)
         self.current = current or (lambda: _session_stream(self.session_id))
         self.changed = asyncio.Event()
         self.task = asyncio.create_task(self.listen())
@@ -836,9 +838,11 @@ class NativeRelay:
             self.screencasting = value.get("screencasting") is True
             if not self.connected:
                 self.frame = None
+                self.recent_frames.clear()
         elif value.get("type") in {"tabs", "url"}:
             if value["type"] == "url":
                 url = value.get("url")
+                self.recent_frames.clear()
                 self.frame = (
                     None  # Never relabel a prior document frame as the new page.
                 )
@@ -860,11 +864,13 @@ class NativeRelay:
             url = active.get("url")
             if url != "about:blank" and not http_url(url):
                 self.url, self.frame = None, None
+                self.recent_frames.clear()
             else:
                 parts = urlsplit(url)
                 safe_url = parts._replace(query="", fragment="").geturl()
                 if self.url != safe_url:
                     self.frame = None
+                    self.recent_frames.clear()
                 self.url = safe_url
         elif value.get("type") == "frame":
             if type(value.get("data")) is not str or len(value["data"]) > (
@@ -881,7 +887,12 @@ class NativeRelay:
                 "captured_at": None,
                 "frame_id": hashlib.sha256(jpeg).hexdigest()[:32],
             }
+            self.recent_frames.append((self.frame["frame_id"], self.frame["received_at"]))
         self.changed.set()
+
+    def accepts_frame(self, frame_id, now):
+        return any(identity == frame_id and 0 <= now - received <= 30
+                   for identity, received in self.recent_frames)
 
     async def listen(self):
         import aiohttp
@@ -902,6 +913,7 @@ class NativeRelay:
             pass
         finally:
             self.connected, self.screencasting, self.url, self.frame = False, False, None, None
+            self.recent_frames.clear()
             self.changed.set()
             if _relays.get(self.session_id) is self:
                 _relays.pop(self.session_id, None)
@@ -1407,9 +1419,10 @@ def _human_input(owned, owner, body):
                 relay is None
                 or relay.generation != owned.identity.generation
                 or relay.frame is None
-                or relay.frame["frame_id"] != body.get("frame_id")
                 or time.time() - relay.frame["received_at"] > 30
                 or body.get("viewport") != owned.viewport
+                or body["operation"] in {"click", "scroll"}
+                and not relay.accepts_frame(body.get("frame_id"), time.time())
             ):
                 raise control.ControlRejected("stale_browser_frame")
             args = body["arguments"]
