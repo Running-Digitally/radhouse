@@ -39,3 +39,26 @@ owner/CSRF isolation, saved preference/history, typing/mobile keyboard behavior,
 queued retry/restart/order/cancellation, uncertain admission, frozen options and
 attachment scope, plus the two concrete review regressions. No new dependency,
 service, credential or scheduler is needed.
+
+## Source qualification
+
+Verified on 9 October 2026 at source commit `29e9011`, based on release
+`3b44acc`. The canonical `scripts/vs0.py verify` gate passed **1,408 tests with
+zero failures, errors or skips** using its owned disposable PostgreSQL fixture.
+Cleanup completed with no residual fixture resources. Native source
+qualification used the pinned Hermes commit
+`818c13be1dc4fd28987e1e881a9408224afd4535`, with its parser/HTTP test dependencies
+in a temporary directory. The existing legacy web bundle was built for its
+browser checks; product dependencies and source locks were unchanged.
+
+The JavaScript address/client/formatter regressions passed all 15 tests.
+Separate real-Chromium journeys passed for address/search, saved settings and
+history, follow-up Send/retry/reload/cancel at 320/390/1280 pixels, Settings
+navigation, terminal clipping/masking and native browser input with lost-ACK
+recovery. These use synthetic credentials and disposable pages, without model
+calls or live deployment.
+
+One earlier complete gate reported a chat-browser failure. That journey passed
+in isolation and the final complete gate passed on the same source. The new
+source is ready for review; live activation requires the paired web and native
+runtime changes.
