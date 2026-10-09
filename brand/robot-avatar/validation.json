@@ -1,0 +1,23 @@
+{
+  "objects": 67,
+  "mesh_objects": 51,
+  "controls": [
+    "CTRL_Antenna",
+    "CTRL_Blink_L",
+    "CTRL_Blink_R",
+    "CTRL_Body",
+    "CTRL_Gaze_L",
+    "CTRL_Gaze_R",
+    "CTRL_Head",
+    "CTRL_Robot",
+    "CTRL_Shoulder_L",
+    "CTRL_Shoulder_R"
+  ],
+  "frames": 96,
+  "fps": 24,
+  "duration_seconds": 4,
+  "loop_boundary_max_transform_error": 0.0,
+  "antenna_center_max_circle_radius": 0.475560297308136,
+  "external_images": [],
+  "blender_version": "5.2.1 LTS"
+}
