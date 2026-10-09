@@ -55,11 +55,18 @@ const turnNodes=new Map(), previewUrls=new Map();
 const retainedSnapshots=new Map();
 const browserView=typeof window.BrowserView==="function" ? new window.BrowserView($("assistant-browser"),
   {persistent:true,request:browserRequest,onReturn:returnBrowser,tab:browserTab}) : null;
-const workspacePages=["/library","/browser","/terminal","/about-you"];
+const workspacePages=["/agent","/library","/browser","/terminal","/about-you"];
 let currentPage=typeof location!=="undefined" && workspacePages.includes(location.pathname) ? location.pathname : "/";
 const library=typeof window.RadhouseLibrary==="function" ? new window.RadhouseLibrary({request:api,card:fileCard,openMessage}) : null;
 const aboutYou=typeof window.RadhouseAboutYou==="function" ? new window.RadhouseAboutYou({container:$("about-you-content"),request:api,onAuthRequired:()=>showLogin(true)}) : null;
-const inferenceControls=typeof window.RadhouseInference==="function" ? new window.RadhouseInference({container:$("inference-controls"),request:api,onAuthRequired:()=>showLogin(true)}) : null;
+const inferenceControls=typeof window.RadhouseInference==="function" ? new window.RadhouseInference({container:$("inference-controls"),request:api,onAuthRequired:()=>showLogin(true),onChange:()=>updateMessageOptions()}) : null;
+let assistantDisplayName="Your Agent";
+const agentProfile=typeof window.RadhouseAgentProfile==="function" ? new window.RadhouseAgentProfile({container:$("agent-profile-content"),request:api,
+  onAuthRequired:()=>showLogin(true),onChange:profile=>{
+    assistantDisplayName=profile?.name?.trim() || "Your Agent";
+    document.querySelectorAll(".assistant-name").forEach(label=>{label.textContent=assistantDisplayName;});
+    if(session)controls();
+  }}) : null;
 const ownerTerminal=typeof window.OwnerTerminalView==="function" ? new window.OwnerTerminalView($("owner-terminal"),
   {request:(path,body,method="POST",signal)=>api(path,body,false,signal,method),tab:browserTab,
     onAuthRequired:()=>showLogin(true),onContextChange:wanted=>{terminalContextWanted=Boolean(wanted);updateTerminalChip();}}) : null;
@@ -74,8 +81,12 @@ function browserTab() {
   return browserTabId;
 }
 function browserRequest(path,body,method="POST") { return api(path,body,false,undefined,method); }
+function currentBrowserContextAvailable() {
+  return Boolean(lastBrowserStatus?.state==="live" && lastBrowserStatus?.generation &&
+    ["human","agent"].includes(lastBrowserStatus?.control?.mode));
+}
 function updateBrowserChip() {
-  const current=lastBrowserStatus?.state==="live" && lastBrowserStatus?.generation,
+  const current=currentBrowserContextAvailable(),
     page=current ? {url:lastBrowserStatus.url,title:lastBrowserStatus.title} : lastBrowserStatus?.page_context?.previous;
   const chip=$("browser-context-chip"); if(!chip)return;
   chip.hidden=!session || session.features?.browser_control!==true || !page?.url;
@@ -83,16 +94,58 @@ function updateBrowserChip() {
     $("browser-context-label").textContent=(current ? "Use current page: " : "Use previous page: ")+(page.title || page.url);
     $("use-browser-context").checked=browserContextWanted;
   }
+  updateMessageOptions();
 }
 function updateTerminalChip() {
   const chip=$("terminal-context-chip"); if(!chip)return;
   chip.hidden=!session || session.features?.terminal!==true;
   $("use-terminal-context").checked=terminalContextWanted;
+  updateMessageOptions();
 }
+function updateMessageOptions() {
+  const current=currentBrowserContextAvailable();
+  const page=current ? {url:lastBrowserStatus.url,title:lastBrowserStatus.title} : lastBrowserStatus?.page_context?.previous;
+  const browserIncluded=Boolean(session?.features?.browser_control && browserContextWanted && page?.url);
+  const terminalIncluded=Boolean(session?.features?.terminal && terminalContextWanted);
+  const selection=inferenceControls?.selection();
+  const inferenceSelected=Boolean(selection?.model || selection?.thinking && selection.thinking!=="default");
+  $("browser-context-summary").hidden=!browserIncluded;
+  $("terminal-context-summary").hidden=!terminalIncluded;
+  $("inference-summary").hidden=!inferenceSelected;
+  $("active-message-options").hidden=!(browserIncluded || terminalIncluded || inferenceSelected);
+  if(browserIncluded){
+    const full=(current ? "Current page: " : "Previous page: ")+(page.title || page.url);
+    const brief=(page.title || page.url).slice(0,40);
+    const button=$("review-browser-context");button.title=full;
+    if(window.RadhouseIcons)window.RadhouseIcons.decorate(button,"browser",brief+(brief.length<(page.title || page.url).length ? "…" : ""),{accessibleLabel:"Review included browser context: "+full});
+    else button.textContent=brief;
+  }
+  if(inferenceSelected){
+    const text=[selection.model,selection.thinking!=="default" ? "Thinking: "+selection.thinking : null].filter(Boolean).join(" · ");
+    $("inference-summary").textContent=text;$("inference-summary").title="Message settings: "+text;
+  }
+}
+function openMessageOptions(focusId) {
+  $("message-options").open=true;
+  if(focusId)$(focusId).focus();
+}
+$("review-browser-context").addEventListener("click",()=>openMessageOptions("use-browser-context"));
+$("review-terminal-context").addEventListener("click",()=>openMessageOptions("use-terminal-context"));
+$("inference-summary").addEventListener("click",()=>{openMessageOptions();inferenceControls?.model.focus();});
+$("remove-browser-context").addEventListener("click",()=>{browserContextWanted=false;updateBrowserChip();$("message").focus();});
+$("remove-terminal-context").addEventListener("click",()=>{terminalContextWanted=false;if(ownerTerminal)ownerTerminal.contextEnabled=false;updateTerminalChip();$("message").focus();});
+window.RadhouseIcons?.decorate($("message-options-toggle"),"settings","Message options",{compact:true});
+window.RadhouseIcons?.decorate($("attach"),"attach","Attach files",{compact:true});
+window.RadhouseIcons?.decorate($("review-terminal-context"),"terminal-context","Terminal context");
+for(const [id,name,label] of [["remove-browser-context","close","Remove browser context"],["remove-terminal-context","close","Remove terminal context"],
+  ["open-browser-context","browser","Open browser"],["open-terminal-context","terminal","Open terminal"]]){
+  window.RadhouseIcons?.decorate($(id),name,label,{compact:true});
+}
+document.addEventListener("pointerdown",event=>{if($("message-options").open && !$("message-options").contains(event.target))$("message-options").open=false;});
+$("message-options").addEventListener("keydown",event=>{if(event.key==="Escape" && $("message-options").open){event.preventDefault();$("message-options").open=false;$("message-options-toggle").focus();}});
 function outgoingBrowserContext() {
   const control=lastBrowserStatus?.control;
-  if(!browserContextWanted || lastBrowserStatus?.state!=="live" || !control
-      || !["human","agent"].includes(control.mode))return null;
+  if(!browserContextWanted || !currentBrowserContextAvailable())return null;
   return {generation:lastBrowserStatus.generation,revision:control.revision,lease_id:control.lease_id || null};
 }
 async function returnBrowser(binding) {
@@ -163,9 +216,9 @@ $("assistant-browser").addEventListener("browser-state",event=>{
   if(event.detail.state==="idle")browserContextWanted=false;
   lastBrowserStatus=event.detail;updateBrowserChip();
 });
-$("use-browser-context").addEventListener("change",event=>{browserContextWanted=event.target.checked;lastBrowserActivity=Date.now();});
+$("use-browser-context").addEventListener("change",event=>{browserContextWanted=event.target.checked;lastBrowserActivity=Date.now();updateBrowserChip();});
 $("open-browser-context").addEventListener("click",()=>{lastBrowserActivity=Date.now();showPage("/browser",true,true);});
-$("use-terminal-context").addEventListener("change",event=>{terminalContextWanted=event.target.checked;if(ownerTerminal)ownerTerminal.contextEnabled=terminalContextWanted;});
+$("use-terminal-context").addEventListener("change",event=>{terminalContextWanted=event.target.checked;if(ownerTerminal)ownerTerminal.contextEnabled=terminalContextWanted;updateTerminalChip();});
 $("open-terminal-context").addEventListener("click",()=>showPage("/terminal",true,true));
 for(const event of ["pointerdown","keydown","wheel"])document.addEventListener(event,()=>{
   if(session && (currentPage==="/browser" || currentPage==="/" && browserContextWanted))lastBrowserActivity=Date.now();
@@ -206,7 +259,10 @@ function showPage(path, push=false, focus=false) {
   $("browser-page").hidden=!session || currentPage!=="/browser";
   $("terminal-page").hidden=!session || currentPage!=="/terminal";
   $("about-you-page").hidden=!session || currentPage!=="/about-you";
-  const pageTitles={"/library":"Library","/browser":"Browser","/terminal":"Terminal","/about-you":"About You"};
+  $("agent-page").hidden=!session || currentPage!=="/agent";
+  agentProfile?.setVisible(Boolean(session && currentPage==="/agent"));
+  $("message-options").open=false;
+  const pageTitles={"/agent":"Your Agent","/library":"Library","/browser":"Browser","/terminal":"Terminal","/about-you":"About You"};
   document.title=currentPage==="/" ? "Radhouse" : pageTitles[currentPage]+" · Radhouse";
   managementNavigation();
   if (currentPage!=="/library") { library?.cancel(); }
@@ -292,7 +348,7 @@ function saveState() {
   return draftWrites;
 }
 function persist() { const savingSession=session; return saveState().catch(() => { if (session===savingSession) { tell("draft_storage_unavailable",persist); } }); }
-$("management-nav").addEventListener("click",async event => {
+async function handleWorkspaceNavigation(event) {
   const link=event.target.closest("a");
   if (!link || event.button!==0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) { return; }
   event.preventDefault();
@@ -313,7 +369,9 @@ $("management-nav").addEventListener("click",async event => {
     }
   } catch { if (session===leavingSession) { tell("draft_storage_unavailable",persist); } }
   finally { managementLeaving=false; }
-});
+}
+$("management-nav").addEventListener("click",handleWorkspaceNavigation);
+document.addEventListener("click",event=>{if(event.target.closest?.(".rh-header-portrait"))void handleWorkspaceNavigation(event);});
 function releaseFile(file) { const url=previewUrls.get(file.file_id); if (url) { URL.revokeObjectURL(url); } previewUrls.delete(file.file_id); }
 function releasePreviews() { for (const url of previewUrls.values()) { URL.revokeObjectURL(url); } previewUrls.clear(); }
 function showLogin(expired=false) {
@@ -321,7 +379,8 @@ function showLogin(expired=false) {
   stopBrowser(); browserSuspended=false;
   lastBrowserStatus=null;updateBrowserChip();
   library?.clear();
-  aboutYou?.clear(); inferenceControls?.clear(); ownerTerminal?.dispose(); terminalContextWanted=false;
+  aboutYou?.clear(); inferenceControls?.clear(); agentProfile?.clear(); ownerTerminal?.dispose(); terminalContextWanted=false;
+  assistantDisplayName="Your Agent";$("message-options").open=false;
   if (session) {
     $("username").value=session.username;
     // Keep the only original in this tab when browser storage is unavailable.
@@ -335,7 +394,7 @@ function showLogin(expired=false) {
   $("messages").replaceChildren(); $("draft-files").replaceChildren(); $("message").value="";
   $("chat-view").hidden=true; $("logout").hidden=true; $("login-view").hidden=false; $("loading").hidden=true;
   $("library-view").hidden=true; $("browser-page").hidden=true;
-  $("terminal-page").hidden=true; $("about-you-page").hidden=true; updateTerminalChip();
+  $("terminal-page").hidden=true; $("about-you-page").hidden=true; $("agent-page").hidden=true; updateTerminalChip();
   clearNotice(); if (expired) { tell("authentication_required"); }
 }
 async function api(path,body,initial=false,signal=undefined,method=undefined) {
@@ -467,10 +526,11 @@ function replyAgentState(turn) {
 }
 function assistantReply(turn) {
   const reply=document.createElement("div"); reply.className="assistant";
-  const name=document.createElement("p"), answer=document.createElement("div"), copy=document.createElement("button"); name.className="message-label rh-agent-label"; name.textContent="Radhouse";
+  const name=document.createElement("p"), answer=document.createElement("div"), copy=document.createElement("button"); name.className="message-label rh-agent-label";
+  const identity=document.createElement("span");identity.className="assistant-name";identity.textContent=assistantDisplayName;name.append(identity);
   const icon=agentMark(replyAgentState(turn));if(icon)name.prepend(icon);
   answer.className="answer"; answer.append(window.RadhouseFormat.render(turn.output || "")); copy.type="button"; copy.className="copy-answer"; copy.dataset.label="Copy"; copy.dataset.copyKind="answer"; copy.dataset.accessibleLabel="Copy answer"; copy.setAttribute("aria-label","Copy answer"); copy.textContent="Copy"; copy.hidden=!turn.output;
-  window.RadhouseIcons?.decorate(copy,"clipboard","Copy",{accessibleLabel:"Copy answer"});
+  window.RadhouseIcons?.decorate(copy,"clipboard","Copy",{compact:true,accessibleLabel:"Copy answer"});
   copy.addEventListener("click",() => window.RadhouseFormat.copyText(turn.output,copy)); reply.append(name,answer);
   if (turn.shared_files?.length) {
     const files=document.createElement("div"); files.className="attachments";
@@ -571,7 +631,7 @@ function resizeMessage() { const input=$("message"); input.style.height="auto"; 
 function replyStatus(pending) {
   if (filesLoading) return "Adding files…";
   if (busy) return outbox?.phase === "uploading" ? "Uploading…" : "Sending…";
-  return pending ? "Radhouse is replying…" : "";
+  return pending ? assistantDisplayName+" is replying…" : "";
 }
 function controls() {
   const pending=pendingTurn(), tooLong=!messageFits($("message").value), hasContent=!!($("message").value.trim() || draft.attachments.length);
@@ -579,6 +639,11 @@ function controls() {
   $("send").disabled=busy || filesLoading || !!pending || !!outbox || tooLong || !hasContent || openingHistory;
   $("attach").disabled=filesLoading || openingHistory || capturingContext; $("attach-text").disabled=filesLoading || openingHistory || capturingContext; $("long-text").hidden=!tooLong;
   inferenceControls?.setDisabled(busy || openingHistory);
+  $("inference-controls").hidden=session?.features?.inference!==true;
+  $("message-options").hidden=!session || !["browser_control","terminal","inference"].some(feature=>session.features?.[feature]===true);
+  const latest=[...turns.values()].sort((a,b)=>b.seq-a.seq)[0];
+  const state=pending ? replyAgentState(pending) : latest && ["failed","cancelled","interrupted"].includes(latest.status) ? "error" : "ready";
+  window.RadhouseNavigation?.setAgentState?.(state,pending ? replyStatus(pending) : state==="error" ? "Last reply needs attention" : "Ready");
   document.querySelectorAll("[data-remove-file]").forEach(button=>{button.disabled=capturingContext;});
   if(window.RadhouseIcons){window.RadhouseIcons.decorate($("send"),"send",busy ? "Sending…" : "Send");window.RadhouseIcons.busy($("send"),busy);}
   else $("send").textContent=busy ? "Sending…" : "Send";
@@ -655,6 +720,7 @@ async function openConversation() {
   $("login-view").hidden=true; $("logout").hidden=false; $("loading").hidden=true;
   showPage(currentPage);
   if(session.features?.inference===true) { void inferenceControls?.load(); }
+  void agentProfile?.load();
   controls();
   const storageKey=key(); let stored, fallback;
   try { stored=await draftOperation(storageKey); } catch { /* Recover through the text fallback or this tab’s retained originals. */ }

@@ -113,6 +113,9 @@ class ChatStore:
             db.execute("""CREATE TABLE IF NOT EXISTS assistant_files (
                 file_id TEXT PRIMARY KEY REFERENCES uploads(file_id),
                 turn_seq INTEGER NOT NULL REFERENCES turns(seq))""")
+            db.execute("""CREATE TABLE IF NOT EXISTS agent_profiles (
+                owner TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK(revision>0),
+                profile TEXT NOT NULL)""")
             db.execute("CREATE INDEX IF NOT EXISTS uploads_owner ON uploads(owner)")
             db.execute("CREATE INDEX IF NOT EXISTS attachments_file ON attachments(file_id,turn_seq,position)")
         self.files_path = self.path.with_name(self.path.name + ".files")
@@ -288,6 +291,27 @@ class ChatStore:
         with self.connection() as db:
             row = db.execute(TURN_BY_REQUEST, (owner, request_id)).fetchone()
             return dict(row) if row else None
+
+    def agent_profile(self, owner):
+        """Read presentation without creating a conversation or default row."""
+        from .agent_profile import DEFAULT_PROFILE
+        with self.connection() as db:
+            row = db.execute("SELECT revision,profile FROM agent_profiles WHERE owner=?", (owner,)).fetchone()
+            return {**json.loads(row["profile"]), "revision": row["revision"]} if row else dict(DEFAULT_PROFILE)
+
+    def save_agent_profile(self, owner, profile):
+        """Compare and save one full validated draft under the SQLite lock."""
+        with self.connection() as db:
+            db.execute(BEGIN_WRITE)
+            row = db.execute("SELECT revision FROM agent_profiles WHERE owner=?", (owner,)).fetchone()
+            revision = row["revision"] if row else 0
+            if profile["revision"] != revision:
+                raise Rejected("agent_profile_conflict", 409)
+            saved = {key: value for key, value in profile.items() if key != "revision"}
+            db.execute("""INSERT INTO agent_profiles(owner,revision,profile) VALUES(?,?,?)
+                ON CONFLICT(owner) DO UPDATE SET revision=excluded.revision,profile=excluded.profile""",
+                (owner, revision + 1, json.dumps(saved, ensure_ascii=False, separators=(",", ":"))))
+            return {**saved, "revision": revision + 1}
 
     def browser_session(self, owner, *, create=False):
         """A browser can share the durable agent session before the first message."""

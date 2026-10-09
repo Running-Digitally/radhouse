@@ -114,6 +114,7 @@
       } finally {
         clearTimeout(timeout); if (epoch === this.epoch) {
           this.controller = null; this.loading = false; this.setDisabled(this.disabled);
+          this.onChange(this.selection());
         }
       }
     }

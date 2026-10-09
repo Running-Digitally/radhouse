@@ -10,7 +10,7 @@ const {chromium, expect: baseExpect} = await import(moduleUrl);
 const expect = baseExpect.configure({timeout: 10000});
 const root = new URL("../src/radhouse/chat/static/", import.meta.url);
 const origin = "http://127.0.0.1:61392";
-const fixture = `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1">
+const fixture = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <link rel="stylesheet" href="/chat.css"><link rel="stylesheet" href="/navigation.css">
   <script src="/navigation.js" defer></script></head><body><div class="shell">
   <header><a href="/" class="brand">Radhouse</a><button id="logout">Sign out</button></header>
@@ -25,7 +25,9 @@ const settings = {checked_at: "2026-10-08T12:00:00Z", authentication: {idle_time
   files: {upload_size_limit_bytes: null, upload_count_limit: null, audio_transcription_enabled: false},
   documents: {selective_access_enabled: true}, browser: {enabled: true}, messages: {character_limit: 16000}};
 const infrastructure = {checked_at: settings.checked_at, components: [], versions: {release_commit: "fixture", package: "fixture", python: "fixture"}};
-const browser = await chromium.launch({headless: true});
+const catalog=JSON.parse(await readFile(new URL("agent-profile/catalog.json",root),"utf8"));
+const profile={schema:"radhouse.agent-profile.v1",revision:0,name:"",intro:"",theme:"hearthside",portrait:"ember",accent:"fern",surface:"paper",stateMotion:true,iconMotion:true};
+const browser = await chromium.launch({headless: true,...(process.env.RADHOUSE_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.RADHOUSE_CHROMIUM_EXECUTABLE_PATH}:{})});
 const context = await browser.newContext({viewport: {width: 1200, height: 850}});
 const page = await context.newPage(), errors = [];
 await cover(page); page.on("pageerror", error => errors.push(error.message));
@@ -38,15 +40,20 @@ await context.route(`${origin}/**`, async route => {
   if (path.startsWith("/admin/")) {
     managementRequests++; await route.fulfill(json(path === "/admin/settings" ? settings : infrastructure)); return;
   }
+  if(path==="/chat/agent-profile"){
+    await route.fulfill(authenticated?json(profile):{status:401,contentType:"application/json",body:'{"error":"authentication_required"}'});return;
+  }
+  if(path==="/workspace-assets/agent-profile/catalog.json"){await route.fulfill(json(catalog));return;}
   if (["/", "/library", "/browser"].includes(path)) {
     await route.fulfill({status: 200, contentType: "text/html", body: fixture}); return;
   }
   const filename = ["/settings", "/infrastructure"].includes(path) ? "admin.html"
-    : ["/chat.css", "/admin.css", "/admin.js", "/navigation.css", "/navigation.js"].includes(path) ? path.slice(1) : null;
+    : ["/chat.css", "/admin.css", "/admin.js", "/navigation.css", "/navigation.js"].includes(path) ? path.slice(1)
+    : ["/workspace-assets/agent-profile.js","/workspace-assets/agent-profile.css",...catalog.profiles.map(entry=>entry.asset)].includes(path) ? path.slice("/workspace-assets/".length) : null;
   if (!filename) { await route.fulfill({status: 404}); return; }
-  await route.fulfill({status: 200, contentType: filename.endsWith(".js") ? "text/javascript" : filename.endsWith(".css") ? "text/css" : "text/html",
-    body: await readFile(new URL(filename, root), "utf8"),
-    headers: {"Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'", "Cache-Control": "no-store"}});
+  await route.fulfill({status: 200, contentType: filename.endsWith(".js") ? "text/javascript" : filename.endsWith(".css") ? "text/css" : filename.endsWith(".webp")?"image/webp":"text/html",
+    body: await readFile(new URL(filename, root)),
+    headers: {"Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'", "Cache-Control": "no-store"}});
 });
 const update = async value => page.evaluate(current => window.RadhouseNavigation.update(current), value);
 const menu = () => page.locator("#navigation-toggle");
@@ -60,7 +67,8 @@ try {
   await expect(menu()).toBeHidden(); await expect(panel()).toBeHidden();
   await update(session());
   await expect(panel()).toBeVisible(); await expect(menu()).toHaveAttribute("aria-expanded", "true");
-  for (const name of ["Chat", "Library", "Browser", "Terminal", "About You", "Settings", "Infrastructure"]) { await expect(link(name)).toBeVisible(); }
+  for (const name of ["Your Agent", "Chat", "Library", "Browser", "Terminal", "About You", "Settings", "Infrastructure"]) { await expect(link(name)).toBeVisible(); }
+  await expect(link("Your Agent")).toHaveAttribute("href","/agent");
   await expect(link("Terminal").locator("svg")).toHaveAttribute("data-icon","terminal");
   await expect(link("About You").locator("svg")).toHaveAttribute("data-icon","about-you");
   await expect(link("Chat")).toHaveAttribute("aria-current", "page");
@@ -76,14 +84,14 @@ try {
   await page.reload(); await update(session()); await expect(panel()).toBeHidden();
   await menu().click(); await expect(panel()).toBeVisible();
   role = "viewer"; await update(session());
-  for (const name of ["Chat", "Library", "Browser", "Terminal", "About You"]) { await expect(link(name)).toBeVisible(); }
+  for (const name of ["Your Agent", "Chat", "Library", "Browser", "Terminal", "About You"]) { await expect(link(name)).toBeVisible(); }
   await expect(page.locator("#settings-link")).toBeHidden(); await expect(page.locator("#infrastructure-link")).toBeHidden();
   role = "admin"; await update(session());
 
   // Small screens start closed, with a modal drawer and an inert page underneath.
   await page.setViewportSize({width: 390, height: 844}); await expect(panel()).toBeHidden(); await noOverflow();
   await menu().click(); await expect(panel()).toBeVisible(); await expect(panel()).toHaveAttribute("aria-modal", "true");
-  await expect(link("Chat")).toBeFocused();
+  await expect(link("Your Agent")).toBeFocused();
   expect(await page.locator("main").evaluate(node => node.inert)).toBe(true);
   expect(await page.locator("header").evaluate(node => node.inert)).toBe(true);
   await link("Infrastructure").focus(); await page.keyboard.press("Tab"); await expect(page.locator("#navigation-close")).toBeFocused();
@@ -100,7 +108,7 @@ try {
   await page.locator("main").evaluate(node => { node.inert = false; });
   await menu().click(); await page.locator("#navigation-close").focus();
   await page.setViewportSize({width: 1200, height: 850}); await expect(panel()).toBeVisible();
-  await expect(link("Chat")).toBeFocused();
+  await expect(link("Your Agent")).toBeFocused();
   await update(null); await expect(panel()).toBeHidden(); await expect(menu()).toBeHidden();
 
   await page.goto(`${origin}/browser`); await update(session());
@@ -109,11 +117,11 @@ try {
 
   // Real admin assets use the same shell and current session role.
   await page.goto(`${origin}/settings`); await expect(page.locator("#content")).toBeVisible();
-  const animationToggle=page.getByRole("switch",{name:"Icon animation",exact:true});
   await expect(page.getByRole("heading",{name:"Appearance",exact:true})).toBeVisible();
-  await animationToggle.uncheck();await expect(page.locator("html")).toHaveAttribute("data-icon-animation","off");
-  await page.reload();await expect(animationToggle).not.toBeChecked();
-  await animationToggle.check();await expect(page.locator("html")).toHaveAttribute("data-icon-animation","on");
+  await expect(page.getByRole("link",{name:"Customize your agent and appearance",exact:true})).toHaveAttribute("href","/agent");
+  await expect(page.getByRole("switch",{name:"Icon animation",exact:true})).toHaveCount(0);
+  await expect(page.locator(".rh-header-portrait img")).toHaveAttribute("src",profile.portrait?catalog.profiles.find(entry=>entry.id===profile.portrait).asset:"");
+  await page.reload();await expect(page.getByRole("link",{name:"Customize your agent and appearance",exact:true})).toBeVisible();
   await expect(link("Settings")).toHaveAttribute("aria-current", "page");
   await expect(link("Library")).toBeVisible(); await expect(link("Browser")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollHeight > innerHeight)).toBe(true);

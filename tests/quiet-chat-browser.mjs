@@ -1,0 +1,94 @@
+// Actual Chromium layout and composer behavior; all API responses are local fixtures.
+import assert from "node:assert/strict";
+import {readFile, mkdir} from "node:fs/promises";
+import {pathToFileURL} from "node:url";
+const {chromium,expect}=await import(pathToFileURL(process.env.RADHOUSE_PLAYWRIGHT_MODULE).href);
+const browser=await chromium.launch({headless:true,...(process.env.RADHOUSE_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.RADHOUSE_CHROMIUM_EXECUTABLE_PATH}:{})});
+const origin="http://127.0.0.1:61489",root=new URL("../src/radhouse/chat/static/",import.meta.url);
+const evidence=process.env.RADHOUSE_DESIGN_EVIDENCE;
+if(evidence)await mkdir(evidence,{recursive:true});
+const context=await browser.newContext({viewport:{width:1280,height:900},permissions:["clipboard-read","clipboard-write"]});
+const page=await context.newPage(),errors=[],requests=[];
+page.on("pageerror",error=>errors.push(error.message));
+const profile={schema:"radhouse.agent-profile.v1",revision:0,name:"",intro:"",theme:"hearthside",portrait:"ember",accent:"fern",surface:"paper",stateMotion:true,iconMotion:true};
+let browserMode="human",previousPage=null;
+const staticNames=new Set(["index.html","chat.css","chat.js","format.js","navigation.js","navigation.css","library.js","browser-view.js","browser-view.css","about-you.js","about-you.css","owner-terminal.js","owner-terminal.css","inference-controls.js","inference-controls.css","agent-profile.js","agent-profile.css"]);
+await context.route(origin+"/**",async route=>{
+  const path=new URL(route.request().url()).pathname;requests.push(path);
+  const json=value=>route.fulfill({contentType:"application/json",body:JSON.stringify(value)});
+  if(path==="/auth/session")return json({username:"alice",csrf_token:"fixture",management:{read:true,write:false},features:{browser:true,browser_control:true,terminal:true,inference:true}});
+  if(path==="/chat/agent-profile")return json(profile);
+  if(path==="/chat/history" || path==="/chat/reply")return json({turns:[{seq:1,request_id:"quiet-answer",text:"Help me make a little room.",status:"completed",output:"A little breathing room starts with one clear next step.\n\nKeep the conversation close, and bring in extra context when you need it.",attachments:[]}],older_before:null});
+  if(path==="/chat/browser")return json({state:"live",generation:"fixture-browser",url:"https://example.com/project",title:"GitHub — Running-Digitally/radhouse: A self-hosted platform for persistent AI agents, with isolated workspaces and explicit permissions",control:{mode:browserMode,revision:1,lease_id:"fixture"},page_context:{previous:previousPage}});
+  if(path.startsWith("/chat/inference"))return json({schema:"radhouse.inference.v1",state:"available",current_model:"nemo-chat",models:[{id:"nemo-chat",label:"nemo-chat",available:true,thinking:{state:"unknown",choices:[],can_enable:false,can_disable:false}}]});
+  let relative=path==="/" || path==="/agent" ? "index.html" : null;
+  const name=path.split("/").at(-1);
+  if(staticNames.has(name))relative=name;
+  if(path.startsWith("/workspace-vendor/xterm/") && ["xterm.js","xterm.css","addon-fit.js"].includes(name))relative="vendor/xterm/"+name;
+  if(path==="/workspace-assets/agent-profile/catalog.json")relative="agent-profile/catalog.json";
+  if(/^\/workspace-assets\/agent-profile\/portraits\/[a-z]+\.webp$/.test(path))relative="agent-profile/portraits/"+name;
+  if(!relative)return route.fulfill({status:404});
+  const contentType=name.endsWith(".js")?"text/javascript":name.endsWith(".css")?"text/css":name.endsWith(".json")?"application/json":name.endsWith(".webp")?"image/webp":"text/html";
+  return route.fulfill({contentType,body:await readFile(new URL(relative,root))});
+});
+try{
+  await page.goto(origin);
+  await expect(page.locator("#chat-view")).toBeVisible();
+  await expect(page.locator("#browser-context-summary")).toBeVisible();
+  await expect(page.locator("#terminal-context-summary")).toBeHidden();
+  await expect(page.getByLabel("Model",{exact:true})).toBeHidden();
+  await expect(page.getByLabel("Thinking",{exact:true})).toBeHidden();
+  await expect(page.getByRole("button",{name:"Refresh models",exact:true})).toBeHidden();
+  await expect(page.locator("#use-terminal-context")).toBeHidden();
+  await expect(page.locator("#inference-summary")).toBeHidden();
+  assert.equal(await page.locator("#compose").evaluate(node=>node.getBoundingClientRect().height<175),true,"Default desktop composer should remain compact");
+  assert.equal(await page.locator("#review-browser-context").innerText().then(text=>text.length<45),true,"Long page context should be abbreviated");
+  await page.locator("#message-options-toggle").click();
+  await expect(page.locator("#use-terminal-context")).toBeVisible();
+  await expect(page.getByLabel("Model",{exact:true})).toBeVisible();
+  await page.locator("#use-terminal-context").check();
+  await expect(page.locator("#terminal-context-summary")).toBeVisible();
+  await page.getByLabel("Model",{exact:true}).selectOption("nemo-chat");
+  await expect(page.locator("#inference-summary")).toHaveText("nemo-chat");
+  await page.locator("#message-options-toggle").press("Escape");
+  await expect(page.locator("#message-options-toggle")).toBeFocused();
+  await expect(page.locator("#use-terminal-context")).toBeHidden();
+  await page.locator("#remove-terminal-context").click();
+  await expect(page.locator("#terminal-context-summary")).toBeHidden();
+  await page.locator("#remove-browser-context").click();
+  await expect(page.locator("#browser-context-summary")).toBeHidden();
+  await page.locator("#inference-summary").click();
+  await page.getByLabel("Model",{exact:true}).selectOption("");
+  await page.locator("#use-browser-context").check();
+  await page.locator("#message").click();
+  await expect(page.locator("#use-browser-context")).toBeHidden();
+  const copy=page.getByRole("button",{name:"Copy answer",exact:true});
+  await expect(copy).toBeVisible();
+  assert.equal(await copy.evaluate(node=>node.classList.contains("rh-action--compact")),true);
+  await copy.click();
+  await expect(page.getByRole("button",{name:"Copied",exact:true})).toHaveClass(/rh-action--compact/);
+  assert.ok((await page.evaluate(()=>navigator.clipboard.readText())).includes("breathing room"));
+  await expect(copy).toBeVisible({timeout:4000});
+  await page.locator("#message").focus();
+  if(evidence)await page.screenshot({path:evidence+"/quiet-chat-desktop.png"});
+  for(const width of [390,320]){
+    await page.setViewportSize({width,height:844});
+    await expect(page.locator("#message")).toBeInViewport();
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,"No mobile horizontal overflow");
+    for(const id of ["attach","message-options-toggle","send"]){
+      const box=await page.locator("#"+id).boundingBox();assert.ok(box.width>=44 && box.height>=44,"44px touch action: "+id);
+    }
+    await page.locator("#message-options-toggle").click();
+    await expect(page.getByLabel("Model",{exact:true})).toBeInViewport();
+    await page.locator("#message-options-toggle").press("Escape");
+    await page.locator("#message").focus();
+    if(evidence)await page.screenshot({path:evidence+`/quiet-chat-${width}.png`});
+  }
+  browserMode="paused";await page.reload();
+  await expect(page.locator("#browser-context-summary")).toBeHidden();
+  previousPage={url:"https://example.com/previous",title:"Earlier page"};browserMode="recovering";await page.reload();
+  await expect(page.locator("#review-browser-context")).toHaveAttribute("title","Previous page: Earlier page");
+  assert.ok(requests.every(path=>!path.includes("/frame") && !path.includes("/open") && !path.startsWith("/chat/messages")),"Presentation must not open browser/terminal or dispatch a message");
+  assert.deepEqual(errors,[]);
+  console.log("PASS quiet chat: compact defaults, context disclosure/removal, explicit model summary, copy feedback, keyboard and 320/390px touch layouts; no runtime allocation or dispatch.");
+}finally{await browser.close();}

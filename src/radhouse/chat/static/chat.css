@@ -9,3 +9,36 @@
 @media(max-width:600px){.shell{padding:0 12px}header{padding:10px 0}.brand{font-size:21px}#history-pane{padding-top:18px}.attachments{grid-template-columns:1fr}#compose{padding:9px;margin-bottom:max(9px,env(safe-area-inset-bottom))}.compose-footer{gap:7px}.compose-footer #reply-status{font-size:12px}#notice,#long-text{flex-wrap:wrap}#message{font-size:16px}.assistant{padding-left:12px}.attachment{gap:8px}#login-view{padding:24px 12px}}
 .workspace-page{flex:1;min-height:0;overflow:auto;padding:24px 4px 28px}.workspace-heading{display:flex;align-items:start;justify-content:space-between;gap:16px;margin-bottom:24px}.workspace-heading h1{margin-bottom:8px}.workspace-heading .intro{margin:0}.library-filters{display:grid;grid-template-columns:minmax(0,1fr) 170px;gap:16px;align-items:end}.library-filters select{font:inherit;color:inherit;background:var(--panel);border:1px solid #bac5b8;border-radius:8px;padding:11px 13px;width:100%;min-height:44px}.library-filters select:focus-visible,.library-file a:focus-visible{outline:3px solid #779e81;outline-offset:2px}.library-files{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.library-file{flex-wrap:wrap;align-items:start;padding:12px}.library-file-meta{flex:1 1 100%;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:12px;color:var(--muted);padding-top:8px;border-top:1px solid var(--line)}.library-file-meta a{color:#315441;text-underline-offset:3px;min-height:24px}.library-file .file-info{min-width:0}.library-file .image-preview{width:64px;height:64px;flex-basis:64px}.library-file .file-name{font-size:14px}.library-file audio{max-width:100%}#library-status{font-size:14px;color:var(--muted)}#library-more{margin-top:18px}.browser-page .browser-view{margin-top:0}.browser-page .browser-view h2{font-size:16px}
 @media(max-width:650px){.library-files{grid-template-columns:1fr}.library-filters{grid-template-columns:minmax(0,1fr) 125px;gap:10px}.workspace-heading{margin-bottom:18px}.workspace-heading h1{font-size:28px}.workspace-heading button{flex-shrink:0}.workspace-page{padding-top:20px}}
+
+/* Keep everyday chat quiet; disclose occasional message controls on request. */
+#messages,#empty{max-width:780px;margin-inline:auto}
+#compose{position:relative;width:min(100%,820px);align-self:center;padding:10px 12px;box-shadow:none}
+#compose:focus-within{border-color:var(--rh-green,#456d55)}
+#message:focus-visible{outline:none}
+.compose-footer{padding-top:4px;gap:6px}
+.compose-footer #attach,.compose-footer #message-options-toggle{border-color:transparent;color:var(--muted)}
+.message-options{position:static;flex:none}
+.message-options summary{list-style:none;cursor:pointer;min-height:44px}
+.message-options summary::-webkit-details-marker{display:none}
+.message-options summary::marker{content:""}
+.message-options[open]>summary{background:var(--rh-soft,#eaf0e6);color:var(--rh-green,#456d55)}
+.message-options-panel{position:absolute;bottom:calc(100% + 8px);left:10px;z-index:5;width:min(460px,calc(100% - 20px));max-height:min(430px,calc(100dvh - var(--composer-height,150px) - 110px));overflow:auto;overscroll-behavior:contain;padding:16px;background:var(--panel,#fffef9);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 28px #24332d18}
+.message-options-panel h2{font-size:14px;font-weight:650;margin:0 0 12px}
+.message-options-panel .browser-context-chip{display:flex;flex-wrap:nowrap;gap:10px;padding:4px 0;margin:0}
+.message-options-panel .browser-context-chip label{min-width:0;flex:1;font-size:13px}
+.message-options-panel .browser-context-chip label span{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.message-options-panel .browser-context-chip input{flex:none;width:18px;height:18px;accent-color:var(--rh-green,#456d55)}
+.message-options-panel .browser-context-chip button{border:0}
+.active-message-options{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 6px;min-width:0}
+.context-summary{display:flex;align-items:center;max-width:100%;min-width:0;border:1px solid var(--line);border-radius:9px;background:var(--rh-soft,#eaf0e6)}
+.context-summary button{border:0;font-size:12px;min-height:36px;padding:4px 7px;color:var(--muted)}
+.context-summary button:first-child{min-width:0;max-width:calc(100% - 36px);flex:1}
+.context-summary .rh-action-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.context-summary .rh-icon{width:16px;height:16px;flex:none}
+.context-summary button:last-child{width:36px;flex:none}
+.inference-summary{border:0;font-size:12px;color:var(--muted);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-height:36px;padding:4px 8px}
+.assistant .copy-answer{opacity:.55}
+.assistant .copy-answer:focus-visible,.assistant .copy-answer[data-state]{opacity:1}
+@media(hover:hover){.assistant:hover .copy-answer{opacity:1}}
+@media(pointer:coarse){.context-summary button,.inference-summary{min-height:44px}.context-summary button:last-child{width:44px}.context-summary button:first-child{max-width:calc(100% - 44px)}}
+@media(max-width:600px){#compose{padding:8px 9px}.message-options-panel{left:7px;width:calc(100% - 14px);padding:13px}.active-message-options{gap:4px}.context-summary{max-width:100%}.compose-footer #reply-status{font-size:11px}.compose-footer #send{padding-inline:11px}}
