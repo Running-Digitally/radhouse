@@ -99,7 +99,7 @@ hosting contract: exact-source-head GitHub Codex review, normal merge, then
 upload only `public/` from merged source. Verify both endpoints, served hashes,
 headers, actual 404 status and visible browser interactions after publication.
 
-PR79 holds the prepared update. Publication is pending Cloudflare sign-in and
-the owner's answer to the request to post the required GitHub Codex review
-comment. A login tab has been left for the owner. This preparation is not a
-public deployment.
+PR79 holds the prepared update. The owner authorized the final commit, push,
+draft/review, merge, local fast-forward and Cloudflare public rollout on 8 October
+(Toronto). The required exact-head GitHub Codex review and post-publication
+verification remain release gates. This preparation is not a public deployment.
