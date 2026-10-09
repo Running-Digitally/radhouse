@@ -781,14 +781,20 @@ def test_stationary_native_relay_retains_frame_with_unknown_capture_time(monkeyp
         relay.ingest({"type": "tabs", "tabs": [{"active": True, "url": "https://example.com/page?secret=1"}]})
         relay.ingest({"type": "frame", "data": __import__("base64").b64encode(b"\xff\xd8\xffactual-frame").decode(), "metadata": {"timestamp": 0}})
         first = await relay.snapshot(True)
+        relay.ingest({"type": "frame", "data": __import__("base64").b64encode(b"\xff\xd8\xffnewer-frame").decode()})
+        assert relay.accepts_frame(first["frame_id"], first["received_at"] + 1)
+        assert not relay.accepts_frame(first["frame_id"], first["received_at"] + 31)
+        assert not relay.accepts_frame("foreign-frame", first["received_at"] + 1)
         second = await relay.snapshot(True)
-        assert first == second
+        assert first["frame_id"] != second["frame_id"]
+        assert second == await relay.snapshot(True)
         assert first['captured_at'] is None
         assert first['received_at'] > 0
         assert first["url"] == "https://example.com/page"
         relay.ingest({"type": "url", "url": "http://192.0.2.10/second?token=hidden"})
         assert relay.url == 'http://192.0.2.10/second'
         assert relay.frame is None
+        assert not relay.accepts_frame(first["frame_id"], first["received_at"] + 1)
         relay.ingest({"type": "frame", "data": __import__("base64").b64encode(b"\xff\xd8\xffsecond-frame").decode()})
         assert (await relay.snapshot(True))["frame_id"] != first["frame_id"]
         relay.ingest({"type": "status", "connected": False})
