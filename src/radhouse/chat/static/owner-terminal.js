@@ -100,7 +100,9 @@
       if (!this.term) {
         if (!window.Terminal || !window.FitAddon?.FitAddon) throw new Error("terminal_renderer_unavailable");
         this.term = new window.Terminal({cursorBlink: true, scrollback: 2000, allowProposedApi: false,
-          fontSize: 14, convertEol: false, theme: {background: "#17231e", foreground: "#f4f3ec"}});
+          fontSize: 14, convertEol: false, minimumContrastRatio: 7,
+          theme: {background: "#17231e", foreground: "#f4f3ec", cursor: "#f4f3ec",
+            selectionBackground: "#c0d4c0", selectionForeground: "#17231e"}});
         this.fit = new window.FitAddon.FitAddon(); this.term.loadAddon(this.fit); this.term.open(this.viewport);
         this.term.onData(data => { this._input(data); });
       }
