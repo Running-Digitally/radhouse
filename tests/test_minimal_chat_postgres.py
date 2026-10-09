@@ -16,6 +16,7 @@ import uvicorn
 
 from radhouse.auth.local import LocalAuthService, provision_local_user
 from radhouse.chat.app import create_app
+from radhouse.chat.agent_profile import DEFAULT_PROFILE
 from radhouse.chat.service import ChatService
 from radhouse.chat.store import ChatStore
 from tests.test_minimal_chat import SyntheticHermes
@@ -45,10 +46,16 @@ def test_real_auth_cookie_csrf_logout_and_schema_unchanged(real_chat, store):
     auth, service, hermes, code, password = real_chat
     with TestClient(create_app(auth, service), base_url="http://127.0.0.1") as client:
         assert client.get("/chat/history").status_code == 401
+        assert client.get("/chat/agent-profile").status_code == 401
         response = client.post("/auth/login", json={"username":"alice","password":password,"totp_code":code}, headers={"Origin":"http://127.0.0.1"})
         assert response.status_code == 200
         token = response.json()["csrf_token"]
         headers = {"Origin":"http://127.0.0.1", "X-Radhouse-CSRF":token}
+        assert client.get("/chat/agent-profile").json() == DEFAULT_PROFILE
+        profile = {**DEFAULT_PROFILE, "name": "Saved with real auth"}
+        assert client.post("/chat/agent-profile", json=profile, headers={"Origin":"http://127.0.0.1"}).status_code == 403
+        assert client.post("/chat/agent-profile", json=profile, headers={**headers, "Origin":"https://evil.test"}).status_code == 403
+        assert client.post("/chat/agent-profile", json=profile, headers=headers).json() == {**profile, "revision": 1}
         file_path = f"/chat/files/{uuid4()}?name=note.txt"
         assert client.put(file_path,content=b"private note",headers={"Origin":"http://127.0.0.1"}).status_code == 403
         assert client.put(file_path,content=b"private note",headers={**headers,"Origin":"https://evil.test"}).status_code == 403
@@ -60,6 +67,7 @@ def test_real_auth_cookie_csrf_logout_and_schema_unchanged(real_chat, store):
         assert client.get("/chat/reply").json()["turns"][0]["output"] == "A synthetic reply."
         assert client.post("/auth/logout", json={}, headers=headers).status_code == 204
         assert client.get("/chat/history").status_code == 401
+        assert client.get("/chat/agent-profile").status_code == 401
     with store.transaction() as tx:
         assert tx._connection.execute("SELECT schema_version FROM radhouse_metadata").fetchone()["schema_version"] == 7
     assert len(hermes.runs) == 1
