@@ -13,9 +13,9 @@ now describes qualified owner control, return and saved logins. A separate
 workspace section describes Terminal, About You and model controls activated
 in the private pilot on 8 October. Agent Identity remains a design preview, presented in
 one compact Visuals card with Echo as its animated centerpiece, Beacon and
-Orbit as smaller static portraits on either side, and the other three themes
-arranged above and below. Each theme
-opens the thirteen-character popup gallery; working identity settings are the
+Orbit as smaller static portraits on either side, and Hearthside and Kiln Club
+above. Paper Trails has been removed from the public preview. Each theme
+opens the ten-character popup gallery; working identity settings are the
 next private-app step. [The update receipt](RELEASE-2026-10-08-WORKSPACE.md) records the evidence.
 Echo uses the approved Blender neutral photograph and A/B/C reactions in the
 Visuals card and featured gallery portrait. Silent A/B/C clips play continuously
@@ -94,7 +94,7 @@ links, the first illustration and a full prose fallback work without enhancement
 The character gallery uses a native modal dialog, collection and portrait
 buttons, previous/next controls and short character stories. Escape and backdrop
 click close it; focus returns to the collection link. Arrow keys and Home/End
-select within each button group. Four native disclosures expose all portraits
+select within each button group. Three native disclosures expose all portraits
 without JavaScript. Reduced motion removes gallery and glyph animation.
 
 The platform glyph module is copied exactly from the qualified app source,

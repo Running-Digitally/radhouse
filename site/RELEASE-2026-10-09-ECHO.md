@@ -3,8 +3,9 @@
 Requested 9 October 2026 (Toronto). The owner asked the public website to use
 the approved Echo videos, then refined the local preview: feature Echo in the
 Visuals card, place his two robot companions in smaller static circles on
-either side, arrange the other three themes around him, and continuously play
-random A/B/C videos with no wait. This is the final behavior in the reviewed
+either side, and continuously play random A/B/C videos with no wait. The owner
+then removed Paper Trails to shorten the Visuals card and its shared row.
+This is the final behavior in the reviewed
 source. Work starts from remote main at
 `e360876896d5eee4d88ba2642d9aeef0ec66947f` in an isolated checkout.
 
@@ -23,8 +24,11 @@ Seven files in `public/characters/` are byte-identical copies of the approved
 These copies total 388,002 bytes. A is six seconds; B and C are five seconds.
 The original A assets and source Blender scenes are unchanged.
 
-The Visuals card places Hearthside and Kiln Club above the larger Echo portrait
-and Paper Trails below. Beacon and Orbit flank Echo as smaller static circles.
+The Visuals card places Hearthside and Kiln Club above the larger Echo portrait.
+Beacon and Orbit flank Echo as smaller static circles. Paper Trails has been
+removed from the card, gallery and static disclosure, leaving three collections
+and ten characters. Removing its extra row and tightening spacing makes the
+four workspace cards shorter while keeping their tops and bottoms aligned.
 Opening Signal Station selects Echo directly in the gallery.
 
 `echo.js` shuffles all three clips, prevents immediate repeats and preloads each
@@ -58,7 +62,8 @@ their prior settings. Publication targets the existing Radhouse static Worker.
   rejection retain the neutral image; no-JavaScript disclosure uses that image.
 - Page and gallery have no horizontal overflow at 320, 390, 700, 1000, 1001 and
   1280 px, including both sides of the four-column breakpoint. Desktop and
-  narrow card and gallery were visually inspected.
+  narrow card and gallery were visually inspected. All four desktop cards have
+  aligned tops and bottoms; only three theme links and gallery choices remain.
 - The walkthrough reports zero page errors. Media copies match their originals
   exactly, including the approved A hashes.
 

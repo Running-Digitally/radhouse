@@ -31,6 +31,8 @@ try {
     });
   });
   await page.goto(`${origin}/#characters`);
+  assert.equal(await page.locator('.visual-theme').count(), 3);
+  assert.equal(await page.locator('#collection-paper').count(), 0);
   await page.waitForFunction(() => window.echoTransitions?.filter(item => item.phase === 'playing').length >= 4,
     null, { timeout: 30000 });
   const transitions = await page.evaluate(() => window.echoTransitions);
@@ -70,6 +72,7 @@ try {
   await page.waitForFunction(() => document.querySelector('.gallery-portrait-frame').dataset.echoPhase === 'playing');
   assert.equal(await page.locator('#gallery-character-name').innerText(), 'Echo', 'The centerpiece must open directly to Echo');
   assert.equal(await page.locator('.gallery-thumbnail video').count(), 0);
+  assert.equal(await page.locator('.gallery-themes button').count(), 3);
   await page.screenshot({ path: `${output}/echo-gallery-desktop.png` });
   assert.equal(await page.locator('#gallery-portrait').getAttribute('src'), '/characters/echo-neutral.png');
   await page.getByRole('button', { name: 'Next character', exact: true }).click();
@@ -85,6 +88,12 @@ try {
     await page.locator('#characters').scrollIntoViewIfNeeded();
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     assert.ok(await page.locator('.signal-portraits').evaluate(row => row.scrollWidth <= row.clientWidth));
+    if (width > 1000) {
+      assert.ok(await page.locator('.workspace-card').evaluateAll(cards => {
+        const bounds = cards.map(card => card.getBoundingClientRect());
+        return bounds.every(rect => Math.abs(rect.top - bounds[0].top) < 1 && Math.abs(rect.bottom - bounds[0].bottom) < 1);
+      }), 'All four workspace cards must have aligned tops and bottoms');
+    }
     if (width === 390) {
       await page.locator('#characters-title').click();
       await page.screenshot({ path: `${output}/echo-card-mobile.png` });
