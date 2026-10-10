@@ -62,6 +62,7 @@ try {
     return left.right < echo.left && echo.right < right.left && echo.width > left.width * 2;
   }));
   await page.screenshot({ path: `${output}/echo-card-desktop.png` });
+  await page.locator('.workspace-cards').screenshot({ path: `${output}/workspace-cards.png` });
 
   await page.getByRole('button', { name: 'Pause Echo', exact: true }).click();
   assert.equal(await page.locator('[data-echo-avatar]').getAttribute('data-echo-phase'), 'neutral');
@@ -91,8 +92,12 @@ try {
     if (width > 1000) {
       assert.ok(await page.locator('.workspace-card').evaluateAll(cards => {
         const bounds = cards.map(card => card.getBoundingClientRect());
-        return bounds.every(rect => Math.abs(rect.top - bounds[0].top) < 1 && Math.abs(rect.bottom - bounds[0].bottom) < 1);
-      }), 'All four workspace cards must have aligned tops and bottoms');
+        const headings = cards.map(card => card.querySelector('h3').getBoundingClientRect());
+        const labels = cards.map(card => card.querySelector('.workspace-number').getBoundingClientRect());
+        return bounds.every(rect => Math.abs(rect.top - bounds[0].top) < 1 && Math.abs(rect.bottom - bounds[0].bottom) < 1)
+          && headings.every(rect => Math.abs(rect.top - headings[0].top) < 1)
+          && labels.every(rect => Math.abs(rect.top - labels[0].top) < 1);
+      }), 'All four cards must align their edges, category labels and headings');
     }
     if (width === 390) {
       await page.locator('#characters-title').click();
