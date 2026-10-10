@@ -5,7 +5,7 @@
   if (icons) {
     for (const host of document.querySelectorAll('[data-site-icon]')) {
       host.append(icons.create(host.dataset.siteIcon));
-      const target = host.closest('a, button, .workspace-card, .browser-handover li') || host;
+      const target = host.closest('a, button, .workspace-feature-item, .browser-handover li') || host;
       target.addEventListener('pointerenter', event => {
         if (event.pointerType !== 'touch') icons.hover(host);
       });
@@ -23,6 +23,7 @@
   const characterGroup = dialog.querySelector('.gallery-characters');
   const featured = dialog.querySelector('.gallery-featured');
   const photo = dialog.querySelector('#gallery-portrait');
+  const portraitFrame = dialog.querySelector('.gallery-portrait-frame');
   const name = dialog.querySelector('#gallery-character-name');
   const role = dialog.querySelector('#gallery-character-role');
   const story = dialog.querySelector('#gallery-character-story');
@@ -36,6 +37,11 @@
   let currentProfile = profiles.find(profile => profile.id === currentTheme.cover);
   let opener = null;
   let portraitAnimation = null;
+  let echoPortrait = null;
+
+  function portraitSource(profile) {
+    return profile.id === 'echo' ? '/characters/echo-neutral.png' : `/characters/${profile.id}.webp`;
+  }
 
   if (icons) {
     icons.decorate(close, 'close', 'Close character gallery', {compact: true});
@@ -49,8 +55,11 @@
 
   function renderProfile(profile, animate = true) {
     currentProfile = profile;
-    photo.src = `/characters/${profile.id}.webp`;
+    echoPortrait?.destroy();
+    echoPortrait = null;
+    photo.src = portraitSource(profile);
     photo.alt = `${profile.name}, ${currentTheme.style.toLowerCase()} character`;
+    if (profile.id === 'echo') echoPortrait = window.RadhouseEcho?.mount(portraitFrame);
     name.textContent = profile.name;
     role.textContent = profile.role;
     story.textContent = profile.story;
@@ -67,6 +76,7 @@
         {opacity: 1, transform: 'translateY(0)'}
       ], {duration: 220, easing: 'ease-out'});
     }
+    window.RadhouseEcho?.refresh();
   }
 
   function chooseTheme(theme, animate = true) {
@@ -86,14 +96,17 @@
       button.setAttribute('aria-label', `Preview ${profile.name}`);
       button.setAttribute('aria-pressed', 'false');
       const image = document.createElement('img');
-      image.src = `/characters/${profile.id}.webp`;
+      image.src = portraitSource(profile);
       image.width = 96;
       image.height = 96;
       image.alt = '';
       image.decoding = 'async';
       const label = document.createElement('span');
       label.textContent = profile.name;
-      button.append(image, label);
+      const thumbnail = document.createElement('span');
+      thumbnail.className = 'gallery-thumbnail';
+      thumbnail.append(image);
+      button.append(thumbnail, label);
       button.addEventListener('click', () => renderProfile(profile));
       characterGroup.append(button);
     }
@@ -130,8 +143,11 @@
       event.preventDefault();
       opener = link;
       chooseTheme(theme, false);
+      const profile = themeProfiles().find(item => item.id === link.dataset.galleryCharacter);
+      if (profile) renderProfile(profile, false);
       dialog.showModal();
       document.body.classList.add('gallery-is-open');
+      window.RadhouseEcho?.refresh();
     });
   }
 
@@ -139,6 +155,9 @@
     portraitAnimation?.cancel();
     portraitAnimation = null;
     document.body.classList.remove('gallery-is-open');
+    echoPortrait?.destroy();
+    echoPortrait = null;
+    window.RadhouseEcho?.refresh();
     opener?.focus({preventScroll: true});
     opener = null;
   });
