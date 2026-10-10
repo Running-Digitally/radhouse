@@ -92,8 +92,9 @@ that budget reports `document_operation_exhausted`, without imposing an upload l
 
 Native plugin configuration provides `callback_base_url`, `callback_ca_file` and
 `callback_tls_server_name`. TCP uses the existing loopback SSH forward. TLS uses the
-independently pinned existing web identity `192.0.2.10`, whose certificate SAN
-does not include loopback. Certificate chain and hostname checks remain enabled;
+explicit web certificate identity from private plugin configuration, for example
+`controller.example.invalid`, whose certificate SAN need not include loopback.
+Certificate chain and hostname checks remain enabled;
 redirects and inherited HTTP proxies are rejected. The bearer supplies callback
 authority; there is no additional standing callback key.
 
@@ -156,7 +157,8 @@ it is neither a model argument nor permission/reachability assertion.
 
 ## Weekly lifecycle contract
 
-The source helper `bootstrap.py` is prepared for the existing deployment-target role. Fixed verbs
+The source helper `bootstrap.py` targets the machine pinned in the private root-owned
+maintenance policy. A missing or mismatched machine identity is refused. Fixed verbs
 are `maintenance-stage`, `maintenance-qualify`, `maintenance-promote`,
 `maintenance-verify` and `maintenance-rollback`, with fixed root policy
 `/etc/radhouse/builder-maintenance.json` and bounded sanitized JSON stdin/stdout.
@@ -200,5 +202,5 @@ the qualified verified restart or acknowledged no-change deferral. Daily OS secu
 updaters remain in place; no second maintenance service or root broker is introduced.
 
 Local source tests and disposable Linux compatibility evidence do not establish a
-deployment-target installed browser, firewall rules, certificate-forward route or live model
+target's installed browser, firewall rules, certificate-forward route or live model
 tool execution. Those remain explicit deployment verification evidence.

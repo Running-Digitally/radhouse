@@ -137,7 +137,6 @@ def _tls_identity(value):
                    for label in value.split("."))
 
 
-
 def configure_documents(callback):
     global _callback
     if callback is not None and not isinstance(callback, Callback):

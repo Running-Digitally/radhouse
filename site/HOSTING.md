@@ -29,9 +29,8 @@ self-review instead of GitHub Codex review. The completed review is recorded in
 | Access | public and unauthenticated |
 
 The Worker name is corrected from this document's earlier proposed `radhouse`
-name. The current name and endpoint are recorded in the infrastructure placement
-reference, `private-installation-record`,
-and the parent release handoff. The Cloudflare dashboard was independently inspected on 6 October in the
+name. The current name and endpoint are recorded in separately maintained private
+deployment records. The Cloudflare dashboard was independently inspected on 6 October in the
 owner's existing account. It names the same Worker and links its custom domain
 to `radhouse.runningdigitally.com`. Its existing static-file uploader supplies
 routine content releases.

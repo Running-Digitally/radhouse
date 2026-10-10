@@ -225,7 +225,7 @@ class BrowserService:
 class BrowserSessionService:
     """The owner's browser exists independently of a chat run.
 
-    deployment-target owns native lifetime, fencing and the encrypted vault. This relay keeps
+    The bot runtime owns native lifetime, fencing and the encrypted vault. This relay keeps
     only durable conversation/dispatch identities, never input or login values.
     """
     control_enabled = True

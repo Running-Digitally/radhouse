@@ -27,7 +27,7 @@ The actual official desktop release is `desktop-v0.5.23`, commit
 pins are not interchangeable. The retained official macOS bundle passes deep
 strict signing checks, Gatekeeper's Notarized Developer ID assessment and its
 stapled notarization ticket. It is signed by Block, Inc., team `EYF346PHUG`, and
-its executable matches the originally retained digest. Restoration on operator workstation
+its executable matches the originally retained digest. Restoration on the operator client
 preserves the previous patched application and all application data.
 
 The restored official desktop visibly displays Researcher's standard profile,
@@ -117,7 +117,7 @@ exact permission/MFA controls remain unchanged.
 
 The retained Hermes overlay is based on `c67fb3378943dc6454b5680f3fc17919facd8fad`
 and locally committed at `27e563d0af4a7fac6bf654db67444b026ecf0d71`. It passed 249
-distinct local cases; the frozen deployment-target rollout has four helper regression cases.
+distinct local cases; the frozen deployment rollout has four helper regression cases.
 The approved isolated Linux qualification also passed all 249 cases without
 changing live runtime state. Source deployment, journal migration and live
 inference remain pending.
@@ -158,7 +158,7 @@ the original completion message/link before relay delivery and never rewrite
 an already signed outbox event on reconnect. A stale delayed delivery does not
 justify replaying work or creating another publication.
 
-The current Radhouse web ingress admits operator workstation. Mobile foreground conversation
+The current Radhouse web ingress admits the operator client. Mobile foreground conversation
 support does not grant phones a new web-review route. Preserve the existing
 private network and firewall boundaries.
 
@@ -247,7 +247,7 @@ Prove the following in order, with separate bounded checks:
 
 1. Correct reply ancestry and empty-success reporting. Retain the failed
    walkthrough and its exact task/run/source-event evidence.
-2. Qualify the existing Hermes/inference host tool path independently of Buzz. Start with
+2. Qualify Hermes with its configured inference provider independently of Buzz. Start with
    one useful question over one admitted reference. Distinguish provider response
    shape, runtime execution/persistence and controller integration failures.
    Require real tool execution and a nonempty useful answer; report missing
@@ -293,8 +293,8 @@ failed or inconclusive research proof remains open; do not silently repeat it.
 Keep queued/applied/too-late/unknown outcomes honest and preserve unsent or
 uncertain guidance. Retain only sanitized IDs, digests, counts and semantic
 checks in operational evidence. Preserve private exposure, firewall restrictions,
-MFA, signed identity, DML-only runtime access and the Hermes/inference host binding. No
-deployment-target mutation, client fork, model switch or unrelated access is included.
+MFA, signed identity, DML-only runtime access and the configured Hermes provider binding.
+No mutation of the deployment target, client fork, model switch or unrelated access is included.
 
 ## Official-client walkthrough corrections, 14 September
 

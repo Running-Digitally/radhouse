@@ -11,3 +11,9 @@ node_modules/
 # Local SonarQube evidence and scanner state
 .sonarqube/
 .scannerwork/
+
+# Installation configuration and release evidence never belong in public Git.
+.env.*
+!.env.example
+.releases/
+.release-private/

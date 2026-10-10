@@ -14,7 +14,7 @@ The owner preferred the clearer page but disliked its visual and interaction.
 They asked to apply Tomas Pueyo's
 [Shallow Intent: Why People Don't Like AI Content, and How to Make It Great](https://unchartedterritories.tomaspueyo.com/p/shallow-intent-why-people-dont-like)
 and its supplied extract at
-`/path/to/private-workspace`.
+`[private local workspace]`.
 Both were read. The extract contains the article's poster discussion and
 conclusions; the live page confirms the article and its publication context.
 
