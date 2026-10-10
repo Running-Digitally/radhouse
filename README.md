@@ -4,7 +4,7 @@ A private web assistant on your own infrastructure.
 
 The current first slice is deliberately small: sign in, talk to one Hermes
 assistant, close the browser, and return to the same conversation. Use the
-existing Warp connection for private access.
+configured private access connection.
 
 The new app is `radhouse.chat`, independent of the earlier platform composition.
 It reuses local password/TOTP authentication and the pinned Hermes HTTP client.
@@ -13,6 +13,11 @@ file. New original attachments are streamed to a private directory beside it. A 
 browser is closed and advances already-authorized queued follow-ups in order.
 An uncertain runtime admission holds later messages until explicitly reconciled.
 Hermes owns the assistant's persistent session context and memory.
+
+For source qualification and repeatable static web updates, see
+[the release workflow](docs/deployment/repeatable-releases.md). Installation
+settings belong in an ignored `.env`; `.env.example` contains synthetic placeholders.
+Run the public-source privacy gate before sharing changes.
 
 **Status:** deployed private pilot. Real conversation and restart continuity,
 selective reads from large PDF/DOCX originals with follow-up citations, and the
@@ -246,6 +251,24 @@ reuse map for the main UI. Run `python3 brand/preview_settings.py` to try it loc
 For security and code-quality analysis after a merge, run the
 [local SonarQube launcher](docs/sonarqube.md) on the development laptop. It tests and scans
 a clean copy of remote `main` and waits for the quality gate.
+
+For a committed static web update, discover the fixed release gates and then run
+one offline qualification/package command. It uses the current clean `HEAD`:
+
+```sh
+python3 scripts/release_candidate.py --baseline FULL_BASELINE_COMMIT --plan-only
+python3 scripts/release_candidate.py --baseline FULL_BASELINE_COMMIT
+```
+
+The baseline must be the reviewed deployed source revision. The runner requires
+existing Python 3.14 project/test dependencies, Node.js and pinned Playwright with
+Chromium. Its explicit location flags support shared existing installations. It
+executes synthetic API/browser checks, rejects failed or skipped required checks,
+and writes timed evidence plus a checked packet under ignored `.release-private/`.
+It never approves or applies a deployment. See the [release workflow](docs/deployment/repeatable-releases.md)
+for dependency flags, the complete gate list and private authority.
+
+Individual checks remain useful during editing:
 
 ```sh
 PYTHONPATH=src:. python -m pytest -q tests/test_minimal_chat.py tests/test_chat_attachments.py

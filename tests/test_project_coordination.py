@@ -32,7 +32,7 @@ def test_current_preview_can_be_reviewed_without_owner_acceptance():
             source_revision=revision,
             preview_revision=revision,
             preview_digest="b" * 64,
-            preview_url="https://builder-preview.runningdigitally.com/",
+            preview_url="https://preview.example.invalid/",
             pull_request="https://github.com/example-owner/example-project/pull/3",
         ),
     )
@@ -118,7 +118,7 @@ def test_failed_deployment_does_not_promote_claimed_merge_or_release():
         report(
             merged_revision=source,
             deployed_revision=source,
-            deployment_url="https://builder-preview.runningdigitally.com/",
+            deployment_url="https://preview.example.invalid/",
             deployment_status="failed",
         ),
     )

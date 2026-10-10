@@ -46,9 +46,9 @@ guest target. The controller's Python version does not change that requirement.
 
 ## Provider following
 
-A bot assigned to a fixed provider binding such as `inference host-chat` follows the model
-currently served behind that binding. An operator can change inference host's backing
-model using inference host's own documented commands. On the next admission or capability
+A bot assigned to a fixed provider binding such as `example-provider-chat` follows the model
+currently served behind that binding. An operator can change the provider's backing
+model using the provider's own documented commands. On the next admission or capability
 refresh, Radhouse records the actual served model and continues with the same
 bot identity, workspace, task records, and provider binding.
 

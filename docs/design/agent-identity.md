@@ -121,7 +121,7 @@ It is not a production settings implementation or a deployment.
 
 The design was integrated with the owner-workspace source on 2026-10-08 while
 preserving the application, runtime and tests unchanged. Production adoption
-can be a deployment-target web-only release; it does not require a Hermes upgrade or another
+can be a web-only release on the deployment target; it does not require a Hermes upgrade or another
 VM/service.
 
 | Slice | Source and contract | Acceptance |
@@ -129,7 +129,7 @@ VM/service.
 | Persist presentation | Add an owner presentation record to `ChatStore`, keyed by authenticated immutable principal ID. Proposed `GET`/`POST /chat/agent-profile` reads/saves optional name and introduction, stable theme/character IDs and validated appearance choices. The server derives ownership; POST requires the existing CSRF check. | Save survives reload; another principal cannot read/write the record; invalid IDs and unsafe text cannot become asset paths or rendered HTML. Existing instance settings remain read-only. |
 | Adopt the owner shell | Add authenticated `/agent`, the first navigation item and centered portrait to the shared chat/admin layout. Retain Chat, Library, Browser, Terminal and About You. Reuse the canonical icons and actual reply-state adapter. | Save/Discard, keyboard focus, 320/390px layouts, cross-tab appearance and device reduced motion work. Synthetic preview states never issue runtime commands or report invented live states. |
 | Package assets | Generate small production renditions of the approved catalog portraits and package their immutable catalog under existing static assets. Load visible/selected portraits; retain original artwork and prompts here. Custom uploaded portraits need a validated raster asset endpoint before adoption. | Runtime pages serve the optimized assets and stable IDs; no full artwork preloading or browser-local data URL persistence is required. |
-| Release | Qualify persistence, owner/CSRF isolation, safe rendering, navigation and existing browser/terminal regressions; freeze a new web package and deploy on deployment-target. Keep the current release and its native/browser pins intact until that package is ready. | Actual web retention/health and authenticated UI checks pass. Runtime IDs, prompts, memory, tool permissions and model choices remain unchanged. |
+| Release | Qualify persistence, owner/CSRF isolation, safe rendering, navigation and existing browser/terminal regressions; freeze a new web package and deploy on the deployment target. Keep the current release and its native/browser pins intact until that package is ready. | Actual web retention/health and authenticated UI checks pass. Runtime IDs, prompts, memory, tool permissions and model choices remain unchanged. |
 
 ### Saved identity and quiet chat implementation
 
@@ -185,7 +185,7 @@ profile loading leaves chat usable with the default presentation. Focused API
 tests cover owner/CSRF isolation, persistence, concurrent saves and invalid
 inputs. Browser checks cover Save/Discard/reload, safe text, saved surfaces,
 320/390px layouts, keyboard/reduced motion, quiet composer disclosures and
-existing Browser/Terminal navigation. The final deployment-target package must enumerate
+existing Browser/Terminal navigation. The final deployment package must enumerate
 the new static assets and preserve current native pins and owner data.
 
 ## Echo portrait motion

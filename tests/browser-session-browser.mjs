@@ -181,8 +181,10 @@ try{
   await expect(page.locator(".browser-control-status")).toHaveText("Login saved for this website.");
   if(await page.locator(".browser-logins input[type=password]").inputValue())throw new Error("Saved login password remained in form");
   await navigate("Chat");await page.getByRole("textbox",{name:"Message your assistant"}).fill("Use this current page");
-  await page.locator("#message-options summary").click();await page.locator("#use-browser-context").check();
-  await expect(page.locator("#browser-context-chip")).toBeVisible();await page.getByRole("button",{name:"Send",exact:true}).click();
+  // The composer summary stays visible while full controls live in collapsed options.
+  await expect(page.locator("#browser-context-summary")).toBeVisible();
+  await expect(page.locator("#use-browser-context")).toBeChecked();
+  await page.getByRole("button",{name:"Send",exact:true}).click();
   await expect.poll(()=>calls.some(([path])=>path==="/chat/messages")).toBe(true);
   const message=calls.find(([path])=>path==="/chat/messages")[1];
   if(message.browser_context?.generation!=="generation-1")throw new Error("Actual run omitted current browser handoff");
@@ -213,8 +215,11 @@ try{
   await expect(page.locator("#assistant-browser img")).not.toHaveAttribute("src",/.+/);
   const count=openCalls;await page.waitForTimeout(2200);if(openCalls!==count||native)throw new Error("Closed browser was automatically reopened");
   await navigate("Chat");await expect(page.locator("#browser-context-label")).toHaveText("Use previous page: Example sign-in");
-  await page.locator("#message-options summary").click();
-  await page.locator("#use-browser-context").check();await page.getByRole("textbox",{name:"Message your assistant"}).fill("About that previous page");
+  await page.getByLabel("Message options",{exact:true}).click();
+  await expect(page.locator("#browser-context-chip")).toBeVisible();
+  await page.locator("#use-browser-context").check();
+  await expect(page.locator("#browser-context-summary")).toBeVisible();
+  await page.getByRole("textbox",{name:"Message your assistant"}).fill("About that previous page");
   await page.getByRole("button",{name:"Send",exact:true}).click();await expect.poll(()=>turns.length).toBe(3);
   const lastMessage=calls.filter(([path])=>path==="/chat/messages").at(-1)[1];
   if(lastMessage.browser_context||!lastMessage.use_previous_browser)throw new Error("Previous locator claimed native continuity");
@@ -230,6 +235,7 @@ try{
   });
   if(stored.includes(secret)||JSON.stringify(turns).includes(secret))throw new Error("Secret persisted in drafts/history");
   await page.getByRole("button",{name:"Sign out",exact:true}).click();await expect(page.locator("#browser-context-chip")).toBeHidden();
+  await expect(page.locator("#browser-context-summary")).toBeHidden();
   active=true;controlSupported=false;mode="idle";
   await page.goto(origin+"/browser");
   await expect(page.getByText("Browser control needs the upgraded Hermes runtime. You can still watch an active agent browser.",{exact:true})).toBeVisible();

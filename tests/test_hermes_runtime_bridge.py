@@ -429,15 +429,15 @@ def test_maintenance_gate_is_before_native_first_await(monkeypatch):
 def test_firewall_information_is_unverified_by_default_and_not_a_url_permission():
     value = SimpleNamespace(_run_idempotency_store=ReceiptStore())
     assert bridge.features(value)["browser_network_policy"]["verified"] is False
-    assert bridge.http_url("http://192.168.50.66:8443/status")
+    assert bridge.http_url("http://192.0.2.20:8443/status")
     assert not bridge.http_url('file:///etc/passwd')
     assert not bridge.http_url('https://user:password@example.com')
-    policy = {"schema": "radhouse.browser-network-policy.v1", "verified": True, "source": "deployment-target firewall snapshot",
+    policy = {"schema": "radhouse.browser-network-policy.v1", "verified": True, "source": "the deployment target firewall snapshot",
         "verified_at": "2026-10-07T12:00:00+00:00", "enforcement": "vm_firewall", "allowed": ["Configured LAN destinations"], "denied": []}
     bridge.configure_network_policy(policy)
     prompt = bridge.trusted_browser_instructions("base instructions", bridge.BROWSER_TOOLS)
     assert 'not permission' in prompt
-    assert 'deployment-target firewall snapshot' in prompt
+    assert 'the deployment target firewall snapshot' in prompt
     assert bridge.trusted_browser_instructions("base instructions", bridge.DOCUMENT_TOOLS) == "base instructions"
     with pytest.raises(ValueError):
         bridge.configure_network_policy({**policy, "verified_at": None})
@@ -461,7 +461,7 @@ def test_native_child_environment_cannot_inherit_credentials_or_browser_profile(
     monkeypatch.setattr(bridge, "_browser_configuration", {"chromium_path": "/fixed/chrome", "agent_browser_path": "/fixed/browser", "empty_config_path": "/fixed/empty.json"})
     token = bridge.bind_run_context("run1", "chat1", "dispatch1", None)
     try:
-        clean = bridge.browser_environment({"PATH": "/usr/bin", "HOME": "/home/bot", "OPENAI_API_KEY": "secret",
+        clean = bridge.browser_environment({"PATH": "/usr/bin", "HOME": "/srv/example-home", "OPENAI_API_KEY": "secret",
             "DOCUMENT_SCOPE_TOKEN": "private", "AGENT_BROWSER_ARGS": "--no-sandbox", "AGENT_BROWSER_PROFILE": "/private/profile"})
         assert set(clean) == {"PATH", "HOME", "AGENT_BROWSER_EXECUTABLE_PATH", "AGENT_BROWSER_ARGS"}
         assert 'secret' not in json.dumps(clean)
@@ -956,7 +956,7 @@ def bootstrap_runtime_policy(tmp_path, monkeypatch):
         source.write_text(f"# qualified runtime file {index}\n")
         files[name] = bootstrap.sha(source)
     value = {
-        "schema": "radhouse.builder-maintenance.v1", "machine_id": ("a" * 32),
+        "schema": "radhouse.builder-maintenance.v1", "machine_id": "a" * 32,
         "browser_root": str(bootstrap.ROOT), "browser_helper_identity": "radhousebot",
         "browser_helper_sha256": bootstrap.sha(bootstrap.__file__), "agent_browser_channel": "reviewed",
         "runtime_files_sha256": files, "runtime_sha256": hashlib.sha256(bootstrap.canonical(files)).hexdigest(),
@@ -964,7 +964,7 @@ def bootstrap_runtime_policy(tmp_path, monkeypatch):
     }
     read_text, source_sha = Path.read_text, bootstrap.sha
     monkeypatch.setattr(Path, "read_text", lambda path, *args, **kwargs:
-        ("a" * 32) if path == Path("/etc/machine-id") else read_text(path, *args, **kwargs))
+        "a" * 32 if path == Path("/etc/machine-id") else read_text(path, *args, **kwargs))
     monkeypatch.setattr(bootstrap, "root_bytes", lambda path: bootstrap.canonical(value))
     monkeypatch.setattr(bootstrap, "sha", lambda path:
         source_sha(runtime / Path(path).relative_to(hermes)) if Path(path).is_relative_to(hermes) else source_sha(path))
@@ -978,6 +978,14 @@ def test_bootstrap_policy_accepts_reviewed_runtime_map_capacity(bootstrap_runtim
     value["runtime_files_sha256"] = files
     value["runtime_sha256"] = hashlib.sha256(bootstrap.canonical(files)).hexdigest()
     assert bootstrap.policy(bootstrap.POLICY) == value
+
+
+@pytest.mark.parametrize("machine_id", [None, "", "invalid", "b" * 32])
+def test_bootstrap_policy_refuses_missing_or_wrong_private_target(bootstrap_runtime_policy, machine_id):
+    bootstrap, value, _ = bootstrap_runtime_policy
+    value["machine_id"] = machine_id
+    with pytest.raises(ValueError, match="maintenance_target_unverified"):
+        bootstrap.policy(bootstrap.POLICY)
 
 
 @pytest.mark.parametrize("invalid", ["empty", "over_capacity", "wrong_type", "absolute_path", "parent_path",

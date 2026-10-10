@@ -353,7 +353,7 @@ def test_owner_radhouse_request_hands_current_preview_to_reviewer_once(
         "Preview ready.\nRADHOUSE_PROJECT_UPDATE: "
         '{"repository":"example-owner/example-project","pull_request":"https://github.com/example-owner/example-project/pull/3",'
         f'"source_revision":"{revision}","preview_revision":"{revision}",'
-        f'"preview_digest":"{"4" * 64}","preview_url":"https://builder-preview.runningdigitally.com/"}}'
+        f'"preview_digest":"{"4" * 64}","preview_url":"https://preview.example.invalid/"}}'
     )
     Coordinator(service, "worker-one").run_once()
     cycle.ingress()
@@ -460,8 +460,8 @@ def test_accepted_ready_review_hands_off_one_private_release_without_owner_messa
             pull_request="https://github.com/example-owner/example-project/pull/3",
             source_revision=revision, preview_revision=revision,
             preview_digest="4" * 64,
-            preview_url="https://builder-preview.runningdigitally.com/",
-            deployment_url="https://builder-preview.runningdigitally.com/",
+            preview_url="https://preview.example.invalid/",
+            deployment_url="https://preview.example.invalid/",
             deployment_status="failed",
         ).validate(), None)
     cycle = ProjectBuzzConversationCycle(
@@ -535,7 +535,7 @@ def test_private_release_hands_builder_preview_to_reviewer_without_owner_message
         "Preview ready.\nRADHOUSE_PROJECT_UPDATE: "
         '{"repository":"example-owner/example-project","pull_request":"https://github.com/example-owner/example-project/pull/3",'
         f'"source_revision":"{revision}","preview_revision":"{revision}",'
-        f'"preview_digest":"{"4" * 64}","preview_url":"https://builder-preview.runningdigitally.com/"}}'
+        f'"preview_digest":"{"4" * 64}","preview_url":"https://preview.example.invalid/"}}'
     )
     Coordinator(service, "worker-one").run_once()
     cycle.ingress()

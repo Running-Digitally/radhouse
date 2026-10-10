@@ -1,6 +1,6 @@
 # SonarQube baseline remediation
 
-Baseline: main `0585e0b222777255d2e603e4a8c30f2db22c7b39`, scanned locally on operator workstation
+Baseline: main `0585e0b222777255d2e603e4a8c30f2db22c7b39`, scanned on the maintainer-selected local analysis host
 on October 7, 2026. Project `Running-Digitally_radhouse` has 484 distinct open
 issues, including overlapping impacts: 8 security, 11 reliability and 469
 maintainability. The passing gate does not resolve the baseline. Displayed
