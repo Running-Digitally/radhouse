@@ -89,6 +89,12 @@ try {
     await page.locator('#characters').scrollIntoViewIfNeeded();
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     assert.ok(await page.locator('.signal-portraits').evaluate(row => row.scrollWidth <= row.clientWidth));
+    assert.ok(await page.locator('.theme-portraits img').evaluateAll(images => images.every(image => {
+      const portrait = image.getBoundingClientRect();
+      const link = image.closest('a').getBoundingClientRect();
+      return portrait.width > 0 && Math.abs(portrait.width - portrait.height) < 1
+        && portrait.left >= link.left && portrait.right <= link.right;
+    })), 'Theme portraits must stay circular and fit within their theme link');
     assert.ok(await page.locator('.workspace-layout').evaluate((layout, width) => {
       const controls = layout.querySelector('.workspace-controls').getBoundingClientRect();
       const visuals = layout.querySelector('#characters').getBoundingClientRect();

@@ -15,7 +15,8 @@ in the private pilot on 8 October. The workspace section pairs three compact
 feature rows with a larger character showcase. The feature list is labeled as
 available in the private pilot; the green identity panel is labeled as a design
 preview. Echo plays between smaller static Beacon and Orbit portraits, with
-Hearthside and Kiln Club links beneath. The columns stack on narrow screens.
+Hearthside and Kiln Club links beneath, each showing all its characters as
+small static portraits. The columns stack on narrow screens.
 Paper Trails has been removed from the public preview. Each theme
 opens the ten-character popup gallery; working identity settings are the
 next private-app step. [The update receipt](RELEASE-2026-10-08-WORKSPACE.md) records the evidence.

@@ -29,7 +29,8 @@ Terminal and model choices form three rows with icons and separators on the
 left. Their release note sits beneath that list. On the right, a pale green
 panel introduces the identity preview with `A familiar face.` and an Echo video
 up to 190 px wide, between static Beacon and Orbit portraits up to 52 px wide.
-Hearthside and Kiln Club each have a portrait and theme link beneath. The footer
+Hearthside shows all four characters and Kiln Club all three, in small static
+portrait groups above their theme links. The footer
 pairs the collection/character count with Pause/Play. At 900 px and below the
 columns stack; the portraits and theme choices scale to the available width.
 Paper Trails is removed from the card, gallery and static disclosure, leaving
@@ -69,7 +70,8 @@ their prior settings. Publication targets the existing Radhouse static Worker.
   1280 px, including both sides of the new layout breakpoint. The workspace
   section, narrow showcase and gallery were visually inspected. Feature rows
   do not overlap; the showcase sits beside the list on desktop and below it
-  on narrower screens. Three theme links and gallery choices remain.
+  on narrower screens. All seven Hearthside/Kiln portraits remain circular and
+  fit their theme links. Three theme links and gallery choices remain.
 - The walkthrough reports zero page errors. Media copies match their originals
   exactly, including the approved A hashes.
 
