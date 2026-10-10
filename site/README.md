@@ -12,13 +12,16 @@ The private pilot is a compact development note below the vision. Browser
 now describes qualified owner control, return and saved logins. A separate
 workspace section describes Terminal, About You and model controls activated
 in the private pilot on 8 October. Agent Identity remains a design preview, presented in
-one compact Visuals card with four groups of three small portraits. Each theme
+one compact Visuals card with Echo as its animated centerpiece, Beacon and
+Orbit as smaller static portraits on either side, and the other three themes
+arranged above and below. Each theme
 opens the thirteen-character popup gallery; working identity settings are the
 next private-app step. [The update receipt](RELEASE-2026-10-08-WORKSPACE.md) records the evidence.
 Echo uses the approved Blender neutral photograph and A/B/C reactions in the
-Visuals card and gallery. Each silent clip plays once after a random 2–6 second
-neutral rest, then returns to that same photograph. Clips shuffle without
-immediate repeats. Pause/Play controls, reduced motion, hidden tabs and offscreen
+Visuals card and featured gallery portrait. Silent A/B/C clips play continuously
+in shuffled order without pauses or immediate repeats. All three clips preload,
+and the previous final frame remains visible until the next clip starts.
+Gallery thumbnails remain static. Pause/Play controls, reduced motion, hidden tabs and offscreen
 portraits suspend playback; unavailable media retains the neutral photograph.
 [The Echo release receipt](RELEASE-2026-10-09-ECHO.md) records sources and checks.
 The hero keeps its original message and uses a tactile conversation notebook.

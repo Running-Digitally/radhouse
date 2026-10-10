@@ -14,37 +14,51 @@ page.on('pageerror', error => errors.push(error.message));
 
 try {
   await page.addInitScript(() => {
-    // Repeatable shuffle and a three-second rest, with real video playback.
+    // Repeatable shuffle with real, continuous video playback.
     Math.random = () => .25;
     document.addEventListener('DOMContentLoaded', () => {
       window.echoTransitions = [];
+      window.echoEndings = [];
       const host = document.querySelector('[data-echo-avatar]');
+      host.addEventListener('ended', event => {
+        window.echoEndings.push({ clip: event.target.dataset.clip, time: performance.now() });
+      }, true);
       new MutationObserver(records => {
         if (!records.some(record => record.attributeName === 'data-echo-phase')) return;
         window.echoTransitions.push({ phase: host.dataset.echoPhase, clip: host.dataset.echoClip,
-          wait: Number(host.dataset.echoWait), time: performance.now(),
-          hidden: host.querySelector('video').hidden });
+          time: performance.now(), activeCount: host.querySelectorAll('video.is-active').length });
       }).observe(host, { attributes: true });
     });
   });
   await page.goto(`${origin}/#characters`);
-  await page.waitForFunction(() => window.echoTransitions?.filter(item => item.phase === 'playing').length >= 3,
-    null, { timeout: 45000 });
-  await page.waitForFunction(() => document.querySelector('[data-echo-avatar]').dataset.echoPhase === 'waiting');
+  await page.waitForFunction(() => window.echoTransitions?.filter(item => item.phase === 'playing').length >= 4,
+    null, { timeout: 30000 });
   const transitions = await page.evaluate(() => window.echoTransitions);
+  const endings = await page.evaluate(() => window.echoEndings);
   const playing = transitions.filter(item => item.phase === 'playing');
   assert.equal(new Set(playing.slice(0, 3).map(item => item.clip)).size, 3, 'Each shuffled group must contain A/B/C');
-  for (let i = 1; i < playing.length; i++) assert.notEqual(playing[i].clip, playing[i - 1].clip);
-  for (const item of playing) {
-    const rest = transitions.findLast(entry => entry.phase === 'waiting' && entry.time < item.time);
-    assert.ok(rest && rest.hidden, 'Neutral photograph must be visible during the rest');
-    assert.ok(rest.wait >= 2000 && rest.wait <= 6000);
-    assert.ok(item.time - rest.time >= rest.wait - 150, 'Playback must wait for the entire neutral rest');
-    assert.equal(item.hidden, false);
+  const handoffs = [];
+  for (let i = 1; i < playing.length; i++) {
+    assert.notEqual(playing[i].clip, playing[i - 1].clip);
+    const ending = endings.findLast(item => item.time < playing[i].time);
+    assert.ok(ending);
+    const elapsed = playing[i].time - ending.time;
+    assert.ok(elapsed < 250, `Reaction handoff took ${elapsed} ms`);
+    handoffs.push(elapsed);
   }
-  assert.deepEqual(await page.locator('[data-echo-avatar] video').evaluate(video => ({
-    muted: video.muted, inline: video.playsInline, loop: video.loop, hidden: video.hidden
-  })), { muted: true, inline: true, loop: false, hidden: true });
+  assert.ok(playing.every(item => item.activeCount === 1));
+  assert.ok(transitions.filter(item => item.time >= playing[0].time).every(item =>
+    ['starting', 'playing'].includes(item.phase) && item.activeCount === 1), 'Handoffs must retain the outgoing frame');
+  assert.ok(await page.locator('[data-echo-avatar] video').evaluateAll(videos => videos.every(video =>
+    video.muted && video.playsInline && !video.loop && video.readyState >= 2)));
+  assert.equal(await page.locator('.signal-companion').count(), 2);
+  assert.equal(await page.locator('.signal-companion video').count(), 0);
+  assert.ok(await page.locator('.signal-portraits').evaluate(row => {
+    const left = row.children[0].getBoundingClientRect();
+    const echo = row.children[1].getBoundingClientRect();
+    const right = row.children[2].getBoundingClientRect();
+    return left.right < echo.left && echo.right < right.left && echo.width > left.width * 2;
+  }));
   await page.screenshot({ path: `${output}/echo-card-desktop.png` });
 
   await page.getByRole('button', { name: 'Pause Echo', exact: true }).click();
@@ -54,6 +68,8 @@ try {
   assert.equal(await page.locator('[data-echo-avatar]').getAttribute('data-echo-phase'), 'neutral');
   await page.getByRole('button', { name: 'Preview Echo', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('.gallery-portrait-frame').dataset.echoPhase === 'playing');
+  assert.equal(await page.locator('#gallery-character-name').innerText(), 'Echo', 'The centerpiece must open directly to Echo');
+  assert.equal(await page.locator('.gallery-thumbnail video').count(), 0);
   await page.screenshot({ path: `${output}/echo-gallery-desktop.png` });
   assert.equal(await page.locator('#gallery-portrait').getAttribute('src'), '/characters/echo-neutral.png');
   await page.getByRole('button', { name: 'Next character', exact: true }).click();
@@ -64,8 +80,16 @@ try {
   assert.equal(await page.locator('#character-gallery video').count(), 0, 'Closing must release all gallery players');
   assert.equal(await page.getByRole('link', { name: 'Explore Signal Station characters', exact: true }).evaluate(link => link === document.activeElement), true);
 
-  for (const width of [320, 390, 700, 1280]) {
+  for (const width of [320, 390, 700, 1000, 1001, 1280]) {
     await page.setViewportSize({ width, height: 900 });
+    await page.locator('#characters').scrollIntoViewIfNeeded();
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    assert.ok(await page.locator('.signal-portraits').evaluate(row => row.scrollWidth <= row.clientWidth));
+    if (width === 390) {
+      await page.locator('#characters-title').click();
+      await page.screenshot({ path: `${output}/echo-card-mobile.png` });
+      await page.locator('#characters').screenshot({ path: `${output}/echo-card-detail.png` });
+    }
     await page.getByRole('link', { name: 'Explore Signal Station characters', exact: true }).click();
     await page.getByRole('button', { name: 'Preview Echo', exact: true }).click();
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
@@ -78,30 +102,20 @@ try {
   await page.getByRole('link', { name: 'Explore Signal Station characters', exact: true }).click();
   await page.getByRole('button', { name: 'Preview Echo', exact: true }).click();
   assert.ok(await page.locator('.echo-avatar').evaluateAll(hosts => hosts.every(host =>
-    host.dataset.echoPhase === 'neutral' && host.querySelector('video').paused && host.querySelector('video').hidden)));
+    host.dataset.echoPhase === 'neutral' && [...host.querySelectorAll('video')].every(video => video.paused && !video.classList.contains('is-active')))));
   await page.emulateMedia({ reducedMotion: 'no-preference' });
-  await page.waitForFunction(() => document.querySelector('.gallery-portrait-frame').dataset.echoPhase === 'waiting');
+  await page.waitForFunction(() => document.querySelector('.gallery-portrait-frame').dataset.echoPhase === 'playing');
   await page.locator('#gallery-close').press('Escape');
   await page.locator('#top').scrollIntoViewIfNeeded();
   await page.waitForFunction(() => document.querySelector('[data-echo-avatar]').dataset.echoPhase === 'neutral');
   assert.deepEqual(errors, []);
-
-  for (const random of [0, .999999]) {
-    const boundary = await context.newPage();
-    await boundary.addInitScript(value => { Math.random = () => value; }, random);
-    await boundary.goto(`${origin}/#characters`);
-    await boundary.waitForFunction(() => document.querySelector('[data-echo-avatar]').dataset.echoPhase === 'waiting');
-    const wait = Number(await boundary.locator('[data-echo-avatar]').getAttribute('data-echo-wait'));
-    assert.ok(Math.abs(wait - (2000 + random * 4000)) < .01);
-    await boundary.close();
-  }
 
   const unavailable = await context.newPage();
   await unavailable.route('**/characters/echo-*.webm', route => route.abort());
   await unavailable.route('**/characters/echo-*.mp4', route => route.abort());
   await unavailable.goto(`${origin}/#characters`);
   await unavailable.waitForFunction(() => document.querySelector('[data-echo-avatar]').dataset.echoPhase === 'unavailable');
-  assert.equal(await unavailable.locator('[data-echo-avatar] video').evaluate(video => video.hidden), true);
+  assert.equal(await unavailable.locator('[data-echo-avatar] video.is-active').count(), 0);
   assert.ok(await unavailable.locator('[data-echo-avatar] img').evaluate(image => image.complete && image.naturalWidth > 0));
   await unavailable.close();
 
@@ -109,7 +123,7 @@ try {
   await denied.addInitScript(() => { HTMLMediaElement.prototype.play = () => Promise.reject(new Error('Autoplay denied')); });
   await denied.goto(`${origin}/#characters`);
   await denied.waitForFunction(() => document.querySelector('[data-echo-avatar]').dataset.echoPhase === 'unavailable');
-  assert.equal(await denied.locator('[data-echo-avatar] video').evaluate(video => video.hidden), true);
+  assert.equal(await denied.locator('[data-echo-avatar] video.is-active').count(), 0);
   await denied.close();
 
   const staticContext = await browser.newContext({ javaScriptEnabled: false });
@@ -119,9 +133,9 @@ try {
   assert.ok(await staticPage.locator('#collection-signal img[alt="Echo"]').evaluate(image => image.complete && image.naturalWidth === 256));
   await staticContext.close();
   console.log(JSON.stringify({ passed: true, clips: playing.map(item => item.clip),
-    restMilliseconds: transitions.filter(item => item.phase === 'waiting').map(item => item.wait),
-    checks: ['real playback', 'neutral rests', 'shuffle', 'pause/resume', 'gallery cleanup', 'focus return',
-      'responsive layouts', 'reduced motion', 'offscreen suspension', 'wait boundaries', 'failed media',
+    handoffMilliseconds: handoffs,
+    checks: ['real continuous playback', 'retained handoff frames', 'shuffle', 'static companions', 'pause/resume', 'gallery cleanup', 'focus return',
+      'responsive layouts', 'reduced motion', 'offscreen suspension', 'failed media',
       'autoplay rejection', 'no JavaScript'], errors, output }));
 } finally {
   await context.close();

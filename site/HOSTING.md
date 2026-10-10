@@ -15,9 +15,12 @@ For this 8 October release, the owner explicitly requested an independent
 self-review instead of GitHub Codex review. The completed review is recorded in
 [REVIEW-2026-10-08-WORKSPACE.md](REVIEW-2026-10-08-WORKSPACE.md).
 
-The owner requested Echo's approved A/B/C video cycle on the public website on
-9 October (Toronto). [The Echo release receipt](RELEASE-2026-10-09-ECHO.md)
-records the shared neutral photograph, copied media, browser checks and rollout.
+The owner requested Echo's approved A/B/C videos on the public website on
+9 October (Toronto), then revised the local preview to feature Echo between
+smaller static companions and continuously shuffle videos without waits.
+[The Echo release receipt](RELEASE-2026-10-09-ECHO.md) records the media,
+layout and browser checks. This revision is awaiting owner design feedback;
+PR #86 has not been merged or published.
 
 ## Hosting contract
 

@@ -8,27 +8,31 @@
   let userPaused = false;
 
   function mount(host) {
-    const video = document.createElement('video');
-    video.muted = true;
-    video.playsInline = true;
-    video.loop = false;
-    video.preload = 'auto';
-    video.hidden = true;
-    video.className = 'echo-video';
-    video.setAttribute('aria-hidden', 'true');
-    host.append(video);
+    const videos = clips.map(clip => {
+      const video = document.createElement('video');
+      video.muted = true;
+      video.playsInline = true;
+      video.loop = false;
+      video.preload = 'none';
+      video.className = 'echo-video';
+      video.dataset.clip = clip;
+      video.setAttribute('aria-hidden', 'true');
+      host.append(video);
+      return video;
+    });
     host.classList.add('echo-avatar');
 
     let visible = false;
     let destroyed = false;
     let failed = false;
-    let timer = null;
+    let prepared = false;
     let watchdog = null;
     let epoch = 0;
     let bag = [];
     let lastClip = null;
-    let nextClip = null;
-    const extension = video.canPlayType('video/webm; codecs="vp9"') ? 'webm' : 'mp4';
+    let active = null;
+    let incoming = null;
+    const extension = videos[0].canPlayType('video/webm; codecs="vp9"') ? 'webm' : 'mp4';
 
     function canRun() {
       return !destroyed && !failed && !userPaused && visible && !document.hidden && !reduced.matches
@@ -38,11 +42,13 @@
 
     function neutral(phase = 'neutral') {
       ++epoch;
-      clearTimeout(timer);
       clearTimeout(watchdog);
-      timer = watchdog = null;
-      video.hidden = true;
-      video.pause();
+      watchdog = null;
+      incoming = active = null;
+      for (const video of videos) {
+        video.pause();
+        video.classList.remove('is-active');
+      }
       host.dataset.echoPhase = phase;
     }
 
@@ -66,68 +72,77 @@
       neutral('unavailable');
     }
 
-    function rest() {
-      neutral();
-      if (!canRun()) return;
-      nextClip = chooseClip();
-      const wait = 2000 + Math.random() * 4000;
-      host.dataset.echoWait = String(wait);
-      host.dataset.echoPhase = 'waiting';
-      // Decode the next clip behind the neutral photograph during the rest.
-      video.src = `/characters/echo-${nextClip}.${extension}`;
-      video.load();
-      timer = setTimeout(() => {
-        timer = null;
-        if (!canRun()) { neutral(); return; }
-        host.dataset.echoPhase = 'starting';
-        const ticket = epoch;
-        watchdog = setTimeout(fail, 15000);
-        video.play().catch(() => {
-          if (ticket === epoch) fail();
-        });
-      }, wait);
+    function start() {
+      if (!canRun()) { neutral(); return; }
+      if (!prepared) {
+        prepared = true;
+        // Preload all three reactions so the next can start at once.
+        for (const video of videos) {
+          video.preload = 'auto';
+          video.src = `/characters/echo-${video.dataset.clip}.${extension}`;
+          video.load();
+        }
+      }
+      const clip = chooseClip();
+      incoming = videos[clips.indexOf(clip)];
+      incoming.currentTime = 0;
+      host.dataset.echoPhase = 'starting';
+      const ticket = ++epoch;
+      clearTimeout(watchdog);
+      watchdog = setTimeout(fail, 15000);
+      incoming.play().catch(() => {
+        if (ticket === epoch) fail();
+      });
     }
 
-    video.addEventListener('playing', () => {
-      if (!canRun()) return;
-      clearTimeout(watchdog);
-      watchdog = null;
-      if (host.dataset.echoPhase !== 'starting') return;
-      lastClip = nextClip;
-      host.dataset.echoClip = lastClip;
-      host.dataset.echoPhase = 'playing';
-      video.hidden = false;
-    });
-    video.addEventListener('ended', () => {
-      if (host.dataset.echoPhase === 'playing') rest();
-    });
-    video.addEventListener('error', () => {
-      if (!destroyed && ['waiting', 'starting', 'playing'].includes(host.dataset.echoPhase)) fail();
-    });
-    video.addEventListener('waiting', () => {
-      if (host.dataset.echoPhase === 'playing') {
+    for (const video of videos) {
+      video.addEventListener('playing', () => {
+        if (!canRun() || (video !== incoming && video !== active)) return;
         clearTimeout(watchdog);
-        watchdog = setTimeout(fail, 15000);
-      }
-    });
+        watchdog = null;
+        if (video !== incoming || host.dataset.echoPhase !== 'starting') return;
+        // Retain the previous clip's final frame until the next is playing.
+        active?.classList.remove('is-active');
+        active?.pause();
+        active = video;
+        incoming = null;
+        video.classList.add('is-active');
+        lastClip = video.dataset.clip;
+        host.dataset.echoClip = lastClip;
+        host.dataset.echoPhase = 'playing';
+      });
+      video.addEventListener('ended', () => {
+        if (video === active && host.dataset.echoPhase === 'playing') start();
+      });
+      video.addEventListener('error', () => {
+        if (!destroyed && prepared) fail();
+      });
+      video.addEventListener('waiting', () => {
+        if (video === active || video === incoming) {
+          clearTimeout(watchdog);
+          watchdog = setTimeout(fail, 15000);
+        }
+      });
+    }
 
     const player = {
       sync() {
         if (!canRun()) neutral(failed ? 'unavailable' : 'neutral');
-        else if (host.dataset.echoPhase === 'neutral') rest();
+        else if (host.dataset.echoPhase === 'neutral') start();
       },
       destroy() {
         destroyed = true;
         neutral();
         observer.disconnect();
         players.delete(player);
-        video.removeAttribute('src');
-        video.load();
-        video.remove();
+        for (const video of videos) {
+          video.removeAttribute('src');
+          video.load();
+          video.remove();
+        }
         host.classList.remove('echo-avatar');
         delete host.dataset.echoPhase;
         delete host.dataset.echoClip;
-        delete host.dataset.echoWait;
       }
     };
     const observer = new IntersectionObserver(entries => {

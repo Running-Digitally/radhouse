@@ -27,11 +27,11 @@
     "characters/pebble.webp": "0c57cef9d12dbfabca1476f9447f58647dcc7828fa8d2b137032c4810f2ab784",
     "characters/rue.webp": "69c5d4b436b3de7682e085862fe84e022d6578f3b6f41aa9e0b41397a879644a",
     "characters/sol.webp": "36dbe866020eda6888ec222902d1cf34037f7c1647d8e8db1c7e83df35b1f3f7",
-    "echo.js": "320144da7e18ffa952d4da4cc7cfa1472cb1a140faceb39ab529f3eb96271e3f",
+    "echo.js": "0cbd74208e601127a078cafd045274a1822b9729565101acfb7c0b22411ca1b4",
     "favicon.svg": "177b88ce1a3f24b3a9fd38043aa34f7a17906d6c7c14cfab813545df07204439",
-    "gallery.css": "42f5cb067ff9ec8d2510f27a6f7f9505ae2940aa576c2fe0b4205e50ad8ae225",
-    "gallery.js": "1861647f1c15ae308da2767266713b2ea821998843c859982c9b90f9016e0e0c",
-    "index.html": "8a88e90c7bcf92de5f038d85a64a6bcdb629096376ea6ad7c4d94f0689d193e3",
+    "gallery.css": "e344f0045433cb51f91b51d7908c146fea02c2d2ba7de524eae2f1ad4438dfb1",
+    "gallery.js": "c8f956d7f9fe5bd16dbccce790152c9afa6e5ea3acb6e14ae3bc9b356fc9bc48",
+    "index.html": "f7f8e09e1597768f9efa4c0fc2c449b4cca6814091c78180a107a77d7d4cc7f8",
     "journey.js": "5fa424bf679f55f9826c5e81c3df5aec9cac4e2d78057b56b46b45c4d9988da3",
     "platform-icons.css": "2d5a026fb7aa2dac89a14ed191b32da694c1f27909b3e25616f725d5bb956a9a",
     "platform-icons.js": "2ac31fd495d3dafb40eb6ea78c8913687f153d51aa803b15c68ff2c2fa360bdd",
@@ -42,5 +42,5 @@
     "vendor/POSTHOG-LICENSE.txt": "a360188f33c72af7aef768e1e65825d91c8a9bd8a0db6d30a7a3c551937a3aef",
     "vendor/posthog-1.436.1.js": "2c14307d97092d9587b5fdde4858437a8c970682d2c35a6158a3fb0afa6ccb96"
   },
-  "release": "2026-10-08-workspace-gallery"
+  "release": "2026-10-09-echo-centerpiece"
 }

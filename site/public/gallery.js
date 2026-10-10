@@ -38,7 +38,6 @@
   let opener = null;
   let portraitAnimation = null;
   let echoPortrait = null;
-  let echoThumbnails = [];
 
   function portraitSource(profile) {
     return profile.id === 'echo' ? '/characters/echo-neutral.png' : `/characters/${profile.id}.webp`;
@@ -88,8 +87,6 @@
     for (const button of themeGroup.querySelectorAll('button')) {
       button.setAttribute('aria-pressed', String(button.dataset.theme === theme.id));
     }
-    for (const player of echoThumbnails) player.destroy();
-    echoThumbnails = [];
     characterGroup.replaceChildren();
     for (const profile of themeProfiles()) {
       const button = document.createElement('button');
@@ -112,7 +109,6 @@
       button.append(thumbnail, label);
       button.addEventListener('click', () => renderProfile(profile));
       characterGroup.append(button);
-      if (profile.id === 'echo' && window.RadhouseEcho) echoThumbnails.push(window.RadhouseEcho.mount(thumbnail));
     }
     renderProfile(profiles.find(profile => profile.id === theme.cover), animate);
   }
@@ -147,6 +143,8 @@
       event.preventDefault();
       opener = link;
       chooseTheme(theme, false);
+      const profile = themeProfiles().find(item => item.id === link.dataset.galleryCharacter);
+      if (profile) renderProfile(profile, false);
       dialog.showModal();
       document.body.classList.add('gallery-is-open');
       window.RadhouseEcho?.refresh();
@@ -159,8 +157,6 @@
     document.body.classList.remove('gallery-is-open');
     echoPortrait?.destroy();
     echoPortrait = null;
-    for (const player of echoThumbnails) player.destroy();
-    echoThumbnails = [];
     window.RadhouseEcho?.refresh();
     opener?.focus({preventScroll: true});
     opener = null;
