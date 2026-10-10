@@ -5,7 +5,7 @@
   if (icons) {
     for (const host of document.querySelectorAll('[data-site-icon]')) {
       host.append(icons.create(host.dataset.siteIcon));
-      const target = host.closest('a, button, .workspace-card, .browser-handover li') || host;
+      const target = host.closest('a, button, .workspace-feature-item, .browser-handover li') || host;
       target.addEventListener('pointerenter', event => {
         if (event.pointerType !== 'touch') icons.hover(host);
       });

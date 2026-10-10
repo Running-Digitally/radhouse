@@ -11,11 +11,12 @@ clear security boundaries, running on infrastructure the owner controls.
 The private pilot is a compact development note below the vision. Browser
 now describes qualified owner control, return and saved logins. A separate
 workspace section describes Terminal, About You and model controls activated
-in the private pilot on 8 October. Agent Identity remains a design preview, presented in
-one compact Visuals card with the same icon, numbered label, heading and copy
-structure as the other workspace cards. A small Echo preview row places Beacon
-and Orbit as static portraits on either side, with Hearthside and Kiln Club
-links beneath. Paper Trails has been removed from the public preview. Each theme
+in the private pilot on 8 October. The workspace section pairs three compact
+feature rows with a larger character showcase. The feature list is labeled as
+available in the private pilot; the green identity panel is labeled as a design
+preview. Echo plays between smaller static Beacon and Orbit portraits, with
+Hearthside and Kiln Club links beneath. The columns stack on narrow screens.
+Paper Trails has been removed from the public preview. Each theme
 opens the ten-character popup gallery; working identity settings are the
 next private-app step. [The update receipt](RELEASE-2026-10-08-WORKSPACE.md) records the evidence.
 Echo uses the approved Blender neutral photograph and A/B/C reactions in the

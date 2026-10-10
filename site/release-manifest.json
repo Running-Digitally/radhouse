@@ -29,18 +29,18 @@
     "characters/sol.webp": "36dbe866020eda6888ec222902d1cf34037f7c1647d8e8db1c7e83df35b1f3f7",
     "echo.js": "0cbd74208e601127a078cafd045274a1822b9729565101acfb7c0b22411ca1b4",
     "favicon.svg": "177b88ce1a3f24b3a9fd38043aa34f7a17906d6c7c14cfab813545df07204439",
-    "gallery.css": "a1eeb14ed4ba5920332ae8082d45f0f15d962fdb43f23683bf46a0ea6e46d970",
-    "gallery.js": "c8f956d7f9fe5bd16dbccce790152c9afa6e5ea3acb6e14ae3bc9b356fc9bc48",
-    "index.html": "dd45beb6cdd2ccec8f02e83d6ed866d159c1e348cc0e5f29e8cc52cb00988660",
+    "gallery.css": "ed816c55c556ef36b017fc5a5deee208c37afdd546be9bfdb5e02a8253b5a9e4",
+    "gallery.js": "f3546c083d4a801e70be66bbed65ed29733b7aa280c14735ef0e305cf534bafa",
+    "index.html": "7b32bf7590906c74676e188541a8fba53e482f9b32677f088a00c76ba4ad8c1d",
     "journey.js": "5fa424bf679f55f9826c5e81c3df5aec9cac4e2d78057b56b46b45c4d9988da3",
     "platform-icons.css": "2d5a026fb7aa2dac89a14ed191b32da694c1f27909b3e25616f725d5bb956a9a",
     "platform-icons.js": "2ac31fd495d3dafb40eb6ea78c8913687f153d51aa803b15c68ff2c2fa360bdd",
     "radhouse-logo.svg": "beed231d18d2f86008e6fce8fc83efa2ea270f7ce1dec26e5c5169824d5cd121",
     "radhouse-mark.svg": "1047da30a00e6d2383133a2dd8dea305d8387fc8cfa44372323b31c5aff969f5",
     "running-digitally-google-search.png": "34827543ae19347d63d39cf307e22a9cfb694b50ab5f4df5eecb86e41012bfe2",
-    "styles.css": "5d7e895855824176e7f257cd49a171d432873ae7bdce8c6f28c9b157baa56714",
+    "styles.css": "f84100ece6d82d70a4f5dbb55c532fb03cc54f0abfed7abeeb78d9dc8a212031",
     "vendor/POSTHOG-LICENSE.txt": "a360188f33c72af7aef768e1e65825d91c8a9bd8a0db6d30a7a3c551937a3aef",
     "vendor/posthog-1.436.1.js": "2c14307d97092d9587b5fdde4858437a8c970682d2c35a6158a3fb0afa6ccb96"
   },
-  "release": "2026-10-09-echo-centerpiece"
+  "release": "2026-10-09-workspace-echo"
 }

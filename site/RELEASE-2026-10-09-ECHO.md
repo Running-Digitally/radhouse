@@ -2,9 +2,9 @@
 
 Requested 9 October 2026 (Toronto). The owner asked the public website to use
 the approved Echo videos, continuously playing random A/B/C videos with no
-wait, between two smaller static robot companions. The reviewed Visuals card
-uses the same icon, numbered label, heading and body structure as the other
-three workspace cards, with a compact identity preview below the copy.
+wait, between two smaller static robot companions. The reviewed workspace
+section pairs three compact feature rows with a larger character showcase.
+The live pilot features and identity design preview are labeled separately.
 Only Hearthside, Kiln Club and Signal Station remain in the public preview.
 Work starts from remote main at
 `e360876896d5eee4d88ba2642d9aeef0ec66947f` in an isolated checkout.
@@ -24,12 +24,14 @@ Seven files in `public/characters/` are byte-identical copies of the approved
 These copies total 388,002 bytes. A is six seconds; B and C are five seconds.
 The original A assets and source Blender scenes are unchanged.
 
-The fourth workspace card has the shared header structure: icon, `04 / Identity`,
-`Visuals.` heading and description. A compact preview row shows the 72 px Echo
-video between static 24 px Beacon and Orbit portraits, with its name alongside.
-Hearthside and Kiln Club each have one small portrait and a theme link beneath.
-The quiet footer pairs the design-preview label with the Pause/Play control.
-Narrow containers wrap the preview label and reduce theme swatches to fit.
+The workspace section uses two columns at widths above 900 px. About You,
+Terminal and model choices form three rows with icons and separators on the
+left. Their release note sits beneath that list. On the right, a pale green
+panel introduces the identity preview with `A familiar face.` and an Echo video
+up to 190 px wide, between static Beacon and Orbit portraits up to 52 px wide.
+Hearthside and Kiln Club each have a portrait and theme link beneath. The footer
+pairs the collection/character count with Pause/Play. At 900 px and below the
+columns stack; the portraits and theme choices scale to the available width.
 Paper Trails is removed from the card, gallery and static disclosure, leaving
 three collections and ten characters. Opening Signal Station selects Echo
 directly in the gallery.
@@ -63,11 +65,11 @@ their prior settings. Publication targets the existing Radhouse static Worker.
 - Pause/resume, portrait replacement, close cleanup, Escape focus return,
   reduced motion and offscreen suspension pass. Media failure and autoplay
   rejection retain the neutral image; no-JavaScript disclosure uses that image.
-- Page and gallery have no horizontal overflow at 320, 390, 700, 1000, 1001 and
-  1280 px, including both sides of the four-column breakpoint. Desktop and
-  narrow card and gallery were visually inspected. All four desktop cards have
-  aligned card edges, category labels and headings; only three theme links and
-  gallery choices remain.
+- Page and gallery have no horizontal overflow at 320, 390, 700, 900, 901 and
+  1280 px, including both sides of the new layout breakpoint. The workspace
+  section, narrow showcase and gallery were visually inspected. Feature rows
+  do not overlap; the showcase sits beside the list on desktop and below it
+  on narrower screens. Three theme links and gallery choices remain.
 - The walkthrough reports zero page errors. Media copies match their originals
   exactly, including the approved A hashes.
 

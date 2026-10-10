@@ -62,7 +62,7 @@ try {
     return left.right < echo.left && echo.right < right.left && echo.width > left.width * 2;
   }));
   await page.screenshot({ path: `${output}/echo-card-desktop.png` });
-  await page.locator('.workspace-cards').screenshot({ path: `${output}/workspace-cards.png` });
+  await page.locator('#workspace').screenshot({ path: `${output}/workspace-section.png` });
 
   await page.getByRole('button', { name: 'Pause Echo', exact: true }).click();
   assert.equal(await page.locator('[data-echo-avatar]').getAttribute('data-echo-phase'), 'neutral');
@@ -84,21 +84,20 @@ try {
   assert.equal(await page.locator('#character-gallery video').count(), 0, 'Closing must release all gallery players');
   assert.equal(await page.getByRole('link', { name: 'Explore Signal Station characters', exact: true }).evaluate(link => link === document.activeElement), true);
 
-  for (const width of [320, 390, 700, 1000, 1001, 1280]) {
+  for (const width of [320, 390, 700, 900, 901, 1280]) {
     await page.setViewportSize({ width, height: 900 });
     await page.locator('#characters').scrollIntoViewIfNeeded();
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     assert.ok(await page.locator('.signal-portraits').evaluate(row => row.scrollWidth <= row.clientWidth));
-    if (width > 1000) {
-      assert.ok(await page.locator('.workspace-card').evaluateAll(cards => {
-        const bounds = cards.map(card => card.getBoundingClientRect());
-        const headings = cards.map(card => card.querySelector('h3').getBoundingClientRect());
-        const labels = cards.map(card => card.querySelector('.workspace-number').getBoundingClientRect());
-        return bounds.every(rect => Math.abs(rect.top - bounds[0].top) < 1 && Math.abs(rect.bottom - bounds[0].bottom) < 1)
-          && headings.every(rect => Math.abs(rect.top - headings[0].top) < 1)
-          && labels.every(rect => Math.abs(rect.top - labels[0].top) < 1);
-      }), 'All four cards must align their edges, category labels and headings');
-    }
+    assert.ok(await page.locator('.workspace-layout').evaluate((layout, width) => {
+      const controls = layout.querySelector('.workspace-controls').getBoundingClientRect();
+      const visuals = layout.querySelector('#characters').getBoundingClientRect();
+      const features = [...layout.querySelectorAll('.workspace-feature-item')].map(item => item.getBoundingClientRect());
+      const separated = features.every((item, index) => !index || item.top >= features[index - 1].bottom);
+      return separated && (width > 900
+        ? controls.right < visuals.left && Math.abs(controls.top - visuals.top) < 1
+        : Math.abs(controls.left - visuals.left) < 1 && controls.bottom < visuals.top);
+    }, width), 'Feature rows and character showcase must remain distinct in the responsive layout');
     if (width === 390) {
       await page.locator('#characters-title').click();
       await page.screenshot({ path: `${output}/echo-card-mobile.png` });
