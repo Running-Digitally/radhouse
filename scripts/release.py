@@ -28,6 +28,7 @@ STATIC = "src/radhouse/chat/static/"
 UNIT = "radhouse-api.service"
 MAX_FILE = 16 * 1024 * 1024
 MAX_PACKET = 128 * 1024 * 1024
+MAX_CONTROL = MAX_PACKET
 TERMINAL = ("completed", "failed", "cancelled", "interrupted")
 HEX40 = re.compile(r"[a-f0-9]{40}")
 HEX64 = re.compile(r"[a-f0-9]{64}")
@@ -500,7 +501,7 @@ def symlink_control(item, pins):
             final = pins.get(str(current))
             if not final or "symlink_target" in final or final["uid"] != 0 or final["sha256"] != item["sha256"]:
                 raise Refusal("execution_link_final_file_pin_required")
-            raw = read_file(current, owner=0)
+            raw = read_file(current, owner=0, maximum=MAX_CONTROL)
             if sha(raw) != item["sha256"] or stat.S_IMODE(current.lstat().st_mode) != int(final["mode"], 8):
                 raise Refusal("private_control_drift")
             break
@@ -574,7 +575,7 @@ class Host:
             if "symlink_target" in item:
                 symlink_control(item, pins)
             else:
-                raw = read_file(p, owner=item["uid"])
+                raw = read_file(p, owner=item["uid"], maximum=MAX_CONTROL)
                 if sha(raw) != item["sha256"] or stat.S_IMODE(p.lstat().st_mode) != int(item["mode"], 8):
                     raise Refusal("private_control_drift")
             ca_pinned |= p == Path(self.profile["RADHOUSE_TLS_CA_FILE"])
