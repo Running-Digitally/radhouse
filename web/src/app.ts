@@ -386,7 +386,11 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
       guidance.append(label, send);
       guidance.addEventListener("submit", (event) => {
         event.preventDefault(); const current = api; if (!current) return;
-        void action(send, async () => { await current.guide(task, input.value); guidanceDrafts.delete(task.task_id); await load(); });
+        void action(send, async () => {
+          if (card.work) await current.workCommand(card.work, 'guidance', input.value);
+          else await current.guide(task, input.value);
+          guidanceDrafts.delete(task.task_id); await load();
+        });
       });
       article.append(guidance);
     }
@@ -430,7 +434,9 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
       if ((verb === "pause" && card.resume.enabled) || (verb === "resume" && !card.resume.enabled) || task.phase === "closed") continue;
       const control = button(label, async () => {
         if (!api) return;
-        await api.changeState(task.task_id, verb, task.state_revision); await load();
+        if (card.work) await api.workCommand(card.work, verb);
+        else await api.changeState(task.task_id, verb, task.state_revision);
+        await load();
       });
       control.disabled = !availability.enabled;
       const reason = actionReason(availability); if (reason) control.title = reason;

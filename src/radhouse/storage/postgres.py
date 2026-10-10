@@ -40,14 +40,15 @@ class ApplicationStorageError(ValueError):
 
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _INITIAL_MIGRATION = Path(__file__).parent / "migrations" / "0001_initial.sql"
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 MIGRATIONS = (_INITIAL_MIGRATION, Path(__file__).parent / "migrations" / "0002_operator_context.sql",
               Path(__file__).parent / "migrations" / "0003_conversations.sql",
               Path(__file__).parent / "migrations" / "0004_task_titles.sql",
               Path(__file__).parent / "migrations" / "0005_project_agents.sql",
               Path(__file__).parent / "migrations" / "0006_project_conversations.sql",
               Path(__file__).parent / "migrations" / "0007_project_coordination.sql",
-              Path(__file__).parent / "migrations" / "0008_work_items.sql")
+              Path(__file__).parent / "migrations" / "0008_work_items.sql",
+              Path(__file__).parent / "migrations" / "0009_work_commands.sql")
 
 
 def schema_digest(version: int = SCHEMA_VERSION) -> str:

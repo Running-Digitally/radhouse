@@ -78,6 +78,11 @@ class BuzzConversationCycle:
                 # The project coordinator is the sole ingress owner. Specialist
                 # identities still publish their own progress and results.
                 return "skip"
+        if self.link.coordinator and self.link.workflow_version == 'artifact-v1':
+            mentioned, addressed = self._agent_mentions(event)
+            # Delegation is a later workflow. The frozen coordinator owns this
+            # artifact ingress; specialists must not run a second interpretation.
+            return 'ambiguous' if addressed and mentioned != {self.link.agent_pubkey} else 'accept'
         members = set(self.link.member_pubkeys or (self.link.agent_pubkey,))
         mentioned, has_address = self._agent_mentions(event)
         if has_address and (len(mentioned) != 1 or not mentioned <= members):
@@ -211,7 +216,7 @@ class BuzzConversationCycle:
             )
 
     def _task_messages(self):
-        if self.link.coordinator:
+        if self.link.coordinator and self.link.workflow_version == 'legacy':
             # Specialist links own task progress/results under their signed
             # identities. The coordinator outbox carries routing and gate notes.
             return
@@ -232,6 +237,22 @@ class BuzzConversationCycle:
                     or task.project_id != self.link.project_id
                 ):
                     raise Rejected("conversation_task_denied", 403)
+                work = tx.work_for_task(task_id)
+                if work is not None:
+                    from radhouse.application.work_service import project_work
+                    view = project_work(tx, work, task)
+                    message_id = 'work:' + sha256(encoded([work.work_id, work.state,
+                        [(b.code, b.resolver) for b in work.blockers], work.artifact_id, task.permission_request]))
+                    existing = tx.conversation_message(message_id)
+                    if existing is not None:
+                        tx.save_conversation_message(replace(existing['message'], task_state_revision=task.state_revision), processed=True)
+                    else:
+                        tx.save_conversation_message(ConversationMessage(message_id, self.link.link_id,
+                            self.link.bot_id, self.conversations.describe_work(view), 'radhouse',
+                            int(self.service._now().timestamp()), task_id=task_id,
+                            reply_to=tx.conversation_task_anchor(self.link, task_id), state='work',
+                            task_state_revision=task.state_revision), processed=True)
+                    continue  # Never post raw work-result JSON as a finished result.
                 # Guidance changes must not repost the completed result. Their
                 # own stable identity also deduplicates reconnect/restart delivery.
                 from radhouse.application.guidance import PROTOCOL, outcome_message_id, outcome_text
@@ -354,6 +375,9 @@ class BuzzConversationCycle:
                 ]
                 if message.task_id:
                     tags.append(["radhouse-task", message.task_id])
+                    work = tx.work_for_task(message.task_id)
+                    if work is not None:
+                        tags.append(['radhouse-work', work.work_id])
                     correlated = tx.task(message.task_id)
                     if (message.state in {"result", "publication"}
                             and correlated is not None and correlated.result_digest):

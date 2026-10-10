@@ -191,7 +191,7 @@ def reconcile_pending_denial(service, task, dispatch, permission):
     return "stale" if not pending_matches_observation else None
 
 
-def control(service, actor, task_id, expected, envelope, *, text=None, request_id=None, choice=None, digest=None):
+def control(service, actor, task_id, expected, envelope, *, text=None, request_id=None, choice=None, digest=None, admit=None):
     from radhouse.application.service import fingerprint
 
     kind = "guidance" if text is not None else "permission"
@@ -265,6 +265,10 @@ def control(service, actor, task_id, expected, envelope, *, text=None, request_i
                            checkpoint_id=None, api_request_id=None, receipt_source=None)
         operation = Operation(key, task_id, task.attempt_id, "submitted",
                               json.dumps({"fingerprint": identity}))
+        # Internal application hook: work receipt/revision fencing commits with
+        # the existing exact-run intent. Never accept this callback from a caller.
+        if admit is not None:
+            admit(tx, task)
         tx.save_operation(operation)
         tx.save_delivery(Delivery(envelope.channel, envelope.event_id, actor.principal_id, identity, task_id, kind))
         updated = task.evolve(guidance=(*task.guidance, receipt), task_revision=task.task_revision + 1)

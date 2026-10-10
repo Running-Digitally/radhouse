@@ -176,7 +176,7 @@ def create_app(
             "Cache-Control": "no-store",
         })
 
-    from radhouse.api.schemas import WorkResponse
+    from radhouse.api.schemas import WorkResponse, WorkCommandRequest, WorkCommandResponse
     from radhouse.application.work_service import WorkService
     work_service = WorkService(service)
 
@@ -187,6 +187,10 @@ def create_app(
     @app.get("/v1/work/{work_id}", response_model=WorkResponse, responses=errors)
     def get_work(work_id: str, actor: Actor, conversation_id: Conversation, binding_revision: BindingRevision):
         return work_service.get(actor, work_id, envelope=read_envelope(actor, conversation_id, binding_revision))
+
+    @app.post("/v1/work/{work_id}/commands", response_model=WorkCommandResponse, responses=errors)
+    def work_command(work_id: str, body: WorkCommandRequest, actor: Actor):
+        return work_service.apply_command(actor, work_id, body.command(), envelope=body.envelope.command())
 
     @app.get("/v1/work/{work_id}/artifacts/{artifact_id}", responses=errors)
     def get_work_artifact(work_id: str, artifact_id: str, actor: Actor,

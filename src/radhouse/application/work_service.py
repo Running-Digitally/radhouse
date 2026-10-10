@@ -1,12 +1,12 @@
 """Channel-independent admission, verification and authorized outcome projections."""
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from uuid import uuid4
 
-from radhouse.domain.tasks import Rejected, StartTask, Task
+from radhouse.domain.tasks import Delivery, Rejected, SavedCommand, StartTask, Task
 from radhouse.domain.work import (
     ArtifactManifest, VerificationReceipt, WorkBlocker, WorkItem, content_digest,
-    parse_result, runtime_contract,
+    parse_result, runtime_contract, WorkCommand, WorkCommandReceipt,
 )
 
 
@@ -55,6 +55,13 @@ class WorkView:
     updated_at: datetime
 
 
+@dataclass(frozen=True)
+class WorkCommandResult:
+    receipt: WorkCommandReceipt
+    work: WorkView
+    application_state: str
+
+
 def project_work(tx, work: WorkItem, task: Task) -> WorkView:
     needs_input = bool(task.permission_request) and task.phase == 'active'
     blockers = work.blockers
@@ -74,6 +81,10 @@ def reconcile_task(tx, task: Task, now: datetime) -> None:
     work = tx.work_for_task(task.task_id)
     if work is None:
         return
+    for receipt in tx.pending_work_commands(work.work_id):
+        state = command_application_state(receipt, task)
+        if state != receipt.application_state:
+            tx.save_work_command(replace(receipt, application_state=state))
     evidence = {}
     if work.workflow_version != 'artifact-v1':
         state, blockers = 'waiting', (WorkBlocker('workflow_upgrade_required', 'administrator'),)
@@ -129,6 +140,24 @@ def _verify_terminal(tx, work: WorkItem, task: Task, now: datetime):
     }
 
 
+def command_application_state(receipt, task):
+    if receipt.application_state in {'applied', 'not_applied'}:
+        return receipt.application_state
+    if receipt.kind == 'guidance':
+        from radhouse.application.service import fingerprint
+        key = 'control:' + fingerprint([receipt.principal_id, receipt.command_key])
+        entry = next((part for part in task.guidance if part['id'] == key), {})
+        outcome = entry.get('application_state')
+        if outcome == 'applied': return 'applied'
+        if outcome in {'too_late', 'not_applied'} or entry.get('state') == 'rejected': return 'not_applied'
+        if outcome == 'unknown' or entry.get('state') == 'unknown': return 'unknown'
+    elif (receipt.kind == 'cancel' and task.outcome == 'cancelled'
+          or receipt.kind == 'pause' and 'human_pause' in task.blockers and task.phase != 'stopping'
+          or receipt.kind == 'resume' and task.phase not in {'closed', 'stopping'} and 'human_pause' not in task.blockers):
+        return 'applied'
+    return receipt.application_state
+
+
 class WorkService:
     def __init__(self, service):
         self.service = service
@@ -163,6 +192,121 @@ class WorkService:
             task = self.service._task(tx, work.task_id)
             self.service._authorize(tx, actor, task, envelope)
             return project_work(tx, work, task)
+
+    def _command_result(self, tx, receipt, task):
+        work = tx.work_item(receipt.work_id)
+        state = command_application_state(receipt, task)
+        if state != receipt.application_state:
+            receipt = replace(receipt, application_state=state)
+            tx.save_work_command(receipt)
+        return WorkCommandResult(receipt, project_work(tx, work, task), state)
+
+    def apply_command(self, actor, work_id, command: WorkCommand, *, envelope) -> WorkCommandResult:
+        """One current-authority path; replay reads the original committed intent."""
+        from radhouse.application.service import fingerprint
+        if (command.kind not in {'pause', 'resume', 'cancel', 'guidance'}
+                or type(command.expected_state_revision) is not int or command.expected_state_revision < 1
+                or type(command.scope_revision) is not int or command.scope_revision < 1
+                or (command.kind == 'guidance' and (not isinstance(command.text, str) or not command.text.strip() or len(command.text) > 4096))
+                or (command.kind != 'guidance' and command.text is not None)):
+            raise Rejected('invalid_work_command', 422)
+        identity = fingerprint({'work_id': work_id, **asdict(command)})
+
+        def inspect(tx):
+            work = tx.work_item(work_id)
+            if work is None:
+                raise Rejected('work_not_found', 404)
+            task = self.service._task(tx, work.task_id)
+            self.service._authorize(tx, actor, task, envelope, write=True)
+            saved = tx.command(actor.principal_id, envelope.command_key)
+            receipt = tx.work_command(actor.principal_id, envelope.command_key)
+            if saved is not None:
+                if saved.fingerprint != identity or saved.task_id != task.task_id or receipt is None or receipt.work_id != work_id:
+                    raise Rejected('command_conflict')
+                return work, task, receipt
+            if receipt is not None:
+                raise Rejected('command_conflict')
+            if work.workflow_version != 'artifact-v1':
+                raise Rejected('workflow_upgrade_required')
+            if work.scope_revision != command.scope_revision:
+                raise Rejected('scope_changed')
+            if work.state_revision != command.expected_state_revision:
+                raise Rejected('stale_work_state')
+            if task.phase == 'closed':
+                raise Rejected('work_not_accepting_control')
+            return work, task, None
+
+        def record(tx, work, task, *, delivery=False):
+            updated = work.evolve(self.service._now())
+            tx.save_work(updated, work.state_revision)
+            receipt = WorkCommandReceipt(actor.principal_id, envelope.command_key, work_id,
+                command.kind, work.scope_revision, updated.state_revision, task.state_revision, self.service._now())
+            # A queued pause/resume/cancel is already confirmed by the committed
+            # task transition. Retain that fact even if the response is lost.
+            receipt = replace(receipt, application_state=command_application_state(
+                receipt, self.service._task(tx, task.task_id)))
+            tx.save_command(SavedCommand(actor.principal_id, envelope.command_key, identity, task.task_id))
+            tx.insert_work_command(receipt)
+            if delivery:
+                tx.save_delivery(Delivery(envelope.channel, envelope.event_id, actor.principal_id,
+                    identity, task.task_id, 'work-' + command.kind))
+            return receipt
+
+        with self.service.store.transaction() as tx:
+            work, task, receipt = inspect(tx)
+            if receipt is not None:
+                event = tx.delivery(envelope.channel, envelope.event_id)
+                event_identity = identity
+                kind = 'work-' + command.kind
+                if command.kind == 'guidance':
+                    kind = 'guidance'
+                    event_identity = fingerprint({'kind': kind, 'task': task.task_id, 'text': command.text,
+                        'request_id': None, 'choice': None, 'digest': None, 'expected': receipt.task_state_revision})
+                if event is not None:
+                    if (event.principal_id != actor.principal_id or event.task_id != task.task_id
+                            or event.fingerprint != event_identity or event.kind != kind):
+                        raise Rejected('delivery_conflict')
+                else:
+                    tx.save_delivery(Delivery(envelope.channel, envelope.event_id, actor.principal_id,
+                        event_identity, task.task_id, kind))
+                return self._command_result(tx, receipt, task)
+            if command.kind != 'guidance':
+                event = tx.delivery(envelope.channel, envelope.event_id)
+                if event is not None:
+                    raise Rejected('delivery_conflict')
+                if command.kind == 'resume':
+                    if task.phase == 'stopping' or 'cancel_requested' in task.blockers or 'human_pause' not in task.blockers:
+                        raise Rejected('cannot_resume')
+                    changed = task.evolve(blockers=tuple(b for b in task.blockers if b not in {'human_pause', 'grant_withdrawal'}))
+                else:
+                    reason = 'human_pause' if command.kind == 'pause' else 'cancel_requested'
+                    queued_cancel = command.kind == 'cancel' and task.attempt_id is None
+                    changed = task.evolve(blockers=tuple(sorted(set(task.blockers) | {reason})),
+                        phase='closed' if queued_cancel else 'stopping' if task.attempt_id else task.phase,
+                        outcome='cancelled' if queued_cancel else task.outcome)
+                original = task
+                task = self.service._save(tx, task, changed, 'work_' + command.kind + '_received')
+                receipt = record(tx, tx.work_item(work_id), original, delivery=True)
+                attempt = tx.attempt(task.attempt_id) if task.attempt_id else None
+                dispatch = tx.dispatch(task.attempt_id) if task.attempt_id else None
+        if command.kind == 'guidance':
+            from radhouse.application.runtime_controls import control
+            def admit(tx, current):
+                work, latest, receipt = inspect(tx)
+                if receipt is not None or latest.state_revision != current.state_revision:
+                    raise Rejected('command_conflict')
+                record(tx, work, current)
+            control(self.service, actor, task.task_id, task.state_revision, envelope,
+                    text=command.text, admit=admit)
+        elif command.kind != 'resume':
+            # Intent and wakeup are already durable; restart can settle the same
+            # exact stop if this local response or process is lost.
+            self.service._finish_hold(task.task_id, reason, attempt, dispatch)
+        with self.service.store.transaction() as tx:
+            work, task, receipt = inspect(tx)
+            if receipt is None:
+                raise Rejected('delivery_conflict')
+            return self._command_result(tx, receipt, task)
 
     def artifact(self, actor, work_id, artifact_id, *, envelope):
         with self.service.store.transaction() as tx:

@@ -95,6 +95,7 @@ class Conversations:
             message.addressed
             and not message.reply_to
             and not _STATUS.fullmatch(content.strip())
+            and not (link.workflow_version == 'artifact-v1' and content.strip().lower().rstrip('.!?') in {'pause', 'resume', 'cancel'})
         )
         if explicit_start:
             return MessageRoute("start")
@@ -126,6 +127,8 @@ class Conversations:
                 tx.task(reply["message"].task_id) if reply["message"].task_id else None
             )
             if target is not None and target.bot_id != link.bot_id:
+                if link.workflow_version == 'artifact-v1':
+                    return MessageRoute('clarify')
                 if target.phase == "closed" and target.result:
                     return MessageRoute("start", follows_task_id=target.task_id)
                 return MessageRoute("clarify")
@@ -140,12 +143,20 @@ class Conversations:
             target = active[0] if active else tx.task(tx.conversation_focus(link))
         if _STATUS.fullmatch(content.strip()):
             return MessageRoute("status", target.task_id if target else None)
+        if link.workflow_version == 'artifact-v1' and target is not None:
+            control = content.strip().lower().rstrip('.!?')
+            if control in {'pause', 'resume', 'cancel'}:
+                return MessageRoute(control, target.task_id, target.state_revision)
         if _NEW.match(content):
             return MessageRoute("start")
         if message.files and target is not None and target.phase != "closed":
             return MessageRoute("clarify")
         if target is not None:
             if target.phase == "closed":
+                if link.workflow_version == 'artifact-v1':
+                    # S2c adds bounded natural-language interpretation. Until
+                    # then a completed-work reply cannot create a fresh planner.
+                    return MessageRoute('clarify', target.task_id)
                 return MessageRoute(
                     "start", follows_task_id=target.task_id if target.result else None
                 )
@@ -186,6 +197,13 @@ class Conversations:
             # Freeze routing before any task/control effect. Retrying after a
             # crash cannot accidentally target a newer active task.
             route = self._route(tx, link, message)
+            if link.workflow_version == 'artifact-v1' and route.task_id:
+                work = tx.work_for_task(route.task_id)
+                if work is None:
+                    route = MessageRoute('clarify')
+                else:
+                    route = replace(route, work_id=work.work_id,
+                                    work_revision=work.state_revision, scope_revision=work.scope_revision)
             tx.save_conversation_message(message, route=route, event=event)
             return tx.conversation_message(message.message_id)
 
@@ -207,6 +225,8 @@ class Conversations:
         envelope = Envelope(
             "buzz", message_id, link.conversation_id, link.binding_revision, message_id
         )
+        if link.workflow_version == 'artifact-v1':
+            return self._process_work(link, actor, envelope, message, route, bot)
         task = None
         response_id = "reply:" + message_id
         if route.action == "start":
@@ -301,6 +321,54 @@ class Conversations:
             if tx.conversation_message(response.message_id) is None:
                 tx.save_conversation_message(response, processed=True)
         return completed
+
+    def _process_work(self, link, actor, envelope, message, route, bot):
+        from radhouse.application.work_service import WorkService
+        from radhouse.domain.work import WorkCommand
+        work_service = WorkService(self.service)
+        view = None
+        if route.action == 'start':
+            brief = _without_agent_prefix(message.content, bot.display_name) if message.addressed else message.content
+            view = work_service.submit(actor, envelope, StartTask(link.bot_id, link.project_id,
+                _NEW.sub('', brief, count=1), bot.provider_binding, files=message.files))
+            reply = 'Your artifact request is saved. Its progress and result belong to this work.'
+        elif route.action == 'status' and route.work_id:
+            view = work_service.get(actor, route.work_id, envelope=envelope)
+            reply = self.describe_work(view)
+        elif route.action in {'guide', 'pause', 'resume', 'cancel'} and route.work_id:
+            command = WorkCommand('guidance' if route.action == 'guide' else route.action,
+                route.work_revision, route.scope_revision, message.content if route.action == 'guide' else None)
+            try:
+                result = work_service.apply_command(actor, route.work_id, command, envelope=envelope)
+                view = result.work
+                reply = ('Your update was applied.' if result.application_state == 'applied'
+                         else 'Your update is saved; its application is not yet confirmed.') if route.action == 'guide' else self.describe_work(view)
+            except Rejected as error:
+                if error.status in {401, 403, 404}:
+                    raise
+                view = work_service.get(actor, route.work_id, envelope=envelope)
+                reply = 'Your message is saved. This work cannot accept that update in its current state.\n' + self.describe_work(view)
+        else:
+            reply = 'Reply to the work you mean, or start a separate assignment. No new work was started.'
+        completed = replace(message, task_id=view.task_id if view else None, state=route.action)
+        response = ConversationMessage('reply:' + message.message_id, link.link_id, link.bot_id,
+            reply, 'radhouse', int(self.service._now().timestamp()), task_id=completed.task_id,
+            reply_to=message.message_id, state='reply')
+        with self.store.transaction() as tx:
+            self.authorize(tx, link, write=True)
+            tx.save_conversation_message(completed, processed=True)
+            if tx.conversation_message(response.message_id) is None:
+                tx.save_conversation_message(response, processed=True)
+        return completed
+
+    @staticmethod
+    def describe_work(view):
+        text = view.title + '\n' + view.state_label
+        if view.blockers:
+            text += '\n' + '\n'.join(blocker.message for blocker in view.blockers)
+        if view.artifact is not None:
+            text += '\nArtifact retained: ' + view.artifact.name + '. Open the work in Radhouse.'
+        return text
 
     @staticmethod
     def describe(task, agent_name="Researcher"):

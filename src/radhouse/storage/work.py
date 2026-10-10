@@ -5,7 +5,7 @@ from datetime import datetime
 from psycopg.types.json import Jsonb
 
 from radhouse.domain.tasks import Rejected
-from radhouse.domain.work import ArtifactManifest, VerificationReceipt, WorkBlocker, WorkItem
+from radhouse.domain.work import ArtifactManifest, VerificationReceipt, WorkBlocker, WorkItem, WorkCommandReceipt
 
 
 def encode(value):
@@ -33,6 +33,19 @@ def decode(row, kind):
 
 
 class WorkQueries:
+    def work_command(self, principal_id: str, command_key: str) -> WorkCommandReceipt | None:
+        row = self._connection.execute('SELECT snapshot FROM public.work_commands WHERE principal_id=%s AND command_key=%s', (principal_id, command_key)).fetchone()
+        return decode(row, WorkCommandReceipt)
+
+    def insert_work_command(self, receipt: WorkCommandReceipt) -> None:
+        self._connection.execute('INSERT INTO public.work_commands(principal_id,command_key,work_id,snapshot) VALUES (%s,%s,%s,%s)', (receipt.principal_id,receipt.command_key,receipt.work_id,encode(receipt)))
+
+    def pending_work_commands(self, work_id: str) -> list[WorkCommandReceipt]:
+        return [decode(row, WorkCommandReceipt) for row in self._connection.execute("SELECT snapshot FROM public.work_commands WHERE work_id=%s AND snapshot->>'application_state' IN ('accepted','unknown') ORDER BY command_key LIMIT 100", (work_id,)).fetchall()]
+
+    def save_work_command(self, receipt: WorkCommandReceipt) -> None:
+        self._connection.execute('UPDATE public.work_commands SET snapshot=%s WHERE principal_id=%s AND command_key=%s AND work_id=%s', (encode(receipt), receipt.principal_id, receipt.command_key, receipt.work_id))
+
     def work_item(self, work_id: str) -> WorkItem | None:
         return decode(self._connection.execute('SELECT snapshot FROM public.work_items WHERE work_id=%s', (work_id,)).fetchone(), WorkItem)
 

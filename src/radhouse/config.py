@@ -229,6 +229,7 @@ class BuzzConversationConfig(StrictModel):
     channel_id: str
     conversation_id: str
     kind: Literal["dm", "stream"] = "dm"
+    workflow_version: Literal["legacy", "artifact-v1"] = "legacy"
     automatic_private_release: bool = False
     private_deployment_url: str | None = None
 
@@ -237,6 +238,8 @@ class BuzzConversationConfig(StrictModel):
 
     @model_validator(mode="after")
     def release_requires_project_channel(self):
+        if self.workflow_version != 'legacy' and (self.automatic_private_release or self.private_deployment_url):
+            raise ValueError('artifact workflow cannot acquire software release authority')
         if self.automatic_private_release:
             if self.kind != "stream":
                 raise ValueError("automatic private release requires a project channel")

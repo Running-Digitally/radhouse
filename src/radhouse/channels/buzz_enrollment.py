@@ -175,6 +175,7 @@ class BuzzEnrollment:
             default_agent=configured.default_agent,
             coordinator=configured.coordinator,
             channel_kind=configured.channel_kind,
+            workflow_version=configured.workflow_version,
         )
         if previous:
             if (
@@ -223,6 +224,14 @@ class BuzzEnrollment:
             raise Rejected("buzz_agent_directory_denied", 403)
         with self.service.store.transaction() as tx:
             self._authorize(tx, actor, envelope, candidate, assure=True)
+            # Relay I/O may race with another enrollment. The first committed
+            # workflow owner cannot be overwritten by this stale preparation.
+            latest = tx.conversation_link(link_id)
+            if latest is not None:
+                if (not configured.matches(latest) or latest.channel_id != channel_id
+                        or tx.conversation_enrollment(link_id) is None):
+                    raise Rejected('buzz_agent_enrollment_conflict', 409)
+                link = latest
             tx.save_conversation_link(link)
             saved = tx.conversation_enrollment(link_id)
             if saved is None:
@@ -258,6 +267,7 @@ class ConfiguredBuzzConversation:
         default_agent=True,
         coordinator=False,
         channel_kind="dm",
+        workflow_version="legacy",
     ):
         self.service, self.relay, self.candidate = service, relay, candidate
         # Keep the original compact snapshot for ordinary two-person DMs.
@@ -267,6 +277,7 @@ class ConfiguredBuzzConversation:
         self.default_agent = default_agent
         self.coordinator = coordinator
         self.channel_kind = channel_kind
+        self.workflow_version = workflow_version
         self.project_members = ()
         self.automatic_private_release = False
         self.private_deployment_url = None
@@ -303,6 +314,7 @@ class ConfiguredBuzzConversation:
             and link.default_agent == self.default_agent
             and link.coordinator == self.coordinator
             and link.channel_kind == self.channel_kind
+            and link.workflow_version == self.workflow_version
         )
 
     def run(self, phase):
@@ -335,7 +347,7 @@ class ConfiguredBuzzConversation:
                 tx.conversation_progress(link.link_id, error=error.code)
             return {"link_id": link.link_id, "count": 0, "error_code": error.code}
         self.relay.owner_attestation = enrollment["auth_tag"]
-        if self.coordinator:
+        if self.coordinator and link.workflow_version == 'legacy':
             from types import SimpleNamespace
             from radhouse.channels.project_buzz import ProjectBuzzConversationCycle
             members = []

@@ -157,3 +157,21 @@ def test_corrupt_saved_delegation_stops_only_its_conversation(enrollment, store)
         saved["auth_tag"][3] = "0" * 128
         tx.save_conversation_enrollment(link.link_id, saved)
     assert configured.run("ingress")["error_code"] == "buzz_agent_attestation_denied"
+
+
+def test_enrollment_racing_relay_io_cannot_overwrite_committed_workflow_owner(enrollment, store):
+    registry, configured, state, actor, command, attestation, link = enrollment
+    original = configured.relay.query
+    def admit_other_owner(*args):
+        result = original(*args)
+        with store.transaction() as tx:
+            tx.save_conversation_link(replace(link, workflow_version='artifact-v1'))
+            tx.save_conversation_enrollment(link.link_id,
+                {'ready': False, 'auth_tag': attestation, 'events': []})
+        return result
+    configured.relay.query = admit_other_owner
+    with pytest.raises(Rejected, match='buzz_agent_enrollment_conflict'):
+        registry.enroll(actor, command, link.link_id, link.channel_id, attestation)
+    with store.transaction() as tx:
+        assert tx.conversation_link(link.link_id).workflow_version == 'artifact-v1'
+    assert not state['published']

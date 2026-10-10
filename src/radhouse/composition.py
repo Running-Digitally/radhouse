@@ -156,6 +156,7 @@ def compose_controller(
                     ),
                     coordinator=agent.coordinator,
                     channel_kind=configured_conversation.kind,
+                    workflow_version=configured_conversation.workflow_version,
                 ))
             for configured in conversation_cycles:
                 if configured.coordinator and configured.candidate.channel_id is not None:

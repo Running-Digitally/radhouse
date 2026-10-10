@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from radhouse.config import BuzzConfig, ConfigurationError, load_config
+from radhouse.config import BuzzConfig, BuzzConversationConfig, ConfigurationError, load_config
 
 
 BASE = """\
@@ -297,3 +297,25 @@ def test_duplicate_bot_identity_or_hermes_home_is_rejected(tmp_path: Path):
 """
     with pytest.raises(ConfigurationError, match="configuration_invalid"):
         load_config(write(tmp_path / "config.yaml", duplicate))
+
+
+@pytest.mark.parametrize('values', [
+    {'automatic_private_release': True, 'private_deployment_url': 'https://example.deployed.runningdigitally.com/'},
+    {'private_deployment_url': 'https://example.deployed.runningdigitally.com/'},
+])
+def test_artifact_route_cannot_acquire_software_release_policy(values):
+    with pytest.raises(ValidationError):
+        BuzzConversationConfig.model_validate({'channel_id': 'project-channel',
+            'conversation_id': 'project-one:alice:buzz', 'kind': 'stream',
+            'workflow_version': 'artifact-v1', **values})
+
+
+def test_config_change_cannot_reinterpret_frozen_artifact_enrollment():
+    from dataclasses import replace
+    from radhouse.channels.buzz_enrollment import ConfiguredBuzzConversation
+    from radhouse.config import BuzzAgentConfig
+    candidate = BuzzAgentConfig.model_validate(buzz_agent('researcher', 'b', default=True))
+    link = replace(candidate.link(), workflow_version='artifact-v1')
+    admitted = ConfiguredBuzzConversation(None, None, candidate, workflow_version='artifact-v1')
+    legacy = ConfiguredBuzzConversation(None, None, candidate)
+    assert admitted.matches(link) and not legacy.matches(link)

@@ -603,6 +603,11 @@ class Service:
             ):
                 task = self._save(tx, task, task.evolve(phase="stopping"), "stop_requested")
 
+        if dispatch.state == "prepared" and set(task.blockers) & {"human_pause", "cancel_requested"}:
+            # Recovery after a committed stop intent must never start a run
+            # that had not yet crossed the runtime boundary.
+            reason = "cancel_requested" if "cancel_requested" in task.blockers else "human_pause"
+            return self._finish_hold(task_id, reason, attempt, dispatch)
         if dispatch.state == "prepared":
             try:
                 capabilities = self.work.capabilities(task)
@@ -621,6 +626,14 @@ class Service:
                 if latest is None:
                     raise Rejected("missing_dispatch")
                 if latest.state == "prepared":
+                    # Capability I/O may race with a committed human stop.
+                    # Recheck the latest intent before crossing into execution.
+                    if current.phase == 'stopping' or set(current.blockers) & {'human_pause', 'cancel_requested', 'grant_withdrawal'}:
+                        return current
+                    try:
+                        require_access(tx.access(current.owner_id), current.bot_id, current.project_id, write=True)
+                    except Rejected:
+                        return self._save(tx, current, current.blocked('grant_withdrawal'), 'waiting')
                     dispatch = replace(
                         latest, state="submitted",
                         runtime_revision=capabilities.runtime_revision,
@@ -813,6 +826,14 @@ class Service:
                               phase="stopping" if task.attempt_id else task.phase), "stop_requested")
             attempt = tx.attempt(task.attempt_id) if task.attempt_id else None
             dispatch = tx.dispatch(task.attempt_id) if task.attempt_id else None
+        return self._finish_hold(task_id, reason, attempt, dispatch)
+
+    def _finish_hold(self, task_id, reason, attempt, dispatch):
+        """Settle an already committed stop intent, outside its transaction."""
+        with self.store.transaction() as tx:
+            task = self._task(tx, task_id)
+        if task.phase == "closed":
+            return task
         if attempt is None:
             stopped, exact_run = True, False
         elif dispatch is None:
