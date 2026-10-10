@@ -82,7 +82,7 @@ receipt when exposed by the dashboard.
 All eleven previously served public files match the committed 6 October release
 manifest, including the actual 404 response. `_headers` is verified through its
 applied response policy. The unchanged pre-release `site/public/` archive is
-retained at `/private/tmp/radhouse-homepage-rollback-20261008.tar`, SHA-256
+retained at `[private release workspace]`, SHA-256
 `837205a99262c09063da25fab4096030475633a7aa8aa5926a4a2260e7779fca`.
 Use the previous deployment or upload that archive through the same uploader
 if verification fails. Keep the same domain, access and bindings.

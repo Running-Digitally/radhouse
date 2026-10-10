@@ -1,7 +1,10 @@
 name: radhouse-documents
 version: 1.0.0
-description: Read only the original files bound to the current Radhouse turn.
+description: Read the original files bound to the current Radhouse turn and share UTF-8 text outputs.
 provides_tools:
   - document_search
   - document_read
+  - file_share
+  - browser_login_list
+  - browser_login_fill
 kind: standalone

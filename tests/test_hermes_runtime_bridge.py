@@ -1,4 +1,5 @@
 """Exercise the pinned native admission/worker functions, not a second fake runtime."""
+
 import asyncio
 from contextlib import nullcontext, suppress
 from contextvars import ContextVar
@@ -46,9 +47,23 @@ def reset_bridge(monkeypatch):
     monkeypatch.setattr(bridge, "_callback", None)
     monkeypatch.setattr(bridge, "_browser_configuration", None)
     monkeypatch.setattr(bridge, "_maintenance_configuration", None)
-    monkeypatch.setattr(bridge, "_network_policy", {"schema": "radhouse.browser-network-policy.v1", "verified": False,
-        "source": None, "verified_at": None, "enforcement": "vm_firewall", "allowed": [], "denied": []})
+    monkeypatch.setattr(
+        bridge,
+        "_network_policy",
+        {
+            "schema": "radhouse.browser-network-policy.v1",
+            "verified": False,
+            "source": None,
+            "verified_at": None,
+            "enforcement": "vm_firewall",
+            "allowed": [],
+            "denied": [],
+        },
+    )
     monkeypatch.setattr(bridge, "_relays", {})
+    monkeypatch.setattr(bridge, "_controller", None)
+    monkeypatch.setattr(bridge, "_vault", None)
+    monkeypatch.setattr(bridge, "_owned_browsers", {})
 
 
 class ReceiptStore:
@@ -78,22 +93,64 @@ class ReceiptStore:
 def native_namespace(monkeypatch):
     lock = json.loads((RUNTIME / "source-lock.json").read_text())
     raw = (RUNTIME / "fixtures/api_server_runs.snapshot").read_bytes()
-    assert hashlib.sha256(raw).hexdigest() == lock["files"]["gateway/platforms/api_server_runs.py"]["snapshot_sha256"]
+    assert (
+        hashlib.sha256(raw).hexdigest()
+        == lock["files"]["gateway/platforms/api_server_runs.py"]["snapshot_sha256"]
+    )
     module = ModuleType("pinned_native_test_runs")
     monkeypatch.setitem(sys.modules, module.__name__, module)
-    context = {name: globals()[name] for name in ("asyncio", "suppress", "dataclass", "Any", "Callable", "Dict", "List", "Optional", "uuid", "hashlib", "json", "re")}
-    context.update(time=__import__("time"), web=SimpleNamespace(json_response=Response),
-        logger=SimpleNamespace(exception=lambda *args: None), TERMINAL_STATUSES={"completed", "failed", "cancelled"},
-        _json_error=lambda factory, message, code=None, status=400: Response({"error": code or message}, status),
+    context = {
+        name: globals()[name]
+        for name in (
+            "asyncio",
+            "suppress",
+            "dataclass",
+            "Any",
+            "Callable",
+            "Dict",
+            "List",
+            "Optional",
+            "uuid",
+            "hashlib",
+            "json",
+            "re",
+        )
+    }
+    context.update(
+        time=__import__("time"),
+        deque=__import__("collections").deque,
+        web=SimpleNamespace(json_response=Response),
+        logger=SimpleNamespace(exception=lambda *args: None),
+        TERMINAL_STATUSES={"completed", "failed", "cancelled"},
+        _json_error=lambda factory, message, code=None, status=400: Response(
+            {"error": code or message}, status
+        ),
         _room_retention_until=lambda request: 0,
         _resolve_conversation_history=lambda *args, **kwargs: ([], None, None, None),
-        _runtime_contract=SimpleNamespace(fresh_admission_error=lambda *args, **kwargs: None),
-        _run_not_found=lambda factory, run_id: Response({"error": "run_not_found"}, 404),
+        _runtime_contract=SimpleNamespace(
+            fresh_admission_error=lambda *args, **kwargs: None
+        ),
+        _run_not_found=lambda factory, run_id: Response(
+            {"error": "run_not_found"}, 404
+        ),
         resolve_profile_request_limit=lambda value: value,
         _configured_run_tools=lambda *args: None,
-        _USAGE_FIELDS=(("input_tokens", "session_prompt_tokens"),))
+        _run_usage=lambda agent: {},
+        _served_runtime=lambda agent: {},
+        _resolve_live_session_id=lambda owner, session: asyncio.sleep(
+            0, result=session
+        ),
+        _USAGE_FIELDS=(("input_tokens", "session_prompt_tokens"),),
+    )
     module.__dict__.update(context)
-    exec(compile(overlay.patch_runs(raw.decode()), str(RUNTIME / "fixtures/api_server_runs.snapshot"), "exec"), module.__dict__)
+    exec(
+        compile(
+            overlay.patch_runs(raw.decode()),
+            str(RUNTIME / "fixtures/api_server_runs.snapshot"),
+            "exec",
+        ),
+        module.__dict__,
+    )
     return module
 
 
@@ -110,20 +167,44 @@ def worker_dependencies(monkeypatch):
 
 
 def adapter(native):
-    value = SimpleNamespace(_run_idempotency_store=ReceiptStore(), _run_idempotency_ids=set(), _run_owners={},
-        _run_statuses={}, _run_streams={}, _run_streams_created={}, _run_approval_sessions={}, _active_run_tasks={},
-        _background_tasks=set(), _model_name="test", _run_owner_pid=1, _run_owner_started=1,
-        _parse_session_key_header=lambda request: (None, None), _run_idempotency_scope=lambda request: "test-owner",
-        _resolve_route=lambda model: None, _request_route_conflict_error=lambda **kwargs: None,
-        _concurrency_limited_response=lambda: None, _conversation_history_for_session=lambda session: asyncio.sleep(0, result=[]),
-        _declared_conversation_session=lambda key: None, _activate_admitted_request=lambda: None,
-        _profile_scope=lambda profile: nullcontext(), _bind_api_server_session=lambda **kwargs: None,
+    value = SimpleNamespace(
+        _run_idempotency_store=ReceiptStore(),
+        _run_idempotency_ids=set(),
+        _run_owners={},
+        _run_statuses={},
+        _run_streams={},
+        _run_streams_created={},
+        _run_approval_sessions={},
+        _active_run_tasks={},
+        _background_tasks=set(),
+        _model_name="test",
+        _run_owner_pid=1,
+        _run_owner_started=1,
+        _parse_session_key_header=lambda request: (None, None),
+        _run_idempotency_scope=lambda request: "test-owner",
+        _resolve_route=lambda model: None,
+        _request_route_conflict_error=lambda **kwargs: None,
+        _concurrency_limited_response=lambda: None,
+        _conversation_history_for_session=lambda session: asyncio.sleep(0, result=[]),
+        _declared_conversation_session=lambda key: None,
+        _activate_admitted_request=lambda: None,
+        _profile_scope=lambda profile: nullcontext(),
+        _bind_api_server_session=lambda **kwargs: None,
         _bind_declared_conversation=lambda *args: None,
-        _durable_run_status=lambda request, run_id: None)
+        _durable_run_status=lambda request, run_id: None,
+        _release_run_owner_if_forgotten=lambda run: None,
+        _ensure_session_db_async=lambda: asyncio.sleep(0, result=None),
+        _admit_to_live_bot_chat=lambda *a: asyncio.sleep(0, result=None),
+        _memory_sessions=SimpleNamespace(checkin=lambda agent: None),
+    )
+
     async def normalize(request, body):
         return body, None
+
     value._normalize_room_dispatch = normalize
-    value._set_run_status = lambda *args, **kwargs: native._set_run_status(value, *args, **kwargs)
+    value._set_run_status = lambda *args, **kwargs: native._set_run_status(
+        value, *args, **kwargs
+    )
     return value
 
 
@@ -134,11 +215,20 @@ def request(body, key="dispatch1"):
 
 
 def api_dependencies():
-    return SimpleNamespace(_openai_error=None, _api_request_profile=ContextVar("testprofile", default="profile"),
-        _api_request_browser_control_principal=ContextVar("testprincipal", default=None),
-        _api_request_browser_control_transport_family=ContextVar("testtransport", default=None),
-        _request_agent_overrides=lambda *args, **kwargs: {}, _publish_turn_process_ownership=lambda *args: None,
-        _clear_turn_process_ownership=lambda *args: None)
+    return SimpleNamespace(
+        _openai_error=None,
+        _api_request_profile=ContextVar("testprofile", default="profile"),
+        _api_request_browser_control_principal=ContextVar(
+            "testprincipal", default=None
+        ),
+        _api_request_browser_control_transport_family=ContextVar(
+            "testtransport", default=None
+        ),
+        _request_turn_author=lambda body: None,
+        _request_agent_overrides=lambda *args, **kwargs: {},
+        _publish_turn_process_ownership=lambda *args: None,
+        _clear_turn_process_ownership=lambda *args: None,
+    )
 
 
 def test_native_admission_receipt_precedes_first_tool_and_private_token_fingerprint(monkeypatch):
@@ -179,19 +269,89 @@ def test_native_admission_receipt_precedes_first_tool_and_private_token_fingerpr
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("later_change", ["catalog_unavailable", "route_conflict"])
+def test_selected_model_durable_replay_precedes_current_engine_checks(monkeypatch, later_change):
+    native = native_namespace(monkeypatch)
+    value, api = adapter(native), api_dependencies()
+    launches, checks = [], []
+    inference = ModuleType("radhouse_native_inference")
+
+    async def admission(owner, body):
+        checks.append(body["model"])
+        return None if len(checks) == 1 else "inference_catalog_unavailable"
+
+    inference.inference_admission_error = admission
+    monkeypatch.setitem(sys.modules, inference.__name__, inference)
+    api._request_agent_overrides = lambda body, **kwargs: {
+        "requested_model": body["model"], "requested_provider": body["provider"],
+        "model_options": body["model_options"],
+    }
+
+    async def execute(owner, launch, **kwargs):
+        launches.append(launch)
+        owner._set_run_status(launch.run_id, "completed", output="done")
+
+    native._execute_run = execute
+    body = {"input": "question", "session_id": "chat1", "disable_tools": True,
+            "model": "chosen-model", "provider": "custom",
+            "model_options": {"reasoning": {"enabled": True, "effort": "high"}},
+            "radhouse_inference": True}
+
+    async def run():
+        accepted = await native._handle_runs(value, request(body), _api_server=api)
+        assert accepted.status == 202
+        await asyncio.gather(*value._active_run_tasks.values())
+        assert len(launches) == 1
+        assert launches[0].agent_kwargs["confirmed_runtime_lock"] is True
+        assert launches[0].agent_kwargs["requested_model"] == "chosen-model"
+        if later_change == "route_conflict":
+            value._request_route_conflict_error = lambda **kwargs: "changed route"
+        replay = await native._handle_runs(value, request(body), _api_server=api)
+        assert replay.status == 202 and replay.value["replayed"] is True
+        assert replay.value["run_id"] == accepted.value["run_id"]
+        assert checks == ["chosen-model"] and len(launches) == 1
+        rejected = await native._handle_runs(value, request(body, key="new-key"), _api_server=api)
+        assert rejected.status == 409
+        assert rejected.value == {"error": "inference_selection_changed" if later_change == "route_conflict"
+                                  else "inference_catalog_unavailable", "admitted": False}
+        assert len(launches) == 1
+
+    asyncio.run(run())
+
+
 def test_native_worker_resets_context_after_exception(monkeypatch):
     native = native_namespace(monkeypatch)
     worker_dependencies(monkeypatch)
     value, api = adapter(native), api_dependencies()
-    launch = native._RunLaunch(value, "run1", None, "chat1", None, False, "question", [],
-        {"allowed_tools": list(bridge.DOCUMENT_TOOLS), "room_dispatch": None}, None, None, None, "dispatch1", "a" * 48)
+    launch = native._RunLaunch(
+        value,
+        "run1",
+        None,
+        "chat1",
+        None,
+        False,
+        "question",
+        [],
+        True,
+        {"allowed_tools": list(bridge.DOCUMENT_TOOLS), "room_dispatch": None},
+        None,
+        None,
+        None,
+        "dispatch1",
+        "a" * 48,
+        None,
+    )
+
     class Agent:
         def run_conversation(self, **kwargs):
             assert bridge.current_run_context().run_id == "run1"
             raise RuntimeError("private parser failure")
+
     prepared_argument_3 = Agent()
     with pytest.raises(RuntimeError):
-        native._run_agent_sync(value, launch, prepared_argument_3, None, _api_server=api)
+        native._run_agent_sync(
+            value, launch, prepared_argument_3, None, _api_server=api
+        )
     with pytest.raises(ValueError):
         bridge.current_run_context()
 
@@ -244,7 +404,9 @@ def test_maintenance_gate_is_before_native_first_await(monkeypatch):
     raw = (RUNTIME / "fixtures/api_server.snapshot").read_text()
     lock = json.loads((RUNTIME / "source-lock.json").read_text())
     assert hashlib.sha256(raw.encode()).hexdigest() == lock["files"]["gateway/platforms/api_server.py"]["snapshot_sha256"]
-    patched = overlay.patch_api(raw)
+    # This hash-pinned bounded fixture contains admission/routes, not disconnect.
+    # Full source render still requires and patches the real lifecycle function.
+    patched = overlay.patch_api(raw, include_lifecycle=False)
     import ast
     tree = ast.parse(patched)
     node = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "_admit_api_agent_request")
@@ -267,15 +429,15 @@ def test_maintenance_gate_is_before_native_first_await(monkeypatch):
 def test_firewall_information_is_unverified_by_default_and_not_a_url_permission():
     value = SimpleNamespace(_run_idempotency_store=ReceiptStore())
     assert bridge.features(value)["browser_network_policy"]["verified"] is False
-    assert bridge.http_url("http://192.168.50.66:8443/status")
+    assert bridge.http_url("http://192.0.2.20:8443/status")
     assert not bridge.http_url('file:///etc/passwd')
     assert not bridge.http_url('https://user:password@example.com')
-    policy = {"schema": "radhouse.browser-network-policy.v1", "verified": True, "source": "deployment-target firewall snapshot",
+    policy = {"schema": "radhouse.browser-network-policy.v1", "verified": True, "source": "the deployment target firewall snapshot",
         "verified_at": "2026-10-07T12:00:00+00:00", "enforcement": "vm_firewall", "allowed": ["Configured LAN destinations"], "denied": []}
     bridge.configure_network_policy(policy)
     prompt = bridge.trusted_browser_instructions("base instructions", bridge.BROWSER_TOOLS)
     assert 'not permission' in prompt
-    assert 'deployment-target firewall snapshot' in prompt
+    assert 'the deployment target firewall snapshot' in prompt
     assert bridge.trusted_browser_instructions("base instructions", bridge.DOCUMENT_TOOLS) == "base instructions"
     with pytest.raises(ValueError):
         bridge.configure_network_policy({**policy, "verified_at": None})
@@ -299,7 +461,7 @@ def test_native_child_environment_cannot_inherit_credentials_or_browser_profile(
     monkeypatch.setattr(bridge, "_browser_configuration", {"chromium_path": "/fixed/chrome", "agent_browser_path": "/fixed/browser", "empty_config_path": "/fixed/empty.json"})
     token = bridge.bind_run_context("run1", "chat1", "dispatch1", None)
     try:
-        clean = bridge.browser_environment({"PATH": "/usr/bin", "HOME": "/home/bot", "OPENAI_API_KEY": "secret",
+        clean = bridge.browser_environment({"PATH": "/usr/bin", "HOME": "/srv/example-home", "OPENAI_API_KEY": "secret",
             "DOCUMENT_SCOPE_TOKEN": "private", "AGENT_BROWSER_ARGS": "--no-sandbox", "AGENT_BROWSER_PROFILE": "/private/profile"})
         assert set(clean) == {"PATH", "HOME", "AGENT_BROWSER_EXECUTABLE_PATH", "AGENT_BROWSER_ARGS"}
         assert 'secret' not in json.dumps(clean)
@@ -357,19 +519,31 @@ def test_active_document_run_before_browser_start_uses_pinned_owned_resolver(mon
 
 
 @pytest.mark.parametrize("frame", [False, True])
-@pytest.mark.parametrize("changed", [False, True])
-def test_browser_reauthorizes_durable_run_after_stream_with_pinned_resolver(monkeypatch, frame, changed):
+@pytest.mark.parametrize("change", [None, "completed", "session", "tools", "dispatch", "unsupported",
+                                    "inplace_session", "inplace_tools", "inplace_dispatch"])
+def test_browser_reauthorizes_durable_run_after_stream_with_pinned_resolver(monkeypatch, frame, change):
     adapter, request, api, state, calls = owned_browser_status_adapter(monkeypatch)
     monkeypatch.setattr(bridge, "_session_stream", lambda session: (8123, "generation1"))
     async def native_frame(*args, **kwargs):
-        if changed:
+        if change == "completed":
             state["run"] = {**state["run"], "status": "completed"}
+        elif change == "inplace_tools":
+            state["run"]["allowed_tools"].pop()
+        elif change and change.startswith("inplace_"):
+            key = {"inplace_session": "session_id", "inplace_dispatch": "dispatch_key"}[change]
+            state["run"][key] = "replacement"
+        elif change:
+            key, value = {"session": ("session_id", "other-session"),
+                "tools": ("allowed_tools", list(bridge.BROWSER_TOOLS)),
+                "dispatch": ("dispatch_key", "other-dispatch"),
+                "unsupported": ("status", "unknown")}[change]
+            state["run"] = {**state["run"], key: value}
         return {"url": "https://example.com/", "jpeg": "actual-frame", "received_at": 1,
                 "captured_at": None, "frame_id": "frame1"}
     monkeypatch.setattr(bridge, "_native_frame", native_frame)
     result = asyncio.run(bridge.handle_browser(adapter, request, frame=frame, api_server=api))
     assert calls == ["status", "status"]
-    if changed:
+    if change not in (None, "completed"):
         assert result.value['state'] == 'unavailable'
         assert 'jpeg' not in result.value
         assert result.status == (409 if frame else 200)
@@ -379,6 +553,55 @@ def test_browser_reauthorizes_durable_run_after_stream_with_pinned_resolver(monk
     else:
         assert result.status == 200
         assert result.value['state'] == 'live'
+
+
+@pytest.mark.parametrize("saved_status", ["completed", "failed", "cancelled", "interrupted"])
+@pytest.mark.parametrize("frame", [False, True])
+def test_terminal_saved_run_observes_only_existing_owned_native_session(monkeypatch, saved_status, frame):
+    adapter, request, api, state, calls = owned_browser_status_adapter(monkeypatch)
+    state["run"] = {**state["run"], "status": saved_status}
+    monkeypatch.setattr(bridge, "_session_stream", lambda session: (8123, "generation1"))
+    async def native_frame(*args, **kwargs):
+        return {"url": "https://example.com/", "jpeg": "actual-frame", "received_at": 1,
+                "captured_at": None, "frame_id": "frame1"}
+    monkeypatch.setattr(bridge, "_native_frame", native_frame)
+    result = asyncio.run(bridge.handle_browser(adapter, request, frame=frame, api_server=api))
+    assert result.status == 200
+    assert calls == ["status", "status"]
+    assert result.value.get("jpeg") == ("actual-frame" if frame else None)
+    if not frame:
+        assert result.value["state"] == "live"
+
+
+@pytest.mark.parametrize("frame", [False, True])
+def test_retired_terminal_browser_is_idle_without_native_read_or_creation(monkeypatch, frame):
+    adapter, request, api, state, calls = owned_browser_status_adapter(monkeypatch)
+    state["run"] = {**state["run"], "status": "completed"}
+    monkeypatch.setattr(bridge, "_session_stream", lambda session: None)
+    monkeypatch.setattr(bridge, "_native_frame", lambda *args, **kwargs: pytest.fail("retired browser reached native stream"))
+    result = asyncio.run(bridge.handle_browser(adapter, request, frame=frame, api_server=api))
+    assert result.status == (409 if frame else 200)
+    assert result.value["state"] == "idle"
+    assert "jpeg" not in result.value
+    assert calls == ["status"]
+
+
+@pytest.mark.parametrize("frame", [False, True])
+def test_native_retirement_during_observation_clears_view_and_reports_idle(monkeypatch, frame):
+    adapter, request, api, state, calls = owned_browser_status_adapter(monkeypatch)
+    state["run"] = {**state["run"], "status": "completed"}
+    stream = [(8123, "generation1")]
+    monkeypatch.setattr(bridge, "_session_stream", lambda session: stream[0])
+    async def native_frame(*args, **kwargs):
+        stream[0] = None
+        raise ValueError("browser_stream_unavailable")
+    monkeypatch.setattr(bridge, "_native_frame", native_frame)
+    result = asyncio.run(bridge.handle_browser(adapter, request, frame=frame, api_server=api))
+    assert result.status == (409 if frame else 200)
+    assert result.value["state"] == "idle"
+    assert result.value["generation"] is result.value["url"] is None
+    assert "jpeg" not in result.value
+    assert calls == ["status"]
 
 
 @pytest.mark.parametrize("denial", ["auth", "foreign", "missing_durable"])
@@ -403,32 +626,89 @@ def pinned_browser_preflight(monkeypatch, cached_chromium):
     source = {}
     for name in ("browser_tool_install", "browser_tool_session"):
         raw = (RUNTIME / "fixtures" / (name + ".snapshot")).read_bytes()
-        assert hashlib.sha256(raw).hexdigest() == lock["files"]["tools/" + name + ".py"]["snapshot_sha256"]
+        assert (
+            hashlib.sha256(raw).hexdigest()
+            == lock["files"]["tools/" + name + ".py"]["snapshot_sha256"]
+        )
         source[name] = raw.decode()
     calls = []
-    origin = SimpleNamespace(_cached_chromium_installed=cached_chromium,
-        _agent_browser_resolved=True, _cached_agent_browser="/ambient/browser")
+    origin = SimpleNamespace(
+        _cached_chromium_installed=cached_chromium,
+        _agent_browser_resolved=True,
+        _cached_agent_browser="/ambient/browser",
+    )
+
     def absent(name):
         calls.append("ambient_lookup")
         return False
-    install = {"_origin": lambda: origin,
-        "os": SimpleNamespace(environ={}, path=SimpleNamespace(isfile=absent, isdir=absent)),
-        "shutil": SimpleNamespace(which=absent), "_chromium_search_roots": lambda: ["/absent/cache"],
-        "_has_chromium_build": lambda root: pytest.fail("absent cache was read")}
-    exec(compile(overlay.patch_browser_install(source["browser_tool_install"]), "pinned_browser_install", "exec"), install)
+
+    pm = ModuleType("pm")
+    pm.installed_package = lambda name: SimpleNamespace(binary="/ambient/browser")
+    runtime = ModuleType("hermes_cli.browser_runtime")
+    runtime.chromium_executable = lambda: "/ambient/chrome" if cached_chromium else None
+    monkeypatch.setitem(sys.modules, "pm", pm)
+    monkeypatch.setitem(sys.modules, runtime.__name__, runtime)
+    install = {
+        "_origin": lambda: origin,
+        "os": SimpleNamespace(
+            environ={},
+            path=SimpleNamespace(
+                isfile=lambda name: bool(cached_chromium), isdir=absent
+            ),
+        ),
+        "shutil": SimpleNamespace(which=absent),
+        "_chromium_search_roots": lambda: ["/absent/cache"],
+        "_has_chromium_build": lambda root: pytest.fail("absent cache was read"),
+        "_is_termux_environment": lambda: False,
+    }
+    exec(
+        compile(
+            overlay.patch_browser_install(source["browser_tool_install"]),
+            "pinned_browser_install",
+            "exec",
+        ),
+        install,
+    )
+
     def lazy_install():
         calls.append("lazy_install")
         return False
-    dependency = SimpleNamespace(_find_agent_browser=install["_find_agent_browser"],
-        _chromium_installed=install["_chromium_installed"], _maybe_autoinstall_chromium=lazy_install,
-        _requires_real_termux_browser_install=lambda cmd: False, _running_in_docker=lambda: False)
+
+    dependency = SimpleNamespace(
+        _find_agent_browser=install["_find_agent_browser"],
+        _chromium_installed=install["_chromium_installed"],
+        _maybe_autoinstall_chromium=lazy_install,
+        _requires_real_termux_browser_install=lambda cmd: False,
+        _running_in_docker=lambda: False,
+    )
     interrupt = ModuleType("tools.interrupt")
     interrupt.is_interrupted = lambda: False
     monkeypatch.setitem(sys.modules, "tools.interrupt", interrupt)
-    namespace = {"Dict": Dict, "Any": Any, "_install": dependency, "_cloud": SimpleNamespace(_is_local_mode=lambda: True,
-        _get_browser_engine=lambda: "chrome"), "_bt": SimpleNamespace(logger=SimpleNamespace(warning=lambda *args: None)),
-        "_CHROMIUM_MISSING_HINT": "missing Chromium", "_CHROMIUM_MISSING_DOCKER_HINT": "missing container Chromium"}
-    exec(compile(source["browser_tool_session"], "pinned_browser_session", "exec"), namespace)
+    tools = ModuleType("tools")
+    desktop = ModuleType("tools.bot_desktop")
+    desktop.placement = SimpleNamespace(TERMINAL="terminal")
+    desktop.runtime = SimpleNamespace(tool_placement=lambda: "host")
+    monkeypatch.setitem(sys.modules, "tools", tools)
+    monkeypatch.setitem(sys.modules, "tools.bot_desktop", desktop)
+    namespace = {
+        "Dict": Dict,
+        "Any": Any,
+        "_install": dependency,
+        "_cloud": SimpleNamespace(
+            _is_local_mode=lambda: True, _get_browser_engine=lambda: "chrome"
+        ),
+        "_bt": SimpleNamespace(logger=SimpleNamespace(warning=lambda *args: None)),
+        "_CHROMIUM_MISSING_HINT": "missing Chromium",
+        "_CHROMIUM_MISSING_DOCKER_HINT": "missing container Chromium",
+    }
+    exec(
+        compile(
+            overlay.patch_browser_preflight(source["browser_tool_session"]),
+            "pinned_browser_session",
+            "exec",
+        ),
+        namespace,
+    )
     return namespace["_browser_command_preflight"], origin, calls, interrupt
 
 
@@ -458,18 +738,24 @@ def test_scoped_browser_preflight_without_qualified_configuration_fails_before_i
 
 
 @pytest.mark.parametrize("cached_chromium", [None, False, True])
-def test_unscoped_preflight_preserves_upstream_missing_cached_and_ready_behavior(monkeypatch, cached_chromium):
+def test_unscoped_preflight_preserves_upstream_missing_cached_and_ready_behavior(
+    monkeypatch, cached_chromium
+):
     preflight, _, calls, _ = pinned_browser_preflight(monkeypatch, cached_chromium)
     # A configured Radhouse pair alone cannot replace another run's upstream lookup.
-    monkeypatch.setattr(bridge, "_browser_configuration", {"agent_browser_path": "/qualified/native"})
+    monkeypatch.setattr(
+        bridge, "_browser_configuration", {"agent_browser_path": "/qualified/native"}
+    )
     result = preflight()
     if cached_chromium:
-        assert result == {'browser_cmd': '/ambient/browser'}
+        assert result == {"browser_cmd": "/ambient/browser"}
         assert calls == []
     else:
         assert result == {"success": False, "error": "missing Chromium"}
         assert calls.count("lazy_install") == 1
-        assert ("ambient_lookup" in calls) is (cached_chromium is None)
+        assert (
+            "ambient_lookup" not in calls
+        )  # Current upstream PM resolves without a cached path scan.
 
 
 def test_scoped_pinned_preflight_keeps_upstream_interrupt_check(monkeypatch):
@@ -525,12 +811,21 @@ def test_overlay_refuses_modified_source_and_preserves_existing_controls(tmp_pat
         overlay.patch_runs(patched)
 
 
-def test_declared_unchanged_thread_source_is_verified_and_passed_through(tmp_path, monkeypatch):
+def test_declared_unchanged_thread_source_is_verified_and_passed_through(
+    tmp_path, monkeypatch
+):
     raw = (RUNTIME / "fixtures/thread_context.snapshot").read_bytes()
-    declaration = {"files": {"tools/thread_context.py": {"before_sha256": hashlib.sha256(raw).hexdigest()}}}
+    declaration = {
+        "files": {
+            "tools/thread_context.py": {
+                "before_sha256": hashlib.sha256(raw).hexdigest()
+            }
+        }
+    }
     package, source = tmp_path / "package", tmp_path / "source"
     package.mkdir()
     (package / "source-lock.json").write_text(json.dumps(declaration))
+    (package / "base_overlay.py").write_text("def render(root): return {}\n")
     (source / "tools").mkdir(parents=True)
     monkeypatch.setattr(overlay, "PACKAGE", package)
     with pytest.raises(FileNotFoundError):
@@ -544,6 +839,9 @@ def test_declared_unchanged_thread_source_is_verified_and_passed_through(tmp_pat
     assert result == {"tools/thread_context.py": raw.decode()}
     # write() must include the passthrough in its install map, too.
     (package / "bridge.py").write_text("# bridge source\n")
+    for name in ("browser_control.py", "native_control.py", "vault_bridge.py",
+                 "about_you.py", "native_inference.py", "owner_terminal.py"):
+        (package / name).write_text("# source\n")
     (package / "plugin").mkdir()
     for name in ("__init__.py", "plugin.yaml"):
         (package / "plugin" / name).write_text("# plugin source\n")
@@ -578,6 +876,8 @@ def test_maintenance_producer_timestamp_matches_strict_operator_iso_schema(monke
     tools = ModuleType("tools")
     tools.browser_tool = SimpleNamespace(_cleanup_lock=threading.Lock(), _active_sessions={})
     monkeypatch.setitem(sys.modules, "tools", tools)
+    terminal_count = [0]
+    monkeypatch.setitem(sys.modules, "radhouse_owner_terminal", SimpleNamespace(owner_terminal_active_count=lambda: terminal_count[0]))
     monkeypatch.setattr(bridge, "_hold", lambda: ({"cycle_id": "a" * 32}, "hold-digest"))
     monkeypatch.setattr(bridge, "_maintenance_configuration", ("b" * 64, "c" * 64))
     value = SimpleNamespace(_pending_agent_requests=0, _inflight_agent_runs=0, _active_run_tasks={})
@@ -586,7 +886,87 @@ def test_maintenance_producer_timestamp_matches_strict_operator_iso_schema(monke
     assert checked.tzinfo is not None
     assert abs((datetime.now(timezone.utc) - checked).total_seconds()) < 1
     assert response['active_runs'] == response['active_browsers'] == 0
+    assert response['active_terminals'] == 0
     assert response['verified'] is True
+    terminal_count[0] = 1
+    active = bridge.maintenance_status(value)
+    assert active['active_terminals'] == active['active_runs'] == 1
+    assert active['active_agent_runs'] == 0 and active['verified'] is True
+    terminal_count[0] = None
+    assert bridge.maintenance_status(value)['verified'] is False
+
+
+@pytest.fixture
+def bootstrap_runtime_policy(tmp_path, monkeypatch):
+    bootstrap = load("radhouse_browser_bootstrap_policy_test", RUNTIME / "bootstrap.py")
+    hermes = Path("/opt/hermes/818c13be1dc4fd28987e1e881a9408224afd4535")
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    files = {}
+    for index in range(35):
+        name = f"runtime_{index}.py"
+        source = runtime / name
+        source.write_text(f"# qualified runtime file {index}\n")
+        files[name] = bootstrap.sha(source)
+    value = {
+        "schema": "radhouse.builder-maintenance.v1", "machine_id": "a" * 32,
+        "browser_root": str(bootstrap.ROOT), "browser_helper_identity": "radhousebot",
+        "browser_helper_sha256": bootstrap.sha(bootstrap.__file__), "agent_browser_channel": "reviewed",
+        "runtime_files_sha256": files, "runtime_sha256": hashlib.sha256(bootstrap.canonical(files)).hexdigest(),
+        "hermes_root": str(hermes), "hermes_python": str(hermes / "venv/bin/python"),
+    }
+    read_text, source_sha = Path.read_text, bootstrap.sha
+    monkeypatch.setattr(Path, "read_text", lambda path, *args, **kwargs:
+        "a" * 32 if path == Path("/etc/machine-id") else read_text(path, *args, **kwargs))
+    monkeypatch.setattr(bootstrap, "root_bytes", lambda path: bootstrap.canonical(value))
+    monkeypatch.setattr(bootstrap, "sha", lambda path:
+        source_sha(runtime / Path(path).relative_to(hermes)) if Path(path).is_relative_to(hermes) else source_sha(path))
+    return bootstrap, value, runtime
+
+
+@pytest.mark.parametrize("count", [32, 35])
+def test_bootstrap_policy_accepts_reviewed_runtime_map_capacity(bootstrap_runtime_policy, count):
+    bootstrap, value, _ = bootstrap_runtime_policy
+    files = dict(list(value["runtime_files_sha256"].items())[:count])
+    value["runtime_files_sha256"] = files
+    value["runtime_sha256"] = hashlib.sha256(bootstrap.canonical(files)).hexdigest()
+    assert bootstrap.policy(bootstrap.POLICY) == value
+
+
+@pytest.mark.parametrize("machine_id", [None, "", "invalid", "b" * 32])
+def test_bootstrap_policy_refuses_missing_or_wrong_private_target(bootstrap_runtime_policy, machine_id):
+    bootstrap, value, _ = bootstrap_runtime_policy
+    value["machine_id"] = machine_id
+    with pytest.raises(ValueError, match="maintenance_target_unverified"):
+        bootstrap.policy(bootstrap.POLICY)
+
+
+@pytest.mark.parametrize("invalid", ["empty", "over_capacity", "wrong_type", "absolute_path", "parent_path",
+    "malformed_digest", "non_string_digest", "map_digest", "file_digest"])
+def test_bootstrap_policy_rejects_unverified_runtime_maps(bootstrap_runtime_policy, invalid):
+    bootstrap, value, runtime = bootstrap_runtime_policy
+    files = value["runtime_files_sha256"]
+    if invalid == "empty":
+        files.clear()
+    elif invalid == "over_capacity":
+        files["runtime_35.py"] = "a" * 64
+    elif invalid == "wrong_type":
+        files = list(files.items())
+    elif invalid in {"absolute_path", "parent_path"}:
+        name = {"absolute_path": "/runtime.py", "parent_path": "../runtime.py"}[invalid]
+        files[name] = files.pop("runtime_0.py")
+    elif invalid == "malformed_digest":
+        files["runtime_0.py"] = "invalid"
+    elif invalid == "non_string_digest":
+        files["runtime_0.py"] = None
+    elif invalid == "file_digest":
+        (runtime / "runtime_0.py").write_text("# changed after qualification\n")
+    value["runtime_files_sha256"] = files
+    value["runtime_sha256"] = hashlib.sha256(bootstrap.canonical(files)).hexdigest()
+    if invalid == "map_digest":
+        value["runtime_sha256"] = "a" * 64
+    with pytest.raises(ValueError, match="maintenance_runtime_unverified"):
+        bootstrap.policy(bootstrap.POLICY)
 
 
 def test_bootstrap_promotes_only_real_isolation_proof_and_unwraps_cycle_receipt(tmp_path, monkeypatch):
@@ -931,60 +1311,154 @@ def pinned_browser_turn_cleanup(monkeypatch, tmp_path):
     """Actual finalizer/helper and unchanged lifecycle, with a disposable native directory."""
     import os
     import shutil
-    lock = json.loads((RUNTIME / 'source-lock.json').read_text())
+
+    lock = json.loads((RUNTIME / "source-lock.json").read_text())
     sources = {}
-    for name, declaration in [('chat_completion_helpers', lock['files']['agent/chat_completion_helpers.py']),
-            ('turn_finalizer', lock['contract_fixtures']['agent/turn_finalizer.py']),
-            ('browser_tool_lifecycle', lock['contract_fixtures']['tools/browser_tool_lifecycle.py']),
-            ('browser_tool_session_record', lock['contract_fixtures']['tools/browser_tool_session.py'])]:
-        raw = (RUNTIME / 'fixtures' / (name + '.snapshot')).read_bytes()
-        assert hashlib.sha256(raw).hexdigest() == declaration['snapshot_sha256']
+    for name, declaration in [
+        ("chat_completion_helpers", lock["files"]["agent/chat_completion_helpers.py"]),
+        ("turn_finalizer", lock["contract_fixtures"]["agent/turn_finalizer.py"]),
+        (
+            "browser_tool_lifecycle",
+            lock["contract_fixtures"]["tools/browser_tool_lifecycle.py"],
+        ),
+        (
+            "browser_tool_session_record",
+            lock["contract_fixtures"]["tools/browser_tool_session.py"],
+        ),
+    ]:
+        raw = (RUNTIME / "fixtures" / (name + ".snapshot")).read_bytes()
+        assert hashlib.sha256(raw).hexdigest() == declaration["snapshot_sha256"]
         sources[name] = raw.decode()
-    browser = ModuleType('tools.browser_tool')
-    log = SimpleNamespace(**{name: lambda *a, **kw: None for name in ('info', 'warning', 'error', 'debug')})
-    browser.__dict__.update(_cleanup_lock=threading.RLock(), _active_sessions={}, _session_last_activity={},
-        _session_owner_homes={}, _cleanup_failures={}, _recording_sessions=set(), _last_active_session_key={}, _suspect_browser_sessions={},
-        _LOCAL_SUFFIX='::local', BROWSER_SESSION_INACTIVITY_TIMEOUT=120, MAX_INACTIVITY_CLEANUP_FAILURES=3,
-        _socket_safe_tmpdir=lambda: str(tmp_path), _bare_task_id_for_session_key=lambda key: key.split('::')[0],
-        _is_local_sidecar_key=lambda key: key.endswith('::local'), _is_camofox_mode=lambda: False,
-        _maybe_stop_recording=lambda key: None, logger=log)
-    tools = ModuleType('tools'); tools.browser_tool = browser
-    cloud = ModuleType('tools.browser_tool_cloud'); cloud._is_headed_mode = lambda: False
-    for name, module in [('tools', tools), ('tools.browser_tool', browser), ('tools.browser_tool_cloud', cloud)]:
+    browser = ModuleType("tools.browser_tool")
+    log = SimpleNamespace(
+        **{
+            name: lambda *a, **kw: None
+            for name in ("info", "warning", "error", "debug")
+        }
+    )
+    browser.__dict__.update(
+        _cleanup_lock=threading.RLock(),
+        _active_sessions={},
+        _session_last_activity={},
+        _session_owner_homes={},
+        _cleanup_failures={},
+        _recording_sessions=set(),
+        _last_active_session_key={},
+        _suspect_browser_sessions={},
+        _LOCAL_SUFFIX="::local",
+        BROWSER_SESSION_INACTIVITY_TIMEOUT=120,
+        MAX_INACTIVITY_CLEANUP_FAILURES=3,
+        _socket_safe_tmpdir=lambda: str(tmp_path),
+        _bare_task_id_for_session_key=lambda key: key.split("::")[0],
+        _is_local_sidecar_key=lambda key: key.endswith("::local"),
+        _is_camofox_mode=lambda: False,
+        _maybe_stop_recording=lambda key: None,
+        logger=log,
+    )
+    tools = ModuleType("tools")
+    tools.browser_tool = browser
+    cloud = ModuleType("tools.browser_tool_cloud")
+    cloud._is_headed_mode = lambda: False
+    for name, module in [
+        ("tools", tools),
+        ("tools.browser_tool", browser),
+        ("tools.browser_tool_cloud", cloud),
+    ]:
         monkeypatch.setitem(sys.modules, name, module)
-    calls = {'close': [], 'vm': []}; clock = [20]
-    lightpanda = ModuleType('tools.browser_lightpanda')
-    lightpanda.stop_lightpanda = lambda name: calls['close'].append(next(
-        task for task, record in browser._active_sessions.items() if record.get('session_name') == name))
-    monkeypatch.setitem(sys.modules, 'tools.browser_lightpanda', lightpanda)
-    lifecycle = {'_bt': browser, 'time': SimpleNamespace(time=lambda: clock[0]), 'os': os, 'shutil': shutil,
-        '_session_owner_scope': lambda task: nullcontext(), '_session_has_expired': lambda record: False,
-        '_cloud': SimpleNamespace(_get_cloud_provider=lambda: None),
-        '_install': SimpleNamespace(_discover_homebrew_node_dirs=SimpleNamespace(cache_clear=lambda: None)),
-        '_cdp': SimpleNamespace(_stop_cdp_supervisor=lambda task: None),
-        '_session': SimpleNamespace(_run_browser_command=lambda task, command, args, timeout: calls['close'].append(task)),
-        '_kill_verified_daemon': lambda directory, name: False}
-    exec(compile(sources['browser_tool_lifecycle'], 'pinned_browser_lifecycle', 'exec'), lifecycle)
-    helper = {'_ra': lambda: SimpleNamespace(cleanup_vm=lambda task: calls['vm'].append(task),
-        cleanup_browser=lifecycle['cleanup_browser']), 'is_persistent_env': lambda task: False,
-        'os': os, 'logging': log}
-    exec(compile(overlay.patch_chat_completion_helpers(sources['chat_completion_helpers']), 'pinned_turn_cleanup', 'exec'), helper)
-    conversation = ModuleType('agent.conversation_loop'); conversation.logger = log
-    monkeypatch.setitem(sys.modules, 'agent', ModuleType('agent'))
-    monkeypatch.setitem(sys.modules, 'agent.conversation_loop', conversation)
-    finalizer = {'_resolve_budget_fallback': lambda agent, **kw: (kw['final_response'], kw['_turn_exit_reason'], False),
-        '_rollback_interrupted_preflight_display': lambda *a: None, '_summarize_user_message_for_log': str}
-    exec(compile(sources['turn_finalizer'], 'pinned_turn_finalizer', 'exec'), finalizer)
+    calls = {"close": [], "vm": []}
+    clock = [20]
+    lightpanda = ModuleType("tools.browser_lightpanda")
+    lightpanda.stop_lightpanda = lambda name: calls["close"].append(
+        next(
+            task
+            for task, record in browser._active_sessions.items()
+            if record.get("session_name") == name
+        )
+    )
+    monkeypatch.setitem(sys.modules, "tools.browser_lightpanda", lightpanda)
+    lifecycle = {
+        "_bt": browser,
+        "time": SimpleNamespace(time=lambda: clock[0]),
+        "os": os,
+        "shutil": shutil,
+        "_session_owner_scope": lambda task: nullcontext(),
+        "_human_holds_shared_browser": lambda task: False,
+        "_session_has_expired": lambda record: False,
+        "_cloud": SimpleNamespace(_get_cloud_provider=lambda: None),
+        "_install": SimpleNamespace(
+            _discover_homebrew_node_dirs=SimpleNamespace(cache_clear=lambda: None)
+        ),
+        "_cdp": SimpleNamespace(_stop_cdp_supervisor=lambda task: None),
+        "_session": SimpleNamespace(
+            _run_browser_command=lambda task, command, args, timeout: calls[
+                "close"
+            ].append(task)
+        ),
+        "_kill_verified_daemon": lambda directory, name: False,
+        "_best_effort": lambda *a: None,
+    }
+    exec(
+        compile(sources["browser_tool_lifecycle"], "pinned_browser_lifecycle", "exec"),
+        lifecycle,
+    )
+    helper = {
+        "_ra": lambda: SimpleNamespace(
+            cleanup_vm=lambda task: calls["vm"].append(task),
+            cleanup_browser=lifecycle["cleanup_browser"],
+        ),
+        "is_persistent_env": lambda task: False,
+        "os": os,
+        "logging": log,
+    }
+    exec(
+        compile(
+            overlay.patch_chat_completion_helpers(sources["chat_completion_helpers"]),
+            "pinned_turn_cleanup",
+            "exec",
+        ),
+        helper,
+    )
+    conversation = ModuleType("agent.conversation_loop")
+    conversation.logger = log
+    monkeypatch.setitem(sys.modules, "agent", ModuleType("agent"))
+    monkeypatch.setitem(sys.modules, "agent.conversation_loop", conversation)
+    harness = ModuleType("hermes_cli.observability.shared_metrics_harness")
+    harness.finish_turn = lambda *a, **kw: None
+    turn_context = ModuleType("agent.turn_context")
+    turn_context.start_deferred_title_upgrade = lambda agent: None
+    monkeypatch.setitem(sys.modules, harness.__name__, harness)
+    monkeypatch.setitem(sys.modules, turn_context.__name__, turn_context)
+    finalizer = {
+        "_resolve_budget_fallback": lambda agent, **kw: (
+            kw["final_response"],
+            kw["_turn_exit_reason"],
+            False,
+            kw["interrupted"],
+        ),
+        "exit_reason_failure": lambda reason: None,
+        "_rollback_interrupted_preflight_display": lambda *a: None,
+        "_summarize_user_message_for_log": str,
+    }
+    exec(compile(sources["turn_finalizer"], "pinned_turn_finalizer", "exec"), finalizer)
+
     class CleanupReached(Exception):
         pass
-    actual_guard = finalizer['_guarded_cleanup']
+
+    actual_guard = finalizer["_guarded_cleanup"]
+
     def stop_after_cleanup(label, function, errors, logger):
         actual_guard(label, function, errors, logger)
         assert not errors
         if label == 'cleanup_task_resources': raise CleanupReached()
-    finalizer['_guarded_cleanup'] = stop_after_cleanup
-    agent = SimpleNamespace(max_iterations=10, verbose_logging=False, _save_trajectory=lambda *a: None)
-    agent._cleanup_task_resources = lambda task: helper['cleanup_task_resources'](agent, task)
+
+    finalizer["_guarded_cleanup"] = stop_after_cleanup
+    agent = SimpleNamespace(
+        max_iterations=10, verbose_logging=False, _save_trajectory=lambda *a: None
+    )
+    agent._cleanup_task_resources = lambda task: helper["cleanup_task_resources"](
+        agent, task
+    )
+
     def finish(task):
         # Execute the real finalizer through cleanup; persistence is outside this contract.
         with pytest.raises(CleanupReached):
@@ -992,6 +1466,7 @@ def pinned_browser_turn_cleanup(monkeypatch, tmp_path):
                 failed=False, messages=[], conversation_history=[], effective_task_id=task, turn_id='turn',
                 user_message='read page', original_user_message='read page', _should_review_memory=False,
                 _turn_exit_reason='text_response(stop)')
+
     def create(task='session'):
         name = 'h_0123456789'; directory = tmp_path / ('agent-browser-' + name)
         directory.mkdir(mode=0o700)
@@ -1007,42 +1482,101 @@ def pinned_browser_turn_cleanup(monkeypatch, tmp_path):
         assert result['session_key'] == task
         assert result['owner_task_id'] == task
         return directory
-    return SimpleNamespace(browser=browser, lifecycle=lifecycle, calls=calls, clock=clock, finish=finish, create=create, cloud=cloud)
+
+    return SimpleNamespace(
+        browser=browser,
+        lifecycle=lifecycle,
+        calls=calls,
+        clock=clock,
+        finish=finish,
+        create=create,
+        cloud=cloud,
+    )
 
 
-@pytest.mark.parametrize('teardown', ['explicit', 'idle', 'shutdown'])
-def test_actual_headless_finalizer_retains_two_turns_but_direct_lifecycle_closes(monkeypatch, tmp_path, teardown):
+@pytest.mark.parametrize("teardown", ["explicit", "idle", "shutdown"])
+def test_actual_headless_finalizer_retains_two_turns_but_direct_lifecycle_closes(
+    monkeypatch, tmp_path, teardown
+):
     native = native_namespace(monkeypatch)
     worker_dependencies(monkeypatch)
     value, api = adapter(native), api_dependencies()
     f = pinned_browser_turn_cleanup(monkeypatch, tmp_path)
-    monkeypatch.setattr(bridge, '_browser_configuration', {'qualified': True})
-    directory = f.create(); original_stream = bridge._session_stream('session')
+    monkeypatch.setattr(bridge, "_browser_configuration", {"qualified": True})
+    directory = f.create()
+    original_stream = bridge._session_stream("session")
+
     class Agent:
         def run_conversation(self, **kwargs):
             assert bridge.current_run_context(task_id=kwargs['task_id']).session_id == 'session'
             f.finish(kwargs['task_id'])
             return 'done'
-    for run in ('first-run', 'second-run'):
-        launch = native._RunLaunch(value, run, None, 'session', None, False, 'read page', [],
-            {'allowed_tools': list(bridge.BROWSER_TOOLS), 'room_dispatch': None}, None, None, None, run + '-dispatch', None)
+
+    for run in ("first-run", "second-run"):
+        launch = native._RunLaunch(
+            value,
+            run,
+            None,
+            "session",
+            None,
+            False,
+            "read page",
+            [],
+            True,
+            {"allowed_tools": list(bridge.BROWSER_TOOLS), "room_dispatch": None},
+            None,
+            None,
+            None,
+            run + "-dispatch",
+            None,
+            None,
+        )
         native._run_agent_sync(value, launch, Agent(), None, _api_server=api)
         assert bridge._context.get() is None
         assert directory.is_dir()
-        assert bridge._session_stream('session') == original_stream
-    assert f.calls == {'close': [], 'vm': ['session', 'session']}
-    assert f.browser._session_last_activity == {'session': 10}
-    token = bridge.bind_run_context('still-scoped', 'session', 'dispatch', None)
+        assert bridge._session_stream("session") == original_stream
+    assert f.calls == {"close": [], "vm": ["session", "session"]}
+    assert f.browser._session_last_activity == {"session": 10}
+    token = bridge.bind_run_context("still-scoped", "session", "dispatch", None)
     try:
-        if teardown == 'idle':
-            f.lifecycle['_cleanup_inactive_browser_sessions'](); assert directory.is_dir()
-            f.clock[0] = 131; f.lifecycle['_cleanup_inactive_browser_sessions']()
-        elif teardown == 'shutdown': f.lifecycle['cleanup_all_browsers']()
-        else: f.lifecycle['cleanup_browser']('session')
-    finally: bridge.reset_run_context(token)
-    assert f.calls['close'] == ['session']
+        if teardown == "idle":
+            f.lifecycle["_cleanup_inactive_browser_sessions"]()
+            assert directory.is_dir()
+            f.clock[0] = 131
+            f.lifecycle["_cleanup_inactive_browser_sessions"]()
+        elif teardown == "shutdown":
+            f.lifecycle["cleanup_all_browsers"]()
+        else:
+            f.lifecycle["cleanup_browser"]("session")
+    finally:
+        bridge.reset_run_context(token)
+    assert f.calls["close"] == ["session"]
     assert not directory.exists()
     assert not f.browser._active_sessions
+
+
+@pytest.mark.parametrize("missing", ["directory", "stream"])
+def test_retained_session_without_native_artifacts_is_idle_without_touching_lifecycle(monkeypatch, tmp_path, missing):
+    f = pinned_browser_turn_cleanup(monkeypatch, tmp_path)
+    directory = f.create()
+    record = dict(f.browser._active_sessions["session"])
+    activity = dict(f.browser._session_last_activity)
+    (directory / "h_0123456789.stream").unlink()
+    if missing == "directory":
+        directory.rmdir()
+    assert bridge._session_stream("session") is None
+    assert f.browser._active_sessions["session"] == record
+    assert f.browser._session_last_activity == activity
+    assert f.calls == {"close": [], "vm": []}
+
+
+def test_retained_session_with_untrusted_native_directory_remains_unavailable(monkeypatch, tmp_path):
+    f = pinned_browser_turn_cleanup(monkeypatch, tmp_path)
+    directory = f.create()
+    directory.chmod(0o755)
+    with pytest.raises(ValueError, match="browser_session_unavailable"):
+        bridge._session_stream("session")
+    assert f.calls == {"close": [], "vm": []}
 
 
 @pytest.mark.parametrize('denial', ['unscoped', 'unqualified', 'other-context', 'nonowned', 'owner', 'key', 'cdp', 'cloud', 'real-profile', 'lightpanda', 'name', 'malformed'])

@@ -47,6 +47,8 @@ class LocalSession:
     conversation_id: str
     binding_revision: int
     project_id: str
+    # Effective validated idle/absolute expiry, never an authentication secret.
+    expires_at: datetime | None = None
 
 
 def _digest(value: str) -> str:
@@ -475,7 +477,7 @@ class LocalAuthService:
                 )
                 binding = self._binding(connection, credential["principal_id"], credential["username"])
                 return LocalSession(token, csrf, credential["principal_id"], credential["username"],
-                                    assurance_until, **binding)
+                                    assurance_until, **binding, expires_at=min(now + idle_ttl, now + session_ttl))
         except Rejected:
             raise
         except (psycopg.Error, ApplicationStorageError):
@@ -569,7 +571,7 @@ class LocalAuthService:
                 binding = self._binding(connection, row["principal_id"], row["username"])
                 csrf = request.headers.get("x-radhouse-csrf", "")
                 return LocalSession(token, csrf, row["principal_id"], row["username"],
-                                    row["assurance_until"], **binding)
+                                    row["assurance_until"], **binding, expires_at=idle_expires)
         except Rejected:
             raise
         except (psycopg.Error, ApplicationStorageError):
@@ -617,5 +619,4 @@ def _initial_work_home(initial_work_home, initial_fields):
     elif initial_fields or not isinstance(initial_work_home, InitialWorkHome):
         raise TypeError("supply one InitialWorkHome or its keyword fields")
     return initial_work_home
-
 

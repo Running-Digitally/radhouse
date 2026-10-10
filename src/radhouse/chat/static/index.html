@@ -2,13 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Radhouse</title><link rel="stylesheet" href="/chat.css"><link rel="stylesheet" href="/browser-view.css">
-  <script src="/format.js" defer></script><script src="/browser-view.js" defer></script><script src="/chat.js" defer></script>
+  <title>Radhouse</title><link rel="stylesheet" href="/chat.css"><link rel="stylesheet" href="/browser-view.css"><link rel="stylesheet" href="/navigation.css"><link rel="stylesheet" href="/workspace-assets/about-you.css"><link rel="stylesheet" href="/workspace-assets/owner-terminal.css"><link rel="stylesheet" href="/workspace-assets/inference-controls.css"><link rel="stylesheet" href="/workspace-assets/agent-profile.css">
+  <link rel="stylesheet" href="/workspace-vendor/xterm/xterm.css">
+  <script src="/workspace-assets/agent-portrait.js" defer></script><script src="/navigation.js" defer></script><script src="/format.js" defer></script><script src="/browser-view.js" defer></script><script src="/library.js" defer></script><script src="/workspace-assets/about-you.js" defer></script><script src="/workspace-assets/inference-controls.js" defer></script><script src="/workspace-vendor/xterm/xterm.js" defer></script><script src="/workspace-vendor/xterm/addon-fit.js" defer></script><script src="/workspace-assets/owner-terminal.js" defer></script><script src="/workspace-assets/agent-profile.js" defer></script><script src="/chat.js" defer></script>
 </head>
 <body>
 <div class="shell">
   <header><a href="/" class="brand">Radhouse</a><button id="logout" hidden>Sign out</button></header>
-  <nav id="management-nav" aria-label="Main navigation" hidden><a href="/" aria-current="page">Chat</a><a href="/settings">Settings</a><a href="/infrastructure">Infrastructure</a></nav>
+  <nav id="management-nav" aria-label="Main navigation" hidden><a href="/" id="chat-link" aria-current="page">Chat</a><a href="/library" id="library-link">Library</a><a href="/browser" id="browser-link">Browser</a><a href="/terminal" id="terminal-link">Terminal</a><a href="/about-you" id="about-you-link">About You</a><a href="/settings" id="settings-link" data-management hidden>Settings</a><a href="/infrastructure" id="infrastructure-link" data-management hidden>Infrastructure</a></nav>
   <main>
     <section id="login-view" hidden>
       <h1>Welcome to Radhouse</h1><p class="intro">Sign in to continue your conversation.</p>
@@ -24,12 +25,16 @@
       <section id="history-pane" tabindex="0" aria-label="Conversation history">
         <button id="older" hidden>Show earlier messages</button>
         <div id="messages" role="log" aria-label="Conversation" aria-live="off"></div>
-        <section id="assistant-browser" aria-label="Assistant browser" hidden></section>
         <div id="empty" hidden><h1>What’s on your mind?</h1><p>Ask a question or attach something to work through.</p></div>
       </section>
       <button id="latest" hidden>Latest ↓</button>
       <form id="compose">
         <div id="draft-files" class="attachments" aria-label="Attached files"></div>
+        <div id="active-message-options" class="active-message-options" aria-label="Included with your next message" hidden>
+          <span id="browser-context-summary" class="context-summary" hidden><button id="review-browser-context" type="button">Current page</button><button id="remove-browser-context" type="button" aria-label="Remove browser context">×</button></span>
+          <span id="terminal-context-summary" class="context-summary" hidden><button id="review-terminal-context" type="button">Terminal context</button><button id="remove-terminal-context" type="button" aria-label="Remove terminal context">×</button></span>
+          <button id="inference-summary" class="inference-summary" type="button" hidden></button>
+        </div>
         <label class="sr-only" for="message">Message your assistant</label>
         <textarea id="message" placeholder="Message your assistant…" rows="1" aria-describedby="long-text"></textarea>
         <div id="long-text" hidden><span>Your text is kept. Attach it as a file to send it.</span><button id="attach-text" type="button">Attach as text file</button></div>
@@ -37,10 +42,43 @@
         <div id="notice" role="alert" hidden><span id="notice-text"></span><button id="notice-action" type="button" hidden>Retry</button></div>
         <div class="compose-footer">
           <button id="attach" type="button" aria-label="Attach files" title="Attach files, or paste or drop them here"><span aria-hidden="true">＋</span> Attach</button>
+          <details id="message-options" class="message-options">
+            <summary id="message-options-toggle" aria-label="Message options" title="Message options">Message options</summary>
+            <div class="message-options-panel">
+              <h2>Message options</h2>
+              <div id="browser-context-chip" class="browser-context-chip" hidden><label><input id="use-browser-context" type="checkbox" checked><span id="browser-context-label"></span></label><button id="open-browser-context" type="button">Open browser</button></div>
+              <div id="terminal-context-chip" class="browser-context-chip" hidden><label><input id="use-terminal-context" type="checkbox"><span>Include terminal context</span></label><button id="open-terminal-context" type="button">Open terminal</button></div>
+              <div id="inference-controls" aria-label="Settings for your next message"></div>
+            </div>
+          </details>
           <output id="reply-status" aria-live="polite"></output>
           <button class="primary" id="send" type="submit" title="Send · Enter on desktop, Shift+Enter for a new line">Send ↗</button>
         </div>
       </form>
+    </section>
+    <section id="agent-page" class="workspace-page" aria-labelledby="agent-title" hidden>
+      <div class="workspace-heading"><div><h1 id="agent-title" tabindex="-1">Your Agent</h1><p class="intro">Make this space feel like yours.</p></div></div>
+      <div id="agent-profile-content"></div>
+    </section>
+    <section id="library-view" class="workspace-page" aria-labelledby="library-title" hidden>
+      <div class="workspace-heading"><div><h1 id="library-title" tabindex="-1">Library</h1><p class="intro">Your uploaded files and files shared by Radhouse.</p></div><button id="library-refresh" type="button">Refresh</button></div>
+      <div class="library-filters"><label>Search files<input id="library-search" type="search" placeholder="Search by filename…" maxlength="512"></label><label>Shared by<select id="library-source"><option value="all">Everyone</option><option value="user">You</option><option value="assistant">Radhouse</option></select></label></div>
+      <p id="library-status" role="status" aria-live="polite"></p>
+      <div id="library-files" class="library-files"></div>
+      <button id="library-more" type="button" hidden>Show more files</button>
+    </section>
+    <section id="browser-page" class="workspace-page browser-page" aria-labelledby="browser-title" hidden>
+      <div class="workspace-heading"><div><h1 id="browser-title" tabindex="-1">Browser</h1><p class="intro">The same browser your assistant uses.</p></div></div>
+      <section id="assistant-browser" aria-label="Assistant browser" hidden></section>
+      <p id="browser-idle-hint" class="intro">A browser opens only when you choose to use it.</p>
+    </section>
+    <section id="terminal-page" class="workspace-page" aria-labelledby="terminal-title" hidden>
+      <div class="workspace-heading"><div><h1 id="terminal-title" tabindex="-1">Terminal</h1><p class="intro">Your own terminal on the agent VM.</p></div></div>
+      <div id="owner-terminal"></div>
+    </section>
+    <section id="about-you-page" class="workspace-page" aria-labelledby="about-you-title" hidden>
+      <div class="workspace-heading"><div><h1 id="about-you-title" tabindex="-1">About You</h1><p class="intro">Saved notes your assistant can read.</p></div></div>
+      <div id="about-you-content"></div>
     </section>
     <output id="loading">Opening your conversation…</output>
   </main>

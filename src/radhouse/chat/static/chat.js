@@ -34,40 +34,173 @@ const explanations = {
   draft_storage_unavailable:"Your browser couldn’t save this draft. Keep this tab open and retry saving it.",
   draft_recovery_in_tab:"You’re signed out. Keep this tab open and sign in here to recover the draft your browser couldn’t save.",
   original_unavailable:"This browser no longer has the unsent original. Edit this message and attach the file again.",
+  browser_context_changed:"The browser changed before this message was received. Take control of the current page and send a new message.",
+  browser_binding_unavailable:"Reconnect to use browser control. Your message and files are kept.",
+  message_options_changed:"This message already has different saved settings or terminal context. Reconnect to check it.",
+  inference_catalog_unavailable:"Model choices are unavailable. Select Default or refresh models before sending.",
+  inference_model_unavailable:"That model is no longer available. Choose an available model or Default.",
+  inference_selection_changed:"The assistant’s model settings changed. Choose a model and send a new message.",
+  inference_selection_invalid:"Choose an available model and thinking setting before sending.",
+  inference_thinking_unavailable:"That thinking setting is no longer supported. Choose Default or refresh models.",
+  terminal_unavailable:"The terminal is unavailable. Your message is kept.",
+  terminal_context_unavailable:"Open the terminal before including its context, or turn off Include terminal context.",
 };
-let session=null, turns=new Map(), outbox=null, busy=false, polling=false, filesLoading=false;
+let session=null, turns=new Map(), outbox=null, busy=false, polling=false, filesLoading=false, capturingContext=false;
+let captureEpoch=0;
 let olderBefore=null, olderLoaded=false, openingHistory=false, followingLatest=true;
 let pendingLookup=null;
 const emptyDraft = () => ({text:"",attachments:[]});
 let draft=emptyDraft(), noticeCode=null, noticeAction=null, draftSignature="";
 const turnNodes=new Map(), previewUrls=new Map();
 const retainedSnapshots=new Map();
-const browserView=typeof window.BrowserView==="function" ? new window.BrowserView($("assistant-browser")) : null;
+const browserView=typeof window.BrowserView==="function" ? new window.BrowserView($("assistant-browser"),
+  {persistent:true,request:browserRequest,onReturn:returnBrowser,tab:browserTab}) : null;
+const workspacePages=["/agent","/library","/browser","/terminal","/about-you"];
+let currentPage=typeof location!=="undefined" && workspacePages.includes(location.pathname) ? location.pathname : "/";
+const library=typeof window.RadhouseLibrary==="function" ? new window.RadhouseLibrary({request:api,card:fileCard,openMessage}) : null;
+const aboutYou=typeof window.RadhouseAboutYou==="function" ? new window.RadhouseAboutYou({container:$("about-you-content"),request:api,onAuthRequired:()=>showLogin(true)}) : null;
+const inferenceControls=typeof window.RadhouseInference==="function" ? new window.RadhouseInference({container:$("inference-controls"),request:api,onAuthRequired:()=>showLogin(true),onChange:()=>updateMessageOptions()}) : null;
+let assistantDisplayName="Your Agent";
+const agentProfile=typeof window.RadhouseAgentProfile==="function" ? new window.RadhouseAgentProfile({container:$("agent-profile-content"),request:api,
+  onAuthRequired:()=>showLogin(true),onChange:profile=>{
+    assistantDisplayName=profile?.name?.trim() || "Your Agent";
+    document.querySelectorAll(".assistant-name").forEach(label=>{label.textContent=assistantDisplayName;});
+    if(session)controls();
+  }}) : null;
+const ownerTerminal=typeof window.OwnerTerminalView==="function" ? new window.OwnerTerminalView($("owner-terminal"),
+  {request:(path,body,method="POST",signal)=>api(path,body,false,signal,method),tab:browserTab,
+    onAuthRequired:()=>showLogin(true),onContextChange:wanted=>{terminalContextWanted=Boolean(wanted);updateTerminalChip();}}) : null;
+let terminalContextWanted=false;
 let browserEpoch=0, browserStatusRequest=null, browserRequestId=null, browserSuspended=false;
+let browserTabId=null,lastBrowserStatus=null,browserContextWanted=true,lastBrowserActivity=0,browserHeartbeat=false;
+function browserTab() {
+  if(browserTabId)return browserTabId;
+  try { browserTabId=sessionStorage.getItem("radhouse-browser-tab"); } catch { /* A tab can operate without storage. */ }
+  if(!/^[a-f0-9-]{36}$/.test(browserTabId || ""))browserTabId=crypto.randomUUID();
+  try { sessionStorage.setItem("radhouse-browser-tab",browserTabId); } catch { /* Keep the same binding in this page. */ }
+  return browserTabId;
+}
+function browserRequest(path,body,method="POST") { return api(path,body,false,undefined,method); }
+function currentBrowserContextAvailable() {
+  return Boolean(lastBrowserStatus?.state==="live" && lastBrowserStatus?.generation &&
+    ["human","agent"].includes(lastBrowserStatus?.control?.mode));
+}
+function updateBrowserChip() {
+  const current=currentBrowserContextAvailable(),
+    page=current ? {url:lastBrowserStatus.url,title:lastBrowserStatus.title} : lastBrowserStatus?.page_context?.previous;
+  const chip=$("browser-context-chip"); if(!chip)return;
+  chip.hidden=!session || session.features?.browser_control!==true || !page?.url;
+  if(!chip.hidden) {
+    $("browser-context-label").textContent=(current ? "Use current page: " : "Use previous page: ")+(page.title || page.url);
+    $("use-browser-context").checked=browserContextWanted;
+  }
+  updateMessageOptions();
+}
+function updateTerminalChip() {
+  const chip=$("terminal-context-chip"); if(!chip)return;
+  chip.hidden=!session || session.features?.terminal!==true;
+  $("use-terminal-context").checked=terminalContextWanted;
+  updateMessageOptions();
+}
+function updateMessageOptions() {
+  const current=currentBrowserContextAvailable();
+  const page=current ? {url:lastBrowserStatus.url,title:lastBrowserStatus.title} : lastBrowserStatus?.page_context?.previous;
+  const browserIncluded=Boolean(session?.features?.browser_control && browserContextWanted && page?.url);
+  const terminalIncluded=Boolean(session?.features?.terminal && terminalContextWanted);
+  const selection=inferenceControls?.selection();
+  const inferenceSelected=Boolean(selection?.model || selection?.thinking && selection.thinking!=="default");
+  $("browser-context-summary").hidden=!browserIncluded;
+  $("terminal-context-summary").hidden=!terminalIncluded;
+  $("inference-summary").hidden=!inferenceSelected;
+  $("active-message-options").hidden=!(browserIncluded || terminalIncluded || inferenceSelected);
+  if(browserIncluded){
+    const full=(current ? "Current page: " : "Previous page: ")+(page.title || page.url);
+    const brief=(page.title || page.url).slice(0,40);
+    const button=$("review-browser-context");button.title=full;
+    if(window.RadhouseIcons)window.RadhouseIcons.decorate(button,"browser",brief+(brief.length<(page.title || page.url).length ? "…" : ""),{accessibleLabel:"Review included browser context: "+full});
+    else button.textContent=brief;
+  }
+  if(inferenceSelected){
+    const text=[selection.model,selection.thinking!=="default" ? "Thinking: "+selection.thinking : null].filter(Boolean).join(" · ");
+    $("inference-summary").textContent=text;$("inference-summary").title="Message settings: "+text;
+  }
+}
+function openMessageOptions(focusId) {
+  $("message-options").open=true;
+  if(focusId)$(focusId).focus();
+}
+$("review-browser-context").addEventListener("click",()=>openMessageOptions("use-browser-context"));
+$("review-terminal-context").addEventListener("click",()=>openMessageOptions("use-terminal-context"));
+$("inference-summary").addEventListener("click",()=>{openMessageOptions();inferenceControls?.model.focus();});
+$("remove-browser-context").addEventListener("click",()=>{browserContextWanted=false;updateBrowserChip();$("message").focus();});
+$("remove-terminal-context").addEventListener("click",()=>{terminalContextWanted=false;if(ownerTerminal)ownerTerminal.contextEnabled=false;updateTerminalChip();$("message").focus();});
+window.RadhouseIcons?.decorate($("message-options-toggle"),"settings","Message options",{compact:true});
+window.RadhouseIcons?.decorate($("attach"),"attach","Attach files",{compact:true});
+window.RadhouseIcons?.decorate($("review-terminal-context"),"terminal-context","Terminal context");
+for(const [id,name,label] of [["remove-browser-context","close","Remove browser context"],["remove-terminal-context","close","Remove terminal context"],
+  ["open-browser-context","browser","Open browser"],["open-terminal-context","terminal","Open terminal"]]){
+  window.RadhouseIcons?.decorate($(id),name,label,{compact:true});
+}
+document.addEventListener("pointerdown",event=>{if($("message-options").open && !$("message-options").contains(event.target))$("message-options").open=false;});
+$("message-options").addEventListener("keydown",event=>{if(event.key==="Escape" && $("message-options").open){event.preventDefault();$("message-options").open=false;$("message-options-toggle").focus();}});
+function outgoingBrowserContext() {
+  const control=lastBrowserStatus?.control;
+  if(!browserContextWanted || !currentBrowserContextAvailable())return null;
+  return {generation:lastBrowserStatus.generation,revision:control.revision,lease_id:control.lease_id || null};
+}
+async function returnBrowser(binding) {
+  if(!session || busy || pendingTurn())return;
+  if(!browserAnchor()) { browserContextWanted=true;showPage("/",true,true);updateBrowserChip();return; }
+  const returningSession=session;busy=true;controls();
+  try {
+    const data=await api("/chat/browser/return",{...binding,request_id:crypto.randomUUID()});
+    if(session!==returningSession)return;
+    accept(data);showPage("/",true,true);
+  } catch(error) { if(session===returningSession)tell(error.message,refreshHistory); }
+  finally { if(session===returningSession){busy=false;controls();} }
+}
+function browserAnchor() { return [...turns.values()].sort((a,b)=>b.seq-a.seq)[0]?.request_id || null; }
 function stopBrowser() {
   browserEpoch++; browserStatusRequest?.controller.abort(); browserStatusRequest=null;
   browserRequestId=null; browserView?.stop();
 }
 async function refreshBrowser() {
-  const pending=pendingTurn();
-  if (!browserView || !session || session.features?.browser!==true || !pending || browserSuspended || openingHistory) {
+  const controlled=session?.features?.browser_control===true;
+  if (!browserView || !session || (!controlled && currentPage!=="/browser") || browserSuspended || openingHistory) {
     stopBrowser(); return;
   }
+  // Instance wiring comes from the authenticated session, not a status request
+  // that may fail while the browser service is temporarily unavailable.
+  browserView.controlEnabled=controlled;
+  if (session.features?.browser!==true) {
+    browserView.update({state:"idle"});
+    $("browser-idle-hint").hidden=false;
+    $("browser-idle-hint").textContent="Browsing isn’t connected to this instance yet.";
+    return;
+  }
   if (document.hidden) { return; }
-  if (browserRequestId!==pending.request_id) { stopBrowser(); browserRequestId=pending.request_id; }
+  const anchor=browserAnchor();
+  if (!controlled && browserRequestId!==anchor) { stopBrowser(); browserRequestId=anchor; }
   if (browserStatusRequest) { return; }
-  const request={session,request_id:pending.request_id,epoch:browserEpoch,controller:new AbortController()};
+  const request={session,anchor,epoch:browserEpoch,controller:new AbortController()};
   browserStatusRequest=request;
   const timeout=setTimeout(()=>request.controller.abort(),5000);
   const current=()=>session===request.session && browserEpoch===request.epoch && !browserSuspended &&
-    pendingTurn()?.request_id===request.request_id && session.features?.browser===true;
+    (controlled || currentPage==="/browser" && browserAnchor()===request.anchor) && session.features?.browser===true;
   try {
     const status=await api("/chat/browser",undefined,false,request.controller.signal);
-    if (current()) { browserView.update(status); }
+    if (current()) {
+      if(lastBrowserStatus?.state==="live" && status.state==="idle")browserContextWanted=false;
+      lastBrowserStatus=status;updateBrowserChip();
+      if(currentPage==="/browser" && !browserView.actionPending)browserView.update(status);
+      $("browser-idle-hint").hidden=status.state!=="idle";
+      $("browser-idle-hint").textContent=controlled ? "A browser opens only when you choose to use it." : "Browser control is not connected to this instance yet.";
+    }
   } catch {
     // The current request becomes unavailable; cancelled or obsolete requests stay quiet.
-    if (current() && !request.controller.signal.aborted) {
+    if (current()) {
       browserView.update({state:"unavailable",run_id:browserView.run,generation:null,url:null});
+      $("browser-idle-hint").hidden=true;
     }
   } finally {
     clearTimeout(timeout);
@@ -75,6 +208,21 @@ async function refreshBrowser() {
   }
 }
 $("assistant-browser").addEventListener("browser-auth-required",()=>{ if (session) { showLogin(true); } });
+$("assistant-browser").addEventListener("browser-activity",()=>{lastBrowserActivity=Date.now();void refreshBrowser();});
+$("assistant-browser").addEventListener("browser-state",event=>{
+  if(!session)return;
+  browserEpoch++;browserStatusRequest?.controller.abort();browserStatusRequest=null;
+  if(lastBrowserStatus?.state!=="live" && event.detail.state==="live")browserContextWanted=true;
+  if(event.detail.state==="idle")browserContextWanted=false;
+  lastBrowserStatus=event.detail;updateBrowserChip();
+});
+$("use-browser-context").addEventListener("change",event=>{browserContextWanted=event.target.checked;lastBrowserActivity=Date.now();updateBrowserChip();});
+$("open-browser-context").addEventListener("click",()=>{lastBrowserActivity=Date.now();showPage("/browser",true,true);});
+$("use-terminal-context").addEventListener("change",event=>{terminalContextWanted=event.target.checked;if(ownerTerminal)ownerTerminal.contextEnabled=terminalContextWanted;updateTerminalChip();});
+$("open-terminal-context").addEventListener("click",()=>showPage("/terminal",true,true));
+for(const event of ["pointerdown","keydown","wheel"])document.addEventListener(event,()=>{
+  if(session && (currentPage==="/browser" || currentPage==="/" && browserContextWanted))lastBrowserActivity=Date.now();
+},{passive:true});
 document.addEventListener("visibilitychange",()=>{
   browserEpoch++; browserStatusRequest?.controller.abort(); browserStatusRequest=null;
   if (!document.hidden) { void refreshBrowser(); }
@@ -95,7 +243,61 @@ function tell(code, action=null) {
   $("notice-action").textContent=["csrf_denied","request_origin_denied","message_conflict"].includes(code) ? "Reconnect" : "Retry";
 }
 function clearNotice() { noticeCode=null; noticeAction=null; $("notice").hidden=true; $("login-notice").hidden=true; }
-function managementNavigation() { $("management-nav").hidden=session?.management?.read!==true; }
+function managementNavigation() {
+  if (window.RadhouseNavigation) { window.RadhouseNavigation.update(session); }
+  else { $("management-nav").hidden=!session; }
+}
+let chatScroll=0, workspaceEpoch=0;
+function showPage(path, push=false, focus=false) {
+  workspaceEpoch++;
+  if (currentPage==="/" && path!=="/") { chatScroll=$("history-pane").scrollTop; }
+  currentPage=workspacePages.includes(path) ? path : "/";
+  if(currentPage==="/browser")lastBrowserActivity=Date.now();
+  if (push && typeof history!=="undefined") { history.pushState(null,"",currentPage); }
+  $("chat-view").hidden=!session || currentPage!=="/";
+  $("library-view").hidden=!session || currentPage!=="/library";
+  $("browser-page").hidden=!session || currentPage!=="/browser";
+  $("terminal-page").hidden=!session || currentPage!=="/terminal";
+  $("about-you-page").hidden=!session || currentPage!=="/about-you";
+  $("agent-page").hidden=!session || currentPage!=="/agent";
+  agentProfile?.setVisible(Boolean(session && currentPage==="/agent"));
+  $("message-options").open=false;
+  const pageTitles={"/agent":"Your Agent","/library":"Library","/browser":"Browser","/terminal":"Terminal","/about-you":"About You"};
+  document.title=currentPage==="/" ? "Radhouse" : pageTitles[currentPage]+" · Radhouse";
+  managementNavigation();
+  if (currentPage!=="/library") { library?.cancel(); }
+  else if (session && !openingHistory) { void library?.load(); }
+  if (currentPage!=="/browser") { stopBrowser(); }
+  else { void refreshBrowser(); }
+  if (currentPage!=="/terminal" || !session || openingHistory) { ownerTerminal?.hide(); }
+  else { void ownerTerminal?.show(); }
+  if (currentPage!=="/about-you" || !session || openingHistory) { aboutYou?.cancel(); }
+  else { void aboutYou?.load(); }
+  if (currentPage==="/" && session) {
+    resizeMessage(); $("history-pane").scrollTop=followingLatest ? $("history-pane").scrollHeight : chatScroll;
+  }
+  if (focus) { $(currentPage==="/" ? "message" : currentPage.slice(1)+"-title").focus(); }
+}
+async function openMessage(requestId, push=true) {
+  if (!session) return;
+  showPage("/",false);
+  if (push && typeof history!=="undefined") { history.pushState(null,"","/?message="+encodeURIComponent(requestId)); }
+  const readingSession=session, pageEpoch=workspaceEpoch;
+  try {
+    if (!turnNodes.has(requestId)) {
+      const result=await api("/chat/messages/"+encodeURIComponent(requestId));
+      if (session!==readingSession || workspaceEpoch!==pageEpoch || currentPage!=="/") return;
+      rememberTurn(result.turn); followingLatest=false; render();
+    }
+    const node=turnNodes.get(requestId)?.node;
+    if (node) { followingLatest=false; node.tabIndex=-1; node.focus({preventScroll:true}); node.scrollIntoView({block:"start"}); updateLatest(); }
+  } catch (error) { if (session===readingSession && workspaceEpoch===pageEpoch && currentPage==="/") { tell(error.message,refreshHistory); } }
+}
+window.addEventListener("popstate",()=>{
+  showPage(location.pathname,false);
+  const message=new URLSearchParams(location.search).get("message");
+  if (currentPage==="/" && message) { void openMessage(message,false); }
+});
 function key() { return "radhouse-chat-draft:"+session.username; }
 let draftDatabase;
 function database() {
@@ -146,12 +348,15 @@ function saveState() {
   return draftWrites;
 }
 function persist() { const savingSession=session; return saveState().catch(() => { if (session===savingSession) { tell("draft_storage_unavailable",persist); } }); }
-$("management-nav").addEventListener("click",async event => {
+async function handleWorkspaceNavigation(event) {
   const link=event.target.closest("a");
   if (!link || event.button!==0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) { return; }
   event.preventDefault();
   const destination=new URL(link.href);
-  if (destination.pathname==="/" || !session || openingHistory || managementLeaving) { return; }
+  if (!session || openingHistory || managementLeaving) { return; }
+  if (["/",...workspacePages].includes(destination.pathname)) {
+    void persist(); showPage(destination.pathname,true,true); return;
+  }
   const leavingSession=session; managementLeaving=true;
   try {
     // Full-page navigation must not discard the only unsent original. Also
@@ -164,11 +369,18 @@ $("management-nav").addEventListener("click",async event => {
     }
   } catch { if (session===leavingSession) { tell("draft_storage_unavailable",persist); } }
   finally { managementLeaving=false; }
-});
+}
+$("management-nav").addEventListener("click",handleWorkspaceNavigation);
+document.addEventListener("click",event=>{if(event.target.closest?.(".rh-header-portrait"))void handleWorkspaceNavigation(event);});
 function releaseFile(file) { const url=previewUrls.get(file.file_id); if (url) { URL.revokeObjectURL(url); } previewUrls.delete(file.file_id); }
 function releasePreviews() { for (const url of previewUrls.values()) { URL.revokeObjectURL(url); } previewUrls.clear(); }
 function showLogin(expired=false) {
+  captureEpoch++; capturingContext=false;
   stopBrowser(); browserSuspended=false;
+  lastBrowserStatus=null;updateBrowserChip();
+  library?.clear();
+  aboutYou?.clear(); inferenceControls?.clear(); agentProfile?.clear(); ownerTerminal?.dispose(); terminalContextWanted=false;
+  assistantDisplayName="Your Agent";$("message-options").open=false;
   if (session) {
     $("username").value=session.username;
     // Keep the only original in this tab when browser storage is unavailable.
@@ -181,14 +393,17 @@ function showLogin(expired=false) {
   busy=false; polling=false; filesLoading=false; openingHistory=false;
   $("messages").replaceChildren(); $("draft-files").replaceChildren(); $("message").value="";
   $("chat-view").hidden=true; $("logout").hidden=true; $("login-view").hidden=false; $("loading").hidden=true;
+  $("library-view").hidden=true; $("browser-page").hidden=true;
+  $("terminal-page").hidden=true; $("about-you-page").hidden=true; $("agent-page").hidden=true; updateTerminalChip();
   clearNotice(); if (expired) { tell("authentication_required"); }
 }
-async function api(path,body,initial=false,signal=undefined) {
+async function api(path,body,initial=false,signal=undefined,method=undefined) {
   const requestingSession=session;
   const headers={};
+  if(session?.features?.browser_control===true || session?.features?.terminal===true)headers["X-Radhouse-Browser-Tab"]=browserTab();
   if (body!==undefined) { headers["Content-Type"]="application/json"; if (session) { headers["X-Radhouse-CSRF"]=session.csrf_token; } }
   let response;
-  try { response=await fetch(path,{method:body===undefined ? "GET" : "POST",headers,body:body===undefined ? undefined : JSON.stringify(body),signal}); }
+  try { response=await fetch(path,{method:method || (body===undefined ? "GET" : "POST"),headers,body:body===undefined ? undefined : JSON.stringify(body),signal}); }
   catch { throw new Error("network_error"); }
   if (!response.ok) {
     let value; try { value=await response.json(); } catch { value={}; }
@@ -281,7 +496,8 @@ function fileCard(file,url,removable) {
   card.append(info);
   if (removable) {
     const remove=document.createElement("button"); remove.type="button"; remove.className="remove-file"; remove.textContent="×"; remove.setAttribute("aria-label","Remove "+file.name);
-    remove.addEventListener("click",() => { releaseFile(file); draft.attachments=draft.attachments.filter(a => a.file_id!==file.file_id); persist(); render(); $("attach").focus(); }); card.append(remove);
+    remove.dataset.removeFile="true"; remove.disabled=capturingContext;
+    remove.addEventListener("click",() => { if(capturingContext)return;releaseFile(file); draft.attachments=draft.attachments.filter(a => a.file_id!==file.file_id); persist(); render(); $("attach").focus(); }); card.append(remove);
   }
   return card;
 }
@@ -297,11 +513,34 @@ function attachmentList(turn) {
   }
   return files;
 }
+// Presentation cues use known reply states; they do not infer VM activity.
+function agentMark(state) {
+  const icon=window.RadhouseIcons?.create("agent");
+  if(icon)window.RadhouseIcons.setAgentState(icon,state);
+  return icon;
+}
+function replyAgentState(turn) {
+  if(turn.error || ["failed","interrupted","cancelled"].includes(turn.status))return "error";
+  if(turn.status==="completed")return "complete";
+  return turn.status==="awaiting_dispatch" ? "waiting" : "thinking";
+}
 function assistantReply(turn) {
   const reply=document.createElement("div"); reply.className="assistant";
-  const name=document.createElement("p"), answer=document.createElement("div"), copy=document.createElement("button"); name.className="message-label"; name.textContent="Radhouse";
-  answer.className="answer"; answer.append(window.RadhouseFormat.render(turn.output)); copy.type="button"; copy.className="copy-answer"; copy.dataset.label="Copy answer"; copy.textContent="Copy answer";
-  copy.addEventListener("click",() => window.RadhouseFormat.copyText(turn.output,copy)); reply.append(name,answer,copy); return reply;
+  const name=document.createElement("p"), answer=document.createElement("div"), copy=document.createElement("button"); name.className="message-label rh-agent-label";
+  const identity=document.createElement("span");identity.className="assistant-name";identity.textContent=assistantDisplayName;name.append(identity);
+  const icon=agentMark(replyAgentState(turn));if(icon)name.prepend(icon);
+  answer.className="answer"; answer.append(window.RadhouseFormat.render(turn.output || "")); copy.type="button"; copy.className="copy-answer"; copy.dataset.label="Copy"; copy.dataset.copyKind="answer"; copy.dataset.accessibleLabel="Copy answer"; copy.setAttribute("aria-label","Copy answer"); copy.textContent="Copy"; copy.hidden=!turn.output;
+  window.RadhouseIcons?.decorate(copy,"clipboard","Copy",{compact:true,accessibleLabel:"Copy answer"});
+  copy.addEventListener("click",() => window.RadhouseFormat.copyText(turn.output,copy)); reply.append(name,answer);
+  if (turn.shared_files?.length) {
+    const files=document.createElement("div"); files.className="attachments";
+    turn.shared_files.forEach(file=>files.append(fileCard(file,file.download_url,false))); reply.append(files);
+  }
+  if (turn.output && turn.status==="failed") {
+    const notice=document.createElement("p"); notice.className="turn-error";
+    notice.textContent="Reply ended before finishing."; reply.append(notice);
+  }
+  reply.append(copy); return reply;
 }
 function turnStatusText(turn) {
   if (turn.error) return explanations[turn.error] || "This message needs attention. Its text and files are kept.";
@@ -316,6 +555,7 @@ function turnStatusText(turn) {
 function pendingReply(block, turn) {
   const status=document.createElement("p"); status.className=turn.error ? "turn-error" : "pending";
   status.textContent = turnStatusText(turn);
+  if(!turn.local){const icon=agentMark(replyAgentState(turn));if(icon){status.prepend(icon);status.classList.add("rh-agent-label");}}
   block.append(status);
   if (turn.local && turn.phase==="uploading") { const progress=document.createElement("p"); progress.className="sending-files"; progress.dataset.uploadProgress=""; block.append(progress); }
   if (turn.local && turn.error) {
@@ -329,9 +569,19 @@ function makeTurn(turn) {
   const block=document.createElement("article"); block.className="turn"; block.dataset.requestId=turn.request_id;
   const label=document.createElement("p"), text=document.createElement("p"); label.className="message-label"; label.textContent="You";
   text.className="message-text"; text.textContent=turn.text; block.append(label,text);
+  if (turn.inference) {
+    const settings=document.createElement("p"); settings.className="message-label";
+    settings.textContent=(turn.inference.model || "Default model") + (turn.inference.thinking!=="default" ? " · Thinking: "+turn.inference.thinking : "");
+    block.append(settings);
+  }
+  if (turn.terminal_context) {
+    const details=document.createElement("details"), summary=document.createElement("summary"), excerpt=document.createElement("pre");
+    summary.textContent="Shared terminal excerpt"; excerpt.textContent=turn.terminal_context.text;
+    excerpt.className="message-text"; details.append(summary,excerpt); block.append(details);
+  }
   if (turn.attachments?.length) { block.append(attachmentList(turn)); }
-  if (turn.output) { block.append(assistantReply(turn)); }
-  else { pendingReply(block, turn); }
+  if (turn.output || turn.shared_files?.length) { block.append(assistantReply(turn)); }
+  if (!turn.output && (turn.error || !terminal.has(turn.status) || !turn.shared_files?.length)) { pendingReply(block, turn); }
   return block;
 }
 
@@ -381,17 +631,37 @@ function resizeMessage() { const input=$("message"); input.style.height="auto"; 
 function replyStatus(pending) {
   if (filesLoading) return "Adding files…";
   if (busy) return outbox?.phase === "uploading" ? "Uploading…" : "Sending…";
-  return pending ? "Radhouse is replying…" : "";
+  return pending ? assistantDisplayName+" is replying…" : "";
 }
 function controls() {
   const pending=pendingTurn(), tooLong=!messageFits($("message").value), hasContent=!!($("message").value.trim() || draft.attachments.length);
-  $("message").disabled=openingHistory;
+  $("message").disabled=openingHistory || capturingContext;
   $("send").disabled=busy || filesLoading || !!pending || !!outbox || tooLong || !hasContent || openingHistory;
-  $("attach").disabled=filesLoading || openingHistory; $("attach-text").disabled=filesLoading || openingHistory; $("long-text").hidden=!tooLong;
-  $("send").textContent=busy ? "Sending…" : "Send ↗";
-  $("reply-status").textContent = replyStatus(pending);
+  $("attach").disabled=filesLoading || openingHistory || capturingContext; $("attach-text").disabled=filesLoading || openingHistory || capturingContext; $("long-text").hidden=!tooLong;
+  inferenceControls?.setDisabled(busy || openingHistory);
+  $("inference-controls").hidden=session?.features?.inference!==true;
+  $("message-options").hidden=!session || !["browser_control","terminal","inference"].some(feature=>session.features?.[feature]===true);
+  const latest=[...turns.values()].sort((a,b)=>b.seq-a.seq)[0];
+  const state=pending ? replyAgentState(pending) : latest && ["failed","cancelled","interrupted"].includes(latest.status) ? "error" : "ready";
+  window.RadhouseNavigation?.setAgentState?.(state,pending ? replyStatus(pending) : state==="error" ? "Last reply needs attention" : "Ready");
+  document.querySelectorAll("[data-remove-file]").forEach(button=>{button.disabled=capturingContext;});
+  if(window.RadhouseIcons){window.RadhouseIcons.decorate($("send"),"send",busy ? "Sending…" : "Send");window.RadhouseIcons.busy($("send"),busy);}
+  else $("send").textContent=busy ? "Sending…" : "Send";
+  const status=$("reply-status"),text=replyStatus(pending);
+  const showAgent=pending && !pending.local && !filesLoading && !busy;
+  // Preserve the same SVG through polling so ongoing state motion stays smooth.
+  let icon=status.querySelector('.rh-icon[data-icon="agent"]'),label=status.querySelector("span");
+  if(!label){label=document.createElement("span");status.replaceChildren(label);}
+  label.textContent=text;
+  if(showAgent){
+    if(!icon){icon=agentMark(replyAgentState(pending));if(icon)status.prepend(icon);}
+    if(icon)window.RadhouseIcons.setAgentState(icon,replyAgentState(pending));
+  }else icon?.remove();
+  if(!$("empty").querySelector('.rh-icon')){const idle=agentMark("idle");if(idle)$("empty").prepend(idle);}
   document.querySelectorAll(".retry,#notice-action").forEach(button => { button.disabled=busy || openingHistory || button.dataset.outgoing==="true" && !!pending; });
   resizeMessage();
+  updateBrowserChip();
+  updateTerminalChip();
 }
 function render(options) { renderHistory(options); renderDraft(); controls(); }
 function migrateFile(file) {
@@ -438,14 +708,19 @@ async function finishOpening(openingSession,generation) {
   if (!currentOpening(openingSession,generation)) { return; }
   if (!draftWriteFailed) retainedSnapshots.delete(openingSession.username);
   render(); void refreshBrowser();
-  if (!matchMedia("(pointer:coarse)").matches) $("message").focus();
+  showPage(currentPage);
+  const message=typeof location!=="undefined" ? new URLSearchParams(location.search).get("message") : null;
+  if (currentPage==="/" && message) { void openMessage(message,false); }
+  if (currentPage==="/" && !message && !matchMedia("(pointer:coarse)").matches) $("message").focus();
 }
 async function openConversation() {
   stopBrowser(); browserSuspended=false;
   const openingSession=session, generation=++openingGeneration; openingHistory=true; followingLatest=true; olderLoaded=false; olderBefore=null;
   turns.clear(); turnNodes.clear(); $("messages").replaceChildren(); draftSignature=""; draft=emptyDraft(); outbox=null;
-  $("login-view").hidden=true; $("chat-view").hidden=false; $("logout").hidden=false; $("loading").hidden=true;
-  managementNavigation();
+  $("login-view").hidden=true; $("logout").hidden=false; $("loading").hidden=true;
+  showPage(currentPage);
+  if(session.features?.inference===true) { void inferenceControls?.load(); }
+  void agentProfile?.load();
   controls();
   const storageKey=key(); let stored, fallback;
   try { stored=await draftOperation(storageKey); } catch { /* Recover through the text fallback or this tab’s retained originals. */ }
@@ -516,7 +791,9 @@ async function prepareOutgoingFiles(box, sendingSession) {
 async function recoverOutgoing(box, sendingSession, error) {
   if (session===sendingSession && outbox===box) {
     box.phase="failed"; box.error=error.message;
-    if ([413,422].includes(error.status) || error.message==="reply_pending") { box.transmitted=false; }
+    if ([413,422].includes(error.status) || ["reply_pending","inference_catalog_unavailable",
+      "inference_model_unavailable","inference_thinking_unavailable","inference_selection_changed",
+      "terminal_context_unavailable"].includes(error.message)) { box.transmitted=false; }
     await persist();
     if (["csrf_denied","request_origin_denied"].includes(error.message)) { tell(error.message,refreshHistory); }
     try { const data=await api("/chat/history"); if (session===sendingSession) { accept(data); } } catch { /* The failed outbox and its retry identity are already retained. */ }
@@ -534,7 +811,11 @@ async function transmit(box) {
     if (!await prepareOutgoingFiles(box, sendingSession)) return;
     box.phase="sending"; box.transmitted=true; await saveState(); render();
     if (session!==sendingSession) { return; }
-    const data=await api("/chat/messages",{request_id:box.request_id,text:box.text,attachments:box.attachments.map(a => a.file_id)});
+    const data=await api("/chat/messages",{request_id:box.request_id,text:box.text,attachments:box.attachments.map(a => a.file_id),
+      ...(box.inference ? {inference:box.inference} : {}),
+      ...(box.terminal_context ? {terminal_context:box.terminal_context} : {}),
+      ...(box.browser_context ? {browser_context:box.browser_context} : {}),
+      ...(box.use_previous_browser ? {use_previous_browser:true} : {})});
     if (session===sendingSession) { accept(data); }
   } catch (error) {
     await recoverOutgoing(box, sendingSession, error);
@@ -561,7 +842,7 @@ function editOutgoing() {
   $("message").value=draft.text; persist(); render(); if (missingFiles) { tell("original_unavailable"); } $("message").focus();
 }
 async function addFiles(fileList) {
-  if (!session || filesLoading || openingHistory) { return; }
+  if (!session || filesLoading || openingHistory || capturingContext) { return; }
   const addingSession=session; filesLoading=true; clearNotice(); controls();
   try {
     draft.attachments.push(...[...fileList].map(file => ({name:file.name,blob:file,file_id:crypto.randomUUID(),kind:fileKind(file),type:file.type,size:file.size})));
@@ -588,10 +869,34 @@ $("compose").addEventListener("paste",event => { const files=[...(event.clipboar
 $("chat-view").addEventListener("dragover",event => { if ([...event.dataTransfer.types].includes("Files")) { event.preventDefault(); $("compose").classList.add("dragging"); } });
 $("chat-view").addEventListener("dragleave",event => { if (!$("chat-view").contains(event.relatedTarget)) { $("compose").classList.remove("dragging"); } });
 $("chat-view").addEventListener("drop",event => { event.preventDefault(); $("compose").classList.remove("dragging"); addFiles(event.dataTransfer.files); });
-$("compose").addEventListener("submit",event => {
+$("compose").addEventListener("submit",async event => {
   event.preventDefault();
   if ($("send").disabled) { return; }
-  outbox={request_id:crypto.randomUUID(),text:$("message").value,attachments:draft.attachments,phase:"sending",transmitted:false,error:null};
+  const sendingSession=session, text=$("message").value, attachments=[...draft.attachments],
+    selection=inferenceControls?.selection() || null, browser_context=outgoingBrowserContext(),
+    use_previous_browser=browserContextWanted && !browser_context && !!lastBrowserStatus?.page_context?.previous?.url;
+  let excerpt=null;
+  const capture=++captureEpoch;
+  busy=true; capturingContext=true; controls();
+  try {
+    if(terminalContextWanted) {
+      excerpt=await ownerTerminal?.prepareContext();
+      if(!excerpt)throw new Error("terminal_context_unavailable");
+    }
+    if(session!==sendingSession || capture!==captureEpoch)return;
+    outbox={request_id:crypto.randomUUID(),text,attachments,phase:"sending",transmitted:false,error:null,
+      ...(selection ? {inference:selection} : {}),...(excerpt ? {terminal_context:excerpt} : {})};
+  } catch(error) {
+    if(session===sendingSession)tell(error.message);
+    return;
+  } finally {
+    if(capture===captureEpoch) { capturingContext=false;if(session===sendingSession){busy=false;controls();} }
+  }
+  if(session!==sendingSession || capture!==captureEpoch)return;
+  if(session?.features?.browser_control===true) {
+    outbox.browser_context=browser_context;
+    outbox.use_previous_browser=use_previous_browser;
+  }
   draft=emptyDraft(); $("message").value=""; render({latest:true}); $("message").focus(); transmit(outbox);
 });
 $("message").addEventListener("input",() => { persist(); controls(); });
@@ -622,6 +927,8 @@ $("logout").addEventListener("click",async () => {
   const signingOutSession=session; let saved=true;
   try { await saveState(); } catch { saved=false; }
   if (session!==signingOutSession) { return; }
+  try { await ownerTerminal?.close(); } catch { /* Native expiry cleans a disconnected shell. */ }
+  if (session!==signingOutSession) { return; }
   try { await api("/auth/logout",{}); if (session===signingOutSession) { showLogin(); if (!saved) { tell("draft_recovery_in_tab"); } } }
   catch (error) { if (session===signingOutSession) { browserSuspended=false; void refreshBrowser(); tell(error.message); } }
 });
@@ -633,6 +940,22 @@ setInterval(async () => {
   finally { if (session===readingSession) { polling=false; } }
 },2000);
 setInterval(()=>{ void refreshBrowser(); },2000);
+async function heartbeatBrowser() {
+  if(!session || session.features?.browser_control!==true || document.hidden || browserHeartbeat
+      || browserView?.actionPending
+      || !lastBrowserStatus?.generation || !lastBrowserStatus.control || Date.now()-lastBrowserActivity>120000
+      || !(currentPage==="/browser" || currentPage==="/" && browserContextWanted))return;
+  browserHeartbeat=true;const presentSession=session,epoch=browserEpoch,control=lastBrowserStatus.control;
+  try {
+    const value=await api("/chat/browser/control/heartbeat",{generation:lastBrowserStatus.generation,
+      revision:control.revision,lease_id:control.lease_id || null});
+    if(session===presentSession && browserEpoch===epoch && !document.hidden && !browserView?.actionPending){
+      lastBrowserStatus=value;updateBrowserChip();if(currentPage==="/browser")browserView?.update(value);
+    }
+  } catch { /* Presence never retries an input or reopens a browser. */ }
+  finally {browserHeartbeat=false;}
+}
+setInterval(()=>{void heartbeatBrowser();},15000);
 window.addEventListener("resize", resizeMessage);
 (async () => {
   const startingSession=session;

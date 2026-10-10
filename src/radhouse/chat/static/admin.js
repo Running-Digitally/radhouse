@@ -4,6 +4,11 @@ const infrastructure = location.pathname === "/infrastructure";
 let session = null, generation = 0, controller;
 const componentNames = {web: "Web app", assistant: "Assistant", documents: "Document reader", storage: "Storage"};
 const statusNames = {healthy: "Healthy", unavailable: "Unavailable", unverified: "Unverified"};
+const profileContainer=document.createElement("div");
+const agentProfile=typeof window.RadhouseAgentProfile==="function" ? new window.RadhouseAgentProfile({
+  container:profileContainer,request:(path,body,initial,signal)=>request(path,signal,body),
+  onAuthRequired:()=>failed("authentication_required")}) : null;
+agentProfile?.setVisible(false);
 function element(tag, text, className) {
   const node = document.createElement(tag); if (text !== undefined) { node.textContent = text; }
   if (className) { node.className = className; } return node;
@@ -27,7 +32,10 @@ function bytes(value) {
   return `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`;
 }
 function renderSettings(data) {
+  const appearance=element("section",undefined,"admin-section"), appearanceLink=element("a","Customize your agent and appearance");
+  appearanceLink.href="/agent";appearance.append(element("h2","Appearance"),appearanceLink);
   $("content").append(
+    appearance,
     section("Sign-in", [["Methods", "Password and authenticator code"],
       ["Idle session", duration(data.authentication.idle_timeout_seconds)],
       ["Session duration", duration(data.authentication.maximum_session_seconds)],
@@ -37,9 +45,10 @@ function renderSettings(data) {
       ["Original files", "Retained with your conversation"], ["Document formats", "Text, PDF, Word, Excel and PowerPoint"],
       ["Audio transcription", data.files.audio_transcription_enabled ? "Connected" : "Not connected"],
       ["Selective document reads", data.documents.selective_access_enabled ? "Enabled; check Infrastructure for current availability" : "Not connected"],
-      ["Agent browser", data.browser?.enabled ? "Enabled with a live view in Chat" : "Not connected"],
+      ["Agent browser", data.browser?.enabled ? (data.browser.mode === "owner_session"
+        ? "Open Browser to browse or take control" : "Enabled with a live view in Chat") : "Not connected"],
       ["Message text", `${data.messages.character_limit.toLocaleString()} characters`]]),
-    element("p", "These are the current app settings. Settings are read only in this version.", "admin-note"));
+    element("p", "Instance settings are read only. Your agent’s appearance is saved separately.", "admin-note"));
 }
 function infrastructureComponent(component) {
   const node = element("section", undefined, "admin-section"), heading = element("div", undefined, "component-heading");
@@ -77,7 +86,8 @@ function failureText(code) {
   return "This page could not be checked. Try refreshing.";
 }
 function failed(code) {
-  if (code === "authentication_required") { session = null; $("logout").hidden = true; }
+  if (code === "authentication_required") { session = null; $("logout").hidden = true; agentProfile?.clear(); }
+  window.RadhouseNavigation?.update(session);
   $("content").replaceChildren(); $("content").hidden = true; $("loading").hidden = true;
   $("checked-at").textContent = ""; $("notice").hidden = false;
   $("notice-text").textContent = failureText(code);
@@ -88,18 +98,21 @@ async function request(path, signal, body) {
     headers: body === undefined ? {} : {"Content-Type": "application/json", "X-Radhouse-CSRF": session.csrf_token},
     body: body === undefined ? undefined : JSON.stringify(body)});
   let data; try { data = response.status === 204 ? null : await response.json(); } catch (_) { throw new Error("service_unavailable"); }
-  if (!response.ok) { throw new Error(data?.error || "service_unavailable"); }
+  if (!response.ok) { const error=new Error(data?.error || "service_unavailable");error.status=response.status;throw error; }
   return data;
 }
 async function load() {
   const current = ++generation; controller?.abort(); controller = new AbortController();
   const signal = controller.signal; $("refresh").disabled = true; $("notice").hidden = true;
+  window.RadhouseIcons?.busy($("refresh"),true);
   $("content").replaceChildren(); $("content").hidden = true; $("checked-at").textContent = "";
   $("loading").hidden = false; $("loading").textContent = "Checking current settings…";
   try {
     const next = await request("/auth/session", signal);
     if (current !== generation) { return; }
     session = next;
+    window.RadhouseNavigation?.update(session);
+    void agentProfile?.load();
     if (session.management?.read !== true) { throw new Error("management_access_required"); }
     $("logout").hidden = false;
     $("loading").textContent = infrastructure ? "Checking the instance…" : "Checking current settings…";
@@ -109,7 +122,7 @@ async function load() {
     $("content").hidden = false; $("loading").hidden = true; $("refresh").hidden = false;
     $("checked-at").textContent = `Checked ${new Date(data.checked_at).toLocaleString()}`;
   } catch (error) { if (current === generation && error.name !== "AbortError") { failed(error.message); } }
-  finally { if (current === generation) { $("refresh").disabled = false; } }
+  finally { if (current === generation) { $("refresh").disabled = false; window.RadhouseIcons?.busy($("refresh"),false); } }
 }
 $("page-title").textContent = infrastructure ? "Infrastructure" : "Settings";
 document.title = `${infrastructure ? "Infrastructure" : "Settings"} · Radhouse`;
@@ -118,6 +131,7 @@ $(infrastructure ? "infrastructure-link" : "settings-link").setAttribute("aria-c
 $("refresh").addEventListener("click", load);
 $("logout").addEventListener("click", async () => {
   ++generation; controller?.abort(); $("content").replaceChildren(); $("content").hidden = true;
+  agentProfile?.clear();
   $("checked-at").textContent = ""; $("logout").disabled = true;
   try { await request("/auth/logout", undefined, {}); location.assign("/"); }
   catch (error) { failed(error.message); $("logout").disabled = false; }

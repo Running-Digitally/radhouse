@@ -4,7 +4,7 @@ A private web assistant on your own infrastructure.
 
 The current first slice is deliberately small: sign in, talk to one Hermes
 assistant, close the browser, and return to the same conversation. Use the
-existing Warp connection for private access.
+configured private access connection.
 
 The new app is `radhouse.chat`, independent of the earlier platform composition.
 It reuses local password/TOTP authentication and the pinned Hermes HTTP client.
@@ -12,6 +12,11 @@ It saves the displayed transcript and pending reply receipt in one private SQLit
 file. New original attachments are streamed to a private directory beside it. A small observer within the web process saves the reply even while the
 browser is closed; it only checks existing runs and never submits messages.
 Hermes owns the assistant's persistent session context and memory.
+
+For source qualification and repeatable static web updates, see
+[the release workflow](docs/deployment/repeatable-releases.md). Installation
+settings belong in an ignored `.env`; `.env.example` contains synthetic placeholders.
+Run the public-source privacy gate before sharing changes.
 
 **Status:** deployed private pilot. Real conversation and restart continuity,
 selective reads from large PDF/DOCX originals with follow-up citations, and the
@@ -21,10 +26,55 @@ expected. This is evidence for the private pilot, not qualification of every
 self-hosted installation or model.
 
 The pilot supports selective access to searchable PDF and DOCX/XLSX/PPTX text,
-a live view of the same browser the assistant uses, and read-only **Settings**
-and **Infrastructure** pages. **Hide/Show** changes the browser view; the assistant
-keeps mouse and keyboard control. Human takeover, scanned-document OCR, audio
-transcription and editable administration settings remain future work.
+**Library**, the same browser the assistant uses, and read-only **Settings**
+and **Infrastructure** pages. Browser control and saved logins were activated
+on 8 October with the paired Hermes v0.21.6 runtime; production Open/Go/reload/Close
+acceptance passed after the web correction `7ac0630`. Scanned-document OCR,
+audio transcription and editable administration settings remain future work.
+
+Browser can open before any chat. Its launcher starts
+no Chromium process until **Open browser** is clicked. The owner can navigate,
+take control while the assistant finishes its reply, and **Return to agent**
+after that reply ends. **Close browser** ends the native process; only a clearly
+labelled previous-page reference remains. Sharing a page adds its brief locator
+and title to a real chat turn, with further reading through browser tools.
+
+Saved logins reuse the local Hermes credential vault. Explicit save/remove and
+exact-origin fill stay within the owned browser. Login tools return metadata and
+fill outcomes; credential form inputs are not saved in chat. This requires the
+qualified Hermes v0.21.6 private session-control API and its separate Python 3.14
+environment. Native, Linux sandbox and production UI proofs have passed for
+the private pilot. Retain the paired old-runtime schema-31
+compatibility patch for rollback; an unchanged old runtime can delete upgraded
+tool-definition blobs during ordinary prompt cleanup. Preserve newer chats and
+the separate vault rather than restoring an older database.
+
+**This branch, not yet activated:** **Terminal** opens an independent shell as
+the existing unprivileged VM user only after **Open terminal**. Leaving its page
+preserves the shell; **Close terminal** ends it. It has the user's ordinary VM
+access and shows raw terminal output. It does not enable agent shell tools or
+share control of an agent process. Abandoned terminals close after ten minutes
+without presence, or sooner when authentication expires.
+
+**Include terminal context** is off initially. When selected, Send captures the
+selected text or the last 20 rendered rows, up to 8 KiB, and masks registered
+secrets before handing the excerpt to the assistant or saving it in chat.
+**About You** separately shows the saved `USER.md` and `MEMORY.md` notes read-only.
+File-level dates describe saved files; they do not claim when a note was learned
+or whether it was included in the current reply.
+
+The next-message **Model** and **Thinking** controls read the configured engine's
+actual catalog. Model choices and supported thinking settings vary by engine;
+unknown capabilities remain unoffered. Thinking currently requires published
+settings that the qualified Custom or LM Studio adapter can carry; other
+adapters retain their defaults until qualified. Catalog reads are cached for
+60 seconds. **Refresh models** checks again without
+changing profile settings. Explicit choices and terminal context are frozen for
+that message and its retries. An explicit selected model uses Hermes' existing
+runtime lock and cannot silently fall back to another model. **Default** retains
+the existing engine behaviour and remains usable during catalog outages. Pair
+this source with its corresponding native overlay before activation; rollback
+must retain the saved runtime choices as well as frozen inputs.
 
 The earlier fleet, Buzz integration, work/task engine and software delivery code
 are retained for history and recovery. They are excluded from this app. The
@@ -56,11 +106,31 @@ placeholders, not working credentials:
 `document_access_enabled` and `browser_enabled` are optional booleans, both
 defaulting to `false`. After qualifying the matching Hermes private API, set the
 document flag to `true` for owner/session-scoped saved-file reads, and the browser
-flag to `true` for the live view and its Hide/Show control. The API must advertise
-the restricted-tool capability plus the corresponding saved-turn document scope
-or same-session, view-only browser capability. Enabling a flag cannot supply a
-missing runtime capability; requests fail closed if it is unavailable. Both are
-enabled in the qualified owner's pilot. This does not enable human browser input.
+flag to `true` for Browser. The API must advertise the restricted-tool capability
+plus the corresponding document or browser capabilities. This source uses the
+qualified owner-session API for opening and controlling the browser; saved-login
+operations additionally require its qualified vault capability. Pair this app
+with that API; rolling back to a view-only gateway also requires the retained
+compatible app. Enabling a flag cannot supply a missing runtime
+capability; unavailable operations fail closed. Web startup and sign-in do not
+depend on the agent being reachable. Both flags are enabled in the existing
+pilot. About You, Terminal and inference controls use their corresponding fixed
+native API routes; opening pages does not create a shell or browser process.
+
+Your Agent is a separate profile page with the approved character collections,
+an optional display name/introduction and saved Appearance choices. Save keeps
+these choices for the authenticated owner across reloads and devices; Discard
+restores the saved version. Evening/device surfaces and separate icon/status
+motion settings respect device reduced motion. These are presentation choices;
+they do not rename the runtime agent or change its prompts, memory or authority.
+The existing SQLite schema-3 initialization adds an independent owner profile
+table, without creating a conversation. A stale Save from another tab keeps the
+draft and asks you to review the saved version.
+
+Chat keeps occasional browser/terminal context and model/thinking controls in
+Message options. Included context appears as short removable chips. The current
+configured engine still determines which models and thinking choices are
+available; opening the options does not start a browser, terminal or reply.
 
 Optional `transcription_endpoint` selects an existing OpenAI-compatible
 `/v1/audio/transcriptions` service; optional `transcription_bearer` belongs only to
@@ -155,11 +225,35 @@ of context length.
 Downloads require the same signed-in owner. Images/audio support streaming range
 requests; other originals are forced downloads with content sniffing disabled.
 
+## Design references
+
+The [agent identity documentation mock](docs/design/agent-identity.md) includes
+the runnable profile/settings preview, four character themes, and a component
+reuse map for the main UI. Run `python3 brand/preview_settings.py` to try it locally.
+
 ## Verify locally
 
 For security and code-quality analysis after a merge, run the
 [local SonarQube launcher](docs/sonarqube.md) on the development laptop. It tests and scans
 a clean copy of remote `main` and waits for the quality gate.
+
+For a committed static web update, discover the fixed release gates and then run
+one offline qualification/package command. It uses the current clean `HEAD`:
+
+```sh
+python3 scripts/release_candidate.py --baseline FULL_BASELINE_COMMIT --plan-only
+python3 scripts/release_candidate.py --baseline FULL_BASELINE_COMMIT
+```
+
+The baseline must be the reviewed deployed source revision. The runner requires
+existing Python 3.14 project/test dependencies, Node.js and pinned Playwright with
+Chromium. Its explicit location flags support shared existing installations. It
+executes synthetic API/browser checks, rejects failed or skipped required checks,
+and writes timed evidence plus a checked packet under ignored `.release-private/`.
+It never approves or applies a deployment. See the [release workflow](docs/deployment/repeatable-releases.md)
+for dependency flags, the complete gate list and private authority.
+
+Individual checks remain useful during editing:
 
 ```sh
 PYTHONPATH=src:. python -m pytest -q tests/test_minimal_chat.py tests/test_chat_attachments.py

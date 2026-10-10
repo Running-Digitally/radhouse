@@ -1,5 +1,4 @@
-from __future__ import annotations
-
+"""Pinned native lifecycle functions."""
 def _guarded_cleanup(label: str, fn: Callable[[], Any], errors: List[str], logger) -> None:
     """Post-loop cleanup must never lose the response: each step is guarded
     independently and errors surface via ``cleanup_errors`` (#8049)."""
@@ -8,6 +7,7 @@ def _guarded_cleanup(label: str, fn: Callable[[], Any], errors: List[str], logge
     except Exception as err:
         errors.append(f"{label}: {err}")
         logger.error("finalize_turn: _%s failed: %s", label, err, exc_info=True)
+
 
 def finalize_turn(
     agent, *, final_response, api_call_count, interrupted, failed, messages, conversation_history,
@@ -18,7 +18,7 @@ def finalize_turn(
     """Run the post-loop finalization and return the turn ``result`` dict."""
     from agent.conversation_loop import logger
 
-    final_response, _turn_exit_reason, preserved_verification_fallback = _resolve_budget_fallback(
+    final_response, _turn_exit_reason, preserved_verification_fallback, interrupted = _resolve_budget_fallback(
         agent, final_response=final_response, api_call_count=api_call_count,
         interrupted=interrupted, failed=failed, messages=messages,
         _turn_exit_reason=_turn_exit_reason,
@@ -27,15 +27,68 @@ def finalize_turn(
         logger=logger,
     )
 
+    # A non-interrupted turn that fell out of the loop after a tool result, with no
+    # follow-up assistant text, is the Desktop/TUI "silent stop" (#55316, #54756): the
+    # composer returns to ready (or keeps spinning) while the durable transcript ends
+    # at a raw ``tool`` row — the user never learns the turn stopped, and the next user
+    # message lands as ``tool → user``. Interrupted tails keep
+    # ``close_interrupted_tool_sequence``; this is the non-interrupt sibling. Mint the
+    # exit reason, fail the turn, and synthesize the visible close so the tail close in
+    # ``_persist_step`` persists an assistant row. A turn that already streamed text is
+    # left alone: ``_recover_final_from_stream`` owns that recovery (#95514).
+    if (
+        not final_response
+        and not interrupted
+        and messages
+        and isinstance(messages[-1], dict)
+        and messages[-1].get("role") == "tool"
+        and not (getattr(agent, "_current_streamed_assistant_text", "") or "").strip()
+    ):
+        _turn_exit_reason = "pending_tool_result"
+        failed = True
+        final_response = ""
+        try:
+            if agent._turn_completion_explainer_enabled():
+                final_response = (
+                    agent._format_turn_completion_explanation("pending_tool_result", None) or ""
+                )
+        except Exception:
+            final_response = ""
+        if not final_response:
+            # The turn-completion explainer opt-out must not reintroduce the silent stop.
+            final_response = (
+                "No reply: the turn stopped while a tool result was still pending. "
+                "Send `continue` to let the model summarize."
+            )
+
+    # Loop exits that are failures in their own right (outer-loop error cap, shutdown, context
+    # that could not be shrunk) carry the verdict the UI descriptor needs; a bare
+    # ``turn_exit_reason`` collapsed to code="unknown", retryable=True on every surface.
+    # Advisory verdicts (``fails_turn=False``) only add the code: ``failed``/``completed`` keep
+    # the loop's values so cron, kanban and transcript persistence behave as before.
+    _exit_failure = None if interrupted else exit_reason_failure(_turn_exit_reason)
+    if _exit_failure is not None and _exit_failure.fails_turn:
+        failed = True
+
+    # Sibling producers (``turn_recovery``, ``codex_runtime``) return ``completed=False`` for an
+    # interrupted turn; the gateway stream gate and the API run status rely on that contract.
     completed = (
         final_response is not None
         and not failed
+        and not interrupted
         and (api_call_count < agent.max_iterations or str(_turn_exit_reason).startswith("text_response("))
     )
 
     _rollback_interrupted_preflight_display(agent, interrupted)
 
+    from hermes_cli.observability.shared_metrics_harness import finish_turn
+    finish_turn(agent, _turn_exit_reason, final_response, interrupted=interrupted, failed=failed)
+
     _cleanup_errors: List[str] = []
+    # The model has answered (or the loop gave up): a title upgrade held back because it shares a
+    # self-hosted endpoint with the main request (#117296) may go out now.
+    from agent.turn_context import start_deferred_title_upgrade
+    _guarded_cleanup("start_deferred_title_upgrade", lambda: start_deferred_title_upgrade(agent), _cleanup_errors, logger)
     # ``user_message`` may be a multimodal list of parts; the trajectory format wants a string.
     _guarded_cleanup(
         "save_trajectory",
@@ -57,9 +110,15 @@ def finalize_turn(
         final_response, _recovered_from_stream = _recover_final_from_stream(
             agent, final_response, interrupted, failed
         )
+        # Recovery paths (stream-recovered / prior-turn text) reach here with a response no
+        # earlier seam transformed; the normal text turn already did this before its flush and
+        # gets the recorded outcome back. Either way the tail close below writes the text the
+        # user will see, never the raw model text (#44239).
+        if final_response and not interrupted:
+            final_response, _, _ = apply_llm_output_transform(agent, final_response, turn_id=turn_id, logger=logger)
         _close_transcript_tail(agent, messages, final_response, interrupted, _recovered_from_stream)
         if not interrupted and not failed:
-            _micro_compact_after_turn(agent, messages, final_response, logger)
+            _micro_compact_after_turn(agent, messages, final_response, logger, effective_task_id)
         agent._persist_session(messages, conversation_history)
 
     _guarded_cleanup("persist_session", _persist_step, _cleanup_errors, logger)
@@ -125,7 +184,12 @@ def finalize_turn(
         "response_transformed": _response_transformed,
         "pre_transform_response": _pre_transform_response,
         "response_previewed": getattr(agent, "_response_was_previewed", False),
+        # The final is byte-for-byte a response this turn already delivered (no footer or
+        # explanation appended since): it carries no new text for the client to paint.
+        "response_reused": bool(final_response) and final_response == getattr(agent, "_reused_response_text", None),
         "model": agent.model,
+        # requested_model / served_model: proxy-reported deployment or Hermes' own fallback route.
+        **result_model_fields(agent),
         "provider": agent.provider,
         "base_url": agent.base_url,
         **{key: getattr(agent, f"session_{key}") for key in _SESSION_TOKEN_KEYS},
@@ -148,12 +212,20 @@ def finalize_turn(
     # surfaces status="error" (desktop can toast) instead of a quiet complete frame, plus
     # the machine-readable cause 'session_persistence_failed:<locked|compression|...>'.
     if failed and str(_turn_exit_reason) == "session_persistence_failed":
+        from hermes_constants import profile_cli_selector
+
+        # Never rebind final_response here: the memory sync and the background-review gate
+        # below must still see an empty response on a persistence-failed turn.
         result["error"] = final_response or (
             "session storage could not be written — check the state database "
-            "health (`hermes doctor`), then send your message again"
+            f"health (`hermes {profile_cli_selector()}doctor`), then send your message again"
         )
         _cause = getattr(agent, "_last_persistence_error_cause", None)
         result["failure_reason"] = "session_persistence_failed:" + (_cause or "unknown")
+    elif _exit_failure is not None:
+        if failed:
+            result["error"] = final_response or str(_turn_exit_reason)
+        stamp_failure(result, _exit_failure.reason, _exit_failure.retryable)
     # Cleanup failures are surfaced, but the response is returned either way (#8049).
     if _cleanup_errors:
         result["cleanup_errors"] = _cleanup_errors
@@ -163,10 +235,16 @@ def finalize_turn(
     if _leftover_steer:
         result["pending_steer"] = _leftover_steer
     agent._response_was_previewed = False
+    agent._reused_response_text = None
     if interrupted and agent._interrupt_message:
         result["interrupt_message"] = agent._interrupt_message
     agent.clear_interrupt()
     agent._stream_callback = None  # don't leak into future calls
+
+    # A voice turn's model route ends with the turn: memory sync and the background review
+    # below (and the next turn) run on the session's main model.
+    from agent.voice_turn_route import end_voice_turn_route
+    end_voice_turn_route(agent)
 
     # Skill trigger is checked NOW — based on how many tool iterations THIS turn used.
     _should_review_skills = (
@@ -201,18 +279,19 @@ def finalize_turn(
 
     # Memory provider on_session_end()/shutdown_all() are NOT called here:
     # run_conversation() runs once per message; CLI/gateway own session-end cleanup.
-    _invoke_hook_safely(
-        "on_session_end", logger,
-        session_id=agent.session_id,
-        task_id=effective_task_id,
-        turn_id=turn_id,
-        completed=completed,
-        failed=failed,
-        interrupted=interrupted,
-        turn_exit_reason=_turn_exit_reason,
-        model=agent.model,
-        platform=_platform,
-    )
+    if not getattr(agent, "_persist_disabled", False):
+        _invoke_hook_safely(
+            "on_session_end", logger,
+            session_id=agent.session_id,
+            task_id=effective_task_id,
+            turn_id=turn_id,
+            completed=completed,
+            failed=failed,
+            interrupted=interrupted,
+            turn_exit_reason=_turn_exit_reason,
+            model=agent.model,
+            platform=_platform,
+        )
 
     agent._turn_preflight_display_snapshot = None
     agent._turn_received_provider_response = False
