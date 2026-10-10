@@ -88,6 +88,12 @@ unchanged in the supported lane. Application-level data remain private and are n
 printed. Root onboarding, service confinement and the original baseline's runtime
 qualification must be established separately; this tool does not create them.
 
+The loaded systemd unit must match the pinned API unit, and every active drop-in
+must be included in private control pins. Service selection is checked before stop.
+An execution-link control may add `symlink_target`: pin each exact literal link
+hop and the final regular file using its digest, with root-owned protected
+ancestors. Changed links and missing chain pins refuse deployment.
+
 ## Run the offline candidate workflow
 
 For a committed static web change, `scripts/release_candidate.py` runs the reviewed

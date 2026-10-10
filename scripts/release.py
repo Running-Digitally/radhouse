@@ -188,11 +188,11 @@ def static_route(name):
     if not name.startswith(STATIC):
         return None
     name = name.removeprefix(STATIC)
-    direct = {"chat.js", "chat.css", "format.js", "browser-view.js", "browser-view.css", "navigation.js", "navigation.css", "library.js"}
+    direct = {"chat.js", "chat.css", "format.js", "browser-view.js", "browser-view.css", "navigation.js", "navigation.css", "library.js", "admin.js", "admin.css"}
     workspace = {"about-you.js", "about-you.css", "owner-terminal.js", "owner-terminal.css", "inference-controls.js", "inference-controls.css", "agent-profile.js", "agent-profile.css", "agent-portrait.js"}
     if name == "index.html":
         return "/"
-    if name in direct:
+    if name in direct or name in {"icons/pdf.svg", "icons/word.svg", "icons/excel.svg", "icons/powerpoint.svg"}:
         return "/" + name
     if name in workspace or name == "agent-profile/catalog.json":
         return "/workspace-assets/" + name
@@ -465,6 +465,66 @@ def tree(root, mapping):
         raise Refusal("release_source_drift")
 
 
+def root_control_path(path):
+    """A privileged execution link may traverse only protected ordinary directories."""
+    path = ancestors(path)
+    for parent in path.parents:
+        info = parent.lstat()
+        if info.st_uid != 0 or info.st_mode & 0o022:
+            raise Refusal("execution_control_ancestor_custody_failed")
+    return path
+
+
+def symlink_control(item, pins):
+    """Pin each literal link hop and the final regular execution file, without following writes."""
+    if (type(item["uid"]) is not int or item["uid"] != 0
+            or not isinstance(item["symlink_target"], str) or not item["symlink_target"]
+            or any(c in item["symlink_target"] for c in "\r\n\0")):
+        raise Refusal("execution_link_pin_invalid")
+    original, current, seen, links = Path(item["path"]), Path(item["path"]), set(), []
+    for _ in range(32):
+        current = root_control_path(current)
+        if current in seen:
+            raise Refusal("execution_link_loop_or_depth_refused")
+        seen.add(current)
+        info = current.lstat()
+        if not stat.S_ISLNK(info.st_mode):
+            if not stat.S_ISREG(info.st_mode):
+                raise Refusal("execution_link_regular_target_required")
+            try:
+                resolved = root_control_path(original.resolve(strict=True))
+            except (OSError, RuntimeError):
+                raise Refusal("execution_link_resolution_failed") from None
+            if resolved != current:
+                raise Refusal("execution_link_resolution_drift")
+            final = pins.get(str(current))
+            if not final or "symlink_target" in final or final["uid"] != 0 or final["sha256"] != item["sha256"]:
+                raise Refusal("execution_link_final_file_pin_required")
+            raw = read_file(current, owner=0)
+            if sha(raw) != item["sha256"] or stat.S_IMODE(current.lstat().st_mode) != int(final["mode"], 8):
+                raise Refusal("private_control_drift")
+            break
+        pin = pins.get(str(current))
+        if not pin or "symlink_target" not in pin or pin["uid"] != 0 or pin["sha256"] != item["sha256"]:
+            raise Refusal("execution_link_chain_pin_required")
+        target = os.readlink(current)
+        if info.st_uid != 0 or stat.S_IMODE(info.st_mode) != int(pin["mode"], 8) or target != pin["symlink_target"]:
+            raise Refusal("execution_link_drift")
+        links.append((current, info.st_dev, info.st_ino, info.st_mtime_ns, target))
+        current = Path(os.path.abspath(current.parent / target))
+    else:
+        raise Refusal("execution_link_loop_or_depth_refused")
+    if not links or links[0][0] != original:
+        raise Refusal("execution_link_required")
+    for path, device, inode, changed, target in links:
+        root_control_path(path)
+        info = path.lstat()
+        if (not stat.S_ISLNK(info.st_mode) or info.st_uid != 0
+                or (info.st_dev, info.st_ino, info.st_mtime_ns) != (device, inode, changed)
+                or os.readlink(path) != target):
+            raise Refusal("execution_link_drift")
+
+
 class Host:
     """Fixed systemd and read-only HTTPS operations; no arbitrary command interface."""
     def __init__(self, profile):
@@ -473,8 +533,10 @@ class Host:
     def identity(self):
         if sys.platform != "linux" or os.getuid() != 0:
             raise Refusal("server_local_linux_root_required")
-        for key in ("RADHOUSE_RELEASE_ROOT", "RADHOUSE_EVIDENCE_ROOT"):
+        for key in ("RADHOUSE_RELEASE_ROOT", "RADHOUSE_EVIDENCE_ROOT", "RADHOUSE_API_UNIT_FILE"):
             p = Path(self.profile[key])
+            if key == "RADHOUSE_API_UNIT_FILE":
+                p = p.parent
             ancestors(p / "placeholder")
             for parent in (p, *p.parents):
                 info = parent.lstat()
@@ -497,19 +559,29 @@ class Host:
         value = json.loads(raw)
         if not value or not isinstance(value, list):
             raise Refusal("private_control_pins_required")
-        ca_pinned = False
+        ca_pinned, paths, pins = False, set(), {}
         for item in value:
-            if set(item) != {"path", "sha256", "uid", "mode"} or not Path(item["path"]).is_absolute() or not HEX64.fullmatch(item["sha256"]):
+            fields = {"path", "sha256", "uid", "mode"}
+            if (set(item) not in (fields, fields | {"symlink_target"})
+                    or not Path(item["path"]).is_absolute() or ".." in Path(item["path"]).parts
+                    or not HEX64.fullmatch(item["sha256"]) or item["path"] in pins):
                 raise Refusal("private_control_pin_invalid")
-            p = Path(item["path"])
-            if p == Path(self.profile["RADHOUSE_API_UNIT_FILE"]):
+            if Path(item["path"]) == Path(self.profile["RADHOUSE_API_UNIT_FILE"]):
                 raise Refusal("api_unit_not_a_fixed_control")
-            raw = read_file(p, owner=item["uid"])
-            if sha(raw) != item["sha256"] or stat.S_IMODE(p.lstat().st_mode) != int(item["mode"], 8):
-                raise Refusal("private_control_drift")
+            pins[item["path"]] = item
+        for item in value:
+            p = Path(item["path"])
+            if "symlink_target" in item:
+                symlink_control(item, pins)
+            else:
+                raw = read_file(p, owner=item["uid"])
+                if sha(raw) != item["sha256"] or stat.S_IMODE(p.lstat().st_mode) != int(item["mode"], 8):
+                    raise Refusal("private_control_drift")
             ca_pinned |= p == Path(self.profile["RADHOUSE_TLS_CA_FILE"])
+            paths.add(str(p))
         if not ca_pinned:
             raise Refusal("tls_ca_pin_required")
+        return frozenset(paths)
 
     def _systemctl(self, arguments):
         result = subprocess.run(["/usr/bin/systemctl", *arguments], stdout=subprocess.PIPE,
@@ -520,11 +592,22 @@ class Host:
         return result.stdout.decode()
 
     def service(self, expected=None):
-        raw = self._systemctl(["show", UNIT, "-pActiveState", "-pMainPID", "-pUser", "-pGroup", "-pNoNewPrivileges", "-pControlGroup"])
+        raw = self._systemctl(["show", UNIT, "-pActiveState", "-pMainPID", "-pUser", "-pGroup", "-pNoNewPrivileges", "-pControlGroup", "-pFragmentPath", "-pDropInPaths"])
         value = dict(line.split("=", 1) for line in raw.splitlines() if "=" in line)
         if (value.get("User") != self.profile["RADHOUSE_SERVICE_USER"] or value.get("Group") != self.profile["RADHOUSE_SERVICE_GROUP"]
                 or value.get("NoNewPrivileges") != "yes"):
             raise Refusal("service_identity_drift")
+        if value.get("FragmentPath") != self.profile["RADHOUSE_API_UNIT_FILE"]:
+            raise Refusal("loaded_api_unit_path_drift")
+        # systemd renders paths with spaces/escapes outside this first supported lane.
+        dropins = value.get("DropInPaths")
+        if dropins is None or "\\" in dropins:
+            raise Refusal("service_dropin_scope_invalid")
+        paths = dropins.split()
+        if any(not Path(p).is_absolute() or ".." in Path(p).parts for p in paths):
+            raise Refusal("service_dropin_scope_invalid")
+        if paths and not set(paths) <= self.controls():
+            raise Refusal("service_dropin_not_pinned")
         if expected == "stopped":
             if value.get("ActiveState") not in {"inactive", "failed"} or value.get("MainPID") != "0":
                 raise Refusal("service_stop_unverified")
@@ -695,6 +778,8 @@ def operate(verb, packet, pin, profile_path, authority_path=None, authority_pin=
             tree(root / (manifest["baseline_revision"] if current == sha(baseline_unit) else manifest["source_revision"]),
                  baseline_mapping if current == sha(baseline_unit) else candidate_mapping)
             if verb == "apply":
+                # Bind the loaded unit, identity and overrides before stopping anything.
+                host.service()
                 # Count attempts before preflight; refusals never stop active owner work.
                 state["attempts"] += 1
                 state["retryable"] = False
@@ -717,6 +802,7 @@ def operate(verb, packet, pin, profile_path, authority_path=None, authority_pin=
                     tree(release, candidate_mapping)
                 save("staged")
                 live()
+                host.service()
                 host.stop()
                 save("api-stopped")
                 before = inventory(profile)

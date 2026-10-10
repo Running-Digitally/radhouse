@@ -250,7 +250,7 @@ def test_apply_preserves_pending_work_originals_and_emits_private_receipt(target
     before = release.inventory(target["profile"])
     result = apply(target)
     assert result["state"] == "verified"
-    assert target["host"].events == ["stop-api", "start-api", "verify-https-auth-assets"]
+    assert target["host"].events == ["service", "service", "stop-api", "start-api", "verify-https-auth-assets"]
     assert release.inventory(target["profile"]) == before
     evidence = target["evidence"] / target["pin"]
     snapshots = list(evidence.glob("snapshot-*.sqlite3"))
@@ -467,3 +467,250 @@ def test_standalone_packaging_rejects_supported_token_signatures_without_echo(pr
     with pytest.raises(release.Refusal, match="credential_in_public_source") as result:
         release.privacy_check(synthetic)
     assert synthetic.decode() not in str(result.value)
+
+
+@pytest.mark.parametrize("field,value,reason", [
+    ("FragmentPath", "/etc/example-app/other-api.service", "loaded_api_unit_path_drift"),
+    ("DropInPaths", "/etc/example-app/unpinned.conf", "service_dropin_not_pinned"),
+    ("User", "root", "service_identity_drift"),
+    ("Group", "root", "service_identity_drift"),
+    ("NoNewPrivileges", "no", "service_identity_drift"),
+])
+def test_effective_systemd_drift_refuses_before_api_stop(target, field, value, reason):
+    original_unit = target["unit"].read_bytes()
+    projected = {"ActiveState": "active", "MainPID": "42", "User": "example_app", "Group": "example_app",
+                 "NoNewPrivileges": "yes", "ControlGroup": "/system.slice/radhouse-api.service",
+                 "FragmentPath": str(target["unit"]), "DropInPaths": "", field: value}
+    calls = []
+
+    class ProjectedHost(target["host"]):
+        service = release.Host.service
+
+        def _systemctl(self, arguments):
+            calls.append(arguments)
+            assert arguments[0] == "show"  # Every mutation must remain unreachable.
+            return "\n".join(key + "=" + val for key, val in projected.items())
+
+    target["host"] = ProjectedHost
+    result = apply(target)
+    assert result["state"] == "failed" and result["reason"] == reason and not result["retryable"]
+    assert "stop-api" not in ProjectedHost.events and "start-api" not in ProjectedHost.events
+    assert target["unit"].read_bytes() == original_unit
+    assert calls and "-pFragmentPath" in calls[0] and "-pDropInPaths" in calls[0]
+    assert not (Path(target["profile"]["RADHOUSE_RELEASE_ROOT"]) / target["manifest"]["source_revision"]).exists()
+
+
+def test_pinned_systemd_dropin_is_supported_and_rechecked_before_stop(target):
+    dropin = write(target["unit"].parent / "radhouse-api.service.d/qualified.conf", b"[Service]\nNoNewPrivileges=yes\n", 0o644)
+    controls = Path(target["profile"]["RADHOUSE_CONTROLS_FILE"])
+    values = json.loads(controls.read_bytes())
+    values.append({"path": str(dropin), "sha256": release.sha(dropin.read_bytes()), "uid": os.getuid(), "mode": "0644"})
+    write(controls, values)
+    target["profile"]["RADHOUSE_CONTROLS_SHA256"] = release.sha(controls.read_bytes())
+    write(target["profile_path"], "\n".join(k + "=" + v for k, v in target["profile"].items()).encode())
+    target["approval"]["profile_sha256"] = release.sha(target["profile_path"].read_bytes())
+    write(target["approval_path"], target["approval"])
+    calls = []
+
+    class ProjectedHost(target["host"]):
+        service = release.Host.service
+
+        def _systemctl(self, arguments):
+            calls.append(arguments)
+            assert arguments[0] == "show"
+            return "\n".join(("ActiveState=active", "MainPID=42", "User=example_app", "Group=example_app",
+                              "NoNewPrivileges=yes", "ControlGroup=/system.slice/radhouse-api.service",
+                              "FragmentPath=" + str(target["unit"]), "DropInPaths=" + str(dropin)))
+
+    target["host"] = ProjectedHost
+    assert apply(target)["state"] == "verified"
+    assert len(calls) == 2 and ProjectedHost.events.count("stop-api") == 1
+    write(dropin, b"[Service]\nNoNewPrivileges=no\n", 0o644)
+    with pytest.raises(release.Refusal, match="private_control_drift"):
+        ProjectedHost(target["profile"]).service()
+
+
+def test_systemd_dropin_drift_during_staging_stops_before_api_stop(target):
+    calls = []
+
+    class ProjectedHost(target["host"]):
+        service = release.Host.service
+
+        def _systemctl(self, arguments):
+            calls.append(arguments)
+            return "\n".join(("ActiveState=active", "MainPID=42", "User=example_app", "Group=example_app",
+                              "NoNewPrivileges=yes", "ControlGroup=/system.slice/radhouse-api.service",
+                              "FragmentPath=" + str(target["unit"]),
+                              "DropInPaths=" + ("/etc/example-app/unpinned.conf" if len(calls) > 1 else "")))
+
+    target["host"] = ProjectedHost
+    result = apply(target)
+    assert result["state"] == "failed" and result["reason"] == "service_dropin_not_pinned"
+    assert "stop-api" not in ProjectedHost.events and len(calls) == 2
+
+
+@pytest.mark.parametrize("name", ["admin.js", "admin.css", "icons/pdf.svg", "icons/word.svg", "icons/excel.svg", "icons/powerpoint.svg"])
+def test_public_management_assets_and_icons_have_exact_routes(name):
+    assert release.static_route(release.STATIC + name) == "/" + name
+
+
+@pytest.mark.parametrize("name", ["admin.html", "icons/unknown.svg", "icons/../pdf.svg"])
+def test_authenticated_html_and_unknown_icons_remain_unsupported(name):
+    assert release.static_route(release.STATIC + name) is None
+
+
+def test_public_icon_update_is_a_supported_static_release(repository):
+    repo, baseline, _ = repository
+    write(repo / (release.STATIC + "icons/pdf.svg"), b"<svg/>", 0o644)
+    git(repo, "add", ".")
+    git(repo, "commit", "--quiet", "-m", "public icon correction")
+    result = release.plan(repo, git(repo, "rev-parse", "HEAD"), baseline)
+    assert result["apply_supported"] and result["lane"] == "static-web"
+
+
+def test_https_verification_includes_public_management_assets_and_icons():
+    members = {release.STATIC + name: ("asset-" + name).encode() for name in
+               ("admin.js", "admin.css", "icons/pdf.svg", "icons/word.svg", "icons/excel.svg", "icons/powerpoint.svg")}
+    manifest = {"files_sha256": {name: release.sha(raw) for name, raw in members.items()}}
+    routes = {release.static_route(name): raw for name, raw in members.items()}
+
+    class AssetHost(release.Host):
+        calls = []
+
+        def service(self, expected=None):
+            return "active"
+
+        def get(self, route):
+            self.calls.append(route)
+            if route == "/healthz":
+                return 200, release.encoded({"status": "ready", "scope": "web"})
+            return (200, routes[route]) if route in routes else (401, b"")
+
+    host = AssetHost({})
+    assert host.verify(manifest)["verified_assets"] == 6
+    assert set(routes) <= set(host.calls)
+    routes["/icons/pdf.svg"] = b"drifted icon"
+    with pytest.raises(release.Refusal, match="served_asset_integrity_failed"):
+        host.verify(manifest)
+
+
+@pytest.fixture
+def execution_links(target, tmp_path, monkeypatch):
+    """Project root ownership for portable execution-link tests; reads/links stay real."""
+    from types import SimpleNamespace
+    directory = tmp_path / "standing-interpreter"
+    directory.mkdir(mode=0o755)
+    binary = write(directory / "python-real", b"qualified interpreter bytes", 0o755)
+    inner, outer = directory / "python3", directory / "python"
+    inner.symlink_to(binary.name)
+    outer.symlink_to(inner.name)
+    digest = release.sha(binary.read_bytes())
+    pins = [{"path": str(path), "sha256": digest, "uid": 0, "mode": format(path.lstat().st_mode & 0o777, "04o"), "symlink_target": os.readlink(path)}
+            for path in (outer, inner)]
+    pins.append({"path": str(binary), "sha256": digest, "uid": 0, "mode": "0755"})
+    controls = Path(target["profile"]["RADHOUSE_CONTROLS_FILE"])
+    initial = json.loads(controls.read_bytes())
+
+    def save(values):
+        write(controls, initial + values)
+        target["profile"]["RADHOUSE_CONTROLS_SHA256"] = release.sha(controls.read_bytes())
+
+    save(pins)
+    # Production always exercises the root-ancestor check; this test process cannot chown.
+    monkeypatch.setattr(release, "root_control_path", release.ancestors)
+    actual_lstat, actual_read = Path.lstat, release.read_file
+
+    def projected_lstat(path, *args, **kwargs):
+        info = actual_lstat(path, *args, **kwargs)
+        if not path.is_relative_to(directory):
+            return info
+        return SimpleNamespace(st_uid=0, **{name: getattr(info, name) for name in
+                               ("st_mode", "st_dev", "st_ino", "st_size", "st_mtime_ns")})
+
+    def read(path, **kwargs):
+        if Path(path).is_relative_to(directory) and kwargs.get("owner") == 0:
+            kwargs["owner"] = os.getuid()
+        return actual_read(path, **kwargs)
+
+    monkeypatch.setattr(Path, "lstat", projected_lstat)
+    monkeypatch.setattr(release, "read_file", read)
+    return {"host": release.Host(target["profile"]), "pins": pins, "save": save,
+            "outer": outer, "inner": inner, "binary": binary, "directory": directory}
+
+
+def test_exact_root_execution_link_chain_and_final_binary_are_supported(execution_links):
+    fixture = execution_links
+    assert str(fixture["outer"]) in fixture["host"].controls()
+
+
+@pytest.mark.parametrize("name", ["outer", "inner"])
+def test_execution_link_retarget_is_refused_with_unchanged_regular_pin(execution_links, name):
+    fixture = execution_links
+    assert fixture["host"].controls()
+    old_digest = release.sha(fixture["binary"].read_bytes())
+    alternate = write(fixture["directory"] / "python-alternate", fixture["binary"].read_bytes(), 0o755)
+    link = fixture[name]
+    link.unlink()
+    link.symlink_to(alternate.name)
+    assert release.sha(fixture["binary"].read_bytes()) == old_digest
+    with pytest.raises(release.Refusal, match="execution_link_drift"):
+        fixture["host"].controls()
+
+
+@pytest.mark.parametrize("missing", ["inner", "binary"])
+def test_execution_chain_cannot_omit_a_link_or_final_regular_pin(execution_links, missing):
+    fixture = execution_links
+    fixture["save"]([pin for pin in fixture["pins"] if pin["path"] != str(fixture[missing])])
+    with pytest.raises(release.Refusal, match="execution_link_(chain_pin|final_file_pin)_required"):
+        fixture["host"].controls()
+
+
+def test_execution_link_loop_is_refused(execution_links):
+    fixture = execution_links
+    fixture["inner"].unlink()
+    fixture["inner"].symlink_to(fixture["outer"].name)
+    pins = [dict(pin, symlink_target=fixture["outer"].name) if pin["path"] == str(fixture["inner"]) else pin
+            for pin in fixture["pins"]]
+    fixture["save"](pins)
+    with pytest.raises(release.Refusal, match="execution_link_loop_or_depth_refused"):
+        fixture["host"].controls()
+
+
+def test_execution_link_nonregular_resolution_is_refused(execution_links):
+    fixture = execution_links
+    fixture["binary"].unlink()
+    fixture["binary"].mkdir(mode=0o755)
+    with pytest.raises(release.Refusal, match="execution_link_regular_target_required"):
+        fixture["host"].controls()
+
+
+def test_execution_link_pin_requires_root_owner(execution_links):
+    fixture = execution_links
+    pins = [dict(pin, uid=1000) if pin["path"] == str(fixture["outer"]) else pin for pin in fixture["pins"]]
+    fixture["save"](pins)
+    with pytest.raises(release.Refusal, match="execution_link_pin_invalid"):
+        fixture["host"].controls()
+
+
+def test_execution_controls_refuse_unprotected_ancestors(tmp_path):
+    path = tmp_path / "unprotected" / "python"
+    path.parent.mkdir(mode=0o777)
+    path.parent.chmod(0o777)
+    with pytest.raises(release.Refusal, match="execution_control_ancestor_custody_failed"):
+        release.root_control_path(path)
+
+
+
+def test_execution_link_cannot_hide_a_directory_symlink_before_parent_traversal(execution_links):
+    fixture = execution_links
+    outside = fixture["directory"] / "alternate/sub"
+    outside.mkdir(parents=True)
+    write(outside.parent / "python-real", fixture["binary"].read_bytes(), 0o755)
+    (fixture["directory"] / "redirect").symlink_to(outside, target_is_directory=True)
+    fixture["outer"].unlink()
+    target = "redirect/../python-real"
+    fixture["outer"].symlink_to(target)
+    pins = [dict(pin, symlink_target=target) if pin["path"] == str(fixture["outer"]) else pin for pin in fixture["pins"]]
+    fixture["save"](pins)
+    with pytest.raises(release.Refusal, match="execution_link_resolution_drift"):
+        fixture["host"].controls()
