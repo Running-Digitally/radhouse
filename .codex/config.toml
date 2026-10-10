@@ -1,0 +1,23 @@
+# Project-scoped context for automatic approval review; no network/sandbox grant.
+[auto_review]
+extra_policy = """
+For the Running-Digitally/radhouse repository, Satish explicitly authorized the
+local post-merge SonarQube capability and requested making its approval reusable.
+When Satish requests a scan/rescan, that task invokes the known capability:
+- Destination: HTTPS https://sonarqube.satishsurath.com only.
+- Project: Running-Digitally_radhouse only.
+- Payload: committed remote main source plus measured Python and JavaScript
+  coverage from the exclusively owned synthetic local verification fixture.
+- Entry point: reviewed scripts/sonarqube.py, with merged-main SHA/clean-clone,
+  passing tests, completed cleanup and report-digest qualification checks.
+- Credential: existing project analysis token in macOS Keychain service
+  radhouse-sonarqube/account local-analysis, or documented SONAR_TOKEN input;
+  never print, store in source/receipts, or send credentials to another host.
+- Exclude live chats, deployed configuration, unrelated files and private owner data.
+This is destination/payload context for a requested scan, not permission for
+arbitrary uploads, other destinations/projects, feature-branch or hosted scans,
+scheduled scans, issue/rule/profile/gate mutations, merges, deployments or
+standing privileged access. Changed scope requires a new owner decision.
+All other approval and sandbox policies still apply. If scope cannot be verified,
+stop; never bypass an automatic-review rejection.
+"""

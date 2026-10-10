@@ -26,6 +26,7 @@ PINNED_IMAGE = IMAGE_TAG + "@sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b3
 LABEL = "org.radhouse.vs0.run-id"
 LIMIT_SECONDS = 900
 COVERAGE_DIRECTORY = "coverage"
+COVERAGE_DATA_FILE = ".coverage"
 PYTHON_COVERAGE_XML = "python.xml"
 
 
@@ -349,10 +350,14 @@ def main():
         run.cleanup()
         if measurement is not None:
             succeeded = _save_measurement(run, measurement) and succeeded
+    return _report_result(run, args.mode, succeeded, prerequisite_missing)
+
+
+def _report_result(run, mode, succeeded, prerequisite_missing):
     if run.output.exists():
         print(f"Sanitized run manifest: {run.manifest_path.relative_to(ROOT)}")
     if succeeded:
-        print(f"PASS: offline {args.mode}; Python {run.manifest['python']}; source {run.manifest['source_commit']}; image {run.manifest['image']}")
+        print(f"PASS: offline {mode}; Python {run.manifest['python']}; source {run.manifest['source_commit']}; image {run.manifest['image']}")
     if prerequisite_missing:
         return 2
     if succeeded and run.manifest.get("cleanup") == "complete":
@@ -405,13 +410,13 @@ def _demonstrate_direction(run, service, work, clock, index, source, destination
 def _prepare_coverage(run):
     directory = run.output / COVERAGE_DIRECTORY
     directory.mkdir()
-    run.env.update(COVERAGE_FILE=str(directory / ".coverage"),
+    run.env.update(COVERAGE_FILE=str(directory / COVERAGE_DATA_FILE),
                    RADHOUSE_COVERAGE_DIR=str(directory / "browser"),
                    NODE_V8_COVERAGE=str(directory / "node"))
     # Build once before browser tests so their coverage maps to the tested TS.
     run.command(["npm", "--prefix", "web", "run", "build"])
     from coverage import Coverage
-    measurement = Coverage(data_file=str(directory / ".coverage"), data_suffix=True)
+    measurement = Coverage(data_file=str(directory / COVERAGE_DATA_FILE), data_suffix=True)
     measurement.start()
     run.env["COVERAGE_PROCESS_CONFIG"] = os.environ["COVERAGE_PROCESS_CONFIG"]
     return measurement
@@ -425,7 +430,7 @@ def _save_measurement(run, measurement):
     try:
         from coverage import Coverage
         directory = run.output / COVERAGE_DIRECTORY
-        combined = Coverage(data_file=str(directory / ".coverage"))
+        combined = Coverage(data_file=str(directory / COVERAGE_DATA_FILE))
         combined.load()
         combined.combine()
         combined.save()
