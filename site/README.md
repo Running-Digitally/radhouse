@@ -15,6 +15,12 @@ in the private pilot on 8 October. Agent Identity remains a design preview, pres
 one compact Visuals card with four groups of three small portraits. Each theme
 opens the thirteen-character popup gallery; working identity settings are the
 next private-app step. [The update receipt](RELEASE-2026-10-08-WORKSPACE.md) records the evidence.
+Echo uses the approved Blender neutral photograph and A/B/C reactions in the
+Visuals card and gallery. Each silent clip plays once after a random 2–6 second
+neutral rest, then returns to that same photograph. Clips shuffle without
+immediate repeats. Pause/Play controls, reduced motion, hidden tabs and offscreen
+portraits suspend playback; unavailable media retains the neutral photograph.
+[The Echo release receipt](RELEASE-2026-10-09-ECHO.md) records sources and checks.
 The hero keeps its original message and uses a tactile conversation notebook.
 Talk, Reply, Away and Return move the scene from day to night and back while
 the notebook stays in place. This is an illustration, not a live agent or a
@@ -59,9 +65,20 @@ node --check site/public/journey.js
 node --check site/public/analytics.js
 node --check site/public/platform-icons.js
 node --check site/public/gallery.js
+node --check site/public/echo.js
 node --test site/test/analytics.test.mjs
 .venv/bin/python -m pytest tests/test_brand_assets.py -q
 git diff --check -- site
+```
+
+The focused video/gallery browser check uses the existing Playwright runtime;
+no site dependencies or build are needed:
+
+```sh
+RADHOUSE_PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs \
+RADHOUSE_BROWSER_CHANNEL=chrome \
+RADHOUSE_BROWSER_ORIGIN=http://127.0.0.1:8931 \
+node site/test/echo-walkthrough.mjs
 ```
 
 The conversation example has a single next action and four keyboard-accessible stages.

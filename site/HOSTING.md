@@ -15,6 +15,10 @@ For this 8 October release, the owner explicitly requested an independent
 self-review instead of GitHub Codex review. The completed review is recorded in
 [REVIEW-2026-10-08-WORKSPACE.md](REVIEW-2026-10-08-WORKSPACE.md).
 
+The owner requested Echo's approved A/B/C video cycle on the public website on
+9 October (Toronto). [The Echo release receipt](RELEASE-2026-10-09-ECHO.md)
+records the shared neutral photograph, copied media, browser checks and rollout.
+
 ## Hosting contract
 
 | Concern | Value |
@@ -42,7 +46,7 @@ changes to DNS, access, bindings or any other Worker.
 
 ## Validate the artifact
 
-There is no compilation. HTML, CSS, JavaScript, SVGs, PNG screenshots, WebP portraits and the pinned, licensed
+There is no compilation. HTML, CSS, JavaScript, SVGs, PNG screenshots, WebP portraits, MP4/WebM clips and the pinned, licensed
 PostHog SDK are committed as the deployable artifact. Run the targeted checks
 in [README.md](README.md), review desktop and narrow layouts and exercise
 keyboard, reduced-motion, disclosures, error recovery and external links.
