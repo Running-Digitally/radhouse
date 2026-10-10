@@ -18,6 +18,8 @@ from urllib.parse import urlsplit
 import httpx
 
 from radhouse.application.ports import AgentWorkPort
+from radhouse.domain.fleet import RuntimeDescriptor
+from pydantic import ValidationError
 from radhouse.domain.tasks import (
     Attempt, InputFile, Rejected, RuntimeActivity, RuntimeCapabilities, RuntimeDispatch, RuntimeFailure, RuntimeGuidanceReceipt, RuntimeResult, Task,
     runtime_images, runtime_input,
@@ -70,6 +72,7 @@ class HermesRun:
     permission_request: dict | None = None
     guidance_receipts: tuple[RuntimeGuidanceReceipt, ...] | None = None
     activity: RuntimeActivity | None = None
+    observation_sequence: int | None = None
 
 
 @dataclass(frozen=True)
@@ -177,6 +180,13 @@ class HermesRunsClient:
                 and allowed.get("mode") == "exact_subset_of_profile" and allowed.get("max_names") == 32),
             guidance_receipts=identified_steering)
 
+    def descriptor(self) -> RuntimeDescriptor:
+        payload, _ = self._request('GET', 'v1/radhouse/descriptor', expected_status=200)
+        try:
+            return RuntimeDescriptor.model_validate(payload)
+        except ValidationError:
+            raise HermesGatewayError('runtime_contract_unavailable') from None
+
     def start_or_attach(
         self, *, input_text: str, session_id: str, dispatch_key: str, disable_tools: bool = False,
         allowed_tools: tuple[str, ...] = (), images: tuple[InputFile, ...] = (),
@@ -239,6 +249,9 @@ class HermesRunsClient:
         payload, _ = self._request("GET", f"v1/runs/{run_id}", expected_status=200)
         if _response_identifier(payload, "run_id") != run_id:
             raise HermesGatewayError("runtime_response_mismatch")
+        sequence = payload.get('observation_sequence')
+        if sequence is not None and (type(sequence) is not int or not 1 <= sequence <= 2**63-1):
+            raise HermesGatewayError('runtime_malformed_observation')
         output = payload.get("output")
         if output is not None and not isinstance(output, str):
             raise HermesGatewayError("runtime_malformed_response")
@@ -303,6 +316,7 @@ class HermesRunsClient:
             permission_request=permission,
             guidance_receipts=receipts,
             activity=RuntimeActivity(run_id, event, label, int(timestamp)),
+            observation_sequence=sequence,
         )
 
     def steer(self, run_id: str, text: str, *, control_id: str | None = None) -> bool | RuntimeGuidanceReceipt:
@@ -375,12 +389,21 @@ class HermesRunsClient:
             raise HermesGatewayError("runtime_unavailable") from None
 
         try:
-            payload = json.loads(data)
-        except (UnicodeDecodeError, json.JSONDecodeError):
+            payload = json.loads(data, object_pairs_hook=_unique_fields)
+        except (UnicodeDecodeError, ValueError):
             raise HermesGatewayError("runtime_malformed_response") from None
         if not isinstance(payload, dict):
             raise HermesGatewayError("runtime_malformed_response")
         return payload, response.headers
+
+
+def _unique_fields(pairs):
+    value = {}
+    for name, part in pairs:
+        if name in value:
+            raise ValueError('duplicate_runtime_field')
+        value[name] = part
+    return value
 
 
 def _validated_identifier(value: str, kind: str) -> str:
@@ -456,15 +479,48 @@ class HermesAgentWorkAdapter:
         *,
         runtime_revision: str,
         clock=lambda: datetime.now(timezone.utc),
+        expected_bot_id=None, expected_profile=None, expected_provider_binding=None,
+        descriptor_required=False,
     ):
         if _IDENTIFIER.fullmatch(runtime_revision) is None:
             raise ValueError("invalid_hermes_runtime_revision")
         self.client = client
         self.runtime_revision = runtime_revision
         self.clock = clock
+        self.expected_bot_id, self.expected_profile = expected_bot_id, expected_profile
+        self.expected_provider_binding, self.descriptor_required = expected_provider_binding, descriptor_required
+        if descriptor_required and not all(isinstance(value, str) and _IDENTIFIER.fullmatch(value)
+            for value in (expected_bot_id, expected_profile, expected_provider_binding)):
+            raise ValueError('runtime_descriptor_identity_required')
+
+    def describe(self, bot_id, *, require_ready=False):
+        if not self.descriptor_required:
+            return None
+        descriptor = self.client.descriptor()
+        if bot_id != self.expected_bot_id or descriptor.bot_id != self.expected_bot_id or descriptor.profile != self.expected_profile:
+            raise HermesGatewayError('runtime_identity_mismatch')
+        if descriptor.runtime_revision != self.runtime_revision:
+            raise HermesGatewayError('runtime_version_mismatch')
+        if descriptor.provider_binding != self.expected_provider_binding:
+            raise HermesGatewayError('runtime_provider_mismatch')
+        now = int(self.clock().timestamp())
+        if not now-60 <= descriptor.observed_at <= now+5:
+            raise HermesGatewayError('runtime_descriptor_stale')
+        if require_ready and descriptor.admission != 'ready':
+            raise HermesGatewayError('runtime_admission_held')
+        return descriptor
+
+    def _check(self, task, *, require_ready=False):
+        descriptor = self.describe(task.bot_id, require_ready=require_ready)
+        if descriptor is not None and task.provider_binding != descriptor.provider_binding:
+            raise HermesGatewayError('runtime_provider_mismatch')
+        return descriptor
 
     def capabilities(self, _task: Task) -> RuntimeCapabilities:
+        descriptor = self._check(_task, require_ready=True)
         capabilities = self.client.capabilities()
+        if descriptor is not None and descriptor.guidance_receipts != capabilities.guidance_receipts:
+            raise HermesGatewayError('runtime_contract_unavailable')
         if _task.disable_tools and not capabilities.disable_tools:
             raise HermesGatewayError("runtime_tools_restriction_unavailable")
         if _task.allowed_tools and not capabilities.allowed_tools:
@@ -500,7 +556,10 @@ class HermesAgentWorkAdapter:
         )
 
     def result(self, _task: Task, dispatch: RuntimeDispatch) -> RuntimeResult:
+        self._check(_task)
         run = self.client.status(dispatch.run_id)
+        if self.descriptor_required and run.observation_sequence is None:
+            raise HermesGatewayError('runtime_contract_unavailable')
         if any(item.get("protocol") == "hermes-guidance-v1" and item.get("run_id") == dispatch.run_id
                for item in _task.guidance) and run.guidance_receipts is None:
             raise HermesGatewayError("runtime_guidance_receipts_unavailable")
@@ -511,14 +570,17 @@ class HermesAgentWorkAdapter:
                 permission_request=run.permission_request,
                 guidance_receipts=receipts,
                 activity=run.activity,
+                observation_sequence=run.observation_sequence,
             )
         if run.status == "completed":
             return RuntimeResult(
-                "completed", run.output, guidance_receipts=receipts, activity=run.activity
+                "completed", run.output, guidance_receipts=receipts, activity=run.activity,
+                observation_sequence=run.observation_sequence,
             )
         if run.status == "cancelled":
             return RuntimeResult(
-                "cancelled", run.output, guidance_receipts=receipts, activity=run.activity
+                "cancelled", run.output, guidance_receipts=receipts, activity=run.activity,
+                observation_sequence=run.observation_sequence,
             )
         if run.status == "interrupted":
             return RuntimeResult(
@@ -526,23 +588,28 @@ class HermesAgentWorkAdapter:
                 guidance_receipts=receipts,
                 guidance_terminal=True,
                 activity=run.activity,
+                observation_sequence=run.observation_sequence,
             )
         return RuntimeResult(
-            "failed", run.output, guidance_receipts=receipts, activity=run.activity
+            "failed", run.output, guidance_receipts=receipts, activity=run.activity,
+            observation_sequence=run.observation_sequence,
         )
 
     def stop(self, _task: Task, dispatch: RuntimeDispatch) -> bool:
+        self._check(_task)
         return self.client.stop(dispatch.run_id).status in {
             "stopping", "cancelled", "completed", "failed", "interrupted",
         }
 
     def steer(self, _task: Task, dispatch: RuntimeDispatch, text: str, *, control_id: str) -> RuntimeGuidanceReceipt:
+        self._check(_task)
         receipt = self.client.steer(dispatch.run_id, text, control_id=control_id)
         if not isinstance(receipt, RuntimeGuidanceReceipt):
             raise HermesGatewayError("runtime_malformed_guidance")
         return receipt
 
     def approve(self, _task: Task, dispatch: RuntimeDispatch, request_id: str, choice: str) -> bool:
+        self._check(_task)
         return self.client.approve(dispatch.run_id, request_id, choice)
 
 
@@ -562,6 +629,12 @@ class RoutingAgentWork:
 
     def capabilities(self, task: Task) -> RuntimeCapabilities:
         return self._adapter(task).capabilities(task)
+
+    def describe(self, bot_id):
+        try:
+            return self.adapters[bot_id].describe(bot_id)
+        except KeyError:
+            raise RuntimeFailure('runtime_not_configured') from None
 
     def start_or_attach(
         self, task: Task, attempt: Attempt, dispatch_key: str,

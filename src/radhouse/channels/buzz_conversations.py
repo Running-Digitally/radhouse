@@ -248,7 +248,7 @@ class BuzzConversationCycle:
                         tx.save_conversation_message(replace(existing['message'], task_state_revision=task.state_revision), processed=True)
                     else:
                         tx.save_conversation_message(ConversationMessage(message_id, self.link.link_id,
-                            self.link.bot_id, self.conversations.describe_work(view), 'radhouse',
+                            self.link.bot_id, self.conversations.work_reply(tx, self.link, view), 'radhouse',
                             int(self.service._now().timestamp()), task_id=task_id,
                             reply_to=tx.conversation_task_anchor(self.link, task_id), state='work',
                             task_state_revision=task.state_revision), processed=True)
@@ -378,6 +378,11 @@ class BuzzConversationCycle:
                     work = tx.work_for_task(message.task_id)
                     if work is not None:
                         tags.append(['radhouse-work', work.work_id])
+                        if work.artifact_id:
+                            artifact = tx.artifact(work.artifact_id)
+                            if artifact:
+                                tags.extend([['radhouse-artifact', artifact[0].artifact_id],
+                                             ['radhouse-digest', artifact[0].sha256]])
                     correlated = tx.task(message.task_id)
                     if (message.state in {"result", "publication"}
                             and correlated is not None and correlated.result_digest):

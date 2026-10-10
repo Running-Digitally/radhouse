@@ -91,6 +91,16 @@ class Conversations:
             if bot is None:
                 raise Rejected("bot_unavailable", 409)
             content = _without_agent_prefix(content, bot.display_name)
+        if link.workflow_version == 'artifact-v1':
+            references = set(re.findall(r'\bwork-[a-f0-9]{32}\b', content))
+            if references:
+                if len(references) != 1:
+                    return MessageRoute('clarify')
+                work = tx.work_item(next(iter(references)))
+                if (work is None or work.owner_id != link.principal_id
+                        or work.project_id != link.project_id or work.accountable_bot_id != link.bot_id):
+                    return MessageRoute('clarify')
+                return MessageRoute('status', work.task_id)
         explicit_start = (
             message.addressed
             and not message.reply_to
@@ -143,6 +153,10 @@ class Conversations:
             target = active[0] if active else tx.task(tx.conversation_focus(link))
         if _STATUS.fullmatch(content.strip()):
             return MessageRoute("status", target.task_id if target else None)
+        if link.workflow_version == 'artifact-v1' and target is not None and content.rstrip().endswith('?'):
+            # Questions retain context and use a read-only fallback. A richer
+            # interpreter must never turn unavailable interpretation into a start.
+            return MessageRoute('status', target.task_id)
         if link.workflow_version == 'artifact-v1' and target is not None:
             control = content.strip().lower().rstrip('.!?')
             if control in {'pause', 'resume', 'cancel'}:
@@ -156,7 +170,7 @@ class Conversations:
                 if link.workflow_version == 'artifact-v1':
                     # S2c adds bounded natural-language interpretation. Until
                     # then a completed-work reply cannot create a fresh planner.
-                    return MessageRoute('clarify', target.task_id)
+                    return MessageRoute('status', target.task_id)
                 return MessageRoute(
                     "start", follows_task_id=target.task_id if target.result else None
                 )
@@ -356,10 +370,33 @@ class Conversations:
             reply_to=message.message_id, state='reply')
         with self.store.transaction() as tx:
             self.authorize(tx, link, write=True)
+            if view is not None and route.action == 'status':
+                response = replace(response, content=self.work_reply(tx, link, view))
             tx.save_conversation_message(completed, processed=True)
             if tx.conversation_message(response.message_id) is None:
                 tx.save_conversation_message(response, processed=True)
+            if view is None:
+                from radhouse.application.work_service import project_work
+                choices = [work for work in tx.work_items(link.principal_id, link.project_id)
+                           if work.accountable_bot_id == link.bot_id][:3]
+                for work in choices:
+                    task = self.service._task(tx, work.task_id)
+                    self.service._authorize(tx, actor, task, envelope)
+                    choice_id = 'choice:' + message.message_id + ':' + work.work_id
+                    if tx.conversation_message(choice_id) is None:
+                        tx.save_conversation_message(ConversationMessage(choice_id, link.link_id, link.bot_id,
+                            self.work_reply(tx, link, project_work(tx, work, task)), 'radhouse',
+                            int(self.service._now().timestamp()), task_id=task.task_id,
+                            reply_to=message.message_id, state='choice'), processed=True)
         return completed
+
+    def work_reply(self, tx, link, view):
+        text = self.describe_work(view)
+        if view.artifact is not None and self.service.review_links is not None:
+            work = tx.work_item(view.work_id)
+            task = self.service._task(tx, work.task_id)
+            text += '\n\nOpen artifact · Sign in to Radhouse:\n' + self.service.review_links.issue_artifact(tx, link, task, work)
+        return text
 
     @staticmethod
     def describe_work(view):

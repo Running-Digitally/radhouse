@@ -134,8 +134,10 @@ export class RadhouseApi {
     return this.request(`/conversations?${this.query()}`);
   }
 
-  async resolveReview(locator: string): Promise<{ task_id: string; project_id: string; conversation_id: string; binding_revision: number }> {
-    const value = await this.request<{ task_id: string; project_id: string; conversation_id: string; binding_revision: number }>("/reviews/resolve", {
+  async resolveReview(locator: string): Promise<{ task_id: string; project_id: string; conversation_id: string; binding_revision: number;
+    work_id?: string; artifact_id?: string; scope_revision?: number; digest?: string }> {
+    const value = await this.request<{ task_id: string; project_id: string; conversation_id: string; binding_revision: number;
+      work_id?: string; artifact_id?: string; scope_revision?: number; digest?: string }>("/reviews/resolve", {
       method: "POST", body: JSON.stringify({ locator }),
     });
     if (!value || !/^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value.task_id)
@@ -143,6 +145,11 @@ export class RadhouseApi {
         || !Number.isSafeInteger(value.binding_revision) || value.binding_revision < 1) {
       throw new ApiError("invalid_server_response", 502);
     }
+    if ([value.work_id, value.artifact_id, value.scope_revision, value.digest].some(item => item !== undefined)
+        && (!/^work-[a-f0-9]{32}$/.test(value.work_id ?? '')
+          || !/^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value.artifact_id ?? '')
+          || !Number.isSafeInteger(value.scope_revision) || (value.scope_revision ?? 0) < 1
+          || !/^[a-f0-9]{64}$/.test(value.digest ?? ''))) throw new ApiError('invalid_server_response', 502);
     return value;
   }
 

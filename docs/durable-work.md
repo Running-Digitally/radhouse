@@ -81,8 +81,9 @@ and freezes its revisions before issuing the same application command as web.
 Known status questions read work without a model call. Explicit `pause`,
 `resume` and `cancel` steer the resolved work; ambiguous targets ask for context.
 Independent requests retain independent work IDs. Replies to terminal work
-cannot start a new planner. Full natural-language interpretation is a later
-slice. Notifications use the canonical verified work projection and never
+return its retained state. Explicit work references and contextual questions
+use a read-only fallback; ambiguous references show bounded contextual choices.
+A richer model interpreter remains unqualified. Notifications use the canonical verified work projection and never
 publish raw result-protocol JSON as a completed artifact.
 
 The default conversation mode remains `legacy`. A configuration edit does not
@@ -108,7 +109,13 @@ alongside this process. `coordinator-once` refuses a Buzz-enabled durable-work
 configuration or any configured artifact conversation, even with new admission
 disabled, so retained work cannot silently return to serialized relay polling.
 
-Sharing these artifacts is deferred until review binds to the artifact itself.
+Signed artifact navigation now binds work, scope, manifest ID and digest to the
+current enrolled owner. The URL fragment survives normal sign-in and opens the
+exact sanitized artifact. It grants no authentication, approval or publication;
+current web/channel binding and grant checks still apply. The original signed
+notification remains immutable; a later status reply can issue a fresh link.
+Changed scope/artifact/bytes invalidate navigation. General artifact sharing
+and publication remain deferred until their audience/review workflow is qualified.
 The existing raw-task review endpoint refuses managed work, so a blocked JSON
 report cannot be published as a verified result through that path. Existing
 legacy task sharing remains available.
@@ -118,12 +125,14 @@ legacy task sharing remains available.
 Migration `0008_work_items.sql` adds work, step links, artifacts and verification
 receipts. `0009_work_commands.sql` links work receipts to the existing
 principal-scoped command ledger. Neither changes historical task contents.
-Exact schema identity remains mandatory. This binary requires schema 9 even
-with admission disabled. Upgrade tests cover versions 1 through 8 and preserve
+Migration `0010_runtime_observations.sql` constrains durable cursors on existing
+dispatch snapshots; see the [runtime contract](runtime-contract.md).
+Exact schema identity remains mandatory. This binary requires schema 10 even
+with admission disabled. Upgrade tests cover versions 1 through 9 and preserve
 tasks.
 
 Deploying/migrating/enabling this path is a separate reviewed rollout. Do not run
-an old schema-7/8 binary after migration, restore an old database under external
+an old schema-7/8/9 binary after migration, restore an old database under external
 effects, or infer completed delivery from historical `completed` tasks. Disable
 new admission, retain all new rows, hold dispatch if necessary, and repair forward
 or use a verified compatible binary. Do not destructively down-migrate.
