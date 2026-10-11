@@ -37,6 +37,7 @@ const explanations = {
   draft_recovery_in_tab:"You’re signed out. Keep this tab open and sign in here to recover the draft your browser couldn’t save.",
   original_unavailable:"This browser no longer has the unsent original. Edit this message and attach the file again.",
   browser_context_changed:"The browser changed before this message was received. Take control of the current page and send a new message.",
+  browser_context_unavailable:"Browser context is unavailable. Edit the message and turn off browser context before sending again.",
   browser_binding_unavailable:"Reconnect to use browser control. Your message and files are kept.",
   message_options_changed:"This message already has different saved settings or terminal context. Reconnect to check it.",
   inference_catalog_unavailable:"Model choices are unavailable. Select Default or refresh models before sending.",
@@ -373,7 +374,7 @@ async function handleWorkspaceNavigation(event) {
   finally { managementLeaving=false; }
 }
 $("management-nav").addEventListener("click",handleWorkspaceNavigation);
-document.addEventListener("click",event=>{if(event.target.closest?.(".rh-header-portrait"))void handleWorkspaceNavigation(event);});
+document.addEventListener("click",event=>{if(event.target.closest?.("a.brand,.rh-header-portrait"))void handleWorkspaceNavigation(event);});
 function releaseFile(file) { const url=previewUrls.get(file.file_id); if (url) { URL.revokeObjectURL(url); } previewUrls.delete(file.file_id); }
 function releasePreviews() { for (const url of previewUrls.values()) { URL.revokeObjectURL(url); } previewUrls.clear(); }
 function showLogin(expired=false) {
@@ -416,6 +417,10 @@ async function api(path,body,initial=false,signal=undefined,method=undefined) {
 }
 function pendingTurn() { return [...turns.values()].find(turn => !terminal.has(turn.status)); }
 function rememberTurn(turn) {
+  const saved=turns.get(turn.seq);
+  // Terminal receipts are immutable on the server. A delayed poll or history
+  // response must not undo an acknowledged completion or follow-up cancellation.
+  if (saved && terminal.has(saved.status) && !terminal.has(turn.status)) { turn=saved; }
   turns.set(turn.seq,turn);
   if (outbox?.request_id===turn.request_id) { outbox.attachments.forEach(releaseFile); outbox=null; persist(); }
 }
@@ -803,6 +808,17 @@ async function prepareOutgoingFiles(box, sendingSession) {
 async function recoverOutgoing(box, sendingSession, error) {
   if (session===sendingSession && outbox===box) {
     box.phase="failed"; box.error=error.message;
+    if (["browser_context_changed","browser_context_unavailable"].includes(error.message)) {
+      // A context rejection can also refer to an already-received request.
+      // Allow editing only when its exact receipt proves it was not saved.
+      try {
+        const receipt=await api("/chat/messages/"+encodeURIComponent(box.request_id));
+        if (session===sendingSession && outbox===box) { rememberTurn(receipt.turn); }
+      } catch (receiptError) {
+        if (session===sendingSession && outbox===box && receiptError.status===404) { box.transmitted=false; }
+      }
+      if (session!==sendingSession || outbox!==box) { return; }
+    }
     if ([413,422].includes(error.status) || ["reply_pending","inference_catalog_unavailable",
       "inference_model_unavailable","inference_thinking_unavailable","inference_selection_changed",
       "terminal_context_unavailable"].includes(error.message)) { box.transmitted=false; }

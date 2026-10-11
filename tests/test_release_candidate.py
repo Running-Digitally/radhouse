@@ -72,7 +72,7 @@ def test_plan_only_requires_no_dependencies_and_writes_nothing(source, monkeypat
     result = candidate.run_candidate(root, baseline, plan_only=True)
     assert result["state"] == "plan"
     assert result["apply_supported"]
-    assert len(result["gates"]) == 13
+    assert len(result["gates"]) == 14
     assert not (root / ".release-private").exists()
     assert result["target_contact"] is False and result["automatic_approval"] is False
 
@@ -104,7 +104,7 @@ def test_candidate_freezes_executed_checks_with_timings_and_pins(source, executi
     assert result["qualification_sha256"] == release.sha((output / "qualification.json").read_bytes())
     manifest, _ = release.load_packet(output / "packet", result["manifest_sha256"])
     assert manifest["qualification_sha256"] == result["qualification_sha256"]
-    assert len(execution) == 13
+    assert len(execution) == 14
     assert not git(root, "status", "--porcelain")
     assert output.stat().st_mode & 0o777 == 0o700
     assert all(p.stat().st_mode & 0o777 == 0o600 for p in output.iterdir() if p.is_file())

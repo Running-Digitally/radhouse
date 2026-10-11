@@ -141,7 +141,12 @@ function failureText(code) {
   return "This page could not be checked. Try refreshing.";
 }
 function failed(code) {
-  if (code === "authentication_required") { session = null; $("logout").hidden = true; agentProfile?.clear(); }
+  if (code === "authentication_required") {
+    // Authentication can expire in a parallel profile/preferences request.
+    // Invalidate every pending page read before clearing the private content.
+    ++generation; controller?.abort(); session = null;
+    $("logout").hidden = true; agentProfile?.clear();
+  }
   window.RadhouseNavigation?.update(session);
   $("content").replaceChildren(); $("content").hidden = true; $("loading").hidden = true;
   $("checked-at").textContent = ""; $("notice").hidden = false;

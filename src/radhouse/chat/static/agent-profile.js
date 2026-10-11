@@ -70,11 +70,15 @@
 
     async load() {
       if(this.dirty || this.busy)return;
-      const epoch=++this.epoch;this.abort?.abort();this.abort=new AbortController();this.busy=true;
+      const epoch=++this.epoch;this.abort?.abort();const controller=this.abort=new AbortController();this.busy=true;
       this.status.textContent="Opening your agent…";this.retry.hidden=true;
       try {
-        if(!this.catalog)this.catalog=await this.request("/workspace-assets/agent-profile/catalog.json",undefined,false,this.abort.signal);
-        const value={portraitSize:80,...await this.request("/chat/agent-profile",undefined,false,this.abort.signal)};
+        if(!this.catalog) {
+          const catalog=await this.request("/workspace-assets/agent-profile/catalog.json",undefined,false,controller.signal);
+          if(epoch!==this.epoch)return;
+          this.catalog=catalog;
+        }
+        const value={portraitSize:80,...await this.request("/chat/agent-profile",undefined,false,controller.signal)};
         if(epoch!==this.epoch)return;
         if(!this.valid(value))throw new Error("invalid_agent_profile");
         this.saved=clone(value);this.current=clone(value);this.remoteChanged=false;
@@ -212,7 +216,7 @@
     }
 
     updateActions() {
-      if(!this.saveButton)return;
+      if(!this.current || !this.saveButton)return;
       this.saveButton.disabled=this.busy || !this.dirty || !this.valid(this.current);this.discardButton.disabled=this.busy || (!this.dirty && !this.remoteChanged);
       this.nameInput.setCustomValidity(textError(this.current.name,32));this.introInput.setCustomValidity(textError(this.current.intro,160,true));
       for(const control of this.form.querySelectorAll("input,textarea,button[role=tab]"))control.disabled=this.busy;

@@ -37,6 +37,7 @@
       this.controlEnabled = false; this.control = null; this.sequence = 0;
       this.displayedFrame = null; this.actionPending = false; this.lease = null;
       this.inputUnconfirmed = false;
+      this.actionGeneration=0;this.actionToken=null;
       this.preferences=null;
       const header = document.createElement("div"); header.className = "browser-view-header"; this.header = header;
       const heading = document.createElement("h2"); heading.textContent = "Assistant browser";
@@ -173,6 +174,7 @@
     }
 
     stop() {
+      this.actionGeneration++;this.actionToken=null;this.actionPending=false;
       this._cancel(); this._clearImage();
       this._clearSecrets(); this.control = null; this.lease = null; this.actionNotice=null;
       this.inputUnconfirmed=false;
@@ -392,30 +394,35 @@
 
     async _act(path,body,{method="POST",update=true}={}) {
       if(this.actionPending || !this.request)return null;
-      const epoch=this.epoch;this.actionPending=true;this.actionNotice=null;this._renderControlState();
+      const epoch=this.epoch, action=Symbol("browser-action");this.actionToken=action;
+      this.actionPending=true;this.actionNotice=null;this._renderControlState();
       this.container.dispatchEvent(new CustomEvent("browser-activity",{bubbles:true}));
       try {
         const value=await this.request(path,body,method);
-        if(epoch!==this.epoch)return null;
+        if(epoch!==this.epoch || this.actionToken!==action)return null;
         if(update) {
           this.update(value);
           this.container.dispatchEvent(new CustomEvent("browser-state",{bubbles:true,detail:value}));
         }
         return value;
       } catch {
-        if(epoch===this.epoch)this.actionNotice=method==="GET"
+        if(epoch===this.epoch && this.actionToken===action)this.actionNotice=method==="GET"
           ? "The browser connection is unavailable. Reconnect to check it again."
           : "We could not confirm that action. It has not been retried. Check the browser before continuing.";
         return null;
       } finally {
-        this.actionPending=false;this._clearSecrets();this._renderControlState();
+        if(this.actionToken===action) {
+          this.actionToken=null;this.actionPending=false;this._clearSecrets();this._renderControlState();
+        }
       }
     }
 
     async _input(operation,args) {
       if(!this._human() || !this.displayedFrame || this.actionPending || this.inputUnconfirmed)return;
+      const actionGeneration=this.actionGeneration,generation=this.generation;
       const value=await this._act("/chat/browser/control/input",{...this._binding(),...this.displayedFrame,
         sequence:++this.sequence,operation,arguments:args},{update:false});
+      if(actionGeneration!==this.actionGeneration || generation!==this.generation)return;
       if(!value || ["uncertain","reserved"].includes(value.outcome)) {
         this.inputUnconfirmed=true;
         this.actionNotice="Previous input wasn’t confirmed. Check the page before continuing.";
@@ -441,25 +448,29 @@
     }
 
     async _navigateAddress() {
-      const original=this.address.value;
+      const original=this.address.value,actionGeneration=this.actionGeneration;
       try {
         let target=resolveAddress(original);
         if(target.kind==="search") {
-          if(!await this._loadPreferences())throw new Error("Your browser settings could not be loaded. Try again.");
+          const loaded=await this._loadPreferences();
+          if(actionGeneration!==this.actionGeneration)return;
+          if(!loaded)throw new Error("Your browser settings could not be loaded. Try again.");
           target=resolveAddress(original,this.preferences.search_engine);
         }
         const result=await this._input("navigate",{url:target.url});
+        if(actionGeneration!==this.actionGeneration)return;
         if(result?.outcome==="applied" && this.address.value===original) {
           this.address.value=target.url;this.addressEdited=false;
           void this._loadPreferences();
         }
-      } catch(error) {this.actionNotice=error.message;this._renderControlState();}
+      } catch(error) {if(actionGeneration===this.actionGeneration){this.actionNotice=error.message;this._renderControlState();}}
     }
 
     async _reconnectControls() {
       if(!this._human() || !this.inputUnconfirmed || this.actionPending)return;
-      this._clearSecrets();
+      this._clearSecrets();const actionGeneration=this.actionGeneration;
       const paused=await this._act("/chat/browser/control/pause",this._binding());
+      if(actionGeneration!==this.actionGeneration)return;
       if(!paused) {
         this.actionNotice="Previous input wasn’t confirmed. Check the page before continuing.";
         this._renderControlState();return;
@@ -470,9 +481,10 @@
 
     async _return() {
       if(!this._human() || !this.canReturn || this.actionPending || this.inputUnconfirmed || !this.onReturn)return;
+      const action=Symbol("browser-return");this.actionToken=action;
       this.actionPending=true;this._renderControlState();this._clearSecrets();
       try {await this.onReturn(this._binding());}
-      finally {this.actionPending=false;this._renderControlState();}
+      finally {if(this.actionToken===action){this.actionToken=null;this.actionPending=false;this._renderControlState();}}
     }
 
     async _showLogins() {
