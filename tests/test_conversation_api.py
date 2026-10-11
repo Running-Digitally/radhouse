@@ -62,3 +62,24 @@ def test_conversation_message_rejects_spoofed_authority(chat, service, alice, en
         response = client.post(f"/conversations/{link.link_id}/messages", json=body)
         assert response.status_code == 422
         assert response.json() == {"code": "invalid_request"}
+
+
+def test_start_fresh_thread_is_an_idempotent_conversation_action(
+    chat, service, alice, envelope, store
+):
+    _, link = chat
+    with TestClient(create_app(service, lambda request: alice)) as client:
+        env = asdict(envelope())
+        path = f"/conversations/{link.link_id}/messages"
+        body = {"envelope": env, "content": "Start fresh thread", "files": []}
+        first = client.post(path, json=body)
+        retry = client.post(path, json=body)
+        assert first.status_code == retry.status_code == 200
+        assert first.json() == retry.json()
+        assert first.json()["state"] == "fresh_context"
+        with store.transaction() as tx:
+            assert tx.tasks() == []
+            rows = tx.conversation_history(link.link_id)
+            assert len(rows) == 2
+            assert rows[0]["message"].state == "fresh_context"
+            assert rows[1]["message"].content.startswith("Started a fresh agent thread")

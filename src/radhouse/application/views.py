@@ -36,6 +36,14 @@ class TaskCard:
 
 
 @dataclass(frozen=True)
+class SharedResult:
+    publication_id: str
+    owner_id: str
+    content: str
+    digest: str
+
+
+@dataclass(frozen=True)
 class WorkHome:
     principal_id: str
     role: str
@@ -44,3 +52,4 @@ class WorkHome:
     agents: tuple[BotProfile, ...]
     tasks: tuple[TaskCard, ...]
     start: ActionView
+    shared_results: tuple[SharedResult, ...] = ()

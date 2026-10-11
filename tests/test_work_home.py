@@ -1,9 +1,10 @@
 """The work home is a scoped server-owned view, not a UI permission guess."""
-from dataclasses import replace
+from dataclasses import asdict, replace
 
 import pytest
 
 from tests.fakes import channel_actor
+from radhouse.domain.tasks import Rejected
 
 pytestmark = pytest.mark.postgres
 
@@ -113,3 +114,38 @@ def test_completed_task_exposes_review_without_reauthentication(
     card = next(card for card in home.tasks if card.task.task_id == completed.task_id)
     assert not card.cancel.enabled and card.cancel.reason == "task_closed"
     assert card.review.enabled and card.review.reason is None
+
+
+@pytest.mark.parametrize("revocation", ["bot", "project_bot", "membership", "account"])
+def test_shared_results_are_discoverable_without_private_task_data_and_recheck_access(
+    service, store, alice, viewer, envelope, start, revocation,
+):
+    scope = envelope(project_id="project-shared")
+    task = service.run(service.admit(alice, scope, replace(start,
+        project_id="project-shared", brief="Private source instructions")).task_id)
+    recipient_scope = envelope(principal="viewer", project_id="project-shared")
+    assert service.work_home(viewer, envelope=recipient_scope).shared_results == ()
+    review = service.prepare_review(alice, task.task_id, task.state_revision,
+                                   ("alice", "viewer"), envelope=scope)
+    publication = service.publish(alice, envelope(project_id="project-shared"), review.review_id,
+                                  review.revision, task.result, review.audience)
+    home = service.work_home(viewer, envelope=recipient_scope)
+    assert home.tasks == ()
+    assert [asdict(item) for item in home.shared_results] == [{
+        "publication_id": publication.publication_id, "owner_id": "alice",
+        "content": task.result, "digest": task.result_digest,
+    }]
+    assert service.work_home(alice, envelope=scope).shared_results == ()
+    with store.transaction() as tx:
+        sql = {
+            "bot": "DELETE FROM bot_grants WHERE principal_id='viewer'",
+            "project_bot": "DELETE FROM project_bots WHERE project_id='project-shared' AND bot_id='bot-alpha'",
+            "membership": "DELETE FROM project_members WHERE principal_id='viewer'",
+            "account": "UPDATE actors SET active=false WHERE principal_id='viewer'",
+        }[revocation]
+        tx._connection.execute(sql)
+    if revocation in {"membership", "account"}:
+        with pytest.raises(Rejected):
+            service.work_home(viewer, envelope=recipient_scope)
+    else:
+        assert service.work_home(viewer, envelope=recipient_scope).shared_results == ()

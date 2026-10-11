@@ -56,18 +56,28 @@ export class RadhouseApi {
   }
 
   async projects(): Promise<Project[]> {
-    const value = await this.request<unknown>("/projects");
-    if (!Array.isArray(value) || value.length > 100 || value.some((item) =>
-      typeof item !== "object" || item === null || typeof item.project_id !== "string"
-      || typeof item.display_name !== "string" || typeof item.conversation_id !== "string"
-      || !Number.isSafeInteger(item.binding_revision) || item.binding_revision < 1
-      || !Array.isArray(item.bot_ids) || item.bot_ids.some((id: unknown) => typeof id !== "string")
-      || !(item.coordination === null || (typeof item.coordination === "object"
-        && item.coordination !== null && typeof item.coordination.phase === "string"
-        && Number.isSafeInteger(item.coordination.revision))))) {
-      throw new ApiError("invalid_server_response", 502);
+    const projects: Project[] = [];
+    let after = "";
+    while (true) {
+      const value = await this.request<unknown>(after ? `/projects?after=${encodeURIComponent(after)}` : "/projects");
+      if (!Array.isArray(value) || value.length > 100 || value.some((item) =>
+        typeof item !== "object" || item === null || typeof item.project_id !== "string"
+        || typeof item.display_name !== "string" || typeof item.conversation_id !== "string"
+        || !Number.isSafeInteger(item.binding_revision) || item.binding_revision < 1
+        || !Array.isArray(item.bot_ids) || item.bot_ids.some((id: unknown) => typeof id !== "string")
+        || !(item.coordination === null || (typeof item.coordination === "object"
+          && item.coordination !== null && typeof item.coordination.phase === "string"
+          && Number.isSafeInteger(item.coordination.revision))))) {
+        throw new ApiError("invalid_server_response", 502);
+      }
+      const batch = value as Project[];
+      for (const project of batch) {
+        if (project.conversation_id <= after) throw new ApiError("invalid_server_response", 502);
+        after = project.conversation_id;
+        projects.push(project);
+      }
+      if (batch.length < 100) return projects;
     }
-    return value as Project[];
   }
 
   async createProject(displayName: string, botIds: string[]): Promise<Project> {

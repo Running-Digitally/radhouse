@@ -217,16 +217,28 @@ class ConversationQueries:
         ).fetchone()
         return row["event"] if row else None
 
-    def conversation_focus(self, link):
+    def conversation_focus(self, link, *, hermes_session_id=None):
         # Only owner selections move focus. Delayed bot progress and random
         # task UUID ordering cannot replace the selected context.
         row = self._connection.execute(
-            "SELECT task_id FROM conversation_messages WHERE link_id=%s "
-            "AND snapshot->>'author'=%s AND processed AND task_id IS NOT NULL "
-            "ORDER BY (snapshot->>'created_at')::bigint DESC, sequence DESC LIMIT 1",
-            (link.link_id, link.principal_id),
+            "SELECT m.task_id FROM conversation_messages m JOIN tasks t ON t.task_id=m.task_id "
+            "WHERE m.link_id=%s AND m.snapshot->>'author'=%s AND m.processed "
+            "AND (%s::text IS NULL OR t.hermes_session_id=%s) "
+            "ORDER BY (m.snapshot->>'created_at')::bigint DESC, m.sequence DESC LIMIT 1",
+            (link.link_id, link.principal_id, hermes_session_id, hermes_session_id),
         ).fetchone()
         return row["task_id"] if row else None
+
+    def conversation_context_id(self, link_id, *, at_or_before=None):
+        """Return the latest boundary active when a received message was created."""
+        row = self._connection.execute(
+            "SELECT route->>'context_id' AS context_id FROM conversation_messages "
+            "WHERE link_id=%s AND route->>'action'='fresh_context' "
+            "AND (%s::bigint IS NULL OR (snapshot->>'created_at')::bigint<=%s) "
+            "ORDER BY (snapshot->>'created_at')::bigint DESC, sequence DESC LIMIT 1",
+            (link_id, at_or_before, at_or_before),
+        ).fetchone()
+        return row["context_id"] if row else None
 
     def conversation_unannounced_publications(self, link_id, limit=20):
         rows = self._connection.execute(

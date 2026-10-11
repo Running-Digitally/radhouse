@@ -36,8 +36,15 @@ try {
   await log.getByText("routine.txt", { exact: true }).click();
   await log.getByText("A quiet walk before breakfast.", { exact: true }).waitFor();
   assert.equal(await page.locator("[data-task-id]").count(), 2);
+  await page.getByText(/New tasks continue this agent thread\./).waitFor();
+  await page.getByRole("button", { name: "Start fresh thread", exact: true }).click();
+  await log.getByText("Start fresh thread", { exact: true }).waitFor();
+  await log.getByText(/Started a fresh agent thread for new work\./).waitFor();
+  assert.equal(await page.locator("[data-task-id]").count(), 2);
+  await page.reload();
+  await log.getByText("Start fresh thread", { exact: true }).waitFor();
   await page.screenshot({ path: process.env.RADHOUSE_SCREENSHOT, fullPage: true });
-  console.log("Conversation walkthrough passed: signed Buzz message → shared web history → contextual reply with file → lost acknowledgment retry → reconnect.");
+  console.log("Conversation walkthrough passed: signed Buzz message → shared web history → contextual reply with file → lost acknowledgment retry → fresh thread without task/history deletion → reconnect.");
 } catch (error) {
   await page.screenshot({ path: process.env.RADHOUSE_SCREENSHOT, fullPage: true });
   console.log((await page.locator("body").innerText()).slice(0, 5000));

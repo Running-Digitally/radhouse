@@ -12,7 +12,7 @@ from radhouse.storage.postgres import ApplicationStorageError, schema_digest
 
 
 @pytest.mark.postgres
-@pytest.mark.parametrize("legacy_version", [1, 2, 3, 4, 5, 6])
+@pytest.mark.parametrize("legacy_version", [1, 2, 3, 4, 5, 6, 7, 8])
 def test_legacy_upgrade_preserves_tasks_and_requires_exact_version_digest(store, service, alice, envelope, start, legacy_version):
     task = service.admit(alice, envelope(), start)
     owner = os.environ["RADHOUSE_VS0_OWNER_DSN"]
@@ -21,6 +21,12 @@ def test_legacy_upgrade_preserves_tasks_and_requires_exact_version_digest(store,
     arguments = dict(expected_database=database, deployment_id=f"fixture-{run_id}", runtime_role="radhouse_runtime")
     with psycopg.connect(owner) as connection:
         # Reconstruct the genuine old schema in this exclusively owned fixture.
+        connection.execute("DROP TABLE task_coordination")
+        if legacy_version < 8:
+            connection.execute(
+                "ALTER TABLE tasks DROP CONSTRAINT tasks_hermes_session_id_format, "
+                "DROP COLUMN hermes_session_id"
+            )
         if legacy_version < 7:
             connection.execute("DROP TABLE project_coordination")
             connection.execute("ALTER TABLE local_sessions DROP COLUMN remembered")
@@ -50,7 +56,7 @@ def test_legacy_upgrade_preserves_tasks_and_requires_exact_version_digest(store,
     with pytest.raises(ApplicationStorageError, match="database_identity_mismatch"):
         with runtime.transaction(): pass
     receipt = initialize_database(owner, **arguments)
-    assert receipt.result == "upgraded" and receipt.schema_version == 7
+    assert receipt.result == "upgraded" and receipt.schema_version == 9
     with runtime.transaction() as tx:
         assert tx.task(task.task_id) == task
         assert tx.task_title(task.task_id).title == "Prepare the synthetic offline report."
@@ -61,7 +67,7 @@ def test_legacy_upgrade_preserves_tasks_and_requires_exact_version_digest(store,
             initialize_database(owner, **arguments)
     finally:
         with psycopg.connect(owner) as connection:
-            connection.execute("UPDATE radhouse_metadata SET schema_version=7,migration_sha256=%s", (schema_digest(),))
+            connection.execute("UPDATE radhouse_metadata SET schema_version=9,migration_sha256=%s", (schema_digest(),))
 
 
 @pytest.mark.postgres
@@ -78,7 +84,7 @@ def test_owner_initializer_is_idempotent_for_the_exact_current_database(store):
 
     assert first == second
     assert first.result == "current"
-    assert first.schema_version == 7
+    assert first.schema_version == 9
     assert len(first.migration_sha256) == 64
 
 

@@ -30,9 +30,7 @@ try {
     "Background refresh detached the active file chooser input");
   await chooser.setFiles({ name: "figures.txt", mimeType: "text/plain", buffer: Buffer.from("Revenue 42\nCosts 12") });
   await web.getByText("figures.txt", { exact: true }).waitFor();
-  await new Promise((resolve) => setTimeout(resolve, 11_000));
-  assert.equal(await originalInput.evaluate((input) => input.isConnected), false,
-    "Background refresh did not resume after the file selection");
+  await web.waitForResponse(response => response.url().includes("/work-home?") && response.ok(), { timeout: 13_000 });
   await web.getByText("figures.txt", { exact: true }).waitFor();
   await web.getByRole("button", { name: "Send assignment" }).click();
   const recent = web.locator(".recent-activity");

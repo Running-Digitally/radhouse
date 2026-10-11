@@ -195,7 +195,8 @@ class FakeAgentWork(_FakeLedger):
                 "INSERT INTO agent_runs(dispatch_key,task_id,attempt_id,run_id,session_id,"
                 "provider_binding,runtime_revision,submitted_at,retention_until,state,result) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                (dispatch_key, task.task_id, attempt.attempt_id, run_id, task.task_id,
+                (dispatch_key, task.task_id, attempt.attempt_id, run_id,
+                 task.hermes_session_id or task.task_id,
                  task.provider_binding, "fake-runtime-v1", submitted_at.isoformat(),
                  retention_until.isoformat(), state, result),
             )
@@ -204,7 +205,8 @@ class FakeAgentWork(_FakeLedger):
         if self.mode == "lost_reply_after_commit":
             raise RuntimeFailure("runtime_lost_reply")
         return RuntimeDispatch(
-            run_id, task.task_id, task.provider_binding, "fake-runtime-v1",
+            run_id, task.hermes_session_id or task.task_id,
+            task.provider_binding, "fake-runtime-v1",
             submitted_at, retention_until,
         )
 

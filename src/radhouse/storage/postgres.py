@@ -39,20 +39,22 @@ class ApplicationStorageError(ValueError):
 
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _INITIAL_MIGRATION = Path(__file__).parent / "migrations" / "0001_initial.sql"
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 9
 MIGRATIONS = (_INITIAL_MIGRATION, Path(__file__).parent / "migrations" / "0002_operator_context.sql",
               Path(__file__).parent / "migrations" / "0003_conversations.sql",
               Path(__file__).parent / "migrations" / "0004_task_titles.sql",
               Path(__file__).parent / "migrations" / "0005_project_agents.sql",
               Path(__file__).parent / "migrations" / "0006_project_conversations.sql",
-              Path(__file__).parent / "migrations" / "0007_project_coordination.sql")
+              Path(__file__).parent / "migrations" / "0007_project_coordination.sql",
+              Path(__file__).parent / "migrations" / "0008_hermes_session_binding.sql",
+              Path(__file__).parent / "migrations" / "0009_coordination_turns.sql")
 
 
 def schema_digest(version: int = SCHEMA_VERSION) -> str:
     try:
         if version == 1:
             return hashlib.sha256(_INITIAL_MIGRATION.read_bytes()).hexdigest()
-        if version not in {2, 3, 4, 5, 6, 7}:
+        if version not in range(2, SCHEMA_VERSION + 1):
             raise ApplicationStorageError("unsupported_schema_version")
         return hashlib.sha256(f"radhouse-schema-v{version}\0".encode() + b"\0".join(path.read_bytes() for path in MIGRATIONS[:version])).hexdigest()
     except OSError:
@@ -137,6 +139,10 @@ def _snapshot(row, kind):
         value["files"] = tuple(InputFile(**item) for item in value.get("files", []))
         value["guidance"] = tuple(value.get("guidance", []))
         value["allowed_tools"] = tuple(value.get("allowed_tools", []))
+        # The indexed column is authoritative so the binding remains readable
+        # from legacy task snapshots and is covered by the schema version gate.
+        if "hermes_session_id" in row:
+            value["hermes_session_id"] = row["hermes_session_id"]
     if kind in (Review, Publication):
         value["audience"] = tuple(value["audience"])
     if kind is Review:
@@ -253,7 +259,7 @@ class PostgresUnitOfWork(ConversationQueries):
 
     def task(self, task_id: str) -> Task | None:
         return _snapshot(self._connection.execute(
-            "SELECT snapshot FROM public.tasks WHERE task_id=%s", (task_id,),
+            "SELECT snapshot,hermes_session_id FROM public.tasks WHERE task_id=%s", (task_id,),
         ).fetchone(), Task)
 
     def task_title(self, task_id: str) -> TaskTitle | None:
@@ -267,7 +273,7 @@ class PostgresUnitOfWork(ConversationQueries):
         return [Binding(**row) for row in self._connection.execute(
             "SELECT channel,subject,conversation_id,principal_id,project_id,revision,active "
             "FROM public.channel_bindings WHERE channel=%s AND subject=%s "
-            "AND principal_id=%s AND active ORDER BY conversation_id LIMIT 100",
+            'AND principal_id=%s AND active ORDER BY conversation_id COLLATE "C"',
             (channel, subject, principal_id),
         ).fetchall()]
 
@@ -283,7 +289,7 @@ class PostgresUnitOfWork(ConversationQueries):
 
     def tasks(self) -> list[Task]:
         return [_snapshot(row, Task) for row in self._connection.execute(
-            "SELECT snapshot FROM public.tasks ORDER BY task_id"
+            "SELECT snapshot,hermes_session_id FROM public.tasks ORDER BY task_id"
         ).fetchall()]
 
     def task_admission_order(self, task_ids: tuple[str, ...]) -> dict[str, int]:
@@ -386,11 +392,11 @@ class PostgresUnitOfWork(ConversationQueries):
         self._connection.execute(
             "INSERT INTO public.tasks (task_id, owner_id, bot_id, project_id, task_revision, "
             "state_revision, phase, outcome, budget_remaining, attempt_id, snapshot, "
-            "display_title, title_source, title_revision) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'brief',1)",
+            "display_title, title_source, title_revision, hermes_session_id) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'brief',1,%s)",
             (task.task_id, task.owner_id, task.bot_id, task.project_id, task.task_revision,
              task.state_revision, task.phase, task.outcome, task.budget_remaining, task.attempt_id,
-             _json(task), title),
+             _json(task), title, task.hermes_session_id),
         )
         self._record_revision(task)
 
@@ -410,10 +416,11 @@ class PostgresUnitOfWork(ConversationQueries):
             raise Rejected("revision_conflict")
         cursor = self._connection.execute(
             "UPDATE public.tasks SET task_revision=%s, state_revision=%s, phase=%s, outcome=%s, "
-            "budget_remaining=%s, attempt_id=%s, snapshot=%s WHERE task_id=%s AND state_revision=%s "
+            "budget_remaining=%s, attempt_id=%s, snapshot=%s,hermes_session_id=%s "
+            "WHERE task_id=%s AND state_revision=%s "
             "AND owner_id=%s AND bot_id=%s AND project_id=%s",
             (task.task_revision, task.state_revision, task.phase, task.outcome, task.budget_remaining,
-             task.attempt_id, _json(task), task.task_id, expected_state_revision,
+             task.attempt_id, _json(task), task.hermes_session_id, task.task_id, expected_state_revision,
              task.owner_id, task.bot_id, task.project_id),
         )
         if cursor.rowcount != 1:
@@ -540,6 +547,23 @@ class PostgresUnitOfWork(ConversationQueries):
             "INSERT INTO public.events(task_id,kind,state_revision,snapshot) VALUES (%s,%s,%s,%s)",
             (event.task_id, event.kind, event.state_revision, _json(event)),
         )
+
+    def rotate_coordination(self, task_ids: tuple[str, ...], limit: int) -> tuple[str, ...]:
+        # The enclosing store transaction serializes selection and recording,
+        # including when independent coordinator processes select concurrently.
+        selected = tuple(row["task_id"] for row in self._connection.execute(
+            "SELECT t.task_id FROM public.tasks t "
+            "LEFT JOIN public.task_coordination c USING (task_id) "
+            'WHERE t.task_id=ANY(%s) ORDER BY COALESCE(c.turn,0),t.task_id COLLATE "C" LIMIT %s',
+            (list(task_ids), limit),
+        ).fetchall())
+        for task_id in selected:
+            self._connection.execute(
+                "INSERT INTO public.task_coordination(task_id) VALUES (%s) "
+                "ON CONFLICT (task_id) DO UPDATE SET turn=EXCLUDED.turn",
+                (task_id,),
+            )
+        return selected
 
     def events(self, task_id: str, after: int) -> list[Event]:
         return [replace(_snapshot(row, Event), cursor=row["cursor"]) for row in self._connection.execute(

@@ -41,6 +41,9 @@ export async function loadAttachments(files: File[]): Promise<AttachedFile[]> {
     if (!file.name || file.name.length > 200 || /[\\/\0\r\n]/.test(file.name)) {
       throw new ApiError("invalid_input_files", 422);
     }
+    if (file.size > (IMAGE_TYPES.has(file.type) ? 4 * 1024 * 1024 : 65536)) {
+      throw new ApiError("invalid_input_files", 422);
+    }
     const bytes = new Uint8Array(await file.arrayBuffer());
     if (IMAGE_TYPES.has(file.type)) {
       imageBytes += bytes.byteLength;
@@ -68,6 +71,65 @@ export async function loadAttachments(files: File[]): Promise<AttachedFile[]> {
     });
   }
   return result;
+}
+
+export async function appendAttachments(existing: AttachedFile[], files: File[]): Promise<AttachedFile[]> {
+  const combined = [...existing];
+  for (const file of await loadAttachments(files)) {
+    if (!combined.some(item => item.name === file.name && item.media_type === file.media_type
+        && item.encoding === file.encoding && item.content === file.content)) combined.push(file);
+  }
+  const textBytes = combined.filter(file => file.encoding === "utf-8")
+    .reduce((total, file) => total + new TextEncoder().encode(file.content).length, 0);
+  const imageBytes = combined.filter(file => file.encoding === "base64")
+    .reduce((total, file) => total + file.content.length * 3 / 4 - (file.content.match(/=*$/)?.[0].length ?? 0), 0);
+  if (combined.length > 4 || textBytes > 65536 || imageBytes > 8 * 1024 * 1024) {
+    throw new ApiError("invalid_input_files", 422);
+  }
+  return combined;
+}
+
+/** One attachment interaction for both assignment and conversation composers. */
+export function attachmentPicker(target: HTMLElement, draft: { files: AttachedFile[] },
+  run: (work: () => Promise<void>) => Promise<void>, filePicker: (open: boolean) => void): HTMLElement {
+  const wrapper = document.createElement("div"); wrapper.className = "attachment-picker";
+  const label = document.createElement("label"); label.className = "field";
+  const caption = document.createElement("span"); caption.className = "field__label";
+  caption.textContent = "Reference files · paste, drop or add text/CSV/images";
+  const input = document.createElement("input"); input.type = "file"; input.multiple = true;
+  input.className = "field__control";
+  input.accept = ".txt,.md,.markdown,.csv,.json,.log,.png,.jpg,.jpeg,.webp";
+  label.append(caption, input);
+  const limits = document.createElement("p"); limits.className = "muted attachment-limits";
+  limits.textContent = "Up to 4 files. Text: 64 KiB total. Images: 4 MiB each, 8 MiB total. New selections add to this list.";
+  const list = document.createElement("ul"); list.className = "attachment-list";
+  list.setAttribute("aria-label", "Selected attachments");
+  const render = () => {
+    list.replaceChildren();
+    draft.files.forEach((file, index) => {
+      const item = document.createElement("li");
+      const name = document.createElement("span"); name.textContent = file.name;
+      const remove = document.createElement("button"); remove.type = "button";
+      remove.className = "button button--secondary"; remove.textContent = "Remove";
+      remove.setAttribute("aria-label", `Remove ${file.name}`);
+      remove.onclick = () => void run(async () => { draft.files = draft.files.filter((_, i) => i !== index); render(); });
+      item.append(name, remove); list.append(item);
+    });
+  };
+  const add = (selected: File[]) => run(async () => {
+    draft.files = await appendAttachments(draft.files, selected); render();
+  });
+  input.onclick = () => filePicker(true);
+  input.addEventListener("cancel", () => filePicker(false));
+  input.onchange = () => {
+    filePicker(false);
+    const selected = Array.from(input.files ?? []);
+    input.value = "";
+    void add(selected);
+  };
+  acceptPastedOrDroppedFiles(target, add);
+  render(); wrapper.append(label, limits, list);
+  return wrapper;
 }
 
 export function acceptPastedOrDroppedFiles(

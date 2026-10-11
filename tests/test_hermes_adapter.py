@@ -532,17 +532,23 @@ def test_https_origin_can_be_supplied_by_the_private_deployment_overlay():
 
 
 class StubHermesClient:
-    def __init__(self, status="completed"):
+    def __init__(self, status="completed", *, expected_session_id="task-01"):
         self.run_status = status
         self.stopped = []
+        self.started = []
+        self.expected_session_id = expected_session_id
 
     def capabilities(self):
         return HermesCapabilities(86_400)
 
     def start_or_attach(self, *, input_text, session_id, dispatch_key):
-        assert (input_text, session_id, dispatch_key) == (
-            "Research safely.", "task-01", "attempt-01",
-        )
+        assert input_text in {"Research safely.", "Continue the comparison."}
+        assert (session_id, dispatch_key) == (self.expected_session_id, "attempt-01")
+        self.started.append({
+            "input_text": input_text,
+            "session_id": session_id,
+            "dispatch_key": dispatch_key,
+        })
         return HermesDispatch("run-01", session_id, "queued", False)
 
     def status(self, run_id):
@@ -576,6 +582,23 @@ def test_agent_work_adapter_preserves_task_session_and_provider_binding():
     assert result.state == "completed" and result.content == "Cited result"
     assert adapter.stop(task, dispatch)
     assert client.stopped == ["run-01"]
+
+
+def test_agent_work_adapter_uses_durable_conversation_session_binding():
+    session_id = "rh-" + "a" * 64
+    client = StubHermesClient(expected_session_id=session_id)
+    adapter = HermesAgentWorkAdapter(client, runtime_revision="hermes-0.21.1")
+    task = Task(
+        "task-01", "alice", "bot-01", "project-01", "Continue the comparison.",
+        "nemo-chat", None, 3, hermes_session_id=session_id,
+    )
+    attempt = Attempt("attempt-01", task.task_id, 1, "worker")
+
+    dispatch = adapter.start_or_attach(task, attempt, attempt.attempt_id)
+
+    assert dispatch.session_id == session_id
+    assert dispatch.run_id != task.task_id
+    assert client.started[0]["session_id"] == session_id
 
 
 @pytest.mark.parametrize(

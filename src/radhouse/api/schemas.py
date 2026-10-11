@@ -195,6 +195,13 @@ class TaskCardResponse(StrictModel):
     publication: PublicationResponse | None = None
 
 
+class SharedResultResponse(StrictModel):
+    publication_id: str
+    owner_id: str
+    content: str
+    digest: str
+
+
 class WorkHomeResponse(StrictModel):
     principal_id: str
     role: Literal["admin", "operator", "viewer"]
@@ -203,6 +210,7 @@ class WorkHomeResponse(StrictModel):
     agents: tuple[AgentResponse, ...]
     tasks: tuple[TaskCardResponse, ...]
     start: ActionResponse
+    shared_results: tuple[SharedResultResponse, ...] = ()
 
 
 class ProjectCoordinationResponse(StrictModel):

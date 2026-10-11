@@ -4,6 +4,7 @@ from uuid import uuid4
 import pytest
 
 from radhouse.application.conversations import Conversations
+from radhouse.domain.access import AuthContext
 from radhouse.domain.conversations import ConversationLink, ConversationMessage
 from radhouse.domain.tasks import InputFile, Rejected
 
@@ -80,8 +81,8 @@ def test_crash_after_task_commit_recovers_same_admission(
     app.receive(link, m)
     original = service.admit
 
-    def lost_reply(*args):
-        original(*args)
+    def lost_reply(*args, **kwargs):
+        original(*args, **kwargs)
         raise OSError("simulated process exit after task commit")
 
     monkeypatch.setattr(service, "admit", lost_reply)
@@ -272,6 +273,224 @@ def test_latest_completed_selection_and_status_keep_context_across_restart(chat,
         assert task.follows_task_id == first.task_id
         assert task.previous_result == done_first.result
         assert len(tx.tasks()) == 3
+
+
+def test_contextual_followups_and_topic_changes_keep_durable_profile_session_after_restart(
+    chat, service, service_factory, store, fake_work,
+):
+    app, link = chat
+    first_message = send(chat, "Compare local backups and hosted backups.")
+    first_done = service.run(first_message.task_id)
+    with store.transaction() as tx:
+        first = tx.task(first_done.task_id)
+        first_dispatch = tx.dispatch(first.attempt_id)
+        restored_link = tx.conversation_link(link.link_id)
+    assert first.hermes_session_id == link.hermes_session_id
+    assert first_dispatch.session_id == link.hermes_session_id
+
+    # Rebuild the application service and link from durable storage as after a
+    # controller restart; the next task must map back to the same Hermes session.
+    restarted_service = service_factory()
+    restarted_chat = (Conversations(restarted_service), restored_link)
+    followup = send(
+        restarted_chat, "Explain which option is easier to maintain.",
+        reply=first_message.message_id,
+    )
+    followup_done = restarted_service.run(followup.task_id)
+    new_topic = send(restarted_chat, "New task: Compare SQLite and PostgreSQL for my notebook.")
+    topic_done = restarted_service.run(new_topic.task_id)
+
+    with store.transaction() as tx:
+        followup_task = tx.task(followup_done.task_id)
+        topic_task = tx.task(topic_done.task_id)
+        followup_dispatch = tx.dispatch(followup_task.attempt_id)
+        topic_dispatch = tx.dispatch(topic_task.attempt_id)
+    assert followup_task.follows_task_id == first.task_id
+    assert followup_task.previous_result == first_done.result
+    assert followup_task.hermes_session_id == topic_task.hermes_session_id == link.hermes_session_id
+    assert topic_task.follows_task_id is None
+    assert len({first.task_id, followup_task.task_id, topic_task.task_id}) == 3
+    assert len({first.attempt_id, followup_task.attempt_id, topic_task.attempt_id}) == 3
+    assert len({first_dispatch.run_id, followup_dispatch.run_id, topic_dispatch.run_id}) == 3
+    assert all(
+        dispatch.session_id == link.hermes_session_id
+        for dispatch in (first_dispatch, followup_dispatch, topic_dispatch)
+    )
+    assert fake_work.start_count == 3
+
+
+def test_explicit_fresh_context_is_distinct_from_new_work_and_preserves_old_threads(
+    chat, service, service_factory, store,
+):
+    app, link = chat
+    first_message = send(chat, "Compare local backups and hosted backups.")
+    first_done = service.run(first_message.task_id)
+    with store.transaction() as tx:
+        first = tx.task(first_done.task_id)
+        first_session = tx.dispatch(first.attempt_id).session_id
+
+    tangent = send(chat, "New task: Give me a short tangent on notebook formats.")
+    tangent_done = service.run(tangent.task_id)
+    with store.transaction() as tx:
+        tangent_task = tx.task(tangent_done.task_id)
+        assert tangent_task.hermes_session_id == first_session
+
+    returned = send(
+        chat, "Which backup option is easier to maintain?",
+        reply=first_message.message_id,
+    )
+    returned_done = service.run(returned.task_id)
+    with store.transaction() as tx:
+        returned_task = tx.task(returned_done.task_id)
+        assert returned_task.follows_task_id == first.task_id
+        assert returned_task.previous_result == first_done.result
+        assert tx.dispatch(returned_task.attempt_id).session_id == first_session
+
+    fresh = message(link, "Start fresh thread")
+    app.receive(link, fresh)
+    with store.transaction() as tx:
+        route = tx.conversation_message(fresh.message_id)["route"]
+        assert route.action == "fresh_context"
+        assert route.context_id == fresh.message_id
+    assert app.process(link, fresh.message_id).state == "fresh_context"
+    # A lost acknowledgment/replayed ingress returns the same boundary and does
+    # not make a task or a second acknowledgment.
+    assert app.process(link, fresh.message_id).state == "fresh_context"
+
+    with store.transaction() as tx:
+        restored_link = tx.conversation_link(link.link_id)
+    restarted = service_factory()
+    restarted_chat = (Conversations(restarted), restored_link)
+    new_work = send(
+        restarted_chat, "Compare SQLite with PostgreSQL for my notebook."
+    )
+    new_done = restarted.run(new_work.task_id)
+    with store.transaction() as tx:
+        new_task = tx.task(new_done.task_id)
+        new_session = tx.dispatch(new_task.attempt_id).session_id
+        assert new_task.hermes_session_id == new_session
+        assert new_session != first_session
+        assert new_task.follows_task_id is None
+        assert new_task.previous_result is None
+        # Explicitly replying to older work returns to the old Hermes thread,
+        # even though the link's current thread has moved on.
+    old_thread_return = send(
+        restarted_chat, "Continue the earlier backup comparison.",
+        reply=first_message.message_id,
+    )
+    old_thread_done = restarted.run(old_thread_return.task_id)
+    with store.transaction() as tx:
+        old_thread_task = tx.task(old_thread_done.task_id)
+        assert old_thread_task.follows_task_id == first.task_id
+        assert tx.dispatch(old_thread_task.attempt_id).session_id == first_session
+        history = tx.conversation_history(link.link_id, tail=True)
+        assert sum(row["message"].message_id == fresh.message_id for row in history) == 1
+        assert any(row["message"].content == "Compare local backups and hosted backups." for row in history)
+        assert len(tx.tasks()) == 5
+
+
+@pytest.mark.parametrize("older_state", ["pending", "queued", "active", "multiple", "legacy_queued"])
+def test_fresh_thread_excludes_unfinished_older_work(chat, service, store, older_state):
+    app, link = chat
+    old = message(link, "Compare local backups.")
+    app.receive(link, old)
+    old_task_id = None
+    if older_state != "pending":
+        old_task_id = app.process(link, old.message_id).task_id
+    if older_state == "active":
+        service.claim(old_task_id, "test-worker")
+    if older_state == "multiple":
+        send(chat, "New task: Compare calendar formats.")
+    if older_state == "legacy_queued":
+        with store.transaction() as tx:
+            task = tx.task(old_task_id)
+            tx.save_task(task.evolve(hermes_session_id=None), task.state_revision)
+    boundary = send(chat, "Start fresh thread")
+    new = send(chat, "Plan my garden.")
+    assert new.state == "start"
+    assert new.task_id != old_task_id
+    with store.transaction() as tx:
+        task = tx.task(new.task_id)
+        assert task.hermes_session_id == link.hermes_session_id_for(boundary.message_id)
+        assert task.follows_task_id is None and task.previous_result is None
+    # Ordinary follow-up stays in the new thread, despite the old task(s).
+    followup = send(chat, "Focus on shade.")
+    assert followup.task_id == new.task_id
+
+
+def test_hermes_sessions_are_separate_by_owner_project_conversation_and_profile(
+    chat, service, store,
+):
+    app, link = chat
+    builder_link = replace(
+        link,
+        link_id="alice-builder",
+        channel_id="dm-alice-builder",
+        bot_id="bot-beta",
+        agent_pubkey="builder-key",
+    )
+    other_owner = replace(link, principal_id="bob")
+    other_project = replace(link, project_id="project-shared")
+    other_conversation = replace(link, link_id="alice-second-conversation")
+    assert len({
+        link.hermes_session_id,
+        builder_link.hermes_session_id,
+        other_owner.hermes_session_id,
+        other_project.hermes_session_id,
+        other_conversation.hermes_session_id,
+    }) == 5
+
+    with store.transaction() as tx:
+        tx.save_conversation_link(builder_link)
+        restored = tx.conversation_link(link.link_id)
+    assert restored.hermes_session_id == link.hermes_session_id
+
+    builder_message = message(builder_link, "Prepare a preview for this separate role.")
+    app.receive(builder_link, builder_message)
+    accepted = app.process(builder_link, builder_message.message_id)
+    with store.transaction() as tx:
+        task = tx.task(accepted.task_id)
+    assert task.bot_id == "bot-beta"
+    assert task.hermes_session_id == builder_link.hermes_session_id
+    assert task.hermes_session_id != link.hermes_session_id
+
+
+def test_recovery_holds_if_saved_dispatch_session_disagrees_with_task_binding(
+    chat, service, store, fake_work,
+):
+    first = send(chat)
+    fake_work.mode = "running"
+    active = service.run(first.task_id)
+    with store.transaction() as tx:
+        task = tx.task(active.task_id)
+        dispatch = tx.dispatch(task.attempt_id)
+        tx.save_dispatch(replace(dispatch, session_id="rh-" + "b" * 64))
+
+    recovered = service.recover(active.task_id)
+
+    assert "operation_unknown" in recovered.blockers
+    assert fake_work.start_count == 1
+
+
+def test_service_rejects_malformed_internal_session_binding(chat, service, envelope, start):
+    _, link = chat
+    actor = AuthContext(link.principal_id, "buzz", link.owner_pubkey)
+    with pytest.raises(Rejected, match="invalid_hermes_session_binding"):
+        service.admit(actor, envelope(), start, hermes_session_id="task-id-from-user")
+
+
+def test_legacy_task_scoped_session_binding_is_accepted_for_old_thread_return(
+    chat, service, envelope, start,
+):
+    _, link = chat
+    actor = AuthContext(link.principal_id, "buzz", link.owner_pubkey)
+    legacy_session_id = str(uuid4())
+
+    task = service.admit(
+        actor, envelope("buzz"), start, hermes_session_id=legacy_session_id
+    )
+
+    assert task.hermes_session_id == legacy_session_id
 
 
 def test_delayed_bot_or_owner_event_cannot_replace_newer_selected_context(chat, service, store):

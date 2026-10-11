@@ -68,6 +68,7 @@ export interface WorkHome {
   agents: AgentSummary[];
   tasks: TaskCard[];
   start: ActionState;
+  shared_results: { publication_id: string; owner_id: string; content: string; digest: string }[];
 }
 
 export interface Project {

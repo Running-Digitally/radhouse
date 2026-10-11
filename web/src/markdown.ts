@@ -18,9 +18,10 @@ function button(label: string, selected: boolean, id: string, controls: string):
 }
 
 /** Render locally. The exact source remains the review, digest and download authority. */
-export function resultViewer(source: string): HTMLElement {
+export function resultViewer(source: string, key?: string): HTMLElement {
   const viewer = document.createElement("section");
   viewer.className = "result-viewer";
+  if (key) viewer.dataset.viewKey = key;
   const tabs = document.createElement("div");
   tabs.className = "result-viewer__tabs";
   tabs.setAttribute("role", "tablist");
@@ -57,6 +58,7 @@ export function resultViewer(source: string): HTMLElement {
   }
 
   const show = (mode: "preview" | "source"): void => {
+    viewer.dataset.mode = mode;
     const previewSelected = mode === "preview";
     preview.hidden = !previewSelected;
     raw.hidden = previewSelected;
@@ -79,6 +81,7 @@ export function resultViewer(source: string): HTMLElement {
     };
   }
   tabs.append(previewButton, sourceButton);
+  viewer.dataset.mode = "preview";
   viewer.append(tabs, preview, raw);
   return viewer;
 }

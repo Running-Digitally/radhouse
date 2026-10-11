@@ -48,6 +48,21 @@ def test_owner_creates_private_project_with_only_selected_agents(service, alice,
         )
 
 
+def test_project_pages_cover_more_than_one_hundred_bindings(service, alice, envelope):
+    created = [service.create_project(alice, envelope(), f"Project {i}", ("bot-alpha",))
+               for i in range(101)]
+    with TestClient(create_app(service, lambda _: alice)) as client:
+        first = client.get("/projects").json()
+        assert len(first) == 100
+        second = client.get("/projects", params={"after": first[-1]["conversation_id"]}).json()
+        assert len(second) == 3
+        ids = [item["project_id"] for item in first + second]
+        assert len(set(ids)) == 103
+        assert {item.project_id for item in created} <= set(ids)
+        assert client.get("/projects", params={"after": second[-1]["conversation_id"]}).json() == []
+        assert client.get("/projects", params={"limit": 101}).status_code == 422
+
+
 def test_completed_result_can_be_delegated_to_another_project_agent(
     service, alice, envelope, start,
 ):

@@ -41,7 +41,7 @@ def create_app(
     async def security_headers(request: Request, call_next):
         response = await call_next(request)
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; "
+            "default-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; "
             "form-action 'self'; object-src 'none'"
         )
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -146,8 +146,9 @@ def create_app(
         )
 
     @app.get("/projects", response_model=tuple[ProjectResponse, ...], responses=errors)
-    def projects(actor: Actor, request: Request):
-        values = service.projects(actor)
+    def projects(actor: Actor, after: Annotated[str, Query(max_length=200)] = "",
+                 limit: Annotated[int, Query(ge=1, le=100)] = 100):
+        values = service.projects(actor, after=after, limit=limit)
         return values
 
     @app.post("/projects", response_model=ProjectResponse, responses=errors)

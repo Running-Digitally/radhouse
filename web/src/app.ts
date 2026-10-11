@@ -5,7 +5,8 @@ import type { Project, Review, TaskCard, TaskEvents, WorkHome } from "./types.js
 import { conversationPanel } from "./conversations.js";
 import type { ConversationDraft, ConversationHistory, ConversationLink } from "./conversations.js";
 import { resultViewer } from "./markdown.js";
-import { acceptPastedOrDroppedFiles, loadAttachments } from "./files.js";
+import { attachmentPicker } from "./files.js";
+import { preserveView } from "./view-state.js";
 import type { AttachedFile } from "./files.js";
 
 export function mountWorkHome(page: HTMLElement, client = operatorClient()): () => void {
@@ -30,6 +31,10 @@ let loadGeneration = 0;
 let sessionEpoch = 0;
 let actionsInFlight = 0;
 let filePickerOpen = false;
+let assignmentProject = "";
+let loadsInFlight = 0;
+let refreshTimer: number | undefined;
+let lastRenderedData = "";
 const drafts = new Map<string, { brief: string; bot: string; files: AttachedFile[]; followsTaskId?: string }>();
 const reviews = new Map<string, Review>();
 const expanded = new Set<string>();
@@ -109,6 +114,7 @@ function field(label: string, name: string, type = "text"): { wrapper: HTMLLabel
 }
 async function action(button: HTMLButtonElement, run: () => Promise<void>): Promise<void> {
   const epoch = sessionEpoch;
+  loadGeneration++; // A pending read must not replace controls during a write.
   const label = button.textContent;
   const controls = Array.from(page.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement | HTMLTextAreaElement>("input, button, select, textarea"))
     .map((node) => ({ node, disabled: node.disabled }));
@@ -148,7 +154,9 @@ function applySession(session: AuthSession): void {
 function loginScreen(message?: string): void {
   loadGeneration++;
   sessionEpoch++;
-  filePickerOpen = false;
+  filePickerOpen = false; assignmentProject = ""; lastRenderedData = "";
+  window.clearTimeout(refreshTimer);
+  delete page.dataset.identity;
   api = null;
   signedIn = null;
   selectedProject = "";
@@ -194,7 +202,7 @@ function reviewPanel(card: TaskCard, review: Review): HTMLElement {
     element("p", "muted", `Share with: ${review.audience.map((id) => id === signedIn?.principal_id ? "Only me" : id).join(", ")}`),
     element("p", "muted", `Review expires ${new Date(review.expires_at).toLocaleTimeString()}`),
     element("p", "digest", `Artifact SHA-256: ${review.digest}`),
-    resultViewer(card.task.result ?? ""));
+    resultViewer(card.task.result ?? "", `review:${card.task.task_id}`));
   panel.append(button("Approve and publish", async () => {
     if (!api || card.task.result === null) return;
     if (new Date(review.expires_at).getTime() <= Date.now()) {
@@ -336,6 +344,7 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
     article.append(form);
   }
   const assignment = element("details", "task-card__assignment");
+  assignment.dataset.viewKey = `assignment:${task.task_id}`;
   assignment.append(element("summary", undefined, "What you asked"), element("p", "message-content", task.brief));
   article.append(assignment);
   const blockers = blockerMessages(card);
@@ -346,7 +355,7 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
     const summary = task.result.replace(/[#*_`>\[\]]/g, "").replace(/\s+/g, " ").trim();
     if (summary !== card.title.title) article.append(element("p", "result-summary",
       summary.length > 220 ? `${summary.slice(0, 219).trim()}…` : summary));
-    if (openResults.has(task.task_id)) article.append(resultViewer(task.result));
+    if (openResults.has(task.task_id)) article.append(resultViewer(task.result, `task:${task.task_id}`));
   }
   if (card.publication) article.append(notice(`Published to ${card.publication.audience.join(", ")}.`));
   if (task.files.length) article.append(element("p", "muted", `Reference files: ${task.files.map((file) => file.name).join(", ")}`));
@@ -429,6 +438,7 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
     if (card.review.enabled) controls.append(button("Review and share", async () => prepareAudience(article, card), true));
     if (task.phase === "closed") secondary.append(button("Ask for a change", async () => {
       clearReviewTarget();
+      assignmentProject = home.project_id;
       drafts.set(home.project_id, { bot: task.bot_id, brief: "", files: [], ...(task.result === null ? {} : { followsTaskId: task.task_id }) });
       await load(task.result === null ? "Describe the next assignment." : "The previous result will be included. Describe the next assignment.");
       page.querySelector<HTMLTextAreaElement>('textarea[name="brief"]')?.focus();
@@ -470,32 +480,13 @@ function startPanel(home: WorkHome): HTMLElement {
   const submit = element("button", "button button--primary", "Send assignment"); submit.type = "submit";
   submit.disabled = !home.start.enabled;
   form.append(label, briefLabel, submit);
-  const fileLabel = element("label", "field"); const files = element("input", "field__control");
-  files.type = "file"; files.multiple = true; files.accept = ".txt,.md,.markdown,.csv,.json,.log,.png,.jpg,.jpeg,.webp";
-  fileLabel.classList.add("field--files");
-  fileLabel.append(element("span", "field__label", "Reference files · paste, drop or choose text/CSV/images"), files);
-  const fileStatus = element("p", "muted file-status", draft.files.map((file) => file.name).join(", "));
-  files.addEventListener("click", () => {
-    // The native chooser still owns this input while it is open. Invalidate
-    // a refresh already in flight, then preserve the form until it closes.
-    filePickerOpen = true;
-    loadGeneration++;
-  });
-  files.addEventListener("cancel", () => { filePickerOpen = false; });
-  files.addEventListener("change", () => {
-    filePickerOpen = false;
-    void action(submit, async () => {
-      const loaded = await loadAttachments(Array.from(files.files ?? []));
-      draft.files = loaded; fileStatus.textContent = loaded.map((file) => file.name).join(", ");
-    });
-  });
-  acceptPastedOrDroppedFiles(brief, async (selected) => {
-    await action(submit, async () => {
-      draft.files = await loadAttachments(selected);
-      fileStatus.textContent = draft.files.map(file => file.name).join(", ");
-    });
-  });
-  form.insertBefore(fileLabel, submit); form.insertBefore(fileStatus, submit);
+  form.insertBefore(attachmentPicker(brief, draft, work => action(submit, work), open => {
+    filePickerOpen = open;
+    if (open) loadGeneration++;
+  }), submit);
+  if (conversationLinks.length) panel.append(button("Back to conversation", async () => {
+    assignmentProject = ""; await load();
+  }));
   if (draft.followsTaskId) form.insertBefore(notice("The previous result is included as reference material."), submit);
   if (!home.start.enabled) panel.append(notice(actionReason(home.start) ?? "No agent is available."));
   form.addEventListener("submit", (event) => {
@@ -506,7 +497,7 @@ function startPanel(home: WorkHome): HTMLElement {
     void action(submit, async () => {
       await currentApi.start({ botId: agent.bot_id, projectId: home.project_id, brief: brief.value.trim(), providerBinding: agent.provider_binding, files: draft.files, ...(draft.followsTaskId ? { followsTaskId: draft.followsTaskId } : {}) });
       if (epoch !== sessionEpoch) return;
-      draft.brief = ""; draft.files = []; delete draft.followsTaskId;
+      draft.brief = ""; draft.files = []; delete draft.followsTaskId; assignmentProject = "";
       await load("Assignment received. You can follow its progress below.");
     });
   });
@@ -519,6 +510,7 @@ function projectsPanel(home: WorkHome): HTMLElement {
   const list = element("div", "project-list");
   for (const project of projects) {
     const item = element("article", `project-card${project.project_id === home.project_id ? " project-card--current" : ""}`);
+    item.dataset.projectId = project.project_id;
     const names = project.bot_ids.map((id) => agentDirectory.get(id)?.display_name ?? id);
     item.append(element("h3", "agent-card__name", project.display_name),
       element("p", "muted", names.length ? `Agents: ${names.join(", ")}` : "No agents assigned"));
@@ -579,10 +571,9 @@ function projectsPanel(home: WorkHome): HTMLElement {
   section.append(form); return section;
 }
 function render(home: WorkHome, message?: string): void {
-  const focused = (page.getRootNode() as Document | ShadowRoot).activeElement;
-  const focusName = focused instanceof HTMLInputElement || focused instanceof HTMLTextAreaElement || focused instanceof HTMLSelectElement ? focused.name : "";
-  const selection = focused instanceof HTMLTextAreaElement ? [focused.selectionStart, focused.selectionEnd] : null;
+  const restoreView = preserveView(page);
   page.replaceChildren();
+  page.dataset.identity = `${home.principal_id}:${home.project_id}`;
   const header = element("header", "page-header"); const identity = element("div");
   identity.append(brand(), element("h1", "page-title", reviewTarget ? "Review your work" : home.project_name));
   if (projects.length > 1) {
@@ -604,7 +595,7 @@ function render(home: WorkHome, message?: string): void {
   if (!reviewTarget) {
     const navigation = element("nav", "work-home-nav"); navigation.setAttribute("aria-label", "Work home sections");
     const destinations: [string, string][] = [["Work", "work-section"]];
-    destinations.push(conversation ? ["Conversation", "conversation-section"] : ["Ask for help", "start-section"]);
+    destinations.push(conversation && assignmentProject !== home.project_id ? ["Conversation", "conversation-section"] : ["Ask for help", "start-section"]);
     for (const [label, id] of destinations) navigation.append(button(label, async () => {
       page.querySelector(`#${id}`)?.scrollIntoView({ block: "start" });
     }));
@@ -614,7 +605,9 @@ function render(home: WorkHome, message?: string): void {
     const attention = element("section", "attention-panel");
     attention.append(element("h2", "section-title", "What needs you"));
     const coordination = projects.find((item) => item.project_id === home.project_id)?.coordination;
-    const latest = home.tasks.find((card) => card.task.task_id === coordination?.latest_task_id);
+    const needsAttention = home.tasks.filter(card => card.task.outcome === "failed"
+      || card.task.phase !== "closed" && (card.task.phase === "recovering"
+        || card.task.blockers.some(reason => !["human_pause", "cancel_requested"].includes(reason))));
     const pending = home.tasks.filter((card) => card.task.phase === "active" && card.task.permission_request);
     const working = home.tasks.find((card) => card.task.phase === "active");
     if (pending.length) {
@@ -624,6 +617,13 @@ function render(home: WorkHome, message?: string): void {
       attention.append(button("View request", async () => {
         page.querySelector(`[data-task-id="${pending[0]?.task.task_id}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" });
       }));
+    } else if (needsAttention.length) {
+      attention.append(element("p", undefined, `${needsAttention.length} ${needsAttention.length === 1 ? "assignment needs" : "assignments need"} attention.`));
+      const first = needsAttention[0]!;
+      attention.append(element("p", "muted", blockerMessages(first)[0] ?? (first.task.phase === "recovering"
+        ? "Radhouse is recovering this assignment. Open its details to check progress."
+        : "An assignment failed. Open its details and ask for a new assignment.")));
+      attention.append(button("View task needing attention", async () => showTask(first.task.task_id)));
     } else if (coordination?.phase === "preview_feedback" && working) {
       const name = home.agents.find((agent) => agent.bot_id === working.task.bot_id)?.display_name ?? "An agent";
       attention.append(element("p", undefined, `${name} is working on an update. The preview may not include it yet; nothing is needed from you right now.`));
@@ -641,8 +641,6 @@ function render(home: WorkHome, message?: string): void {
       }
     } else if (coordination?.phase === "blocked") {
       attention.append(element("p", undefined, coordination.status_note ?? "Radhouse needs help with the current project step."));
-    } else if (latest?.task.outcome === "failed") {
-      attention.append(element("p", undefined, "The latest assignment failed. Open its result to see what happened."));
     } else {
       attention.append(element("p", "muted", "Nothing right now. Radhouse will let you know when a decision is needed."));
     }
@@ -655,15 +653,12 @@ function render(home: WorkHome, message?: string): void {
     manage.append(element("summary", undefined, "Settings"), projectsPanel(home));
     page.append(manage);
   }
-  if (!reviewTarget && conversation && conversationHistory && api && signedIn) {
+  if (!reviewTarget && assignmentProject !== home.project_id && conversation && conversationHistory && api && signedIn) {
     const draft = conversationDrafts.get(conversation.link_id) ?? { content: "", reply: null, files: [] };
     conversationDrafts.set(conversation.link_id, draft);
     const conversationSection = conversationPanel(api, conversation, conversationHistory, draft, signedIn.principal_id,
-      async () => load(), taskId => {
-        const card = Array.from(page.querySelectorAll<HTMLElement>("[data-task-id]")).find(node => node.dataset.taskId === taskId);
-        card?.scrollIntoView({ block: "start", behavior: "smooth" });
-        card?.querySelector<HTMLButtonElement>("button")?.focus();
-      }, action, open => { filePickerOpen = open; if (open) loadGeneration++; });
+      async () => load(), taskId => { void showTask(taskId); }, action,
+      open => { filePickerOpen = open; if (open) loadGeneration++; }, home.role !== "viewer");
     conversationSection.id = "conversation-section";
     page.append(conversationSection);
   } else if (!reviewTarget) {
@@ -715,6 +710,18 @@ function render(home: WorkHome, message?: string): void {
       work.append(activity);
     }
   }
+  if (!reviewTarget && home.shared_results.length) {
+    const shared = element("section", "section shared-results");
+    shared.append(element("h2", "section-title", "Shared with you"));
+    for (const result of home.shared_results) {
+      const article = element("article", "task-card"); article.dataset.publicationId = result.publication_id;
+      article.append(element("h3", "task-card__title", `Result shared by ${result.owner_id}`),
+        element("p", "muted", "Only the approved result is shared. The original assignment and conversation remain private."),
+        resultViewer(result.content, `shared:${result.publication_id}`));
+      shared.append(article);
+    }
+    work.append(shared);
+  }
   const conversationOrStart = page.querySelector("#conversation-section, #start-section");
   if (conversationOrStart) page.insertBefore(work, conversationOrStart);
   else page.append(work);
@@ -723,14 +730,32 @@ function render(home: WorkHome, message?: string): void {
   const allowed = new Set(home.tasks.map((card) => card.task.task_id));
   for (const id of reviews.keys()) if (!allowed.has(id)) reviews.delete(id);
   for (const id of timelines.keys()) if (!allowed.has(id)) timelines.delete(id);
-  if (focusName === "brief" || focusName === "agent" || focusName === "project" || focusName === "project-name" || focusName.startsWith("conversation-") || focusName.startsWith("guide-") || focusName.startsWith("title-")) {
-    const next = Array.from(page.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>("[name]")).find(node => node.name === focusName);
-    next?.focus(); if (next instanceof HTMLTextAreaElement && selection) next.setSelectionRange(selection[0] ?? 0, selection[1] ?? 0);
-  }
+  restoreView();
 }
-async function load(message?: string): Promise<void> {
+async function showTask(taskId: string): Promise<void> {
+  recentActivityOpen = true; olderWorkOpen = true; openResults.add(taskId);
+  await load();
+  const card = Array.from(page.querySelectorAll<HTMLElement>("[data-task-id]")).find(node => node.dataset.taskId === taskId);
+  const heading = card?.querySelector<HTMLElement>("h3");
+  card?.scrollIntoView({ block: "start" });
+  if (heading) { heading.tabIndex = -1; heading.focus({ preventScroll: true }); }
+}
+function scheduleRefresh(): void {
+  window.clearTimeout(refreshTimer);
+  if (disposed || !api || loadsInFlight > 0) return;
+  refreshTimer = window.setTimeout(() => {
+    if (!filePickerOpen && actionsInFlight === 0 && page.querySelector(".review-panel form, .audience-choice") === null
+        && !Array.from(page.querySelectorAll<HTMLTextAreaElement>(".guidance-form textarea")).some(input =>
+          input.value || input === (page.getRootNode() as Document | ShadowRoot).activeElement)) void load(undefined, true);
+    else scheduleRefresh();
+  }, 10_000);
+}
+
+async function load(message?: string, background = false): Promise<void> {
   if (disposed) return;
   const generation = ++loadGeneration;
+  loadsInFlight++;
+  window.clearTimeout(refreshTimer);
   try {
     if (!api) {
       const session = await client.currentSession();
@@ -772,12 +797,20 @@ async function load(message?: string): Promise<void> {
       try { window.localStorage.setItem(`radhouse.project.${signedIn.principal_id}`, project.project_id); }
       catch { /* Storage may be unavailable; the current session still works. */ }
     }
-    render(home, message);
+    const data = JSON.stringify([home, available, links, history, [...timelines], reviewTarget]);
+    if (!background || data !== lastRenderedData || reviews.size > 0) {
+      render(home, message);
+      lastRenderedData = data;
+    }
   } catch (error) {
     if (generation !== loadGeneration) return;
+    lastRenderedData = "";
     if (error instanceof ApiError && error.status === 401) loginScreen();
     else page.replaceChildren(notice(errorMessage(error), true),
       button("Open work home", async () => { clearReviewTarget(); await load(); }), button("Try again", async () => load()));
+  } finally {
+    loadsInFlight--;
+    scheduleRefresh();
   }
 }
 const onReviewLink = () => {
@@ -786,12 +819,6 @@ const onReviewLink = () => {
 };
 window.addEventListener("hashchange", onReviewLink);
 void load();
-const interval = window.setInterval(() => {
-  // Active forms retain their fields; every submit still performs current server checks.
-  if (api && !filePickerOpen && actionsInFlight === 0 && page.querySelector(".review-panel form, .audience-choice") === null
-      && !Array.from(page.querySelectorAll<HTMLTextAreaElement>(".guidance-form textarea")).some((input) =>
-        input.value || input === (page.getRootNode() as Document | ShadowRoot).activeElement)) void load();
-}, 10_000);
 
-return () => { disposed = true; window.removeEventListener("hashchange", onReviewLink); loadGeneration++; sessionEpoch++; window.clearInterval(interval); drafts.clear(); reviews.clear(); timelines.clear(); conversationDrafts.clear(); guidanceDrafts.clear(); titleDrafts.clear(); openResults.clear(); projectBotDraft.clear(); agentDirectory.clear(); page.replaceChildren(); };
+return () => { disposed = true; window.removeEventListener("hashchange", onReviewLink); loadGeneration++; sessionEpoch++; window.clearTimeout(refreshTimer); drafts.clear(); reviews.clear(); timelines.clear(); conversationDrafts.clear(); guidanceDrafts.clear(); titleDrafts.clear(); openResults.clear(); projectBotDraft.clear(); agentDirectory.clear(); page.replaceChildren(); };
 }

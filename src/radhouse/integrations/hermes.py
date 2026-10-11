@@ -482,7 +482,7 @@ class HermesAgentWorkAdapter:
         submitted_at = self.clock().astimezone(timezone.utc)
         accepted = self.client.start_or_attach(
             input_text=runtime_input(task),
-            session_id=task.task_id,
+            session_id=task.hermes_session_id or task.task_id,
             dispatch_key=dispatch_key,
             **({"images": runtime_images(task)} if runtime_images(task) else {}),
             **({"disable_tools": True} if task.disable_tools else {}),

@@ -14,7 +14,7 @@ from uuid import uuid4
 from radhouse.channels.mapping import verify_envelope
 from radhouse.channels.commands import Envelope
 from radhouse.application.ports import AgentWorkPort, ProviderPort, Store, UnitOfWork
-from radhouse.application.views import ActionView, ProjectView, TaskCard, WorkHome
+from radhouse.application.views import ActionView, ProjectView, SharedResult, TaskCard, WorkHome
 from radhouse.domain.access import (
     AuthContext, Binding, ProjectProfile, require_access,
 )
@@ -49,6 +49,12 @@ def runtime_request_fingerprint(task: Task, session_id: str) -> str:
     if task.allowed_tools:
         body["allowed_tools"] = task.allowed_tools
     return fingerprint(body)
+
+
+_HERMES_SESSION_ID = re.compile(r"rh-[a-f0-9]{64}")
+_LEGACY_TASK_SESSION_ID = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+)
 
 
 class Service:
@@ -88,6 +94,8 @@ class Service:
 
     @staticmethod
     def _save(tx: UnitOfWork, old: Task, new: Task, kind: str) -> Task:
+        if new.hermes_session_id != old.hermes_session_id:
+            raise Rejected("hermes_session_binding_immutable")
         tx.save_task(new, old.state_revision)
         tx.add_event(Event(new.task_id, kind, new.state_revision))
         return new
@@ -124,7 +132,20 @@ class Service:
         if task.state_revision != expected:
             raise Rejected("stale_state")
 
-    def admit(self, actor: AuthContext, envelope: Envelope, start: StartTask) -> Task:
+    def admit(
+        self,
+        actor: AuthContext,
+        envelope: Envelope,
+        start: StartTask,
+        *,
+        hermes_session_id: str | None = None,
+    ) -> Task:
+        if (
+            hermes_session_id is not None
+            and _HERMES_SESSION_ID.fullmatch(hermes_session_id) is None
+            and _LEGACY_TASK_SESSION_ID.fullmatch(hermes_session_id) is None
+        ):
+            raise Rejected("invalid_hermes_session_binding", 422)
         # An explicit no-tools assignment narrows runtime authority. Only the
         # operator's brief is considered; reference material cannot set policy.
         if re.search(r"\b(?:use no tools|do not use (?:any )?tools|don't use (?:any )?tools|no tool calls)\b", start.brief, re.I):
@@ -191,7 +212,8 @@ class Service:
                 task = Task(str(uuid4()), actor.principal_id, start.bot_id, start.project_id,
                             start.brief, start.provider_binding, start.resource_key, start.budget,
                             files=start.files, follows_task_id=start.follows_task_id, previous_result=previous_result,
-                            disable_tools=start.disable_tools, allowed_tools=start.allowed_tools)
+                            disable_tools=start.disable_tools, allowed_tools=start.allowed_tools,
+                            hermes_session_id=hermes_session_id)
                 tx.insert_task(task)
                 tx.save_command(SavedCommand(actor.principal_id, envelope.command_key, identity, task.task_id))
                 tx.add_event(Event(task.task_id, "admitted", task.state_revision))
@@ -259,13 +281,14 @@ class Service:
         held = {"human_pause", "grant_withdrawal", "budget_exhausted"}
         with self.store.transaction() as tx:
             tasks = tx.tasks()
-        active = tuple(
-            task.task_id for task in tasks
-            if task.phase != "closed"
-            and (task.phase == "stopping" or not set(task.blockers) & held or pending(task))
-        )
-        closed = tuple(task.task_id for task in tasks if task.phase == "closed" and pending(task))
-        return (active + closed)[:limit]
+            eligible = [task for task in tasks if (
+                task.phase != "closed"
+                and (task.phase == "stopping" or not set(task.blockers) & held or pending(task))
+                or task.phase == "closed" and pending(task)
+            )]
+            # Persist rotation because production starts a new coordinator
+            # process each cycle. Outages and failed polls still yield a turn.
+            return tx.rotate_coordination(tuple(task.task_id for task in eligible), limit)
 
     def advance(self, task_id: str, worker_id: str) -> Task:
         with self.store.transaction() as tx:
@@ -278,13 +301,15 @@ class Service:
             return self.run(task_id, worker_id)
         return self.recover(task_id)
 
-    def projects(self, actor: AuthContext) -> tuple[ProjectView, ...]:
+    def projects(self, actor: AuthContext, *, after: str = "", limit: int | None = None) -> tuple[ProjectView, ...]:
         with self.store.transaction() as tx:
             access = tx.access(actor.principal_id)
             if access is None or not access.active:
                 raise Rejected("access_denied", 403)
             result = []
             for binding in tx.bindings(actor.channel, actor.subject, actor.principal_id):
+                if binding.conversation_id <= after:
+                    continue
                 project = tx.project(binding.project_id)
                 if project and project.state == "active" and project.project_id in access.projects:
                     result.append(ProjectView(project.project_id, project.display_name,
@@ -292,6 +317,8 @@ class Service:
                                               tuple(bot.bot_id for bot in tx.bots(
                                                   actor.principal_id, project.project_id,
                                               )), tx.project_coordination(project.project_id)))
+                    if limit is not None and len(result) >= limit:
+                        break
             return tuple(result)
 
     def create_project(self, actor: AuthContext, envelope: Envelope,
@@ -358,14 +385,30 @@ class Service:
             if project is None or project.state != "active":
                 raise Rejected("project_unavailable", 409)
             agents = tuple(tx.bots(actor.principal_id, binding.project_id))
-            tasks = tuple(
-                task for task in tx.tasks()
-                if task.owner_id == actor.principal_id and task.project_id == binding.project_id
+            project_tasks = tuple(
+                task for task in tx.tasks() if task.project_id == binding.project_id
+                and (binding.project_id, task.bot_id) in access.project_bots
                 and task.bot_id in access.bots
+            )
+            tasks = tuple(
+                task for task in project_tasks
+                if task.owner_id == actor.principal_id
             )
             publications = {task.task_id: tx.publication(task.task_id) for task in tasks}
             titles = {task.task_id: tx.task_title(task.task_id) for task in tasks}
             order = tx.task_admission_order(tuple(task.task_id for task in tasks))
+            shared_results = []
+            for task in project_tasks:
+                if task.owner_id == actor.principal_id:
+                    continue
+                publication = tx.publication(task.task_id)
+                if publication is not None and actor.principal_id in publication.audience:
+                    # Release only the approved bytes, never the private title,
+                    # brief, attachments, task history or other audience members.
+                    shared_results.append(SharedResult(
+                        publication.publication_id, task.owner_id,
+                        publication.content, publication.digest,
+                    ))
 
         can_write = access.role in {"admin", "operator"}
         ready = any(agent.state == "ready" for agent in agents)
@@ -406,6 +449,7 @@ class Service:
         return WorkHome(
             actor.principal_id, access.role, binding.project_id, project.display_name,
             agents, tuple(sorted(cards, key=lambda card: card.sequence, reverse=True)), start,
+            tuple(shared_results),
         )
 
     @staticmethod
@@ -458,7 +502,7 @@ class Service:
             updated = task.evolve(phase="active", attempt_id=attempt.attempt_id,
                                   generation=attempt.generation, budget_remaining=task.budget_remaining - 1,
                                   blockers=(), observation_sequence=0)
-            session_id = task.task_id
+            session_id = task.hermes_session_id or task.task_id
             request_digest = runtime_request_fingerprint(task, session_id)
             tx.save_dispatch(AgentDispatch(
                 attempt.attempt_id, task.task_id, attempt.attempt_id, session_id,
@@ -540,7 +584,11 @@ class Service:
             if worker_id is not None and attempt.worker_id != worker_id:
                 return task
             expected_digest = runtime_request_fingerprint(task, dispatch.session_id)
-            if dispatch.request_digest != expected_digest:
+            expected_session_id = task.hermes_session_id or task.task_id
+            if (
+                dispatch.session_id != expected_session_id
+                or dispatch.request_digest != expected_digest
+            ):
                 blockers = tuple(sorted(set(task.blockers) | {"operation_unknown"}))
                 phase = "stopping" if task.phase == "stopping" else "recovering"
                 return self._save(tx, task, task.evolve(
@@ -688,8 +736,10 @@ class Service:
         content = result.content if result.state == "completed" else None
         if result.state == "completed" and (content is None or not content.strip()):
             return self._needs_attention(task_id, dispatch_key)
-        if content is not None and len(content.encode()) > 65536:
-            raise Rejected("result_too_large")
+        oversized = content is not None and len(content.encode()) > 65536
+        if oversized:
+            content = None
+            result = replace(result, state="failed", content=None)
         with self.store.transaction() as tx:
             task = self._task(tx, task_id)
             if task.phase == "closed":
@@ -702,6 +752,8 @@ class Service:
             blockers = set(task.blockers) - {
                 "operation_unknown", "runtime_stop", "runtime_unavailable",
             }
+            if oversized:
+                blockers.add("result_too_large")
             if result.state == "cancelled" and "human_pause" in blockers and "cancel_requested" not in blockers:
                 return self._save(tx, task, task.evolve(
                     phase="queued", attempt_id=None, blockers=tuple(sorted(blockers))), "paused")

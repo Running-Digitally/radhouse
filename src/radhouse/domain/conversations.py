@@ -1,6 +1,7 @@
 """One explicitly linked owner/agent conversation, independent of a chat client."""
 
 from dataclasses import dataclass
+from hashlib import sha256
 from typing import Literal
 
 from radhouse.domain.tasks import InputFile
@@ -31,6 +32,25 @@ class ConversationLink:
     coordinator: bool = False
     channel_kind: Literal["dm", "stream"] = "dm"
 
+    @property
+    def hermes_session_id(self) -> str:
+        """Default Hermes session scoped to this owner, conversation and bot profile."""
+        return self.hermes_session_id_for()
+
+    def hermes_session_id_for(self, context_id: str | None = None) -> str:
+        """Return the Hermes thread for this link and an optional fresh-context boundary."""
+        identity_parts = [
+            "radhouse-hermes-session-v1",
+            self.link_id,
+            self.principal_id,
+            self.project_id,
+            self.bot_id,
+        ]
+        if context_id:
+            identity_parts.extend(("fresh-context", context_id))
+        identity = "\0".join(identity_parts)
+        return "rh-" + sha256(identity.encode("utf-8")).hexdigest()
+
 
 @dataclass(frozen=True)
 class ConversationMessage:
@@ -56,3 +76,7 @@ class MessageRoute:
     task_id: str | None = None
     expected_revision: int | None = None
     follows_task_id: str | None = None
+    # Fresh-context boundaries and task bindings are frozen with the received
+    # message so retries and delayed processing cannot pick a newer thread.
+    context_id: str | None = None
+    hermes_session_id: str | None = None

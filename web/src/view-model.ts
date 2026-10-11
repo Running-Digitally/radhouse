@@ -46,6 +46,7 @@ const blockerLabels: Record<string, string> = {
   cancel_requested: "Cancellation was requested.",
   resource_busy: "Another task is using the same exclusive resource.",
   budget_exhausted: "This task has reached its retry budget.",
+  result_too_large: "The agent finished, but its result exceeded the 64 KiB limit. Ask for a shorter result; the original run was not restarted.",
 };
 
 export function phaseLabel(phase: Phase): string {

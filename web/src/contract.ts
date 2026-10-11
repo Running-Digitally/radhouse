@@ -134,7 +134,8 @@ const roles = ["admin", "operator", "viewer"] as const;
 
 export function parseWorkHome(value: unknown): WorkHome {
   const item = record(value);
-  if (!Array.isArray(item.agents) || !Array.isArray(item.tasks)) {
+  const sharedResults = item.shared_results === undefined ? [] : item.shared_results;
+  if (!Array.isArray(item.agents) || !Array.isArray(item.tasks) || !Array.isArray(sharedResults)) {
     throw new Error("invalid_work_home");
   }
   return {
@@ -145,5 +146,10 @@ export function parseWorkHome(value: unknown): WorkHome {
     agents: item.agents.map(agent),
     tasks: item.tasks.map(taskCard),
     start: action(item.start),
+    shared_results: sharedResults.map(value => {
+      const shared = record(value);
+      return { publication_id: string(shared.publication_id), owner_id: string(shared.owner_id),
+        content: string(shared.content), digest: string(shared.digest) };
+    }),
   };
 }

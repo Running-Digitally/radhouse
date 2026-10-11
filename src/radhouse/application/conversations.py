@@ -15,6 +15,7 @@ _STATUS = re.compile(
     re.I,
 )
 _NEW = re.compile(r"^(?:separately[, :]+|new task[: ,]+)", re.I)
+_FRESH_CONTEXT = re.compile(r"^start fresh(?:[ ]+(?:thread|context))?[.! ]*$", re.I)
 
 
 def _without_agent_prefix(content, display_name):
@@ -91,17 +92,49 @@ class Conversations:
             if bot is None:
                 raise Rejected("bot_unavailable", 409)
             content = _without_agent_prefix(content, bot.display_name)
+        # This exact owner command is a context boundary, not a new assignment.
+        # Its message ID is stable across ingress retries and becomes the thread
+        # identity for later work; prior Hermes and Radhouse history is retained.
+        if (
+            not message.reply_to
+            and not message.files
+            and _FRESH_CONTEXT.fullmatch(content.strip())
+        ):
+            return MessageRoute("fresh_context", context_id=message.message_id)
+
+        context_id = tx.conversation_context_id(
+            link.link_id, at_or_before=message.created_at
+        )
+
+        def current_session_id():
+            return link.hermes_session_id_for(context_id)
+
+        def task_session_id(task):
+            if task.hermes_session_id:
+                return task.hermes_session_id
+            dispatch = tx.dispatch(task.attempt_id) if task.attempt_id else None
+            return dispatch.session_id if dispatch is not None else link.hermes_session_id
+
         explicit_start = (
             message.addressed
             and not message.reply_to
             and not _STATUS.fullmatch(content.strip())
         )
         if explicit_start:
-            return MessageRoute("start")
+            return MessageRoute("start", hermes_session_id=current_session_id())
+        pending = tx.conversation_pending(link.link_id)
+        if context_id:
+            pending = [row for row in pending if (
+                row["route"].hermes_session_id == current_session_id()
+                or row["route"].task_id is not None
+                and (task := tx.task(row["route"].task_id)) is not None
+                and task_session_id(task) == current_session_id()
+            )]
         if (
-            tx.conversation_pending(link.link_id, limit=1)
+            pending
             and not message.reply_to
             and not _NEW.match(content)
+            and not _FRESH_CONTEXT.fullmatch(content.strip())
         ):
             return MessageRoute("clarify")
         target = None
@@ -127,32 +160,45 @@ class Conversations:
             )
             if target is not None and target.bot_id != link.bot_id:
                 if target.phase == "closed" and target.result:
-                    return MessageRoute("start", follows_task_id=target.task_id)
+                    return MessageRoute(
+                        "start",
+                        follows_task_id=target.task_id,
+                        hermes_session_id=task_session_id(target),
+                    )
                 return MessageRoute("clarify")
         tasks = [
             tx.task(task_id) for task_id in tx.conversation_task_messages(link.link_id)
         ]
         tasks = [t for t in tasks if t is not None]
+        if context_id and not message.reply_to:
+            # A fresh boundary fences implicit selection, including unfinished
+            # older work. Only an explicit reply may return to an old thread.
+            tasks = [t for t in tasks if task_session_id(t) == current_session_id()]
         active = [t for t in tasks if t.phase != "closed"]
         if target is None and not message.reply_to:
             if len(active) > 1 and not _NEW.match(content):
                 return MessageRoute("clarify")
-            target = active[0] if active else tx.task(tx.conversation_focus(link))
+            focus = tx.conversation_focus(
+                link, **({"hermes_session_id": current_session_id()} if context_id else {})
+            )
+            target = active[0] if active else tx.task(focus)
         if _STATUS.fullmatch(content.strip()):
             return MessageRoute("status", target.task_id if target else None)
         if _NEW.match(content):
-            return MessageRoute("start")
+            return MessageRoute("start", hermes_session_id=current_session_id())
         if message.files and target is not None and target.phase != "closed":
             return MessageRoute("clarify")
         if target is not None:
             if target.phase == "closed":
                 return MessageRoute(
-                    "start", follows_task_id=target.task_id if target.result else None
+                    "start",
+                    follows_task_id=target.task_id if target.result else None,
+                    hermes_session_id=task_session_id(target),
                 )
             return MessageRoute("guide", target.task_id, target.state_revision)
         if len(tasks) > 1:
             return MessageRoute("clarify")
-        return MessageRoute("start")
+        return MessageRoute("start", hermes_session_id=current_session_id())
 
     def receive(self, link, message, *, event=None):
         if (
@@ -224,8 +270,12 @@ class Conversations:
                     files=message.files,
                     follows_task_id=route.follows_task_id,
                 ),
+                hermes_session_id=route.hermes_session_id or link.hermes_session_id,
             )
-            reply = "I have your assignment. I’ll keep its progress and result in this conversation."
+            reply = (
+                "I have your assignment. New work continues this agent thread. Send “Start fresh thread” "
+                "to begin without its prior transcript; earlier messages and task results stay here."
+            )
             if task.disable_tools:
                 reply += " Tools are disabled for this task."
             elif task.allowed_tools:
@@ -279,6 +329,12 @@ class Conversations:
                         reply += "\n\nReview status · Approved and published to the approved audience."
                     else:
                         reply += "\n\nReview required · Sign in to Radhouse:\n" + self.service.review_links.issue(tx, link, task)
+        elif route.action == "fresh_context":
+            reply = (
+                "Started a fresh agent thread for new work. Earlier messages and task results "
+                "are still here; reply to an earlier task to return to its thread. Saved memory "
+                "and this agent’s permissions are unchanged."
+            )
         else:
             reply = "Which task do you mean? Reply to its message so I can keep your instruction with the right work."
         completed = replace(

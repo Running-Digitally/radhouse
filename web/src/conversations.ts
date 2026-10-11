@@ -1,5 +1,5 @@
 import type { RadhouseApi } from "./api.js";
-import { acceptPastedOrDroppedFiles, loadAttachments } from "./files.js";
+import { attachmentPicker } from "./files.js";
 import type { AttachedFile } from "./files.js";
 
 export interface ConversationLink {
@@ -45,12 +45,17 @@ function node<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, 
 export function conversationPanel(api: RadhouseApi, link: ConversationLink, history: ConversationHistory,
   draft: ConversationDraft, owner: string, refresh: () => Promise<void>, review: (taskId: string) => void,
   run: (button: HTMLButtonElement, work: () => Promise<void>) => Promise<void>,
-  filePicker: (open: boolean) => void): HTMLElement {
+  filePicker: (open: boolean) => void, canWrite = true): HTMLElement {
   const panel = node("section", "conversation-panel");
+  panel.dataset.conversationId = link.link_id;
   const heading = node("div", "conversation-heading");
   heading.append(node("span", "agent-avatar", link.display_name.slice(0, 1)),
     node("h2", "section-title", link.display_name), node("span", "muted", "Your conversation · also in Buzz"));
   panel.append(heading);
+  const contextHelp = node("p", "notice",
+    "New tasks continue this agent thread. Start fresh thread begins without its prior transcript. Earlier messages and task results stay here; replying to an earlier task returns to its thread. Saved memory and permissions are unchanged.");
+  contextHelp.setAttribute("role", "note");
+  panel.append(contextHelp);
   if (history.error_code) {
     const hold = node("p", "notice notice--error", "Buzz delivery needs attention. Your conversation is saved here; replies may be delayed.");
     hold.setAttribute("role", "status"); panel.append(hold);
@@ -74,11 +79,12 @@ export function conversationPanel(api: RadhouseApi, link: ConversationLink, hist
   if (!history.messages.length) list.append(node("p", "empty", "Ask Researcher a question or give it an assignment. Its progress and result will stay in this conversation."));
   for (const message of history.messages) {
     const own = message.author === owner;
-    const item = node("article", `conversation-message${own ? " conversation-message--own" : ""}`);
+    const item = node("article", `conversation-message${own ? " conversation-message--own" : ""}${message.state === "fresh_context" ? " conversation-message--context-boundary" : ""}`);
     item.append(node("p", "message-author", own ? `You · ${message.source === "buzz" ? "Buzz" : "Radhouse"}` : link.display_name),
       node("p", "message-content", message.content));
-    for (const file of message.files) {
+    for (const [index, file] of message.files.entries()) {
       const details = node("details", "message-reference");
+      details.dataset.viewKey = `${message.message_id}:file:${index}`;
       details.append(node("summary", "", file.name));
       if (file.encoding === "base64" && file.media_type.startsWith("image/")) {
         const image = node("img", "message-reference__image");
@@ -98,11 +104,16 @@ export function conversationPanel(api: RadhouseApi, link: ConversationLink, hist
       reply.onclick = () => { draft.reply = message; clearReply.hidden = false; replyLabel.textContent = `Replying to: ${message.content.slice(0, 100)}`; composer.focus(); };
       const details = node("button", "button button--secondary", message.state === "result" ? "Review result" : "Task details"); details.type = "button";
       details.onclick = () => { if (message.task_id) review(message.task_id); };
-      controls.append(reply, details);
+      if (canWrite) controls.append(reply);
+      controls.append(details);
     }
     item.append(controls); list.append(item);
   }
   panel.append(list);
+  if (!canWrite) {
+    panel.append(node("p", "notice", "Your access is read-only. You can read this conversation and its shared results."));
+    return panel;
+  }
   const form = node("form", "conversation-compose");
   const replyLabel = node("p", "muted", draft.reply ? `Replying to: ${draft.reply.content.slice(0, 100)}` : "");
   const clearReply = node("button", "button button--secondary", "Clear reply"); clearReply.type = "button";
@@ -113,26 +124,17 @@ export function conversationPanel(api: RadhouseApi, link: ConversationLink, hist
   composer.rows = 3; composer.required = true; composer.maxLength = 4096; composer.value = draft.content;
   composer.placeholder = `Message ${link.display_name}…`; composer.oninput = () => { draft.content = composer.value; };
   label.append(node("span", "field__label", `Message ${link.display_name}`), composer);
-  const filesLabel = node("label", "field"); const files = node("input", "field__control");
-  files.type = "file"; files.multiple = true; files.accept = ".txt,.md,.markdown,.csv,.json,.log,.png,.jpg,.jpeg,.webp";
-  filesLabel.append(node("span", "field__label", "Reference files · paste, drop or choose text/CSV/images"), files);
-  const fileNames = node("p", "muted", draft.files.map(file => file.name).join(", "));
   const submit = node("button", "button button--primary", "Send message"); submit.type = "submit";
-  files.onclick = () => filePicker(true); files.addEventListener("cancel", () => filePicker(false));
-  files.onchange = () => {
-    filePicker(false);
-    void run(submit, async () => {
-      const loaded = await loadAttachments(Array.from(files.files ?? []));
-      draft.files = loaded; fileNames.textContent = loaded.map(file => file.name).join(", ");
-    });
-  };
-  acceptPastedOrDroppedFiles(composer, async selected => {
-    await run(submit, async () => {
-      draft.files = await loadAttachments(selected);
-      fileNames.textContent = draft.files.map(file => file.name).join(", ");
-    });
+  const fresh = node("button", "button button--secondary", "Start fresh thread"); fresh.type = "button";
+  fresh.setAttribute("aria-label", "Start fresh thread");
+  fresh.onclick = () => void run(fresh, async () => {
+    await api.sendMessage(link.link_id, "Start fresh thread", null, []);
+    draft.reply = null;
+    delete draft.before;
+    await refresh();
   });
-  form.append(replyLabel, clearReply, label, filesLabel, fileNames, submit);
+  const attachments = attachmentPicker(composer, draft, work => run(submit, work), filePicker);
+  form.append(replyLabel, clearReply, label, attachments, submit, fresh);
   form.onsubmit = event => {
     event.preventDefault(); if (!draft.content.trim()) return;
     void run(submit, async () => {

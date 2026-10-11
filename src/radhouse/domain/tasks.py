@@ -1,4 +1,4 @@
-"""Task state is independent of runtime sessions and channel deliveries."""
+"""Task state is independent of runtime runs and channel deliveries."""
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Literal
@@ -167,6 +167,9 @@ class Task:
     permission_request: dict | None = None
     disable_tools: bool = False
     allowed_tools: tuple[str, ...] = ()
+    # Durable conversation-to-Hermes binding. None preserves legacy task-scoped
+    # sessions for API-admitted and pre-upgrade tasks.
+    hermes_session_id: str | None = None
 
     def evolve(self, **changes) -> "Task":
         return replace(self, state_revision=self.state_revision + 1, **changes)

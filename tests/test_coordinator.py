@@ -123,3 +123,58 @@ def test_runtime_activity_is_durable_deduplicated_and_does_not_advance_task_stat
         assert len(events) == 1
         assert events[0].data["label"] == "Using an assigned tool"
         assert tx.latest_event(task.task_id, "runtime_activity") == events[0]
+
+
+@pytest.mark.postgres
+def test_provider_outage_yields_to_healthy_work_across_coordinator_restarts(
+    service, service_factory, store, alice, envelope, start, fake_provider, monkeypatch,
+):
+    with store.transaction() as tx:
+        tx._connection.execute("UPDATE bots SET provider_binding='offline-model' WHERE bot_id='bot-alpha'")
+    monkeypatch.setattr("radhouse.application.service.uuid4", lambda: "00000000-0000-4000-8000-000000000001")
+    blocked = service.admit(alice, envelope(), replace(start, provider_binding="offline-model"))
+    monkeypatch.setattr("radhouse.application.service.uuid4", lambda: "ffffffff-ffff-4fff-8fff-ffffffffffff")
+    ready = service.admit(alice, envelope(project_id="project-shared"),
+                          replace(start, project_id="project-shared", bot_id="bot-beta"))
+    monkeypatch.undo()
+    describe = fake_provider.describe
+    fake_provider.describe = lambda binding: replace(describe(binding), available=binding != "offline-model")
+    first = Coordinator(service, "first-process", max_tasks_per_cycle=1).run_once()
+    second = Coordinator(service_factory(), "restarted-process", max_tasks_per_cycle=1).run_once()
+    assert first.receipts[0].task_id == blocked.task_id
+    assert second.receipts[0].task_id == ready.task_id
+    assert second.receipts[0].outcome == "completed"
+
+
+@pytest.mark.postgres
+def test_scheduler_rotation_is_fair_and_does_not_grow_task_history(
+    service, service_factory, store, alice, envelope, start,
+):
+    tasks = [service.admit(alice, envelope(), start) for _ in range(3)]
+    before = service.events(alice, tasks[0].task_id, envelope=envelope())["events"]
+    turns = [service_factory().coordination_candidates(1)[0] for _ in range(9)]
+    expected = sorted(task.task_id for task in tasks)
+    assert turns == expected * 3
+    assert service.events(alice, tasks[0].task_id, envelope=envelope())["events"] == before
+    with store.transaction() as tx:
+        assert tx._connection.execute("SELECT count(*) AS n FROM task_coordination").fetchone()["n"] == 3
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize("content, oversized", [("x" * 65536, False), ("é" * 32769, True)])
+def test_result_size_limit_closes_dispatch_and_releases_resource_claim(
+    service, store, alice, envelope, start, fake_work, content, oversized,
+):
+    fake_work.result_content = content
+    task = service.admit(alice, envelope(), replace(start, resource_key="shared-report"))
+    done = service.run(task.task_id)
+    assert done.phase == "closed"
+    assert done.outcome == ("failed" if oversized else "completed")
+    assert ("result_too_large" in done.blockers) == oversized
+    assert done.result == (None if oversized else content)
+    assert service.recover(task.task_id) == done
+    assert fake_work.start_count == 1
+    with store.transaction() as tx:
+        assert tx.dispatch(done.attempt_id).state == "closed"
+        assert tx.attempt(done.attempt_id).state == "finished"
+        assert tx._connection.execute("SELECT count(*) AS n FROM claims WHERE task_id=%s AND active", (task.task_id,)).fetchone()["n"] == 0
