@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Radhouse browser trial</title><link rel="stylesheet" href="/qualification/assets/styles.css"></head>
+<body>
+<header><div><strong>Radhouse</strong><span class="badge">Browser trial</span></div><span id="connection" role="status">Connecting…</span></header>
+<main>
+<section class="browser-pane">
+<div class="toolbar"><span id="owner" role="status">Opening browser…</span><div class="actions">
+<button id="take" hidden>Take control</button><button id="return" hidden>Return to agent</button>
+<button id="fit">Fit screen</button><button id="zoom">Zoom in</button><button id="expand">Expand</button></div></div>
+<p id="notice" role="status"></p>
+<div class="viewport" id="viewport"><iframe id="stream" title="Assistant browser" allow="clipboard-read; clipboard-write"></iframe><div id="touch-layer" hidden aria-label="View-only screen"></div></div>
+<p class="hint" id="hint">Click a page field to type after taking control. Click the draft to return keyboard focus to chat.</p>
+</section>
+<aside id="chat"><h1>Try an intervention</h1><p>Edit the form, select text, scroll, use a hover menu and complete the fake sign-in. Then return the page to the agent.</p>
+<label for="draft">Chat draft</label><textarea id="draft" placeholder="Keep a draft here while you use the browser…"></textarea>
+<button id="agent">Observe with agent tools</button><output id="observation" aria-live="polite"></output>
+<p class="qualification">This trial uses synthetic browser state and deterministic agent tools.</p></aside>
+</main><script src="/qualification/assets/viewer.js" type="module"></script>
+</body></html>

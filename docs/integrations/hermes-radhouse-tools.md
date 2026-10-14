@@ -204,3 +204,14 @@ updaters remain in place; no second maintenance service or root broker is introd
 Local source tests and disposable Linux compatibility evidence do not establish a
 target's installed browser, firewall rules, certificate-forward route or live model
 tool execution. Those remain explicit deployment verification evidence.
+
+## Selkies qualification candidate
+
+The [isolated Selkies package](../../runtime/selkies/README.md) qualifies desktop
+takeover and phone viewing through the same reviewed native driver and seven-tool
+Unix channel. It adds a streaming input fence and the private
+`HumanReturnObservation` proof for paused-to-fresh-run admission after verified
+human-input quiescence. Existing callers and ordinary paused admission retain
+their current behavior. This synthetic package does not activate a new installed
+Hermes capability; production lifecycle, authentication, browser-tab agreement,
+sandbox and paired-release qualification remain required.

@@ -146,6 +146,15 @@ class FenceObservation:
 
 
 @dataclass(frozen=True)
+class HumanReturnObservation:
+    """Trusted streaming adapter proof after revoke, drain and fresh observation."""
+    identity: BrowserIdentity
+    owner: OwnerBinding
+    revision: int
+    quiescent: bool
+
+
+@dataclass(frozen=True)
 class RetirementObservation:
     """Internal exact native teardown proof, not inferred from absence."""
     identity: BrowserIdentity
@@ -415,6 +424,7 @@ class BrowserController:
         lease_id: str | None,
         revision: int,
         previous: RunTerminalObservation | None = None,
+        handover: HumanReturnObservation | None = None,
     ) -> ControlState:
         """Explicit handback admits a fresh run, never the run paused by takeover."""
         if run.session_id != identity.session_id:
@@ -428,6 +438,13 @@ class BrowserController:
                 self._owner(state, owner)
                 if state.retired or state.revision != revision:
                     raise ControlRejected("stale_control")
+            elif state.mode == "paused" and lease_id is None:
+                self._owner(state, owner)
+                if (state.retired or state.revision != revision
+                        or not isinstance(handover, HumanReturnObservation)
+                        or handover.identity != identity or handover.owner != owner
+                        or handover.revision != revision or handover.quiescent is not True):
+                    raise ControlRejected("quiescence_unproven")
             else:
                 raise ControlRejected("control_lease_unavailable")
             if state.active_command is not None:

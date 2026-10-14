@@ -1,0 +1,285 @@
+"""Exercise the new input path against the actual durable browser controller."""
+import asyncio
+import importlib.util
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from tests.test_browser_control import control
+
+spec = importlib.util.spec_from_file_location("selkies_qualification_control",
+    Path(__file__).parents[1] / "runtime/selkies/control.py")
+stream = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = stream
+spec.loader.exec_module(stream)
+
+
+def fixture(tmp_path):
+    clock = [1000.0]
+    c = control.BrowserController(tmp_path / "browser.db", maintenance_held=lambda: False,
+        clock=lambda: clock[0], lease_seconds=10)
+    identity = control.BrowserIdentity("conversation", "session", "generation")
+    run = control.RunBinding("old-run", "session", "old-key")
+    c.bind_browser(identity, run, "owner")
+    events, tables = [], []
+
+    async def publish(table):
+        tables.append(table)
+
+    async def fence(state):
+        events.append("native-fence")
+        return control.FenceObservation(identity, state.takeover_after, True)
+
+    async def observe():
+        events.append("fresh-observation")
+        return {"snapshot": "fresh page"}
+
+    async def resume(owner, revision, observation):
+        c.admit_run(identity, owner, control.RunBinding("fresh-run", "session", "fresh-key"),
+            lease_id=None, revision=revision,
+            previous=control.RunTerminalObservation(run.run_id, run.session_id, "completed"),
+            handover=control.HumanReturnObservation(identity, owner, revision, True))
+        events.append("agent-admitted")
+
+    async def clear_clipboard():
+        events.append("clear-clipboard")
+        return True
+
+    async def sensitive_clear():
+        return True
+
+    boundary = stream.StreamingControl(c, identity, fence=fence, observe=observe,
+        publish=publish, resume=resume, current=lambda: identity.generation,
+        clear_clipboard=clear_clipboard, sensitive_clear=sensitive_clear)
+    desktop = boundary.add_viewer(control.OwnerBinding("owner", "a"*64, 1, "desktop"), can_take=True)
+    phone = boundary.add_viewer(control.OwnerBinding("owner", "b"*64, 1, "phone"))
+    connections = {}
+
+    async def dispatch(message, display_id="primary", conn_id=None):
+        events.append("input:" + message)
+
+    async def release():
+        events.append("release-buttons")
+        handler.button_mask = 0
+
+    async def reset():
+        events.append("release-keys")
+        handler.pressed_keys.clear()
+        handler.translated_keys.clear()
+
+    async def clipboard(value):
+        events.append("clear-clipboard")
+        return True
+
+    handler = SimpleNamespace(is_wayland=False, on_message=dispatch, button_mask=0,
+        pressed_keys={}, translated_keys={}, release_mouse_buttons=release,
+        reset_keyboard=reset, write_clipboard=clipboard,
+        _reset_multipart_clipboard=lambda: events.append("clear-transfer"),
+        xdisplay=SimpleNamespace(sync=lambda: events.append("x-sync"), query_keymap=lambda: [0]*32,
+            screen=lambda: SimpleNamespace(root=SimpleNamespace(query_pointer=lambda: SimpleNamespace(mask=0)))))
+    boundary.attach(handler, lambda cid: connections.get(cid))
+    return SimpleNamespace(c=c, clock=clock, identity=identity, run=run, events=events,
+        tables=tables, boundary=boundary, desktop=desktop, phone=phone,
+        connections=connections, handler=handler)
+
+
+async def take(f, viewer=None):
+    return await f.boundary.take(viewer or f.desktop, request_id="request",
+        revision=f.boundary.state().revision, auth_expires_at=2000)
+
+
+def test_phone_cannot_take_or_inject_and_desktop_positive_control(tmp_path):
+    async def scenario():
+        f = fixture(tmp_path)
+        f.connections[1] = f.phone.token
+        with pytest.raises(stream.StreamRejected, match="viewing_only"):
+            await take(f, f.phone)
+        await f.handler.on_message("kd,97", conn_id=1)
+        await take(f)
+        f.connections[2] = f.boundary.input_token
+        await f.handler.on_message("kd,97", conn_id=1)
+        await f.handler.on_message("kd,97", display_id=None, conn_id=2)
+        await f.handler.on_message("cmd,touch /tmp/forbidden", conn_id=2)
+        await f.handler.on_message("r,900x900", conn_id=2)
+        assert f.events.count("input:kd,97") == 1
+        assert not any("forbidden" in e or "900x900" in e for e in f.events)
+    asyncio.run(scenario())
+
+
+def test_takeover_blocks_agent_before_inflight_completion_and_fence(tmp_path):
+    async def scenario():
+        f = fixture(tmp_path)
+        f.c.reserve_agent(f.identity, f.run, "active-command")
+        pending = await take(f)
+        assert pending.mode == "takeover_pending" and f.boundary.input_token is None
+        with pytest.raises(control.ControlRejected):
+            f.c.reserve_agent(f.identity, f.run, "later-command")
+        f.c.complete_agent(f.identity, f.run, "active-command", outcome="completed")
+        state = await f.boundary.settle_takeover()
+        assert state.mode == "human" and f.events == ["native-fence"]
+    asyncio.run(scenario())
+
+
+def test_handback_waits_for_input_releases_and_observation_before_agent(tmp_path):
+    async def scenario():
+        f = fixture(tmp_path)
+        state = await take(f)
+        stale_token = f.boundary.input_token
+        f.connections[1] = stale_token
+        entered, finish = asyncio.Event(), asyncio.Event()
+
+        async def held(message, display_id="primary", conn_id=None):
+            entered.set()
+            await finish.wait()
+            f.handler.pressed_keys[97] = 1
+            f.handler.button_mask = 1
+            f.events.append("accepted-input-complete")
+
+        f.boundary._dispatch = held
+        input_task = asyncio.create_task(f.handler.on_message("kd,97", conn_id=1))
+        await entered.wait()
+        return_task = asyncio.create_task(f.boundary.handback(f.desktop,
+            lease_id=state.lease.lease_id, revision=state.revision))
+        await asyncio.sleep(0)
+        assert f.boundary.state().mode == "human"
+        with pytest.raises(control.ControlRejected):
+            f.c.reserve_agent(f.identity, f.run, "too-early")
+        finish.set()
+        await input_task
+        await return_task
+        await f.handler.on_message("kd,97", conn_id=1)
+        assert f.events == ["native-fence", "accepted-input-complete", "release-buttons",
+            "release-keys", "x-sync", "clear-transfer", "clear-clipboard", "x-sync",
+            "fresh-observation", "agent-admitted"]
+        assert f.boundary.state().admitted_run.run_id == "fresh-run"
+    asyncio.run(scenario())
+
+
+def test_sensitive_precondition_keeps_control_so_owner_can_finish_signin(tmp_path):
+    async def scenario():
+        f = fixture(tmp_path)
+        state = await take(f)
+        token = f.boundary.input_token
+        async def sensitive(): return False
+        f.boundary.sensitive_clear = sensitive
+        with pytest.raises(stream.StreamRejected, match="sensitive_fields_present"):
+            await f.boundary.handback(f.desktop, lease_id=state.lease.lease_id, revision=state.revision)
+        assert f.boundary.state().mode == "human" and f.boundary.authorized(token)
+        assert "agent-admitted" not in f.events
+    asyncio.run(scenario())
+
+
+def test_expiry_denies_connected_input_and_never_resumes_agent(tmp_path):
+    async def scenario():
+        f = fixture(tmp_path)
+        await take(f)
+        f.connections[1] = f.boundary.input_token
+        f.clock[0] += 11
+        await f.handler.on_message("kd,97", conn_id=1)
+        state = await f.boundary.reconcile()
+        assert state.mode == "paused" and f.boundary.input_token is None
+        assert "agent-admitted" not in f.events
+        assert not any(e.startswith("input:") for e in f.events)
+    asyncio.run(scenario())
+
+
+def test_two_tabs_compete_and_old_token_does_not_regain_authority(tmp_path):
+    async def scenario():
+        f = fixture(tmp_path)
+        other = f.boundary.add_viewer(control.OwnerBinding("owner", "c"*64, 1, "other"), can_take=True)
+        state = await take(f)
+        with pytest.raises(control.ControlRejected):
+            await take(f, other)
+        old_token = f.boundary.input_token
+        await f.boundary.handback(f.desktop, lease_id=state.lease.lease_id, revision=state.revision)
+        await take(f, other)
+        assert f.boundary.input_token != old_token
+        assert not f.boundary.authorized(old_token)
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("failure", ["release", "clipboard", "sync", "observe", "publish"])
+def test_unconfirmed_handback_stays_paused_without_agent_admission(tmp_path, failure):
+    async def scenario():
+        f = fixture(tmp_path)
+        state = await take(f)
+
+        async def fail(*args):
+            raise RuntimeError("synthetic-failure")
+
+        if failure == "release": f.handler.release_mouse_buttons = fail
+        if failure == "clipboard": f.boundary.clear_clipboard = fail
+        if failure == "sync": f.handler.xdisplay.sync = lambda: (_ for _ in ()).throw(RuntimeError())
+        if failure == "observe": f.boundary.observe = fail
+        if failure == "publish": f.boundary.publish = fail
+        with pytest.raises(stream.StreamRejected, match="handback_unconfirmed"):
+            await f.boundary.handback(f.desktop, lease_id=state.lease.lease_id, revision=state.revision)
+        assert f.boundary.state().mode == "paused" and f.boundary.input_token is None
+        assert "agent-admitted" not in f.events
+    asyncio.run(scenario())
+
+
+def test_paused_agent_admission_requires_matching_trusted_return_proof(tmp_path):
+    f = fixture(tmp_path)
+    state = asyncio.run(take(f))
+    paused = f.c.begin_return(f.identity, f.desktop.owner, state.lease.lease_id, state.revision)
+    for proof in (None, control.HumanReturnObservation(f.identity, f.phone.owner, paused.revision, True),
+                  control.HumanReturnObservation(f.identity, f.desktop.owner, paused.revision-1, True),
+                  control.HumanReturnObservation(f.identity, f.desktop.owner, paused.revision, False)):
+        with pytest.raises(control.ControlRejected):
+            f.c.admit_run(f.identity, f.desktop.owner,
+                control.RunBinding("fresh", "session", "fresh-key"), lease_id=None,
+                revision=paused.revision, handover=proof,
+                previous=control.RunTerminalObservation("old-run", "session", "completed"))
+
+
+def test_replaced_generation_cannot_receive_input_or_a_new_grant(tmp_path):
+    async def scenario():
+        f = fixture(tmp_path)
+        await take(f)
+        f.connections[1] = f.boundary.input_token
+        f.boundary.current = lambda: "replacement-generation"
+        await f.handler.on_message("kd,97", conn_id=1)
+        await f.boundary.reconcile()
+        with pytest.raises(stream.StreamRejected, match="stale_browser"):
+            await take(f)
+        assert f.boundary.state().mode == "paused"
+        assert not any(e.startswith("input:") for e in f.events)
+    asyncio.run(scenario())
+
+
+def test_internal_punctuation_commit_is_reentrant_but_unbound_input_is_denied(tmp_path):
+    async def scenario():
+        f = fixture(tmp_path)
+        await take(f)
+        f.connections[1] = f.boundary.input_token
+
+        async def punctuation(message, display_id="primary", conn_id=None):
+            if message.startswith("kd,"):
+                await f.handler.on_message("co,end,_")
+            else:
+                f.events.append(message)
+
+        f.boundary._dispatch = punctuation
+        await asyncio.wait_for(f.handler.on_message("kd,95", conn_id=1), timeout=1)
+        await f.handler.on_message("co,end,forbidden", conn_id=None)
+        assert "co,end,_" in f.events and "co,end,forbidden" not in f.events
+    asyncio.run(scenario())
+
+
+def test_background_atomic_repeat_cannot_inject_after_expiry_or_during_fence(tmp_path):
+    async def scenario():
+        f = fixture(tmp_path)
+        f.handler.keyboard = SimpleNamespace(press=lambda key: f.events.append("physical-press"),
+            release=lambda key: f.events.append("physical-release"))
+        await take(f)
+        f.boundary._bind_keyboard()
+        f.handler.keyboard.press(95)
+        async with f.boundary.input_lock:
+            f.handler.keyboard.press(95)
+        f.clock[0] += 11
+        f.handler.keyboard.press(95)
+        assert f.events.count("physical-press") == 1
+    asyncio.run(scenario())
