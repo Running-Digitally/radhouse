@@ -98,7 +98,10 @@ sandbox readiness and existing app health. Reuse prior native/sandbox/egress and
 memory qualification when their frozen bytes and settings are unchanged; do not
 repeat the package investigation or unrelated full suites for a viewer-only
 change. Record real iPhone/Android keyboard acceptance separately from emulation.
-Revisit after a demonstrated input, accessibility, ownership or performance gap.
+The deployed pilot's ASCII input and preedit replacement passed. Non-ASCII
+characters currently fail in the X11/Chromium mapping path; see the guide's
+acceptance boundary. This remains open for the mobile pilot. Revisit after a
+demonstrated input, accessibility, ownership or performance gap.
 
 References: [Selkies input](https://docs.selkies.io/latest/reference/web-core/lib/input),
 [upstream keyboard controls](https://github.com/selkies-project/selkies/blob/main/addons/selkies-dashboard/src/components/Sidebar.jsx),

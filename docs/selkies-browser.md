@@ -71,6 +71,23 @@ is not a production chat response. Existing login/secret-field handback rules
 still apply. Closed shadow roots/custom secret widgets are outside the guard's
 coverage; multiple visible browser windows remain unsupported.
 
+## Current pilot acceptance
+
+The installed unified viewer passed all 13 desktop stream journeys and seven
+focused mobile checks: takeover, ASCII text/preedit replacement/deletion,
+hardware-keyboard override, navigation soft keys, orientation, handback cleanup
+and viewing-only input denial. Desktop emulation verifies the existing assist
+focus and remote values; actual iPhone/Android OS keyboard appearance remains
+owner acceptance.
+
+Non-ASCII text is a known pilot limitation. The accented-character and CJK
+probes failed: events reached the synthetic page, but Chromium reported null
+characters instead of text after dynamic X11 keymap binding. Repeating a binding
+and using the existing Selkies text-commit protocol did not fix it. The fault is
+not yet isolated within the X11/Chromium mapping path. The mobile pilot therefore
+has verified ASCII typing only; full international text acceptance is open.
+No alternate text-injection or clipboard workaround is installed.
+
 ## Next implementation boundary
 
 Implement the accepted chat replacement by having the runtime bind Selkies to
