@@ -53,3 +53,51 @@ class RpcTests(unittest.IsolatedAsyncioTestCase):
                 await s._rpc(Socket(), 'Page.getFrameTree', timeout=.01)
         # An outer timeout must fail the test, not satisfy the expected error.
         await asyncio.wait_for(bounded(), .2)
+
+
+class MemoryMaintenanceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_pressure_collects_each_page_without_reading_page_or_heap_contents(self):
+        from unittest.mock import AsyncMock, patch
+        from types import SimpleNamespace
+        calls = []
+        class Socket:
+            def __init__(self, url):
+                self.url = url
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, *args):
+                pass
+        class Client(Socket):
+            def ws_connect(self, url):
+                return Socket(url)
+        async def rpc(ws, method, params=None):
+            calls.append((ws.url, method, params))
+            return {}
+        endpoint = 'http://127.0.0.1:9123'
+        pages = [{'id':'A'*32}, {'id':'B'*32}]
+        with patch.dict('sys.modules', {'aiohttp':SimpleNamespace(ClientSession=lambda **k:Client('unused'), ClientTimeout=lambda **k:None)}), \
+                patch.object(s, '_browser_url', AsyncMock(return_value='browser')), \
+                patch.object(s, '_targets', AsyncMock(return_value=(pages, set()))), \
+                patch.object(s, '_rpc', side_effect=rpc):
+            await s.notify_memory_pressure(endpoint)
+        self.assertEqual(calls, [
+            ('browser', 'Memory.simulatePressureNotification', {'level':'critical'}),
+            (s._target_url(endpoint, 'A'*32), 'HeapProfiler.collectGarbage', None),
+            (s._target_url(endpoint, 'B'*32), 'HeapProfiler.collectGarbage', None)])
+
+    async def test_untrusted_target_id_cannot_redirect_maintenance_socket(self):
+        from unittest.mock import AsyncMock, patch
+        from types import SimpleNamespace
+        class Client:
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, *args):
+                pass
+            def ws_connect(self, url):
+                return self
+        with patch.dict('sys.modules', {'aiohttp':SimpleNamespace(ClientSession=lambda **k:Client(), ClientTimeout=lambda **k:None)}), \
+                patch.object(s, '_browser_url', AsyncMock(return_value='browser')), \
+                patch.object(s, '_targets', AsyncMock(return_value=([{'id':'../other'}], set()))), \
+                patch.object(s, '_rpc', AsyncMock()):
+            with self.assertRaisesRegex(RuntimeError, '^page_check_unconfirmed$'):
+                await s.notify_memory_pressure('http://127.0.0.1:9123')

@@ -136,11 +136,19 @@ async def _browser_url(client, endpoint):
 
 
 async def notify_memory_pressure(endpoint):
-    # Fixed browser maintenance operation; no page values, input or agent API.
+    # Fixed maintenance only: no heap snapshots, page values, input or agent API.
     from aiohttp import ClientSession, ClientTimeout
     async with asyncio.timeout(8), ClientSession(timeout=ClientTimeout(total=8)) as client:
         async with client.ws_connect(await _browser_url(client, endpoint)) as ws:
             await _rpc(ws, 'Memory.simulatePressureNotification', {'level':'critical'})
+        # A browser pressure notification alone need not reclaim renderer Blob
+        # wrappers promptly. Ask each owned page to collect unreachable objects;
+        # otherwise completed high-speed transfers can OOM a cgroup-sized VM.
+        # Do not enable a profiler or retrieve objects, content or response bodies.
+        pages, _ = await _targets(client, endpoint)
+        for page in pages:
+            async with client.ws_connect(_target_url(endpoint, page.get('id'))) as ws:
+                await _rpc(ws, 'HeapProfiler.collectGarbage')
 
 
 async def _targets(client, endpoint):

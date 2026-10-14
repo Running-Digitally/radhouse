@@ -397,7 +397,7 @@ async def run():
     pressure_notifications, pressure_failures = [0], [0]
     async def memory_watch():
         while True:
-            await asyncio.sleep(2)
+            await asyncio.sleep(1)
             if resources.pressure():
                 try:
                     await sandbox.notify_memory_pressure(CHROME_ENDPOINT)
