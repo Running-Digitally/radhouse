@@ -41,6 +41,10 @@ class BrowserContextBody(BaseModel):
     lease_id: Annotated[str | None, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")] = None
 
 
+class BrowserObservationContextBody(BrowserContextBody):
+    observation_only: bool = False
+
+
 class InferenceSelection(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     model: Annotated[str | None, Field(min_length=1, max_length=512)] = None
@@ -52,7 +56,7 @@ class Message(BaseModel):
     request_id: Annotated[str, Field(pattern=r"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$")]
     text: Annotated[str, Field(max_length=16000)]
     attachments: list[Annotated[str, Field(pattern=FILE_ID.pattern)]] = Field(default_factory=list)
-    browser_context: BrowserContextBody | None = None
+    browser_context: BrowserObservationContextBody | None = None
     use_previous_browser: bool = False
     inference: InferenceSelection | None = None
     terminal_context: dict | None = None
@@ -86,6 +90,7 @@ def create_app(auth, service, *, admin=None, documents=None, browser=None, about
             "features": {"documents": getattr(service, "document_access", False) is True,
                          "browser": getattr(service, "browser_enabled", False) is True,
                          "browser_control": getattr(browser, "control_enabled", False) is True,
+                         "browser_streaming": getattr(browser, "streaming_enabled", False) is True,
                          "about_you": about_you is not None,
                          "terminal": owner_terminal is not None,
                          "inference": inference is not None}}
@@ -203,12 +208,12 @@ def create_app(auth, service, *, admin=None, documents=None, browser=None, about
                 browser_data = json.loads(existing["browser_context"])
                 saved = browser_data.get("browser_context")
                 expected = {key: saved[key] for key in ("generation", "revision", "lease_id")} if saved else None
-                if (body.browser_context.model_dump() if body.browser_context else None) != expected or bool(browser_data.get("use_previous_browser")) != body.use_previous_browser or browser_data["browser_owner"] != {
+                if (body.browser_context.model_dump(exclude={"observation_only"} if not body.browser_context.observation_only else set()) if body.browser_context else None) != expected or bool(browser_data.get("use_previous_browser")) != body.use_previous_browser or browser_data["browser_owner"] != {
                         "principal_id": session.principal_id, "conversation_id": session.conversation_id}:
                     raise Rejected("browser_context_changed", 409)
             else:
                 browser_data = browser.dispatch_data(session, request.headers.get("x-radhouse-browser-tab"),
-                    body.browser_context.model_dump() if body.browser_context else None, use_previous=body.use_previous_browser)
+                    body.browser_context.model_dump(exclude={"observation_only"} if not body.browser_context.observation_only else set()) if body.browser_context else None, use_previous=body.use_previous_browser)
         elif body.browser_context is not None or body.use_previous_browser:
             raise Rejected("browser_context_unavailable", 409)
         if getattr(browser, "control_enabled", False):
@@ -287,6 +292,11 @@ def _install_response_handlers(app):
     @app.middleware("http")
     async def private_responses(request, call_next):
         response = await call_next(request)
+        if request.url.path.startswith("/chat/browser/stream/"):
+            response.headers.update({"Cache-Control":"no-store","X-Content-Type-Options":"nosniff",
+                "Referrer-Policy":"no-referrer","X-Frame-Options":"SAMEORIGIN",
+                "Content-Security-Policy":"default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self'; worker-src 'self' blob:; frame-ancestors 'self'; base-uri 'none'; form-action 'none'"})
+            return response
         response.headers.update({"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
             "Referrer-Policy": "no-referrer", "X-Frame-Options": "DENY",
             "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"})
@@ -351,7 +361,7 @@ def _install_assets(app):
     @app.get("/workspace-assets/{name}")
     def workspace_asset(name: str):
         if name not in {"about-you.js", "about-you.css", "owner-terminal.js", "owner-terminal.css",
-                        "inference-controls.js", "inference-controls.css", "agent-profile.js", "agent-profile.css", "agent-portrait.js"}:
+                        "inference-controls.js", "inference-controls.css", "agent-profile.js", "agent-profile.css", "agent-portrait.js", "browser-stream.js", "conversation-workspace.css"}:
             raise Rejected("asset_not_found", 404)
         return FileResponse(STATIC / name,
             media_type=JAVASCRIPT_MEDIA_TYPE if name.endswith(".js") else "text/css")
@@ -514,6 +524,10 @@ class BrowserControlBody(BrowserContextBody):
     pass
 
 
+class BrowserVisibilityBody(BrowserControlBody):
+    mode: Literal["private", "observe"]
+
+
 class BrowserTakeBody(BrowserControlBody):
     request_id: Annotated[str, Field(pattern=r"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$")]
 
@@ -549,6 +563,9 @@ def _install_controlled_browser_routes(app, browser, auth, service):
         browser.binding(session, tab)
         return session, tab
 
+    from .browser_transport import install_stream_routes
+    install_stream_routes(app, auth, service, browser)
+
     def recheck(request, before, tab):
         if request.headers.get("x-radhouse-browser-tab", "") != tab:
             raise Rejected("browser_binding_changed", 409)
@@ -581,6 +598,10 @@ def _install_controlled_browser_routes(app, browser, auth, service):
     @app.post("/chat/browser/control/take")
     async def browser_take(body: BrowserTakeBody, request: Request):
         return await call(request, browser.control, "take", body.model_dump(exclude_none=True))
+
+    @app.post("/chat/browser/control/visibility")
+    async def browser_visibility(body: BrowserVisibilityBody, request: Request):
+        return await call(request, browser.control, "visibility", body.model_dump(exclude_none=True))
 
     @app.post("/chat/browser/control/heartbeat")
     async def browser_heartbeat(body: BrowserControlBody, request: Request):
@@ -619,7 +640,7 @@ def _install_controlled_browser_routes(app, browser, auth, service):
             if service.store.pending(session.principal_id) is not None:
                 raise Rejected("reply_pending", 409)
             data = await asyncio.to_thread(browser.dispatch_data, session, tab,
-                body.model_dump(exclude={"request_id"}))
+                body.model_dump(exclude={"request_id", "observation_only"}), return_to_agent=True)
         await asyncio.to_thread(recheck, request, session, tab)
         result = await asyncio.to_thread(service.send, session.principal_id, body.request_id,
             "I’m returning the browser to you. Continue from the current page.", browser_data=data)

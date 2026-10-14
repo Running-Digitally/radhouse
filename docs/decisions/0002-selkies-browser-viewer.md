@@ -1,6 +1,6 @@
 # ADR-0002: Use Selkies for the Radhouse browser viewer
 
-Status: accepted owner decision; unified desktop/mobile pilot authorized.
+Status: accepted owner decision; platform replacement and private/observe takeover authorized.
 
 Date: 2026-10-14
 
@@ -52,10 +52,11 @@ reclamation. Downloads remain unrestricted.
    only when the chat and Selkies tools demonstrably address that same browser.
    Do not redirect a live chat's browser panel to an independent test browser.
 
-This task deploys slice 1 for owner testing and establishes the replacement
-architecture. Slice 2 is implementation of this accepted decision, not another
-choice of streaming package. Until it is installed, the pilot explicitly
-identifies its disposable profile and test-driver observations.
+Slice 1 is deployed. Slice 2 is now being implemented and qualified under
+CR-2026-1014-08. The integrated platform uses the actual agent-owned browser;
+the independently deployed pilot remains a separate disposable profile.
+The [platform design](../design/selkies-platform.md) owns the shared Chat/Browser
+workspace and authenticated stream transport.
 
 ## Contracts and implementation
 
@@ -106,3 +107,20 @@ demonstrated input, accessibility, ownership or performance gap.
 References: [Selkies input](https://docs.selkies.io/latest/reference/web-core/lib/input),
 [upstream keyboard controls](https://github.com/selkies-project/selkies/blob/main/addons/selkies-dashboard/src/components/Sidebar.jsx),
 [WebKit focus behavior](https://bugs.webkit.org/show_bug.cgi?id=195884).
+
+## Private and observed takeover
+
+Every new takeover starts Private, denying model page reads and mutations.
+Explicit Let agent observe permits read-only snapshots for the same authenticated
+conversation while the owner retains input. It does not record keystrokes, train
+a model or save a reusable walkthrough. The owner can ask the agent to follow
+along in chat. Make private durably revokes the observation epoch, discards late
+captures and waits for the observation barrier before acknowledging Private.
+Chat sends in Private attach no current or previous page. Return to agent is an
+explicit, fenced handback, distinct from minimizing the browser.
+
+Keep one composer and live stream across Chat/Browser emphasis changes. Desktop
+Chat shows a small browser only during agent activity or human takeover; clicking
+it opens Browser emphasis with chat alongside. Phones use a compact chat drawer,
+inline Keys grid and the visual viewport so the OS keyboard does not require a
+separate phone browser implementation.

@@ -56,6 +56,7 @@
       this.viewport.append(this.image); this.body.append(this.status, this.site, this.viewport);
       this.container.replaceChildren(header, this.body);
       if (this.request) this._createControls();
+      this.streamPresenter = this.request && window.RadhouseBrowserStream ? new window.RadhouseBrowserStream(this) : null;
       this.toggle.addEventListener("click", () => {
         this.open = !this.open; this.body.hidden = !this.open;
         this.container.classList.toggle("browser-view--collapsed",!this.open);
@@ -96,8 +97,9 @@
       this.site.textContent = typeof value?.url === "string" ? value.url : "";
       this.site.hidden = !this.site.textContent;
       if (this.request) this._updateControls(value, state);
+      this.streamPresenter?.update(value);
       if (!this.active) { this._cancel(); this._clearImage(); }
-      else if (!this.controller && this.timer === null) this._schedule(0);
+      else if (!this.streamPresenter?.enabled && !this.controller && this.timer === null) this._schedule(0);
     }
 
     _cancel() {
@@ -121,6 +123,7 @@
     }
 
     async _poll() {
+      if(this.streamPresenter?.enabled){this.streamPresenter.mount();return;}
       if (!this.active || !this.open || document.hidden || this.container.hidden) return;
       const epoch = this.epoch, run = this.run, generation = this.generation;
       const controller = new AbortController(); this.controller = controller;
@@ -174,6 +177,7 @@
     }
 
     stop() {
+      this.streamPresenter?.clear();
       this.actionGeneration++;this.actionToken=null;this.actionPending=false;
       this._cancel(); this._clearImage();
       this._clearSecrets(); this.control = null; this.lease = null; this.actionNotice=null;
@@ -185,7 +189,7 @@
       this.site.textContent = ""; this._label(""); this.container.hidden = true;
     }
 
-    destroy() { this.stop(); document.removeEventListener("visibilitychange", this.visibility); }
+    destroy() { this.stop(); this.streamPresenter?.destroy(); document.removeEventListener("visibilitychange", this.visibility); }
 
     _decorate(button,icon,label,compact=false) {
       if(window.RadhouseIcons && icon)window.RadhouseIcons.decorate(button,icon,label,{compact});
@@ -375,6 +379,7 @@
       for(const button of this.loginList.querySelectorAll("button"))button.disabled=!human || this.actionPending || this.inputUnconfirmed;
       this.keyboard.hidden=!human;
       this.utilities.hidden=!human;
+      this.streamPresenter?.render();
       const text=this.active ? {agent:"Your assistant is using this browser.",human:"You have control. Browser actions from your assistant are paused.",
         takeover_pending:"Waiting for the current browser action to finish…",paused:"Browser actions are paused. Take control to continue.",
         recovering:"A browser action could not be confirmed. Input is paused."}[this.control?.mode] : null;
@@ -384,6 +389,7 @@
     }
 
     _point(event) {
+      if(this.streamPresenter?.enabled)return null;
       if(!this._human() || !this.displayedFrame || this.actionPending)return null;
       const rect=this.image.getBoundingClientRect(),{width,height}=this.displayedFrame.viewport;
       const scale=Math.min(rect.width/width,rect.height/height),
@@ -413,11 +419,13 @@
       } finally {
         if(this.actionToken===action) {
           this.actionToken=null;this.actionPending=false;this._clearSecrets();this._renderControlState();
+          this.container.dispatchEvent(new CustomEvent("browser-action-settled",{bubbles:true}));
         }
       }
     }
 
     async _input(operation,args) {
+      if(this.streamPresenter?.enabled)return;
       if(!this._human() || !this.displayedFrame || this.actionPending || this.inputUnconfirmed)return;
       const actionGeneration=this.actionGeneration,generation=this.generation;
       const value=await this._act("/chat/browser/control/input",{...this._binding(),...this.displayedFrame,
@@ -480,6 +488,7 @@
     }
 
     async _return() {
+      this.streamPresenter?.hideKeyboard();
       if(!this._human() || !this.canReturn || this.actionPending || this.inputUnconfirmed || !this.onReturn)return;
       const action=Symbol("browser-return");this.actionToken=action;
       this.actionPending=true;this._renderControlState();this._clearSecrets();

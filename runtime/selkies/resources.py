@@ -2,7 +2,7 @@
 from pathlib import Path
 
 
-def pressure(cgroup=Path('/sys/fs/cgroup')):
+def pressure(cgroup=None):
     """Exclude reclaimable file cache; notify before a hard cgroup OOM.
 
     Chromium's host memory signal need not reflect its smaller container limit.
@@ -10,6 +10,14 @@ def pressure(cgroup=Path('/sys/fs/cgroup')):
     non-cgroup installations retain Chromium's ordinary memory handling.
     """
     try:
+        if cgroup is None:
+            cgroup = Path('/sys/fs/cgroup')
+            # systemd services see the host's cgroup root, unlike containers.
+            entries = Path('/proc/self/cgroup').read_text().splitlines()
+            unified = next((line[3:] for line in entries if line.startswith('0::')), '/')
+            relative = Path(unified.lstrip('/'))
+            if '..' not in relative.parts and (cgroup/relative/'memory.max').is_file():
+                cgroup = cgroup/relative
         limit = int((cgroup/'memory.max').read_text())
         current = int((cgroup/'memory.current').read_text())
         stats = dict(line.split() for line in (cgroup/'memory.stat').read_text().splitlines())

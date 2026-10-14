@@ -48,6 +48,7 @@ class DocumentRunContext:
 _context = ContextVar("radhouse_document_run", default=None)
 _callback = None
 _browser_configuration = None
+_streaming = None
 HOLD_PATH = Path("/var/lib/radhouse-maintenance/hold.json")
 POLICY_PATH = Path("/etc/radhouse/builder-maintenance.json")
 _maintenance_configuration = None
@@ -184,6 +185,7 @@ def features(adapter):
             "version": 1,
             "mode": "owner_session",
         },
+        "runs_browser_streaming": {"supported": _streaming is not None, "version": 1, "mode": "owner_session"},
         "browser_credential_vault": {
             "supported": _controller is not None and _vault is not None,
             "version": 1,
@@ -405,6 +407,19 @@ def _register(ctx):
                 )
             }
         )
+    stream_manifest = ctx.get_config("browser_stream_manifest_path")
+    if stream_manifest:
+        global _streaming
+        import importlib.util
+        stream_config = json.loads(_root_file(Path(stream_manifest), 2 * 1024 * 1024))
+        module_path = Path(stream_config["root"]) / "adapter/platform.py"
+        if hashlib.sha256(_root_file(module_path, 128 * 1024)).hexdigest() != stream_config["files"]["adapter/platform.py"]:
+            raise ValueError("stream_installation_unverified")
+        spec = importlib.util.spec_from_file_location("radhouse_selkies_platform", module_path)
+        _streaming = importlib.util.module_from_spec(spec)
+        __import__("sys").modules[spec.name] = _streaming
+        spec.loader.exec_module(_streaming)
+        _streaming.configure(__import__("sys").modules[__name__], stream_manifest)
     network_manifest = ctx.get_config("browser_network_policy_path")
     if network_manifest:
         configure_network_policy(
@@ -771,6 +786,14 @@ def checked_browser_call(name, arguments, trusted, fallback):
         if name == "browser_navigate" and not http_url(arguments.get("url")):
             raise ValueError("browser_scope_unavailable")
         # Preserve upstream policy/formatters, changing only its admitted transport.
+        if _streaming is not None and _streaming.runtime is not None:
+            runtime = _streaming.runtime
+            context = current_run_context()
+            if (context.run_id, context.dispatch_key) in runtime.observers:
+                if name != "browser_snapshot":
+                    raise ValueError("browser_observation_only")
+                future = asyncio.run_coroutine_threadsafe(runtime.observation(context), runtime.loop)
+                return json.dumps(_redacted(future.result(20)), ensure_ascii=False)
         if _controller is not None:
             with agent_browser_operation(current_run_context()) as owned:
                 result = fallback()
@@ -1072,6 +1095,7 @@ class OwnedBrowser:
         self.operation_lock = threading.RLock()
         self.current_page = self.previous_page = None
         self.viewport = None
+        self.last_browser_run = None
 
     def handle(self, handle, timeout=45):
         self.last_handle = handle
@@ -1144,6 +1168,8 @@ def _current_owned(conversation_id, session_id, principal_id):
     # Stream files may briefly outlive a daemon. Positive process retirement comes first.
     if pid and started and _pid_gone(pid, started):
         if owned:
+            if _streaming is not None:
+                _streaming.retire()
             owned.channel.close()
             from tools import browser_tool_lifecycle as lifecycle
 
@@ -1223,6 +1249,11 @@ def _launch_owned(conversation_id, session_id, principal_id, *, run=None):
         lifecycle._start_browser_cleanup_thread()
         channel, identity, pid, started = None, None, None, None
         try:
+            if _streaming is not None:
+                endpoint = _streaming.launch(__import__("sys").modules[__name__], directory, environment)
+                argv = [_browser_configuration["agent_browser_path"], "--config",
+                    _browser_configuration["empty_config_path"], "--cdp", endpoint,
+                    "--session", name, "--pin-tab", "--json", "open", "--", "about:blank"]
             result = subprocess.run(
                 argv,
                 env=environment,
@@ -1267,6 +1298,8 @@ def _launch_owned(conversation_id, session_id, principal_id, *, run=None):
             lifecycle._start_browser_cleanup_thread()
             return owned
         except BaseException:
+            if _streaming is not None:
+                _streaming.retire()
             if channel is not None:
                 channel.close()
             # Existing exact-PID lifecycle only; do not delete evidence of an unknown daemon.
@@ -1313,11 +1346,15 @@ def agent_browser_operation(context):
     owned.operation_lock.acquire()
     try:
         _controller.reserve_agent(owned.identity, run, command_id)
+        owned.last_browser_run = context.run_id
     except BaseException:
         owned.operation_lock.release()
         raise
     token = _browser_operation.set(owned)
     try:
+        if _streaming is not None and _streaming.runtime is not None:
+            future = asyncio.run_coroutine_threadsafe(_streaming.runtime.visible(), _streaming.runtime.loop)
+            future.result(12)
         yield owned
     except native.NativeWaitTimeout, native.NativeChannelError:
         _controller.complete_agent(owned.identity, run, command_id, outcome="uncertain")
@@ -1365,6 +1402,8 @@ def _control_public(state, owner):
             lease_id=state.lease.lease_id,
             lease_expires_at=state.lease.expires_at,
             next_sequence=state.last_sequence + 1,
+            observation_mode=state.lease.observation_mode,
+            observation_epoch=state.lease.observation_epoch,
         )
     return output
 
@@ -1564,6 +1603,65 @@ def validate_browser_context(
         return "browser_context_rejected"
 
 
+async def validate_browser_context_async(adapter, body, run_id, dispatch_key, request=None, *, admit=False):
+    if _streaming is None or body.get("browser_context") is None:
+        return validate_browser_context(adapter, body, run_id, dispatch_key, request, admit=admit)
+    try:
+        control, _ = _control_modules()
+        value = body["browser_context"]
+        owner, conversation, expiry = _private_owner(value)
+        if body.get("browser_owner") != {"principal_id": owner.principal_id, "conversation_id": conversation}:
+            raise ValueError("owner_mismatch")
+        owned, state = _current_owned(conversation, body["session_id"], owner.principal_id)
+        if owned is None or value.get("generation") != owned.identity.generation:
+            raise ValueError("stale_browser")
+        runtime = await _streaming.ensure(__import__("sys").modules[__name__], owned)
+        boundary = runtime.boundary
+        if value.get("observation_only") is True:
+            if value.get("return_to_agent"):
+                raise ValueError("invalid_binding")
+            async with boundary.input_lock:
+                state = _controller.heartbeat(owned.identity,owner,value.get("lease_id"),value.get("revision"),auth_expires_at=expiry)
+                if state.lease.observation_mode != "observe":
+                    raise ValueError("browser_observation_denied")
+                if admit:
+                    runtime.observers[(run_id,dispatch_key)] = (owner,state.lease.lease_id,state.lease.observation_epoch)
+                    owned.last_browser_run = run_id
+            return None
+        previous = _previous_run(adapter,state,request)
+        if previous and previous.status not in {"completed","failed","cancelled","interrupted"}:
+            raise ValueError("previous_run_not_terminal")
+        if state.mode == "human":
+            if value.get("return_to_agent") is not True:
+                raise ValueError("explicit_return_required")
+            _controller.heartbeat(owned.identity,owner,value.get("lease_id"),value.get("revision"),auth_expires_at=expiry)
+            if not admit:
+                return None
+            runtime.return_binding = (owner,value.get("lease_id"),value.get("revision"))
+            viewer = await runtime.viewer(owner)
+            await boundary.handback(viewer,lease_id=value.get("lease_id"),revision=value.get("revision"))
+            state = _controller.state(owned.identity)
+        elif state.mode == "paused" and runtime.handover is not None:
+            if getattr(runtime,"return_binding",None) != (owner,value.get("lease_id"),value.get("revision")):
+                raise ValueError("invalid_binding")
+        elif state.mode != "agent" or value.get("lease_id") is not None or value.get("revision") != state.revision:
+            raise ValueError("stale_control")
+        if admit:
+            _controller.admit_run(owned.identity,owner,control.RunBinding(run_id,body["session_id"],dispatch_key),
+                lease_id=None,revision=state.revision,previous=previous,handover=runtime.handover)
+            runtime.handover = None
+        return None
+    except Exception:
+        return "browser_context_rejected"
+
+
+async def handle_browser_stream(adapter, request):
+    if _streaming is None:
+        from aiohttp import web
+        return web.Response(status=404)
+    return await _streaming.relay(__import__("sys").modules[__name__], adapter, request)
+
+
 async def handle_browser_session(adapter, request, *, operation, api_server):
     from aiohttp import web
 
@@ -1589,7 +1687,12 @@ async def handle_browser_session(adapter, request, *, operation, api_server):
                 _launch_owned, conversation, session_id, owner.principal_id
             )
             state = _controller.state(owned.identity)
-            if state.mode in {"agent", "paused"}:
+            if _streaming is not None:
+                runtime = await _streaming.ensure(__import__("sys").modules[__name__], owned)
+                viewer = await runtime.viewer(owner)
+                state = await runtime.boundary.take(viewer, request_id=body.get("request_id") or uuid4().hex,
+                    revision=state.revision, auth_expires_at=expiry)
+            elif state.mode in {"agent", "paused"}:
                 state = _controller.request_takeover(
                     owned.identity,
                     owner,
@@ -1599,7 +1702,8 @@ async def handle_browser_session(adapter, request, *, operation, api_server):
                 )
             elif state.lease is None or state.lease.owner != owner:
                 raise control.ControlRejected("browser_control_busy")
-            state = await asyncio.to_thread(_fence_takeover, owned, state)
+            if _streaming is None:
+                state = await asyncio.to_thread(_fence_takeover, owned, state)
         else:
             owned, state = _current_owned(conversation, session_id, owner.principal_id)
             if owned is None:
@@ -1623,7 +1727,14 @@ async def handle_browser_session(adapter, request, *, operation, api_server):
                 and body["generation"] != state.identity.generation
             ):
                 raise control.ControlRejected("stale_browser")
-            if operation == "take":
+            runtime = await _streaming.ensure(__import__("sys").modules[__name__], owned) if _streaming is not None else None
+            if runtime is not None and operation == "visibility":
+                state = await runtime.visibility(owner,body)
+            elif runtime is not None and operation == "take":
+                viewer = await runtime.viewer(owner)
+                state = await runtime.boundary.take(viewer,request_id=body.get("request_id"),
+                    revision=body.get("revision"),auth_expires_at=expiry)
+            elif operation == "take":
                 state = _controller.request_takeover(
                     owned.identity,
                     owner,
@@ -1654,11 +1765,18 @@ async def handle_browser_session(adapter, request, *, operation, api_server):
 
                 lifecycle._update_session_activity(session_id)
             elif operation == "input":
+                if runtime is not None:
+                    raise control.ControlRejected("stream_input_required")
                 result = await asyncio.to_thread(_human_input, owned, owner, body)
                 return web.json_response(result, headers={"Cache-Control": "no-store"})
             elif operation == "pause":
+                if runtime is not None:
+                    _controller.pause(owned.identity,owner)
+                    await runtime.boundary.reconcile()
                 state = await asyncio.to_thread(_pause_owned, owned, owner)
             elif operation == "close":
+                if runtime is not None:
+                    await runtime.stop()
                 result = await asyncio.to_thread(
                     _owner_close, adapter, request, owned, owner, body
                 )
@@ -1699,7 +1817,10 @@ async def handle_browser_session(adapter, request, *, operation, api_server):
             and state.lease
             and state.lease.owner == owner
         ):
-            state = await asyncio.to_thread(_fence_takeover, owned, state)
+            if _streaming is not None:
+                state = await runtime.boundary.settle_takeover()
+            else:
+                state = await asyncio.to_thread(_fence_takeover, owned, state)
         if (not maintenance_held() and state.active_command is None and state.mode not in {
             "recovering",
             "takeover_pending",
@@ -1708,7 +1829,7 @@ async def handle_browser_session(adapter, request, *, operation, api_server):
         stream = _session_stream(session_id)
         if stream is None or stream[1] != owned.identity.generation:
             raise control.ControlRejected("stale_browser")
-        result = await _native_frame(
+        result = {"url": "about:blank"} if _streaming is not None else await _native_frame(
             stream[0],
             want_frame=operation == "frame",
             session_id=session_id,
@@ -1729,6 +1850,15 @@ async def handle_browser_session(adapter, request, *, operation, api_server):
                 "previous": owned.previous_page,
             },
         }
+        if _streaming is not None:
+            if operation == "frame":
+                raise control.ControlRejected("stream_view_required")
+            runtime = await _streaming.ensure(__import__("sys").modules[__name__], owned)
+            viewer = await runtime.viewer(owner)
+            response["stream"] = {"path":"/chat/browser/stream/index.html",
+                "token":runtime.boundary.input_token if runtime.boundary.input_owner == owner and runtime.boundary.authorized(runtime.boundary.input_token) else viewer.token}
+            active = adapter._run_statuses.get(owned.last_browser_run) or {}
+            response["agent_active"] = active.get("status") in {"queued","running","waiting_for_approval","stopping"}
         if operation == "frame":
             response.update(
                 {
@@ -1919,7 +2049,13 @@ async def handle_browser_logins(adapter, request, *, operation):
         owned, state = _current_owned(conversation, session_id, owner.principal_id)
         if owned is None or body.get("generation") != state.identity.generation:
             raise ValueError("stale_browser")
-        result = await asyncio.to_thread(_human_login, owned, owner, body, operation)
+        if _streaming is not None:
+            runtime = await _streaming.ensure(__import__("sys").modules[__name__],owned)
+            async with runtime.boundary.input_lock:
+                await runtime.visible()
+                result = await asyncio.to_thread(_human_login,owned,owner,body,operation)
+        else:
+            result = await asyncio.to_thread(_human_login, owned, owner, body, operation)
         return web.json_response(result, headers={"Cache-Control": "no-store"})
     except Exception:
         return web.json_response(

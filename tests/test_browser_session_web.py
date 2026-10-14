@@ -387,3 +387,102 @@ def test_web_save_and_remove_match_real_runtime_human_login_contract(tmp_path,mo
         assert LOGIN["password"].encode() not in store.path.read_bytes()
         assert LOGIN["password"].encode() not in controller.database_path.read_bytes()
     finally:relay.close()
+
+
+def _enable_stream(native):
+    original = native.browser_session
+    def call(*args, **kwargs):
+        result = original(*args, **kwargs)
+        if result.get('state') == 'live':
+            result.update(stream={'path':'/chat/browser/stream/index.html','token':'x'*43},agent_active=False)
+            result['control'].update(observation_mode='private',observation_epoch=0)
+        return result
+    native.browser_session = call
+
+
+def test_streaming_private_chat_requires_explicit_return_or_observation(app):
+    client,auth,native,store,browser=app
+    native.active=True;_enable_stream(native)
+    assert client.post('/chat/browser/open',headers=HEADERS).status_code==200
+    status=client.get('/chat/browser',headers=HEADERS).json()
+    assert status['control']['observation_mode']=='private'
+    assert status['stream']['path']=='/chat/browser/stream/index.html'
+    with pytest.raises(Rejected,match='browser_private'):
+        browser.dispatch_data(auth.session(type('Request',(),{'method':'GET','cookies':{auth.cookie_name:'synthetic-cookie'},'headers':HEADERS})()),TAB,CONTROL)
+    response=client.post('/chat/messages',headers=HEADERS,json={'request_id':str(uuid4()),'text':'Hello','browser_context':CONTROL})
+    assert response.status_code==409 and response.json()=={'error':'browser_private'}
+    response=client.post('/chat/browser/control/visibility',headers=HEADERS,json={**CONTROL,'mode':'private'})
+    assert response.status_code==200
+    assert native.calls[-1][1]=='control/visibility'
+    assert native.calls[-1][2]['mode']=='private'
+    assert client.post('/chat/browser/control/visibility',headers=HEADERS,json={**CONTROL,'mode':'automatic'}).status_code==422
+
+
+def test_stream_viewer_requires_authentication_before_transport(app):
+    client,auth,native,store,browser=app
+    client.cookies.clear()
+    assert client.get('/chat/browser/stream/index.html').status_code==401
+    from starlette.websockets import WebSocketDisconnect
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect('/chat/browser/stream/api/websockets',headers={'Origin':'https://foreign.invalid'}):
+            pass
+
+
+def test_stream_http_strips_owner_cookies_and_rechecks_binding(app,monkeypatch):
+    import aiohttp
+    from types import SimpleNamespace
+    client,auth,native,store,browser=app
+    native._runs=SimpleNamespace(_client=SimpleNamespace(base_url='http://127.0.0.1:8642/',headers={'Authorization':'Bearer synthetic-service'}))
+    calls=[]
+    class Body:
+        async def read(self,limit): return b'<html>synthetic stream</html>'
+    class Reply:
+        status=200;headers={'Content-Type':'text/html'};content=Body()
+        async def __aenter__(self):return self
+        async def __aexit__(self,*args):pass
+    class Session:
+        def __init__(self,**kwargs):pass
+        async def __aenter__(self):return self
+        async def __aexit__(self,*args):pass
+        def get(self,url,**kwargs):calls.append((url,kwargs));return Reply()
+    monkeypatch.setattr(aiohttp,'ClientSession',Session)
+    response=client.get('/chat/browser/stream/index.html?ignored=1',headers={'Sec-Fetch-Site':'same-origin'})
+    assert response.status_code==200
+    assert calls[0][0]=='http://127.0.0.1:8642/v1/browser-stream/index.html'
+    headers=calls[0][1]['headers']
+    assert set(headers)=={'Authorization','X-Radhouse-Stream-Owner'}
+    assert 'Cookie' not in headers
+    assert 'synthetic-cookie' not in str(headers)
+    assert json.loads(headers['X-Radhouse-Stream-Owner'])['auth_session_digest']==hashlib.sha256(b'synthetic-cookie').hexdigest()
+    assert response.headers['x-frame-options']=='SAMEORIGIN'
+    assert client.get('/chat/browser/stream/api/command').status_code==404
+    assert client.get('/chat/browser/stream/index.html',headers={'Sec-Fetch-Site':'cross-site'}).status_code==403
+
+
+def test_stream_websocket_closes_on_session_revocation(app,monkeypatch):
+    import asyncio,aiohttp,base64
+    from types import SimpleNamespace
+    client,auth,native,store,browser=app
+    native._runs=SimpleNamespace(_client=SimpleNamespace(base_url='http://127.0.0.1:8642/',headers={'Authorization':'Bearer synthetic-service'}))
+    calls=[]
+    class Remote:
+        async def __aenter__(self):return self
+        async def __aexit__(self,*args):pass
+        async def send_str(self,value):pass
+        async def send_bytes(self,value):pass
+        async def messages(self):
+            yield SimpleNamespace(type=aiohttp.WSMsgType.TEXT,data='AUTH_SUCCESS,synthetic')
+            await asyncio.Future()
+        def __aiter__(self):return self.messages()
+    class Session:
+        def __init__(self,**kwargs):pass
+        async def __aenter__(self):return self
+        async def __aexit__(self,*args):pass
+        def ws_connect(self,url,**kwargs):calls.append((url,kwargs));return Remote()
+    monkeypatch.setattr(aiohttp,'ClientSession',Session)
+    protocol='selkies.token.'+base64.urlsafe_b64encode(('x'*43).encode()).decode().rstrip('=')
+    with client.websocket_connect('ws://127.0.0.1/chat/browser/stream/api/websockets',headers={'Origin':'http://127.0.0.1'},subprotocols=['selkies',protocol]) as ws:
+        assert ws.receive_text()=='AUTH_SUCCESS,synthetic'
+        assert calls[0][1]['protocols']==['selkies',protocol]
+        auth.active=False
+        assert ws.receive()=={'type':'websocket.close','code':1008,'reason':''}

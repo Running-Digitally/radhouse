@@ -108,14 +108,14 @@ def patch_runs(source):
     source = _replace(
         source,
         "    q = self._run_streams[run_id] = _RunStream()\n",
-        """    from radhouse_hermes_bridge import validate_browser_context, scoped_session_admission_error
+        """    from radhouse_hermes_bridge import validate_browser_context_async, scoped_session_admission_error
     if await scoped_session_admission_error(self, session_id, body):
         self._run_owners.pop(run_id, None)
         return web.json_response({"error": "browser_context_rejected", "admitted": False}, status=409)
     if body.get("browser_context") is not None and session_id != body.get("session_id"):
         self._run_owners.pop(run_id, None)
         return web.json_response({"error": "browser_context_rejected", "admitted": False}, status=409)
-    if validate_browser_context(self, body, run_id, idempotency_key, request):
+    if await validate_browser_context_async(self, body, run_id, idempotency_key, request):
         self._run_owners.pop(run_id, None)
         return web.json_response({"error": "browser_context_rejected", "admitted": False}, status=409)
     q = self._run_streams[run_id] = _RunStream()
@@ -129,7 +129,7 @@ def patch_runs(source):
     source = _replace(
         source,
         "    launch = _RunLaunch(\n",
-        """    if validate_browser_context(self, body, run_id, idempotency_key, request, admit=True):
+        """    if await validate_browser_context_async(self, body, run_id, idempotency_key, request, admit=True):
         self._set_run_status(run_id, "failed", error="browser_context_rejected")
         return _accepted_response(run_id, "failed", gateway_session_key, replayed=False)
     launch = _RunLaunch(
@@ -186,6 +186,10 @@ def patch_api(source, *, include_lifecycle=True):
         operation = request.path.rstrip("/").rsplit("/", 1)[-1]
         return await handle_browser_session(self, request, operation=operation, api_server=sys.modules[__name__])
 
+    async def _handle_radhouse_browser_stream(self, request):
+        from radhouse_hermes_bridge import handle_browser_stream
+        return await handle_browser_stream(self, request)
+
     async def _handle_radhouse_browser_logins(self, request):
         from radhouse_hermes_bridge import handle_browser_logins
         operation = request.path.rstrip("/").rsplit("/", 1)[-1]
@@ -195,10 +199,11 @@ def patch_api(source, *, include_lifecycle=True):
         + anchor,
     )
     anchor = "        routes.extend(_api_runs._http_routes(self))\n"
-    routes = """        routes.append(("POST", "/v1/browser-sessions/open", self._handle_radhouse_browser_session))
+    routes = """        routes.append(("GET", "/v1/browser-stream/{tail:.*}", self._handle_radhouse_browser_stream))
+        routes.append(("POST", "/v1/browser-sessions/open", self._handle_radhouse_browser_session))
         for operation in ("status", "frame"):
             routes.append(("POST", "/v1/browser-sessions/{session_id}/" + operation, self._handle_radhouse_browser_session))
-        for operation in ("take", "heartbeat", "input", "pause", "close"):
+        for operation in ("take", "heartbeat", "input", "pause", "close", "visibility"):
             routes.append(("POST", "/v1/browser-sessions/{session_id}/control/" + operation, self._handle_radhouse_browser_session))
         for operation in ("list", "save", "remove", "fill"):
             routes.append(("POST", "/v1/browser-sessions/{session_id}/logins/" + operation, self._handle_radhouse_browser_logins))

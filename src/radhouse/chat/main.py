@@ -58,7 +58,8 @@ def app_factory():
     browser_service = None
     if browser_enabled:
         browser_service = BrowserSessionService(store, browser_client, owner_id=config["owner_id"],
-            chat_service=service, credential_vault=lambda: _browser_vault_available(status_client))
+            chat_service=service, credential_vault=lambda: _browser_vault_available(status_client),
+            streaming=config.get("browser_streaming_enabled", False))
     app = create_app(auth, service, admin=admin,
         documents=DocumentBridge(store, status_client, owner_id=config["owner_id"]) if document_access else None,
         browser=browser_service,
@@ -89,10 +90,10 @@ def _load_chat_config():
     config = json.loads(path.read_text())
     required = {"auth_dsn", "auth_database", "deployment_id", "auth_encryption_key",
                 "origin", "owner_id", "hermes_endpoint", "hermes_bearer", "transcript_path"}
-    optional = {"transcription_endpoint", "transcription_bearer", "document_access_enabled", "browser_enabled"}
+    optional = {"transcription_endpoint", "transcription_bearer", "document_access_enabled", "browser_enabled", "browser_streaming_enabled"}
     if not required <= set(config) or set(config) - required - optional or ("transcription_bearer" in config and "transcription_endpoint" not in config):
         raise ValueError("invalid_chat_config")
-    if any(type(config.get(key, False)) is not bool for key in ("document_access_enabled", "browser_enabled")):
+    if any(type(config.get(key, False)) is not bool for key in ("document_access_enabled", "browser_enabled", "browser_streaming_enabled")):
         raise ValueError("invalid_chat_config")
     return config
 

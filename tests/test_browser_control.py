@@ -483,3 +483,59 @@ def test_root_hold_then_status_observes_a_reservation_admitted_just_before_hold(
     assert not snapshot.known and not snapshot.idle
     with pytest.raises(control.ControlRejected, match="maintenance_held"):
         c.reserve_agent(identity, run, "after-hold")
+
+
+def test_every_human_takeover_defaults_to_private(fixture):
+    c, identity, run, owner, _, _ = fixture
+    state = human(fixture)
+    assert state.lease.observation_mode == "private"
+    with pytest.raises(control.ControlRejected, match="observation_denied"):
+        c.authorize_observation(identity, owner, state.lease.lease_id, 0)
+    with pytest.raises(control.ControlRejected, match="browser_control_blocked"):
+        c.reserve_agent(identity, run, "private-read")
+
+
+def test_observe_is_explicit_read_only_and_private_revokes_old_epoch(fixture):
+    c, identity, run, owner, _, _ = fixture
+    state = human(fixture)
+    visible = c.observation_mode(identity, owner, state.lease.lease_id, state.revision, "observe")
+    assert visible.lease.observation_epoch == 1
+    c.authorize_observation(identity, owner, visible.lease.lease_id, 1)
+    with pytest.raises(control.ControlRejected, match="browser_control_blocked"):
+        c.reserve_agent(identity, run, "observe-cannot-click")
+    private = c.observation_mode(identity, owner, visible.lease.lease_id, visible.revision, "private")
+    with pytest.raises(control.ControlRejected, match="observation_denied"):
+        c.authorize_observation(identity, owner, private.lease.lease_id, 1)
+    again = c.observation_mode(identity, owner, private.lease.lease_id, private.revision, "observe")
+    assert again.lease.observation_epoch == 3
+    with pytest.raises(control.ControlRejected, match="observation_denied"):
+        c.authorize_observation(identity, owner, again.lease.lease_id, 1)
+
+
+def test_observation_rejects_another_tab_and_authentication_expiry(fixture):
+    c, identity, _, owner, clock, _ = fixture
+    state = human(fixture)
+    state = c.observation_mode(identity, owner, state.lease.lease_id, state.revision, "observe")
+    other = replace(owner, tab_id="other-tab")
+    with pytest.raises(control.ControlRejected):
+        c.authorize_observation(identity, other, state.lease.lease_id, state.lease.observation_epoch)
+    with pytest.raises(control.ControlRejected):
+        c.observation_mode(identity, other, state.lease.lease_id, state.revision, "private")
+    clock[0] = state.lease.expires_at + 1
+    with pytest.raises(control.ControlRejected, match="observation_denied"):
+        c.authorize_observation(identity, owner, state.lease.lease_id, state.lease.observation_epoch)
+
+
+def test_observation_mode_persists_and_next_takeover_is_private(fixture):
+    c, identity, _, owner, clock, path = fixture
+    state = human(fixture)
+    state = c.observation_mode(identity, owner, state.lease.lease_id, state.revision, "observe")
+    restarted = make_controller(path, clock=lambda: clock[0])
+    assert restarted.state(identity).lease.observation_mode == "observe"
+    restarted.pause(identity, owner)
+    paused = restarted.state(identity)
+    pending = restarted.request_takeover(identity, owner, "new-takeover", revision=paused.revision, auth_expires_at=300)
+    taken = restarted.confirm_takeover(identity, pending.revision,
+        control.FenceObservation(identity, pending.takeover_after, True))
+    assert taken.lease.observation_mode == "private"
+    assert taken.lease.observation_epoch == 0

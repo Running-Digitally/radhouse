@@ -84,15 +84,16 @@ function browserTab() {
   return browserTabId;
 }
 function browserRequest(path,body,method="POST") { return api(path,body,false,undefined,method); }
+function browserIsPrivate() { return integratedBrowser() && lastBrowserStatus?.control?.mode==="human" && lastBrowserStatus.control.observation_mode!=="observe"; }
 function currentBrowserContextAvailable() {
-  return Boolean(lastBrowserStatus?.state==="live" && lastBrowserStatus?.generation &&
+  return Boolean(!browserIsPrivate() && lastBrowserStatus?.state==="live" && lastBrowserStatus?.generation &&
     ["human","agent"].includes(lastBrowserStatus?.control?.mode));
 }
 function updateBrowserChip() {
   const current=currentBrowserContextAvailable(),
     page=current ? {url:lastBrowserStatus.url,title:lastBrowserStatus.title} : lastBrowserStatus?.page_context?.previous;
   const chip=$("browser-context-chip"); if(!chip)return;
-  chip.hidden=!session || session.features?.browser_control!==true || !page?.url;
+  chip.hidden=!session || session.features?.browser_control!==true || browserIsPrivate() || !page?.url;
   if(!chip.hidden) {
     $("browser-context-label").textContent=(current ? "Use current page: " : "Use previous page: ")+(page.title || page.url);
     $("use-browser-context").checked=browserContextWanted;
@@ -108,7 +109,7 @@ function updateTerminalChip() {
 function updateMessageOptions() {
   const current=currentBrowserContextAvailable();
   const page=current ? {url:lastBrowserStatus.url,title:lastBrowserStatus.title} : lastBrowserStatus?.page_context?.previous;
-  const browserIncluded=Boolean(session?.features?.browser_control && browserContextWanted && page?.url);
+  const browserIncluded=Boolean(!browserIsPrivate() && session?.features?.browser_control && browserContextWanted && page?.url);
   const terminalIncluded=Boolean(session?.features?.terminal && terminalContextWanted);
   const selection=inferenceControls?.selection();
   const inferenceSelected=Boolean(selection?.model || selection?.thinking && selection.thinking!=="default");
@@ -149,11 +150,12 @@ $("message-options").addEventListener("keydown",event=>{if(event.key==="Escape" 
 function outgoingBrowserContext() {
   const control=lastBrowserStatus?.control;
   if(!browserContextWanted || !currentBrowserContextAvailable())return null;
-  return {generation:lastBrowserStatus.generation,revision:control.revision,lease_id:control.lease_id || null};
+  if(integratedBrowser() && control?.mode==='human' && control.observation_mode!=='observe')return null;
+  return {generation:lastBrowserStatus.generation,revision:control.revision,lease_id:control.lease_id || null,...(integratedBrowser() && control.mode==='human' && control.observation_mode==='observe'?{observation_only:true}:{})};
 }
 async function returnBrowser(binding) {
   if(!session || busy || pendingTurn())return;
-  if(!browserAnchor()) { browserContextWanted=true;showPage("/",true,true);updateBrowserChip();return; }
+  if(!browserAnchor() && !integratedBrowser()) { browserContextWanted=true;showPage("/",true,true);updateBrowserChip();return; }
   const returningSession=session;busy=true;controls();
   try {
     const data=await api("/chat/browser/return",{...binding,request_id:crypto.randomUUID()});
@@ -162,6 +164,49 @@ async function returnBrowser(binding) {
   } catch(error) { if(session===returningSession)tell(error.message,refreshHistory); }
   finally { if(session===returningSession){busy=false;controls();} }
 }
+function integratedBrowser() { return session?.features?.browser_streaming===true; }
+function browserPreviewActive() {
+  return lastBrowserStatus?.state==="live" && (lastBrowserStatus.agent_active===true || lastBrowserStatus.control?.mode==="human");
+}
+let browserChatOpen=false;
+function syncConversationWorkspace() {
+  const root=document.querySelector("main"), enabled=integratedBrowser() && ["/","/browser"].includes(currentPage);
+  const human=enabled && lastBrowserStatus?.control?.mode==='human' && !!lastBrowserStatus.control.lease_id;
+  const observing=human && lastBrowserStatus.control.observation_mode==='observe';
+  $("browser-privacy-bar").hidden=!human;
+  $("browser-privacy-label").textContent=observing?'Agent can see the browser':'Browser is private';
+  $("browser-privacy-toggle").textContent=observing?'Make private':'Let agent observe';
+  $("browser-privacy-toggle").disabled=!!browserView?.actionPending;
+  const browserMode=enabled && currentPage==="/browser", preview=enabled && !browserMode && browserPreviewActive();
+  root.classList.toggle("conversation-workspace",enabled);
+  root.classList.toggle("workspace-browser",browserMode);
+  root.classList.toggle("workspace-chat",enabled && !browserMode);
+  root.classList.toggle("has-browser-preview",preview);
+  root.classList.toggle("chat-drawer-open",browserMode && browserChatOpen);
+  $("browser-minimize").hidden=!browserMode;$("browser-chat-toggle").hidden=!browserMode;
+  $("browser-preview-open").hidden=!preview;
+  $("browser-chat-toggle").setAttribute("aria-expanded",String(browserChatOpen));
+  if(enabled){$("chat-view").hidden=false;$("browser-page").hidden=!browserMode && !preview;}
+  browserView?.streamPresenter?.presentation({preview,visible:enabled ? browserMode || preview : currentPage==="/browser"});
+}
+$("assistant-browser").addEventListener("browser-action-settled",syncConversationWorkspace);
+$("browser-privacy-toggle").addEventListener("click",()=>browserView?.streamPresenter?.changeMode(lastBrowserStatus?.control?.observation_mode==='observe'?'private':'observe'));
+$("browser-preview-open").addEventListener("click",()=>showPage("/browser",true,true));
+$("browser-minimize").addEventListener("click",()=>{browserView?.streamPresenter?.hideKeyboard();showPage("/",true,true);});
+$("browser-chat-toggle").addEventListener("click",()=>{
+  browserChatOpen=!browserChatOpen;browserView?.streamPresenter?.hideKeyboard();syncConversationWorkspace();
+  if(browserChatOpen)$("message").focus();
+});
+$("assistant-browser").addEventListener("browser-input-focus",event=>{
+  if(event.detail.focused && browserChatOpen){browserChatOpen=false;syncConversationWorkspace();}
+});
+function conversationViewport() {
+  const height=window.visualViewport?.height || window.innerHeight;
+  document.documentElement.style.setProperty("--conversation-viewport-height",height+"px");
+  document.body.classList.toggle("conversation-keyboard-open",window.innerHeight-height>140);
+}
+window.visualViewport?.addEventListener("resize",conversationViewport);
+window.addEventListener("resize",conversationViewport);conversationViewport();
 function browserAnchor() { return [...turns.values()].sort((a,b)=>b.seq-a.seq)[0]?.request_id || null; }
 function stopBrowser() {
   browserEpoch++; browserStatusRequest?.controller.abort(); browserStatusRequest=null;
@@ -195,7 +240,8 @@ async function refreshBrowser() {
     if (current()) {
       if(lastBrowserStatus?.state==="live" && status.state==="idle")browserContextWanted=false;
       lastBrowserStatus=status;updateBrowserChip();
-      if(currentPage==="/browser" && !browserView.actionPending)browserView.update(status);
+      if((currentPage==="/browser" || integratedBrowser() && currentPage==="/") && !browserView.actionPending)browserView.update(status);
+      syncConversationWorkspace();
       $("browser-idle-hint").hidden=status.state!=="idle";
       $("browser-idle-hint").textContent=controlled ? "A browser opens only when you choose to use it." : "Browser control is not connected to this instance yet.";
     }
@@ -217,7 +263,7 @@ $("assistant-browser").addEventListener("browser-state",event=>{
   browserEpoch++;browserStatusRequest?.controller.abort();browserStatusRequest=null;
   if(lastBrowserStatus?.state!=="live" && event.detail.state==="live")browserContextWanted=true;
   if(event.detail.state==="idle")browserContextWanted=false;
-  lastBrowserStatus=event.detail;updateBrowserChip();
+  lastBrowserStatus=event.detail;updateBrowserChip();syncConversationWorkspace();
 });
 $("use-browser-context").addEventListener("change",event=>{browserContextWanted=event.target.checked;lastBrowserActivity=Date.now();updateBrowserChip();});
 $("open-browser-context").addEventListener("click",()=>{lastBrowserActivity=Date.now();showPage("/browser",true,true);});
@@ -270,8 +316,9 @@ function showPage(path, push=false, focus=false) {
   managementNavigation();
   if (currentPage!=="/library") { library?.cancel(); }
   else if (session && !openingHistory) { void library?.load(); }
-  if (currentPage!=="/browser") { stopBrowser(); }
+  if (currentPage!=="/browser" && !(integratedBrowser() && currentPage==="/")) { stopBrowser(); }
   else { void refreshBrowser(); }
+  syncConversationWorkspace();
   if (currentPage!=="/terminal" || !session || openingHistory) { ownerTerminal?.hide(); }
   else { void ownerTerminal?.show(); }
   if (currentPage!=="/about-you" || !session || openingHistory) { aboutYou?.cancel(); }
@@ -902,7 +949,7 @@ $("compose").addEventListener("submit",async event => {
   if ($("send").disabled) { return; }
   const sendingSession=session, text=$("message").value, attachments=[...draft.attachments],
     selection=inferenceControls?.selection() || null, browser_context=outgoingBrowserContext(),
-    use_previous_browser=browserContextWanted && !browser_context && !!lastBrowserStatus?.page_context?.previous?.url;
+    use_previous_browser=!browserIsPrivate() && browserContextWanted && !browser_context && !!lastBrowserStatus?.page_context?.previous?.url;
   let excerpt=null;
   const capture=++captureEpoch;
   busy=true; capturingContext=true; controls();
@@ -978,7 +1025,7 @@ async function heartbeatBrowser() {
     const value=await api("/chat/browser/control/heartbeat",{generation:lastBrowserStatus.generation,
       revision:control.revision,lease_id:control.lease_id || null});
     if(session===presentSession && browserEpoch===epoch && !document.hidden && !browserView?.actionPending){
-      lastBrowserStatus=value;updateBrowserChip();if(currentPage==="/browser")browserView?.update(value);
+      lastBrowserStatus=value;updateBrowserChip();if(currentPage==="/browser" || integratedBrowser() && currentPage==="/")browserView?.update(value);syncConversationWorkspace();
     }
   } catch { /* Presence never retries an input or reopens a browser. */ }
   finally {browserHeartbeat=false;}

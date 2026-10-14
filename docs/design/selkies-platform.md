@@ -101,3 +101,31 @@ Open/Take/Return/heartbeat/close contracts keep auth, origin, CSRF and tab bindi
 The existing pilot's non-ASCII X11 mapping limitation remains open; do not claim
 international-text acceptance from ASCII checks. iPhone keyboard opening was
 owner-confirmed; revised physical-phone layout/Android acceptance is distinct.
+
+## Two human-control privacy modes
+
+Owner addition: default every new takeover to **Private**. The owner can switch
+that same session to **Let agent observe** and back without navigation, another
+browser or a control transfer. Both modes keep agent browser mutations denied.
+
+Private denies agent snapshots, screenshots, metadata/page context and any
+observer delivery. Normal chat remains usable without attaching private page
+context. Explicit Return to agent drains input and obtains a fresh safe
+observation before new agent admission; minimize/Chat navigation never does so.
+
+Observe permits only owner-bound, read-only page observations for the matching
+conversation/run. It grants no click, typing, navigation or credential access.
+A lease-scoped observation epoch invalidates old observer grants whenever the
+mode changes; expiry, logout, disconnect, retirement and a new lease revoke
+them. Make private revokes first, discards pending observations and waits for the
+observation boundary before acknowledging Private. Sensitive-field checks apply
+to observations even in Observe mode. No raw keystroke/event recording or model
+training is introduced. Conversation-only follow-along is the proposed default;
+the owner's reusable-walkthrough preference is being clarified separately.
+
+Expose plain-language status and a single obvious switch while human control is
+active. Take control is labeled private. No silent switch to Observe, including
+on reconnect, agent requests, changing workspace emphasis or new takeovers.
+Qualification must prove default Private, explicit Observe, mutation denial in
+both modes, foreign/expired/stale observer rejection, and no late delivery after
+Make private acknowledges.

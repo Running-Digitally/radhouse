@@ -1,0 +1,53 @@
+/* One chat and one stream; CSS changes emphasis without moving either DOM. */
+.conversation-workspace{display:grid!important;grid-template-columns:minmax(0,1fr);grid-template-areas:"chat";gap:16px;min-width:0;min-height:0}
+.conversation-workspace #chat-view{grid-area:chat;min-width:0;min-height:0;height:100%;margin:0}
+.conversation-workspace #browser-page{grid-area:browser;position:relative;min-width:0;min-height:0;padding:0;overflow:auto}
+.workspace-chat.has-browser-preview{grid-template-columns:minmax(0,1fr) minmax(240px,320px);grid-template-areas:"chat browser"}
+.workspace-browser{grid-template-columns:minmax(0,1fr) minmax(280px,350px);grid-template-areas:"browser chat"}
+.workspace-browser #chat-view{border-left:1px solid var(--line);padding-left:12px}
+.workspace-browser #compose{max-width:100%;padding:8px}
+.workspace-browser #messages{max-width:100%}
+.browser-workspace-actions{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.browser-workspace-actions button{min-height:44px}
+#browser-chat-toggle{display:none}
+#browser-preview-open{position:absolute;inset:0;width:100%;height:100%;border-radius:14px;background:transparent;border:1px solid var(--line);padding:0;z-index:4;cursor:pointer}
+#browser-preview-open span{position:absolute;bottom:0;left:0;right:0;padding:10px;background:var(--panel);border-radius:0 0 14px 14px;font-size:13px}
+#browser-preview-open:focus-visible{outline:3px solid var(--rh-green,#456d55);outline-offset:2px}
+.workspace-chat #browser-page{align-self:start;max-height:330px;border-radius:14px}
+.workspace-chat #browser-page>.workspace-heading,.workspace-chat #browser-idle-hint,.workspace-chat .browser-view-header,.workspace-chat .browser-actions,.workspace-chat .browser-control-status,.workspace-chat .browser-utilities,.workspace-chat .browser-logins{display:none!important}
+.workspace-chat #assistant-browser{margin:0;padding-bottom:38px}
+.workspace-chat .browser-view-body{padding:0;border:0}
+.workspace-chat .browser-stream-frame{aspect-ratio:1280/900}
+.browser-view--streaming .browser-view-header{display:none!important}
+.browser-view--streaming .browser-view-viewport{aspect-ratio:1280/900;overflow:auto;position:relative;background:#000}
+.browser-stream-frame{width:100%;height:100%;border:0;display:block;flex:none}
+.browser-stream-zoom .browser-stream-frame{width:1280px;height:900px;min-width:1280px;min-height:900px}
+.browser-stream-tools{display:flex;flex-wrap:wrap;gap:6px;padding:8px;border-top:1px solid var(--line)}
+.browser-stream-tools button{min-height:44px;min-width:0;font:inherit;padding:7px 10px}
+.browser-stream-keys{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;flex-basis:100%;min-width:0;padding:8px;border:1px solid var(--line);border-radius:8px}
+.browser-stream-keys button{white-space:normal;overflow-wrap:anywhere}
+.browser-stream-notice{padding:0 10px;font-size:13px}
+@media(max-width:950px){
+  .conversation-workspace.workspace-browser{grid-template-columns:minmax(0,1fr);grid-template-areas:"browser";grid-template-rows:minmax(0,1fr)}
+  .workspace-browser #chat-view{display:none;border:0;padding:0}
+  .workspace-browser.chat-drawer-open{grid-template-areas:"browser" "chat";grid-template-rows:minmax(96px,1fr) minmax(170px,.8fr)}
+  .workspace-browser.chat-drawer-open #chat-view{display:flex;border-top:1px solid var(--line);padding-top:8px}
+  .workspace-browser #browser-page>.workspace-heading{margin:0 0 8px;gap:8px}
+  .workspace-browser #browser-page .workspace-heading h1{font-size:22px;margin:0}
+  .workspace-browser #browser-page .workspace-heading .intro{display:none}
+  .workspace-browser #browser-page{overscroll-behavior:contain}
+  #browser-chat-toggle:not([hidden]){display:inline-flex}
+  .conversation-workspace.workspace-chat.has-browser-preview{grid-template-columns:minmax(0,1fr);grid-template-areas:"browser" "chat";grid-template-rows:auto minmax(0,1fr)}
+  .workspace-chat #browser-page{width:min(100%,260px);max-height:180px;justify-self:end}
+  .workspace-chat .browser-view-viewport{height:130px;aspect-ratio:auto}
+  .browser-stream-tools{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+  .browser-stream-tools button{font-size:13px;padding:7px 5px}
+  .browser-stream-keys{grid-column:1/-1}
+  body:has(.conversation-workspace){height:var(--conversation-viewport-height,100dvh);min-height:0;padding-bottom:env(safe-area-inset-bottom)}
+}
+.browser-privacy,#browser-privacy-bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px;border-top:1px solid var(--line);font-size:13px}
+.browser-privacy button,#browser-privacy-bar button{min-height:44px}
+.browser-privacy [aria-pressed="true"]{background:var(--rh-green,#456d55);color:#fff}
+.browser-privacy span{flex-basis:100%;color:var(--muted)}
+#browser-privacy-bar{justify-content:space-between;margin-bottom:6px;border:1px solid var(--line);border-radius:10px}
+#browser-privacy-bar[hidden],.browser-privacy[hidden]{display:none}

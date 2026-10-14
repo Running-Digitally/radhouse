@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 CHROME = '/opt/browser/chrome-linux64/chrome'
 
 
-def chrome_arguments(profile, proxy=None):
+def chrome_arguments(profile, proxy=None, *, start_url="http://127.0.0.1:18081/"):
     args = [CHROME, '--disable-extensions', '--no-first-run', '--no-default-browser-check',
         '--disable-background-networking', '--disable-component-update', '--disable-sync',
         '--disable-breakpad', '--password-store=basic', '--use-mock-keychain',
@@ -23,13 +23,13 @@ def chrome_arguments(profile, proxy=None):
             raise ValueError('invalid_review_proxy')
         args += ['--proxy-server='+proxy,
             '--proxy-bypass-list=<-loopback>;127.0.0.1:18081']
-    args.append('http://127.0.0.1:18081/')
+    args.append(start_url)
     return args
 
 
-def launch(profile, env, proxy=None):
+def launch(profile, env, proxy=None, *, start_url="http://127.0.0.1:18081/"):
     profile.mkdir(mode=0o700)
-    child = subprocess.Popen(chrome_arguments(profile, proxy), env=env,
+    child = subprocess.Popen(chrome_arguments(profile, proxy, start_url=start_url), env=env,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     port_file = profile / 'DevToolsActivePort'
     for _ in range(200):

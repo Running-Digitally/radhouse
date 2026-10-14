@@ -2,9 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Radhouse</title><link rel="stylesheet" href="/chat.css"><link rel="stylesheet" href="/browser-view.css"><link rel="stylesheet" href="/navigation.css"><link rel="stylesheet" href="/workspace-assets/about-you.css"><link rel="stylesheet" href="/workspace-assets/owner-terminal.css"><link rel="stylesheet" href="/workspace-assets/inference-controls.css"><link rel="stylesheet" href="/workspace-assets/agent-profile.css">
+  <title>Radhouse</title><link rel="stylesheet" href="/chat.css"><link rel="stylesheet" href="/browser-view.css"><link rel="stylesheet" href="/workspace-assets/conversation-workspace.css"><link rel="stylesheet" href="/navigation.css"><link rel="stylesheet" href="/workspace-assets/about-you.css"><link rel="stylesheet" href="/workspace-assets/owner-terminal.css"><link rel="stylesheet" href="/workspace-assets/inference-controls.css"><link rel="stylesheet" href="/workspace-assets/agent-profile.css">
   <link rel="stylesheet" href="/workspace-vendor/xterm/xterm.css">
-  <script src="/workspace-assets/agent-portrait.js" defer></script><script src="/navigation.js" defer></script><script src="/format.js" defer></script><script src="/browser-view.js" defer></script><script src="/library.js" defer></script><script src="/workspace-assets/about-you.js" defer></script><script src="/workspace-assets/inference-controls.js" defer></script><script src="/workspace-vendor/xterm/xterm.js" defer></script><script src="/workspace-vendor/xterm/addon-fit.js" defer></script><script src="/workspace-assets/owner-terminal.js" defer></script><script src="/workspace-assets/agent-profile.js" defer></script><script src="/chat.js" defer></script>
+  <script src="/workspace-assets/agent-portrait.js" defer></script><script src="/navigation.js" defer></script><script src="/format.js" defer></script><script src="/workspace-assets/browser-stream.js" defer></script><script src="/browser-view.js" defer></script><script src="/library.js" defer></script><script src="/workspace-assets/about-you.js" defer></script><script src="/workspace-assets/inference-controls.js" defer></script><script src="/workspace-vendor/xterm/xterm.js" defer></script><script src="/workspace-vendor/xterm/addon-fit.js" defer></script><script src="/workspace-assets/owner-terminal.js" defer></script><script src="/workspace-assets/agent-profile.js" defer></script><script src="/chat.js" defer></script>
 </head>
 <body>
 <div class="shell">
@@ -28,6 +28,7 @@
         <div id="empty" hidden><h1>What’s on your mind?</h1><p>Ask a question or attach something to work through.</p></div>
       </section>
       <button id="latest" hidden>Latest ↓</button>
+      <div id="browser-privacy-bar" hidden><span id="browser-privacy-label" role="status"></span><button id="browser-privacy-toggle" type="button"></button></div>
       <form id="compose">
         <div id="draft-files" class="attachments" aria-label="Attached files"></div>
         <div id="active-message-options" class="active-message-options" aria-label="Included with your next message" hidden>
@@ -68,8 +69,9 @@
       <button id="library-more" type="button" hidden>Show more files</button>
     </section>
     <section id="browser-page" class="workspace-page browser-page" aria-labelledby="browser-title" hidden>
-      <div class="workspace-heading"><div><h1 id="browser-title" tabindex="-1">Browser</h1><p class="intro">The same browser your assistant uses.</p></div></div>
+      <div class="workspace-heading"><div><h1 id="browser-title" tabindex="-1">Browser</h1><p class="intro">The same browser your assistant uses.</p></div><div class="browser-workspace-actions"><button id="browser-chat-toggle" type="button" aria-expanded="false" aria-controls="chat-view" hidden>Chat</button><button id="browser-minimize" type="button" hidden>Back to chat</button></div></div>
       <section id="assistant-browser" aria-label="Assistant browser" hidden></section>
+      <button id="browser-preview-open" type="button" hidden><span>Open live browser ↗</span></button>
       <p id="browser-idle-hint" class="intro">A browser opens only when you choose to use it.</p>
     </section>
     <section id="terminal-page" class="workspace-page" aria-labelledby="terminal-title" hidden>

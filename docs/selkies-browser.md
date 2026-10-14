@@ -106,3 +106,41 @@ standalone test browser for the page the chat agent is using.
 Build/source controls, sandbox requirements and focused test commands are in
 [`runtime/selkies/README.md`](../runtime/selkies/README.md). The feature's draft PR
 and the private Homelab change record own the current deployment evidence.
+
+## Integrated platform workspace
+
+The platform replacement keeps Hermes' conversation-owned browser and controller.
+An embedded Selkies adapter provides its live display and human input over an
+authenticated HTTP/WebSocket relay. No second browser is substituted for agent
+work. Selkies is installed as a frozen package outside Hermes' existing Python
+environment; existing dependency versions remain authoritative. Private X11
+authentication, a renderer sandbox proof and the existing public-web firewall
+remain required. Closed broad desktop/file/command APIs are not exposed.
+
+Chat displays a small live browser while an agent browser step or human takeover
+is active. Select that preview for Browser emphasis; Back to chat restores chat
+emphasis without moving the stream or losing the draft. Desktop retains chat
+alongside Browser. On phones the Chat button opens a compact drawer; switching
+focus hides the remote keyboard assist. Keys uses an inline grid with at least
+44-pixel targets. Fit and Zoom change local presentation only.
+
+Take control privately is the default. Private blocks model page reads and
+mutations; chat attaches neither the current nor previous page. Select Let agent
+observe to allow read-only page snapshots when you ask in chat. You retain mouse
+and keyboard control. Select Private again before entering sensitive information
+and wait for confirmation. The server revokes the observation epoch, waits for
+the shared observation boundary and discards pending captures before confirming.
+Already delivered observations cannot be removed from the agent's conversation.
+No keystroke recording, persistent walkthrough or model training is added.
+
+Minimizing or opening chat never returns control. Return to agent explicitly
+revokes human input, releases held input, clears the clipboard, checks sensitive
+fields and obtains a fresh observation before admitting a new agent run. Submit
+or clear passwords and one-time codes before return. Logout, expiry and a lost
+controlling stream revoke input; reconnect does not replay keyboard events.
+The original saved login vault remains separate from the browser profile.
+
+The standalone pilot and integrated platform are distinct deployments; installation
+and logged-in acceptance are recorded in the Homelab change record. Physical
+iPhone/Android layout acceptance and non-ASCII text remain separate limitations
+from automated responsive and ASCII checks.

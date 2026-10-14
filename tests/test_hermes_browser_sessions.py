@@ -870,3 +870,46 @@ def test_native_page_title_whitespace_is_normalized_before_web_status(session):
     session.executor.handler = result
     page = session.owned.metadata()
     assert page["title"] == "First Second Title"
+
+
+def test_streaming_observe_admission_never_transfers_human_control(session,monkeypatch):
+    async def scenario():
+        session.bind();state=session.human()
+        runtime=SimpleNamespace(boundary=SimpleNamespace(input_lock=asyncio.Lock()),observers={},handover=None)
+        async def ensure(*args):return runtime
+        monkeypatch.setattr(bridge,'_streaming',SimpleNamespace(runtime=runtime,ensure=ensure))
+        body={'session_id':'session','browser_owner':{'principal_id':'alice','conversation_id':'conversation'},'browser_context':session.body(state)}
+        assert await bridge.validate_browser_context_async(session.value,body,'observer','observer-key',admit=True)=='browser_context_rejected'
+        body['browser_context']['observation_only']=True
+        assert await bridge.validate_browser_context_async(session.value,body,'observer','observer-key',admit=True)=='browser_context_rejected'
+        state=session.c.observation_mode(session.identity,session.owner,state.lease.lease_id,state.revision,'observe')
+        body['browser_context']={**session.body(state),'observation_only':True}
+        assert await bridge.validate_browser_context_async(session.value,body,'observer','observer-key',admit=True) is None
+        assert session.c.state(session.identity).mode=='human'
+        assert session.c.state(session.identity).admitted_run==session.run
+        assert runtime.observers[('observer','observer-key')]==(session.owner,state.lease.lease_id,state.lease.observation_epoch)
+        with pytest.raises(control.ControlRejected):session.c.reserve_agent(session.identity,session.run,'old-mutation')
+    asyncio.run(scenario())
+
+
+def test_streaming_return_requires_explicit_return_and_typed_drain_proof(session,monkeypatch):
+    async def scenario():
+        session.bind();state=session.human()
+        runtime=SimpleNamespace(observers={},handover=None)
+        async def viewer(owner):return SimpleNamespace(owner=owner)
+        async def handback(viewer,*,lease_id,revision):
+            after=session.c.begin_return(session.identity,viewer.owner,lease_id,revision)
+            runtime.handover=control.HumanReturnObservation(session.identity,viewer.owner,after.revision,True)
+        runtime.viewer=viewer;runtime.boundary=SimpleNamespace(handback=handback)
+        async def ensure(*args):return runtime
+        monkeypatch.setattr(bridge,'_streaming',SimpleNamespace(runtime=runtime,ensure=ensure))
+        body={'session_id':'session','browser_owner':{'principal_id':'alice','conversation_id':'conversation'},'browser_context':session.body(state)}
+        assert await bridge.validate_browser_context_async(session.value,body,'fresh','fresh-key',admit=True)=='browser_context_rejected'
+        body['browser_context']['return_to_agent']=True
+        assert await bridge.validate_browser_context_async(session.value,body,'fresh','fresh-key') is None
+        assert session.c.state(session.identity).mode=='human'
+        assert await bridge.validate_browser_context_async(session.value,body,'fresh','fresh-key',admit=True) is None
+        assert session.c.state(session.identity).mode=='agent'
+        assert session.c.state(session.identity).admitted_run.run_id=='fresh'
+        assert runtime.handover is None
+    asyncio.run(scenario())

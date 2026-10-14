@@ -88,6 +88,12 @@ class HumanLease:
     request_revision: int
     expires_at: float
     auth_expires_at: float
+    observation_mode: Literal["private", "observe"] = "private"
+    observation_epoch: int = 0
+
+    def __post_init__(self):
+        if self.observation_mode not in {"private", "observe"} or type(self.observation_epoch) is not int or self.observation_epoch < 0:
+            raise ControlRejected("invalid_observation_mode")
 
 
 @dataclass(frozen=True)
@@ -634,6 +640,37 @@ class BrowserController:
             )
             state = replace(state, lease=lease)
             self._save(db, state)
+            return state
+
+    def observation_mode(self, identity: BrowserIdentity, owner: OwnerBinding,
+                         lease_id: str, revision: int, mode: str) -> ControlState:
+        """Explicit lease-bound visibility; a new lease always starts private."""
+        if type(mode) is not str or mode not in {"private", "observe"}:
+            raise ControlRejected("invalid_observation_mode")
+        with self._transaction() as db:
+            self._admission()
+            state = self._load(db, identity)
+            self._lease(state, owner, lease_id, revision)
+            if state.lease.observation_mode == mode:
+                return state
+            lease = replace(state.lease, observation_mode=mode,
+                            observation_epoch=state.lease.observation_epoch + 1)
+            state = replace(state, lease=lease, revision=state.revision + 1)
+            self._save(db, state)
+            return state
+
+    def authorize_observation(self, identity: BrowserIdentity, owner: OwnerBinding,
+                              lease_id: str, epoch: int) -> ControlState:
+        """No browser reads can outlive this exact explicit observation grant."""
+        with self._transaction() as db:
+            self._admission()
+            state = self._load(db, identity)
+            self._owner(state, owner)
+            lease = state.lease
+            if (state.retired or state.mode != "human" or lease is None
+                    or lease.owner != owner or lease.lease_id != lease_id
+                    or lease.observation_mode != "observe" or lease.observation_epoch != epoch):
+                raise ControlRejected("browser_observation_denied")
             return state
 
     def begin_return(self, identity: BrowserIdentity, owner: OwnerBinding,

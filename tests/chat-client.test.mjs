@@ -10,7 +10,8 @@ async function client({ browser = null } = {}) {
   const elements = new Map();
   const element = id => {
     if (!elements.has(id)) elements.set(id, {
-      value: "", style: {}, dataset: {}, children: [],
+      value: "", style: {}, dataset: {}, children: [], classList:{toggle(){},add(){},remove(){}},
+      setAttribute() {},
       addEventListener() {}, replaceChildren() {},
       querySelectorAll() { return []; },
       getBoundingClientRect() { return { top: 0 }; },
@@ -18,7 +19,7 @@ async function client({ browser = null } = {}) {
     return elements.get(id);
   };
   const context = vm.createContext({
-    document: { getElementById: element, addEventListener() {}, querySelectorAll() { return []; } },
+    document: { documentElement:{style:{setProperty(){}}},body:{classList:{toggle(){}}},querySelector:()=>element("main"),getElementById: element, addEventListener() {}, querySelectorAll() { return []; } },
     window: { addEventListener() {}, ...(browser ? {BrowserView:class {constructor(){return browser;}}} : {}) },
     ResizeObserver: class { observe() {} },
     innerHeight: 800, setInterval() {}, setTimeout, clearTimeout, AbortController,

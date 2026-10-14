@@ -94,6 +94,7 @@ class HermesCapabilities:
     browser_network_policy: dict | None = None
     file_share: bool = False
     browser_control: bool = False
+    browser_streaming: bool = False
     browser_credential_vault: bool = False
 
 
@@ -207,6 +208,10 @@ class HermesRunsClient:
             browser_network_policy=browser_network_policy(features.get("browser_network_policy")),
             file_share=(isinstance(sharing, dict) and sharing.get("supported") is True
                 and type(sharing.get("version")) is int and sharing["version"] == 1),
+            browser_streaming=(isinstance(features.get("runs_browser_streaming"),dict)
+                and features["runs_browser_streaming"].get("supported") is True
+                and features["runs_browser_streaming"].get("version") == 1
+                and features["runs_browser_streaming"].get("mode") == "owner_session"),
             browser_control=(isinstance(control, dict) and control.get("supported") is True
                 and type(control.get("version")) is int and control["version"] == 1
                 and control.get("mode") == "owner_session"),
