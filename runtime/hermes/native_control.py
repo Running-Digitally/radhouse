@@ -284,6 +284,12 @@ class NativeControlChannel:
         )
 
 
+    def submit_trusted_target(self, command_id, target_id):
+        """Private visible-page alignment; never part of the seven agent tools."""
+        if type(target_id) is not str or not re.fullmatch(r"[A-Fa-f0-9]{32}", target_id):
+            raise NativeRejected("native_target_invalid")
+        return self._submit(command_id, "trusted", [{"action":"tab_switch", "tabId":target_id}])
+
     def submit_metadata(self, command_id):
         return self.submit_trusted_evaluation(
             command_id,

@@ -1,10 +1,11 @@
 # Selkies browser qualification
 
-This package runs a disposable Radhouse browser trial: desktop takeover and
-phone viewing, using one headed Chromium and the reviewed native driver. A
+This package runs a disposable Radhouse browser review: desktop takeover and
+phone viewing, using one sandboxed headed Chromium and the reviewed native driver. A
 deterministic test driver invokes the same seven-tool map and Unix channel used
-by Hermes. No model request, production conversation, saved login or personal
-browser profile is used.
+by Hermes. No model request or production conversation is used. The review has its own
+disposable profile. Public websites are available when the deployment enables
+`RADHOUSE_BROWSER_MODE=public_web` with `RADHOUSE_REVIEW_PROXY`.
 
 `source-lock.json` freezes the upstream source, native driver, Chromium and Linux
 base. `requirements.txt` pins the resolved Python dependencies. `prepare.py`
@@ -74,6 +75,8 @@ docker build --platform linux/amd64 \
   -t radhouse-selkies-qualification /private/tmp/radhouse-selkies-build
 docker run -d --platform linux/amd64 \
   --name radhouse-selkies-qualification --shm-size 2g \
+  --security-opt seccomp=/path/to/qualified-chromium-seccomp.json \
+  --security-opt apparmor=radhouse-selkies-web \
   -p 127.0.0.1:18080:8080 radhouse-selkies-qualification
 docker cp radhouse-selkies-qualification:/state/viewer-links.json /private/tmp/viewer-links.json
 chmod 600 /private/tmp/viewer-links.json
@@ -85,10 +88,27 @@ and reconnect preserve the running browser, while a container restart creates
 a new disposable browser. Failures are diagnosed and corrected, followed by a
 new qualified candidate; no rollback operation is implemented.
 
-This local amd64 Docker fixture explicitly disables Chromium's sandbox for the
-emulated proof, as the retained native qualification image did. It is synthetic
-only. Its source/stream results cannot qualify the installed Linux sandbox,
-production authentication or the private HTTPS access path.
+Chromium is launched directly as the unprivileged review user, then the unchanged
+reviewed native driver attaches through its private local path. This avoids the
+driver's container heuristic that automatically disables the sandbox. Startup
+requires owned non-root renderers with an extra PID namespace/BPF filter and no
+sandbox-disabling flags; installed verification also proves distinct user and
+network namespace inodes. The container needs the qualified per-container
+seccomp/AppArmor policies from its private deployment; there is no unsandboxed
+fallback. Host sysctls and general Docker policy remain unchanged.
+
+The public-only HTTP/CONNECT proxy runs separately without TLS termination or
+payload logging. It accepts only the configured browser address, resolves IPv4,
+rejects any non-global/multicast/reserved DNS result, and connects to the exact
+vetted numeric address on ports 80/443. The browser stays on an internal network
+without a default gateway. Implicit loopback bypass is removed before the narrow
+fixture exception is added. HTTPS certificates remain browser-verified end to
+end. Host policies and private launch links belong in the Homelab change record.
+
+A trusted visibility boolean aligns observations with exactly one visible
+Chrome page through the same native command queue. This tab-selection capability
+is private and is not added to the seven agent tools. Multiple visible browser
+windows remain an unconfirmed boundary rather than choosing an arbitrary page.
 
 ## Validation
 
@@ -126,8 +146,8 @@ and presented frame using one client-side performance clock. This traverses
 input, the remote page, capture, encoding, transport and client presentation;
 it is not a CDP timing proxy or a physical key-to-screen measurement.
 
-Before application activation, qualify browser-tab agreement, queued input and
-renderer scheduling under the intended Linux sandbox, repeated reconnects and
+Before production application activation, broaden multi-window/tab agreement,
+queued input and renderer scheduling, repeated reconnects and
 service failures, authentication/logout expiry, actual HTTPS embedding,
 input-to-visible latency and resource use, then conduct owner device acceptance.
 The controller extension is implemented; the production web/runtime wiring and

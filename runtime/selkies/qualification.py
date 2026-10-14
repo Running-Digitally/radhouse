@@ -17,6 +17,7 @@ import signal
 import subprocess
 import sys
 import time
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -25,6 +26,11 @@ FIXTURE = "http://127.0.0.1:18081/"
 NATIVE_NAME = "h_" + secrets.token_hex(5)
 SOCKETS = STATE / ("native-" + NATIVE_NAME)
 DISPLAY_NUMBER = secrets.randbelow(50000)+100
+BROWSER_MODE = os.environ.get("RADHOUSE_BROWSER_MODE", "fixture")
+PROXY = os.environ.get("RADHOUSE_REVIEW_PROXY")
+SANDBOX_PROOF = None
+CHROME_CHILD = None
+CHROME_ENDPOINT = None
 
 
 def load(name, path):
@@ -38,6 +44,7 @@ def load(name, path):
 control = load("radhouse_browser_control", ROOT / "runtime/hermes/browser_control.py")
 native = load("radhouse_native_control", ROOT / "runtime/hermes/native_control.py")
 stream = load("radhouse_selkies_control", Path(__file__).with_name("control.py"))
+sandbox = load("radhouse_selkies_sandbox", Path(__file__).with_name("sandbox.py"))
 
 
 def prepare_environment():
@@ -68,21 +75,21 @@ def prepare_environment():
 
 
 def launch_native():
-    if os.environ.get("RADHOUSE_QUALIFICATION_EMULATED") != "1":
-        raise RuntimeError("disposable_fixture_opt_in_required")
+    global CHROME_CHILD, CHROME_ENDPOINT
+    if BROWSER_MODE not in {"fixture", "public_web"} or (BROWSER_MODE == "public_web" and not PROXY):
+        raise RuntimeError("review_mode_or_proxy_missing")
     env = {k: os.environ[k] for k in ("PATH", "HOME", "DISPLAY", "LANG") if k in os.environ}
-    env.update(AGENT_BROWSER_SOCKET_DIR=str(SOCKETS),
-        AGENT_BROWSER_EXECUTABLE_PATH="/opt/browser/chrome-linux64/chrome",
-        # The native driver splits this field on commas; a comma-bearing
-        # --window-size value would introduce an unintended positional URL.
-        AGENT_BROWSER_ARGS="--disable-extensions,--no-sandbox,--start-maximized")
+    CHROME_CHILD, endpoint = sandbox.launch(STATE / ("profile-" + NATIVE_NAME), env, PROXY)
+    CHROME_ENDPOINT = endpoint
+    env.update(AGENT_BROWSER_SOCKET_DIR=str(SOCKETS))
+    # Attach to our already sandboxed process. The native driver's automatic
+    # container launch heuristic adds --no-sandbox, so it must not launch Chrome.
     result = subprocess.run(["/opt/browser/agent-browser", "--config", "/opt/browser/empty.json",
-        "--executable-path", env["AGENT_BROWSER_EXECUTABLE_PATH"], "--headed",
-        "--session", NATIVE_NAME, "--json", "open", "--", FIXTURE], env=env,
-        capture_output=True, timeout=45, check=False)
+        "--cdp", endpoint, "--session", NATIVE_NAME, "--json", "open", "--", FIXTURE],
+        env=env, capture_output=True, timeout=45, check=False)
     value = json.loads(result.stdout or b"{}")
     if result.returncode or not value.get("success"):
-        raise RuntimeError("native_launch_failed: "+str(value.get("error", "unknown"))[:500])
+        raise RuntimeError("sandboxed_native_attach_failed")
 
 
 def generation():
@@ -117,6 +124,22 @@ async def run():
     last_handle = None
     last_observation = None
 
+    # Unprivileged startup proof: owned non-root renderers must have an extra
+    # PID namespace and BPF filter, with no sandbox-disabling flags. Host-side
+    # deployment verification additionally checks user/network namespace inodes;
+    # those links are deliberately unreadable by an unprivileged parent after
+    # renderer dumpability is restricted. No page content is used as a proof.
+    global SANDBOX_PROOF
+    for attempt in range(50):
+        try:
+            SANDBOX_PROOF = sandbox.verify(CHROME_CHILD.pid, require_namespaces=False)
+            break
+        except RuntimeError as error:
+            if str(error) != "renderer_sandbox_missing" or attempt == 49:
+                raise
+            await asyncio.sleep(.1)
+    (STATE / "sandbox-proof.json").write_text(json.dumps(SANDBOX_PROOF))
+
     async def fence(state):
         nonlocal last_handle
         handle = channel.fence_after(uuid4().hex, last_handle)
@@ -126,8 +149,17 @@ async def run():
             raise stream.StreamRejected("native_fence_unconfirmed")
         return control.FenceObservation(identity, state.takeover_after, True)
 
+    async def align_visible_page():
+        nonlocal last_handle
+        target = await sandbox.visible_target(CHROME_ENDPOINT)
+        last_handle = channel.submit_trusted_target(uuid4().hex, target)
+        selected = await last_handle.wait()
+        if not selected.completed or selected.legacy.get("success") is not True:
+            raise stream.StreamRejected("visible_page_unconfirmed")
+
     async def sensitive_clear():
         nonlocal last_handle
+        await align_visible_page()
         # Fixed trusted evaluation returns only a boolean, before any snapshot.
         expression = "Array.from(document.querySelectorAll('input')).some(e => (e.type === 'password' || e.autocomplete === 'one-time-code') && !!e.value)"
         last_handle = channel.submit_trusted_evaluation(uuid4().hex, expression)
@@ -194,7 +226,8 @@ async def run():
             "controlling": bool(holder), "lease_id": state.lease.lease_id if holder else None,
             "stream_token": boundary.input_token if holder else v.token,
             "page": FIXTURE, "qualification_only": True,
-            "boundary_blocked": boundary._blocked}
+            "boundary_blocked": boundary._blocked,
+            "public_web": BROWSER_MODE == "public_web", "sandbox_enabled": SANDBOX_PROOF is not None}
 
     async def new_session(request):
         parent = viewer(request)
@@ -250,14 +283,20 @@ async def run():
             raise stream.StreamRejected("viewing_only")
         body = await request.json()
         name, args = body["tool"], body.get("arguments", {})
-        if name == "browser_navigate" and not args.get("url", "").startswith(FIXTURE):
-            raise stream.StreamRejected("fixture_only")
+        if name == "browser_navigate":
+            url = args.get("url", "")
+            parsed = urlsplit(url)
+            if not url.startswith(FIXTURE) and not (BROWSER_MODE == "public_web"
+                    and parsed.scheme in {"http", "https"} and parsed.hostname
+                    and parsed.username is None and parsed.password is None):
+                raise stream.StreamRejected("review_navigation_rejected")
         # The exact native mapping rejects all other commands and eval/shell.
         native.tool_command(name, args)
         command_id = uuid4().hex
         admitted = run_binding
         c.reserve_agent(identity, admitted, command_id)
         try:
+            await align_visible_page()
             last_handle = channel.submit_tool(command_id, name, args)
             ack = await last_handle.wait()
             c.complete_agent(identity, admitted, command_id, outcome="completed" if ack.completed else "uncertain")
@@ -360,6 +399,9 @@ def main():
         except asyncio.CancelledError:
             pass
     finally:
+        if CHROME_CHILD is not None and CHROME_CHILD.poll() is None:
+            CHROME_CHILD.terminate()
+            CHROME_CHILD.wait(timeout=5)
         for process in processes:
             process.terminate()
         for process in processes:

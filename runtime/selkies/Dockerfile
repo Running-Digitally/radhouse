@@ -17,7 +17,7 @@ COPY build-inputs.json /opt/build-inputs.json
 COPY client-source /opt/selkies-client-source
 RUN useradd --uid 1000 --create-home radhouse && mkdir /state && chown radhouse /state
 USER radhouse
-ENV RADHOUSE_QUALIFICATION_EMULATED=1 HOME=/home/radhouse LANG=C.UTF-8
+ENV RADHOUSE_BROWSER_MODE=fixture HOME=/home/radhouse LANG=C.UTF-8
 WORKDIR /opt/candidate
 EXPOSE 8080
 ENTRYPOINT ["python", "runtime/selkies/qualification.py"]

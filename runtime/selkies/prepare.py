@@ -112,7 +112,7 @@ def prepare(archive, native, chrome_archive, output):
         "served_core_sha256": sha(output / "selkies-web/selkies-core.js"),
         "candidate_files": {str(p.relative_to(output / "candidate")):sha(p)
             for p in sorted((output / "candidate").rglob("*")) if p.is_file()},
-        "sandbox_qualified": False, "synthetic_only": True}
+        "sandbox_qualified": False, "available_modes": ["fixture", "public_web"], "synthetic_only": False}
     (output / "build-inputs.json").write_text(json.dumps(receipt, indent=2)+"\n")
     shutil.rmtree(upstream)
     return receipt

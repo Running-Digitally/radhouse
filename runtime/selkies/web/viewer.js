@@ -33,6 +33,10 @@ function render(value) {
     agent: "Agent has control", takeover_pending: "Handing over…", human: "Desktop has control",
     paused: "Browser paused", recovering: "Check the page", retired: "Browser closed",
   }[value.mode] || "Connecting…");
+  $("browsing-mode").textContent = value.public_web ? "Public web · sandbox enabled" : "Sandboxed exercise pages";
+  $("instructions").textContent = value.public_web
+    ? "Take control and use Chrome’s address bar to browse websites. Try typing, selection, paste and scrolling, then return control for a page observation."
+    : "Edit the exercise form, try selection and paste, then return control.";
   $("hint").textContent = phone ? "Viewing only. Zoom and scroll here to read the screen."
     : "Click a page field to type after taking control. Click the draft to return keyboard focus to chat.";
   if (value.boundary_blocked) $("notice").textContent = "The input boundary needs diagnosis. Agent input remains paused.";

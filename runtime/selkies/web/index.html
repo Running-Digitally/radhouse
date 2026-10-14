@@ -13,9 +13,9 @@
 <div class="viewport" id="viewport"><iframe id="stream" title="Assistant browser" allow="clipboard-read; clipboard-write"></iframe><div id="touch-layer" hidden aria-label="View-only screen"></div></div>
 <p class="hint" id="hint">Click a page field to type after taking control. Click the draft to return keyboard focus to chat.</p>
 </section>
-<aside id="chat"><h1>Try an intervention</h1><p>Edit the form, select text, scroll, use a hover menu and complete the fake sign-in. Then return the page to the agent.</p>
+<aside id="chat"><h1>Review your browser</h1><p id="browsing-mode" role="status"></p><p id="instructions">Edit the form, select text, scroll, use a hover menu and complete the fake sign-in. Then return the page to the agent.</p>
 <label for="draft">Chat draft</label><textarea id="draft" placeholder="Keep a draft here while you use the browser…"></textarea>
 <button id="agent">Observe with agent tools</button><output id="observation" aria-live="polite"></output>
-<p class="qualification">This trial uses synthetic browser state and deterministic agent tools.</p></aside>
+<p class="qualification">This review uses a disposable browser profile and test-driver page observations. Live chats and saved logins are separate.</p></aside>
 </main><script src="/qualification/assets/viewer.js" type="module"></script>
 </body></html>
