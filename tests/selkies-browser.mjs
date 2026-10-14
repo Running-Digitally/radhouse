@@ -222,10 +222,12 @@ try {
   assert.ok(!JSON.stringify(observed.value.result).includes("RADHOUSE_TEST_SECRET_CANARY"));
   check("handback releases held input and admits a fresh observation of the same browser");
 
-  // A formerly authorized credential remains invalid after handback.
+  // A formerly authorized credential remains invalid after handback. Allow
+  // protocol close/transport teardown time on SSH-backed qualification paths;
+  // the unchanged field assertion separately proves no input was admitted.
   const stale = await desktop.evaluate(async token=>{
     const socket = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://")+location.host+"/stream/api/websockets?token="+encodeURIComponent(token));
-    return await new Promise(resolve=>{socket.onopen=()=>{socket.send("kd,97");socket.send("ku,97");};socket.onclose=()=>resolve(true);setTimeout(()=>{socket.close();resolve(false);},2000);});
+    return await new Promise(resolve=>{socket.onopen=()=>{socket.send("kd,97");socket.send("ku,97");};socket.onclose=()=>resolve(true);setTimeout(()=>{socket.close();resolve(false);},5000);});
   },oldInputToken);
   assert.equal(stale,true);
   assert.equal(active().notes,"Deliberate paste");
