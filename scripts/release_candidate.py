@@ -34,7 +34,7 @@ BROWSER_TESTS = (
     "tests/agent-profile-browser.mjs", "tests/appearance-readability-browser.mjs",
     "tests/library-browser.mjs", "tests/owner-terminal-browser.mjs",
     "tests/inference-controls-browser.mjs", "tests/about-you-browser.mjs",
-    "tests/browser-session-browser.mjs",
+    "tests/browser-session-browser.mjs", "tests/live-ux-regressions-browser.mjs",
 )
 MAX_LOG = 8 * 1024 * 1024
 REQUIRED_IMPORTS = ("pytest", "fastapi", "httpx", "psycopg", "argon2", "pyotp", "cryptography", "yaml", "pypdf")

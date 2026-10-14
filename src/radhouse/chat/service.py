@@ -1,4 +1,4 @@
-"""One conversation, one pending reply, no work or fleet orchestration."""
+"""One conversation, one active reply, with durable ordered follow-ups."""
 import time
 import json
 from threading import Lock
@@ -94,13 +94,14 @@ class ChatService:
         return {**self.store.history(owner), "accepted_request_id": request_id}
 
 
-    def _reserved_turn(self, turn, owner, request_id, text, attachments, capabilities):
+    def _reserved_turn(self, turn, owner, request_id, text, attachments, capabilities, browser_data, request_options):
         if turn is None:
             if self.document_access and not (capabilities.allowed_tools and capabilities.document_scope):
                 raise Rejected("document_capability_unavailable", 503)
             if self.browser_enabled and not (capabilities.allowed_tools and capabilities.browser_view):
                 raise Rejected("browser_capability_unavailable", 503)
-            turn = self.store.reserve(owner, request_id, text, self.clock(), attachments)
+            turn = self.store.reserve(owner, request_id, text, self.clock(), attachments,
+                browser_data=browser_data, request_options=request_options or {})
         return turn
 
 
@@ -141,12 +142,18 @@ class ChatService:
                 raise Rejected("chat_capability_unavailable", 503)
             if self.browser_control and not capabilities.browser_control:
                 raise Rejected("browser_capability_unavailable", 503)
-            turn = self._reserved_turn(turn, owner, request_id, text, attachments, capabilities)
+            turn = self._reserved_turn(turn, owner, request_id, text, attachments, capabilities, browser_data, request_options)
             turn = self.store.freeze_request_options(turn, request_options or {})
             if self.browser_control:
                 if browser_data is None:
                     raise Rejected("browser_binding_unavailable", 409)
                 turn = self.store.freeze_browser_context(turn, browser_data)
+            if turn["status"] in TERMINAL:
+                return {**self.store.history(owner), "accepted_request_id": request_id}
+            if turn["status"] == "waiting":
+                turn = self.store.promote_waiting(turn)
+                if turn["status"] == "waiting" or turn["status"] in TERMINAL:
+                    return {**self.store.history(owner), "accepted_request_id": request_id}
             turn, tools, documents = self._supported_tools(turn, capabilities)
             retention = capabilities.idempotency_retention_seconds - 60
             self._check_retry_window(turn, retention)
@@ -314,4 +321,14 @@ class ChatService:
             except HermesGatewayError:
                 self.store.note_error(turn, "reply_status_unavailable")
                 raise Rejected("assistant_unavailable", 503) from None
+        # Only a positively never-attempted queued follow-up may auto-dispatch.
+        # A lost runtime acknowledgement holds the queue for explicit recovery.
+        next_turn = self.store.pending(owner)
+        if next_turn and next_turn["queued_followup"] and next_turn["run_id"] is None and (
+                next_turn["status"] == "waiting" or next_turn["status"] == "awaiting_dispatch"
+                and next_turn["first_dispatch_at"] is None and next_turn["retry_until"] == 0):
+            try:
+                self.retry(owner, next_turn["request_id"])
+            except Rejected as exc:
+                self.store.note_error(next_turn, exc.code)
         return self.store.history(owner)

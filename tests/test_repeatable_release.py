@@ -643,6 +643,31 @@ def test_exact_root_execution_link_chain_and_final_binary_are_supported(executio
     assert str(fixture["outer"]) in fixture["host"].controls()
 
 
+@pytest.mark.parametrize("through_links", [False, True])
+def test_control_binary_above_source_limit_is_supported(execution_links, through_links):
+    fixture = execution_links
+    raw = b"x" * (release.MAX_FILE + 1)
+    write(fixture["binary"], raw, 0o755)
+    pins = [dict(pin, sha256=release.sha(raw)) for pin in fixture["pins"]
+            if through_links or "symlink_target" not in pin]
+    fixture["save"](pins)
+    assert str(fixture["binary"]) in fixture["host"].controls()
+    # The larger execution-control allowance does not change ordinary source reads.
+    with pytest.raises(release.Refusal, match="file_changed_or_too_large"):
+        release.read_file(fixture["binary"])
+
+
+@pytest.mark.parametrize("through_links", [False, True])
+def test_control_binary_above_control_limit_is_refused(execution_links, through_links):
+    fixture = execution_links
+    with fixture["binary"].open("r+b") as stream:
+        stream.truncate(release.MAX_CONTROL + 1)
+    fixture["save"]([pin for pin in fixture["pins"]
+                     if through_links or "symlink_target" not in pin])
+    with pytest.raises(release.Refusal, match="file_changed_or_too_large"):
+        fixture["host"].controls()
+
+
 @pytest.mark.parametrize("name", ["outer", "inner"])
 def test_execution_link_retarget_is_refused_with_unchanged_regular_pin(execution_links, name):
     fixture = execution_links

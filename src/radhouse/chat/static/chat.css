@@ -14,6 +14,7 @@
 #messages,#empty{max-width:780px;margin-inline:auto}
 #compose{position:relative;width:min(100%,820px);align-self:center;padding:10px 12px;box-shadow:none}
 #compose:focus-within{border-color:var(--rh-green,#456d55)}
+#compose:has(#message:focus-visible){outline:2px solid var(--rh-green,#456d55);outline-offset:2px}
 #message:focus-visible{outline:none}
 .compose-footer{padding-top:4px;gap:6px}
 .compose-footer #attach,.compose-footer #message-options-toggle{border-color:transparent;color:var(--muted)}

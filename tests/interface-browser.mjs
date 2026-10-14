@@ -38,6 +38,11 @@ try{
   await page.goto(origin);
   const copy=page.getByRole("button",{name:"Copy answer",exact:true});
   await expect(copy).toBeVisible();
+  const composerMessage=page.getByRole("textbox",{name:"Message your assistant"});
+  await composerMessage.focus();await page.keyboard.press("Tab");await page.keyboard.press("Shift+Tab");
+  await expect(composerMessage).toBeFocused();
+  const composerFocus=await page.locator("#compose").evaluate(node=>({style:getComputedStyle(node).outlineStyle,width:getComputedStyle(node).outlineWidth}));
+  assert.deepEqual(composerFocus,{style:"solid",width:"2px"},"Keyboard focus must remain visible around the composer");
   await expect(copy.locator(".rh-action-label")).toHaveText("Copy");
   await expect(page.locator(".message-label .rh-icon[data-icon=agent]")).toHaveAttribute("data-agent-state","complete");
   for(const name of ["Chat","Library","Browser","Terminal","About You","Settings","Infrastructure"]){

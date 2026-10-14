@@ -50,7 +50,10 @@ await context.route(`${origin}/**`, async route => {
     catch (_) { /* An intentional logout aborts the held request. */ }
     return;
   }
-  const filename = {"/": "index.html", "/settings": "admin.html", "/infrastructure": "admin.html", "/admin.js": "admin.js", "/admin.css": "admin.css", "/chat.css": "chat.css", "/chat.js": "chat.js", "/format.js": "format.js", "/browser-view.js": "browser-view.js", "/browser-view.css": "browser-view.css", "/navigation.js": "navigation.js", "/navigation.css": "navigation.css", "/library.js": "library.js"}[path];
+  const asset=path.replace(/^\/workspace-assets\//,"/");
+  const filename = {"/": "index.html", "/settings": "admin.html", "/infrastructure": "admin.html"}[path]
+    || (/^\/[a-z0-9-]+\.(?:js|css)$/i.test(asset) ? asset.slice(1) : null)
+    || (/^\/workspace-vendor\/xterm\/(?:xterm|addon-fit)\.(?:js|css)$/.test(path) ? "vendor/"+path.slice(18) : null);
   if (!filename) { await route.fulfill({status: 200, contentType: "text/html", body: "<title>Chat</title><p>Return to Chat</p>"}); return; }
   await route.fulfill({status: 200, contentType: filename.endsWith(".js") ? "text/javascript" : filename.endsWith(".css") ? "text/css" : "text/html",
     headers: {"Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'", "Cache-Control": "no-store"},
@@ -88,7 +91,7 @@ try {
   await expect(page.getByRole("heading", {name: "Settings", exact: true})).toBeVisible();
   await expect(page.locator("#content")).toBeVisible();
   await expect(page.locator("#content")).toContainText("No configured limit");
-  await expect(page.locator("#content")).toContainText("Settings are read only");
+  await expect(page.locator("#content")).toContainText("Instance configuration is read only");
   await expect(page.locator("#settings-link")).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("textbox")).toHaveCount(0);
   if (artifacts) { await mkdir(artifacts, {recursive: true}); await page.screenshot({path: `${artifacts}/settings-desktop.png`, fullPage: true}); }

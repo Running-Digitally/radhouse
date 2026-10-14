@@ -195,20 +195,21 @@ def test_expired_unknown_dispatch_never_sends_again(chat):
     service.clock = lambda: 4540
     with pytest.raises(Rejected, match="reply_recovery_required"):
         service.send("alice", key, "Uncertain")
-    with pytest.raises(Rejected, match="reply_pending"):
-        service.send("alice", str(uuid4()), "Another")
+    response = service.send("alice", str(uuid4()), "Another")
+    assert response["turns"][-1]["status"] == "waiting"
+    service.poll("alice")
     assert len(hermes.requests) == 1
 
 
-def test_conflicting_replay_and_second_pending_message_are_refused(chat):
+def test_conflicting_replay_is_refused_and_second_message_waits(chat):
     service, hermes = chat
     key = str(uuid4()); service.send("alice", key, "Original")
     with pytest.raises(Rejected, match="message_conflict"): service.send("alice", key, "Changed")
-    with pytest.raises(Rejected, match="reply_pending"): service.send("alice", str(uuid4()), "Second")
+    assert service.send("alice", str(uuid4()), "Second")["turns"][-1]["status"] == "waiting"
     assert len(hermes.requests) == 1
 
 
-def test_concurrent_messages_reserve_only_one_pending_turn(chat):
+def test_concurrent_messages_reserve_only_one_active_turn(chat):
     service, hermes = chat
     def send(_):
         try: service.send("alice", str(uuid4()), "Concurrent")
@@ -216,7 +217,7 @@ def test_concurrent_messages_reserve_only_one_pending_turn(chat):
         return "accepted"
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(send, range(2)))
-    assert sorted(results) == ["accepted", "reply_pending"]
+    assert sorted(results) == ["accepted", "accepted"]
     assert len(hermes.runs) == 1
 
 

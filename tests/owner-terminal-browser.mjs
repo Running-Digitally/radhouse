@@ -85,6 +85,11 @@ try {
   await page.evaluate(()=>view.term.select(0,0,7));
   const selection=await page.evaluate(()=>view.prepareContext());
   if(selection.source!=="selection")throw new Error("Selection context was ignored");
+  await page.evaluate(()=>{
+    view.term.getSelection=()=>"x".repeat(8120)+"synthetic-secret"+"y".repeat(100)+"\nSAFE_LINE";
+  });
+  const clipped=await page.evaluate(()=>view.prepareContext());
+  if(clipped.text!=="SAFE_LINE"||!clipped.truncated)throw new Error("Byte clipping retained a secret fragment");
   holdResize=true;await page.evaluate(()=>{void view._resize();});
   await expect.poll(()=>heldResize!==null).toBe(true);
   await page.evaluate(()=>view.dispose());await page.evaluate(()=>view.show());

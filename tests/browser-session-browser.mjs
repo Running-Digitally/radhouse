@@ -37,6 +37,7 @@ await context.route(`${origin}/**`,async route=>{
   if(path==="/auth/session")return active?json({username:"alice",csrf_token:"synthetic-csrf",features:{browser:true,browser_control:controlSupported,documents:true}}):json({error:"authentication_required"},401);
   if(path==="/auth/logout"){active=false;return route.fulfill({status:204});}
   if(path==="/chat/history"||path==="/chat/reply")return json({turns,older_before:null});
+  if(path==="/chat/browser/preferences")return json({revision:0,search_engine:"google",history:[]});
   if(path==="/chat/library")return json({files:[],next_cursor:null});
   if(path==="/chat/browser"){
     statusCalls++;reconnectMethods.push(request.method());
@@ -128,15 +129,15 @@ try{
   await page.getByRole("button",{name:"Open browser window",exact:true}).click();
   await expect(page.locator("#assistant-browser img")).toBeVisible();
   if(openCalls!==1)throw new Error("Explicit open sent duplicate launches");
-  await page.getByRole("textbox",{name:"Website URL",exact:true}).fill("https://example.org/login");
+  await page.getByRole("combobox",{name:"Search or enter address",exact:true}).fill("https://example.org/login");
   // The status request can finish after Go takes focus but before its submit.
   await page.getByRole("button",{name:"Go",exact:true}).focus();
   await page.evaluate(()=>refreshBrowser());
-  await expect(page.getByRole("textbox",{name:"Website URL",exact:true})).toHaveValue("https://example.org/login");
+  await expect(page.getByRole("combobox",{name:"Search or enter address",exact:true})).toHaveValue("https://example.org/login");
   await page.getByRole("button",{name:"Go",exact:true}).click();
   await expect(page.getByText("That action was not applied. Check the page before trying another action.",{exact:true})).toBeVisible();
   await page.evaluate(()=>refreshBrowser());
-  await expect(page.getByRole("textbox",{name:"Website URL",exact:true})).toHaveValue("https://example.org/login");
+  await expect(page.getByRole("combobox",{name:"Search or enter address",exact:true})).toHaveValue("https://example.org/login");
   if(inputCalls!==1||native.url()!=="about:blank")throw new Error("Rejected navigation was automatically retried");
   await page.getByRole("button",{name:"Go",exact:true}).click();await expect(native.getByRole("heading",{name:"Example sign-in"})).toBeVisible();
   if(calls.find(([path,data])=>path==="/chat/browser/control/input"&&data.operation==="navigate")?.[1].arguments.url!=="https://example.org/login")throw new Error("Navigation did not submit the user's literal URL");
