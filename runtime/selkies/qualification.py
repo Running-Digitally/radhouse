@@ -162,9 +162,10 @@ async def run():
         return target
 
     async def sensitive_clear():
-        target = await align_visible_page()
         try:
-            return await sandbox.sensitive_clear(CHROME_ENDPOINT, target)
+            async with asyncio.timeout(8):
+                target = await align_visible_page()
+                return await sandbox.sensitive_clear(CHROME_ENDPOINT, target)
         except Exception:
             raise stream.StreamRejected("page_check_unconfirmed") from None
 
@@ -252,7 +253,8 @@ async def run():
             "input_locked": boundary.input_lock.locked(), "transition_locked": boundary.transition_lock.locked(),
             "buttons": h.button_mask, "keys": len(h.pressed_keys),
             "generation_matches": generation() == identity.generation,
-            "memory_pressure_notifications": pressure_notifications[0]})
+            "memory_pressure_notifications": pressure_notifications[0],
+            "memory_pressure_failures": pressure_failures[0]})
 
     async def takeover(request):
         v = viewer(request)
@@ -294,7 +296,8 @@ async def run():
         command_id = uuid4().hex
         admitted = run_binding
         c.reserve_agent(identity, admitted, command_id)
-        outcome = "uncertain"
+        # Read-only preflight failures have not dispatched the requested tool.
+        outcome = "completed"
         try:
             target = await align_visible_page()
             if name == "browser_snapshot" and not await sandbox.sensitive_clear(CHROME_ENDPOINT, target):
@@ -303,6 +306,7 @@ async def run():
                 outcome = "completed"
                 raise stream.StreamRejected("sensitive_fields_present")
             last_handle = channel.submit_tool(command_id, name, args)
+            outcome = "uncertain"
             ack = await last_handle.wait()
             outcome = "completed" if ack.completed else "uncertain"
         except stream.StreamRejected:
@@ -322,7 +326,7 @@ async def run():
         try:
             return await handler(request)
         except stream.StreamRejected as error:
-            code = "sensitive_fields_present" if str(error) == "sensitive_fields_present" else "browser_control_rejected"
+            code = str(error) if str(error) in {"sensitive_fields_present", "page_check_unconfirmed"} else "browser_control_rejected"
             return web.json_response({"error": code}, status=409)
         except (control.ControlRejected, native.NativeRejected):
             return web.json_response({"error": "browser_control_rejected"}, status=409)
@@ -380,13 +384,19 @@ async def run():
                 await boundary.disconnect(watched[0])
                 watched[0] = None
 
-    pressure_notifications = [0]
+    pressure_notifications, pressure_failures = [0], [0]
     async def memory_watch():
         while True:
             await asyncio.sleep(2)
             if resources.pressure():
-                await sandbox.notify_memory_pressure(CHROME_ENDPOINT)
-                pressure_notifications[0] += 1
+                try:
+                    await sandbox.notify_memory_pressure(CHROME_ENDPOINT)
+                except Exception:
+                    # A failed maintenance hint must not discard the owner's
+                    # browser. The authority watcher independently fails closed.
+                    pressure_failures[0] += 1
+                else:
+                    pressure_notifications[0] += 1
 
     watched = [None]
     watchdogs = [asyncio.create_task(watch()), asyncio.create_task(memory_watch())]

@@ -1,7 +1,7 @@
 # Selkies browser qualification
 
 This package runs a disposable Radhouse browser review: desktop takeover and
-phone viewing, using one sandboxed headed Chromium and the reviewed native driver. A
+phone viewing, using one sandboxed headed Chromium and a page-only native build from the reviewed driver source. A
 deterministic test driver invokes the same seven-tool map and Unix channel used
 by Hermes. No model request or production conversation is used. The review has its own
 disposable profile. Public websites are available when the deployment enables
@@ -50,7 +50,7 @@ connection, verifies physical key/button state, clears and verifies CLIPBOARD
 and PRIMARY ownership, and obtains a fresh native observation before admitting
 a fresh agent run. `HumanReturnObservation` is a private typed proof bound to
 the exact owner, generation and paused revision; ordinary paused-run admission
-remains denied. Unconfirmed boundaries stay paused. Input is never replayed.
+remains denied. Unconfirmed boundaries stay paused. Page checks have an overall deadline, including WebSocket receives, so a crashed renderer cannot indefinitely hold the handback input lock. Input is never replayed.
 
 The client adaptation disables initial/focus clipboard reads and enables the
 upstream deliberate copy/paste gestures for Chromium collaborators. The
@@ -89,7 +89,7 @@ a new disposable browser. Loss of the owned Chromium process or the revocation w
 new qualified candidate; no rollback operation is implemented.
 
 Chromium is launched directly as the unprivileged review user, then the unchanged
-reviewed native driver attaches through its private local path. This avoids the
+reviewed native driver source attaches through its private local path. This avoids the
 driver's container heuristic that automatically disables the sandbox. Startup
 requires owned non-root renderers with an extra PID namespace/BPF filter and no
 sandbox-disabling flags; installed verification also proves distinct user and
@@ -156,3 +156,10 @@ input-to-visible latency and resource use, then conduct owner device acceptance.
 Resource qualification must include sustained public downloads and post-load observation. Check cgroup `memory.events` and renderer survival; a child renderer can be OOM-killed while the stream and container remain alive. The public proxy applies connection bounds, without bandwidth shaping. A fixed maintenance watcher reads the container memory limit and working set (excluding reclaimable file cache). Under pressure it asks the owned Chromium to reclaim memory through its private browser protocol; no page data or input is involved, and downloads retain full throughput. This avoids relying only on the larger host memory signal before a hard container OOM.
 The controller extension is implemented; the production web/runtime wiring and
 paired installed-release qualification remain the next integration slice.
+
+
+## Native page-only variant
+
+The private variant retains the existing reviewed native transport boundary and seven-tool Unix channel. It omits background Network-domain initialization for pages and child targets, avoiding unused body inspection during public browsing. Page/Runtime and real HTTP(S) traffic remain available. The default native build and production Hermes executable are separate and unchanged. Explicit native network/HAR commands are outside this trial's restricted adapter.
+
+`native-page-only-lock.json` pins the upstream archive, existing boundary patch, additional source patch, Cargo lock and Rust build profile. Verify and apply the ordinary `runtime/hermes/native-view-only` source gate first, then verify this variant before and after applying `native-page-only.patch` with `verify_native_variant.py`. The additional gate checks every changed source file; it does not download or mutate source. `native-page-only.Dockerfile` builds from that patched tree in a `source/` directory using the pinned toolchain and compile-time `RADHOUSE_NATIVE_PAGE_ONLY=1` policy. Native boundary, stream, browser-initialization and CLI regression suites run before producing `/opt/page-only-agent-browser`. Supply that frozen binary to `prepare.py`; the package rejects a different digest. Build and runtime qualification receipts remain separate.

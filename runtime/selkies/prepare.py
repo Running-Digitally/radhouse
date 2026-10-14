@@ -19,8 +19,22 @@ def sha(path):
     return digest.hexdigest()
 
 
+def verify_native_provenance(lock):
+    if lock.get('native_variant') != 'page_only':
+        return
+    for name, key in (('native-page-only-lock.json', 'native_variant_lock_sha256'),
+            ('native-page-only-build.json', 'native_variant_build_receipt_sha256')):
+        if sha(HERE/name) != lock[key]:
+            raise ValueError('native_provenance_mismatch')
+    receipt = json.loads((HERE/'native-page-only-build.json').read_text())
+    if (receipt['native_binary_sha256'] != lock['native_binary_sha256']
+            or receipt['variant_source_lock_sha256'] != lock['native_variant_lock_sha256']):
+        raise ValueError('native_provenance_mismatch')
+
+
 def prepare(archive, native, chrome_archive, output):
     lock = json.loads((HERE / "source-lock.json").read_text())
+    verify_native_provenance(lock)
     if sha(archive) != lock["selkies_archive_sha256"] or sha(native) != lock["native_binary_sha256"]:
         raise ValueError("source_identity_mismatch")
     output.mkdir(mode=0o700, parents=True, exist_ok=False)

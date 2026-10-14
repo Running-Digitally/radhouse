@@ -16,7 +16,9 @@ async function api(path, body) {
     const value = await response.json();
     throw new Error(value.error === "sensitive_fields_present"
       ? "Finish sign-in or clear the password and code fields before returning control."
-      : "The browser action could not be confirmed. Check the page before continuing.");
+      : value.error === "page_check_unconfirmed"
+        ? "The page could not be checked. Reload a failed tab or close extra browser windows, then try again."
+        : "The browser action could not be confirmed. Check the page before continuing.");
   }
   return response.json();
 }

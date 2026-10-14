@@ -1,0 +1,48 @@
+{
+  "schema": "radhouse.selkies-native-page-only-build.v1",
+  "upstream_version": "0.38.2",
+  "variant_source_lock_sha256": "fb7975a7f5c7837978bea1ee927acb6d3e6445180e03c33970d97638392d4e6c",
+  "native_binary_sha256": "7e34ff38be22c8bab3c2cc8adaf54710a2e73a1d037aaa0d4d614a2b1648d886",
+  "toolchain_image": "rust@sha256:114c7a4425406451c2866b6aafe69fe29b1b298832db1277d411ac73c82d04d6",
+  "toolchain": [
+    "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "binary: rustc",
+    "commit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4",
+    "commit-date: 2026-09-28",
+    "host: x86_64-unknown-linux-gnu",
+    "release: 1.99.0",
+    "LLVM version: 23.1.1"
+  ],
+  "profile": "ci",
+  "target": "x86_64-unknown-linux-gnu",
+  "build_environment": {
+    "RADHOUSE_NATIVE_PAGE_ONLY": "1"
+  },
+  "suites": [
+    {
+      "filter": "radhouse_",
+      "passed": 23,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "filter": "native::stream",
+      "passed": 111,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "filter": "native::browser::tests",
+      "passed": 96,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "filter": "flags::tests",
+      "passed": 91,
+      "failed": 0,
+      "ignored": 0
+    }
+  ],
+  "installed_qualification": false
+}

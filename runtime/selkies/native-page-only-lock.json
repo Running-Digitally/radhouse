@@ -1,0 +1,70 @@
+{
+  "schema": "radhouse.selkies-native-page-only.v1",
+  "upstream_commit": "39a74c70d7759d5a6de7a22c04570bb626bbd081",
+  "upstream_archive_sha256": "f95f730316f2849fd62f41b2153f06fc6b78c76636270f98495c7e773ef77274",
+  "base_boundary_patch_sha256": "66764271d8dccf5424a17a300bed1cf820103cc84d37bf17624c2ddb681eb85a",
+  "variant_patch_sha256": "d241dd35dc7f6220d74313058bae12dd52ba1ad74ae32793618ba5958e7f018a",
+  "cargo_lock_sha256": "f1f1980cf6802f2fe1f6543645c91779f95531156690a452f0342da35e4aa92f",
+  "toolchain_image": "rust@sha256:114c7a4425406451c2866b6aafe69fe29b1b298832db1277d411ac73c82d04d6",
+  "build_profile": "ci",
+  "build_environment": {
+    "RADHOUSE_NATIVE_PAGE_ONLY": "1"
+  },
+  "files": {
+    "README.md": {
+      "before_sha256": "8254bcc72e867ef76b4c6a352ae5d111a991e55fc8488eaee0da6f668f264be2",
+      "after_sha256": "c2767040ffaf770343718589e071835b52d7f1651f3baf51f693998a5507afae"
+    },
+    "cli/src/mcp.rs": {
+      "before_sha256": "f599883d062f8ee0e8debe4ea7e4cf12d35d9576ee4178f2b720682eb7f26bfd",
+      "after_sha256": "07c2d896a1c3d5a630b306e43a73f10e71699fdb05d34cfa310f4d3d8a5858e4"
+    },
+    "cli/src/native/actions.rs": {
+      "before_sha256": "4499aecfd9ecb38e715d5edd0c49c5b3f65eb5e14a6fd63000f43668b4994586",
+      "after_sha256": "f6bee144c35b764f19e33316788312264e2b5bbe0398a3fd30feb0cdf1338f1a"
+    },
+    "cli/src/native/browser.rs": {
+      "before_sha256": "6fe1aedf3ae366a6d41fa0c26d11a99a5c3e5e7fbfdd9a1ece3c4559c0c5649c",
+      "after_sha256": "b0f19d8f886d87049f1e53ea77cb3f48657bcf81e27b4a618a8e034f2bd942c6"
+    },
+    "cli/src/output.rs": {
+      "before_sha256": "f457ba2aee6df62686cbe773c2da79c94972db82f25e5cf263c72a735a6f7ec5",
+      "after_sha256": "f2c12c0034a17a03bd6d8d9c57e32365e75fc0675c6906ade3dd39edf49ab760"
+    },
+    "docs/src/app/network/page.mdx": {
+      "before_sha256": "1a1cc13cc57b0a85dc293c7e283f7acf146ea473165045091de0b6efd56fd862",
+      "after_sha256": "0f20ad2f7cced32fe550892724e97674a76d316320426a483e8a1718eb2da756"
+    },
+    "skill-data/core/SKILL.md": {
+      "before_sha256": "9c02e42ab9bb80b78a28c7f2eba422b6f4f7aa34b37c5fba9473208ab1ec718b",
+      "after_sha256": "f642d0e9a33e0dabb74db64dd7d3c94520b61c8aa82161f5d4936ce6f8b03280"
+    },
+    "cli/src/native/stream/http.rs": {
+      "before_sha256": "31958e2b4cfdf336174b066b4a4c16bb1617b587445fb021a2b5221ae94228f4",
+      "after_sha256": "31958e2b4cfdf336174b066b4a4c16bb1617b587445fb021a2b5221ae94228f4"
+    },
+    "cli/src/native/stream/dashboard.rs": {
+      "before_sha256": "ea524d60a05e5074c1c1f1009dbdbb57a294911957820d3631012ac4c5eba560",
+      "after_sha256": "ea524d60a05e5074c1c1f1009dbdbb57a294911957820d3631012ac4c5eba560"
+    },
+    "cli/src/native/stream/websocket.rs": {
+      "before_sha256": "4e51a9649ae5b9a696a93421d9c5751f15e952a7178c3965903854d9cc57c757",
+      "after_sha256": "4e51a9649ae5b9a696a93421d9c5751f15e952a7178c3965903854d9cc57c757"
+    },
+    "cli/src/native/stream/mod.rs": {
+      "before_sha256": "419f32a40c6fc17457b6ffb628a82018f0694b28f63953b8aaa841c2b8ef6da0",
+      "after_sha256": "419f32a40c6fc17457b6ffb628a82018f0694b28f63953b8aaa841c2b8ef6da0"
+    },
+    "cli/src/flags.rs": {
+      "before_sha256": "e742e8ef0ac1dee63cfe7143a9bbb1511cc01b19ff73f3e01870b8d2f1ce35f1",
+      "after_sha256": "e742e8ef0ac1dee63cfe7143a9bbb1511cc01b19ff73f3e01870b8d2f1ce35f1"
+    },
+    "cli/src/main.rs": {
+      "before_sha256": "ae1d728b884267b06b7731bed8ad7c79c641971851989edb1ed9ba69f7127609",
+      "after_sha256": "ae1d728b884267b06b7731bed8ad7c79c641971851989edb1ed9ba69f7127609"
+    }
+  },
+  "normal_native_build_policy_unchanged": true,
+  "cargo_toml_sha256": "da3e693570f25a60780176a0cc45533ef97594e2cbb81229dc5f879aacac89d2",
+  "native_binary_sha256": "7e34ff38be22c8bab3c2cc8adaf54710a2e73a1d037aaa0d4d614a2b1648d886"
+}

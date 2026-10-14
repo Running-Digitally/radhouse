@@ -1,4 +1,5 @@
 """Managed sandboxed Chrome launch. No automatic sandbox-disabling fallback."""
+import asyncio
 import os
 from pathlib import Path
 import shlex
@@ -89,14 +90,17 @@ def verify(browser_pid, proc=Path('/proc'), *, require_namespaces=True):
         'parent_seccomp_filters':parent_filters, 'renderers':renderers}
 
 
-async def _rpc(ws, method, params=None):
-    await ws.send_json({'id':1, 'method':method, 'params':params or {}})
-    while True:
-        reply = await ws.receive_json()
-        if reply.get('id') == 1:
-            if 'error' in reply or 'result' not in reply:
-                raise RuntimeError('page_check_unconfirmed')
-            return reply['result']
+async def _rpc(ws, method, params=None, *, timeout=8):
+    # ClientSession's HTTP timeout does not bound WebSocket receives. A crashed
+    # renderer or unrelated events must not hold the human handback lock forever.
+    async with asyncio.timeout(timeout):
+        await ws.send_json({'id':1, 'method':method, 'params':params or {}})
+        while True:
+            reply = await ws.receive_json()
+            if reply.get('id') == 1:
+                if 'error' in reply or 'result' not in reply:
+                    raise RuntimeError('page_check_unconfirmed')
+                return reply['result']
 
 
 def _target_url(endpoint, target):
@@ -134,7 +138,7 @@ async def _browser_url(client, endpoint):
 async def notify_memory_pressure(endpoint):
     # Fixed browser maintenance operation; no page values, input or agent API.
     from aiohttp import ClientSession, ClientTimeout
-    async with ClientSession(timeout=ClientTimeout(total=8)) as client:
+    async with asyncio.timeout(8), ClientSession(timeout=ClientTimeout(total=8)) as client:
         async with client.ws_connect(await _browser_url(client, endpoint)) as ws:
             await _rpc(ws, 'Memory.simulatePressureNotification', {'level':'critical'})
 
@@ -156,7 +160,7 @@ async def _targets(client, endpoint):
 async def visible_target(endpoint):
     """An isolated world prevents a site's getters from spoofing visibility."""
     from aiohttp import ClientSession, ClientTimeout
-    async with ClientSession(timeout=ClientTimeout(total=8)) as client:
+    async with asyncio.timeout(8), ClientSession(timeout=ClientTimeout(total=8)) as client:
         pages, _ = await _targets(client, endpoint)
         visible = []
         for page in pages:
@@ -193,7 +197,7 @@ async def sensitive_clear(endpoint, target):
     checks. Missing frames, detached contexts and protocol errors fail closed.
     """
     from aiohttp import ClientSession, ClientTimeout
-    async with ClientSession(timeout=ClientTimeout(total=8)) as client:
+    async with asyncio.timeout(8), ClientSession(timeout=ClientTimeout(total=8)) as client:
         pages, oop_frames = await _targets(client, endpoint)
         if target not in {p.get('id') for p in pages}:
             raise RuntimeError('page_check_unconfirmed')

@@ -2,11 +2,14 @@
   "schema": "radhouse.selkies-qualification-source.v1",
   "selkies_commit": "1aefc6ab475603d02a59c4ddec8790cee4c8d992",
   "selkies_archive_sha256": "43be86dff567a96a65b37c6a5146d29554092a07220d98aeea762b4582885288",
-  "native_binary_sha256": "3cf7cebfc3e3e920c319c31f89a327b5e5a8abca1846c5d06a61cf2e2a54307b",
+  "native_binary_sha256": "7e34ff38be22c8bab3c2cc8adaf54710a2e73a1d037aaa0d4d614a2b1648d886",
   "chromium_binary_sha256": "ed05e73a2cdf875326fcfa438b31c71a6a885a353610731dd52090dfc476f778",
   "base_image": "python@sha256:9bed8554e926c07c6f908841d5ee88c33e8df9236b191526bbce81a9062ab43a",
   "platform": "linux/amd64",
   "capture_backend": "X11",
   "transport": "WebSockets",
-  "deployed_qualification": false
+  "deployed_qualification": false,
+  "native_variant": "page_only",
+  "native_variant_lock_sha256": "fb7975a7f5c7837978bea1ee927acb6d3e6445180e03c33970d97638392d4e6c",
+  "native_variant_build_receipt_sha256": "8bcbf7796d251a1e70d649632117a87689ca28f0905917472c97c7d924060963"
 }
