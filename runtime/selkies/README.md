@@ -1,7 +1,7 @@
-# Selkies browser qualification
+# Selkies browser pilot
 
-This package runs a disposable Radhouse browser review: desktop takeover and
-phone viewing, using one sandboxed headed Chromium and a page-only native build from the reviewed driver source. A
+This package is the accepted Radhouse browser-viewer replacement, deployed first
+as a disposable unified desktop/mobile pilot, using one sandboxed headed Chromium and a page-only native build from the reviewed driver source. A
 deterministic test driver invokes the same seven-tool map and Unix channel used
 by Hermes. No model request or production conversation is used. The review has its own
 disposable profile. Public websites are available when the deployment enables
@@ -19,7 +19,7 @@ excluded because it downloads a moving database outside this candidate's scope.
 ```mermaid
 flowchart LR
     Desktop[Desktop viewer] --> Selkies[Selkies in the qualification process]
-    Phone[Phone viewer capability] --> Selkies
+    Phone[Phone controlling or viewing capability] --> Selkies
     Selkies --> Gate[StreamingControl input boundary]
     Gate --> X11[X11 display and Chromium]
     Tools[Restricted seven-tool adapter] --> Native[Native Unix channel]
@@ -28,8 +28,8 @@ flowchart LR
     Controller --> Tools
 ```
 
-Phone capabilities cannot obtain an input grant, call agent tools, or acquire a
-desktop capability. Each desktop document, including a reload or duplicated tab, gets a distinct owner binding. Closed idle sessions are reclaimed at the bounded viewer limit; launch capabilities, connected streams and the current holder remain protected. Takeover
+Viewing-only capabilities cannot obtain an input grant, call agent tools, or acquire a
+controlling capability. Each controlling document, including a reload or duplicated tab, gets a distinct owner binding. Closed idle sessions are reclaimed at the bounded viewer limit; launch capabilities, connected streams and the current holder remain protected. Takeover
 closes agent admission, waits for an in-flight native action and its matching
 fence, then issues a new stream credential. Credentials travel in the iframe
 fragment; a public connection nonce forces the iframe to reload on authority
@@ -82,7 +82,10 @@ docker cp radhouse-selkies-qualification:/state/viewer-links.json /private/tmp/v
 chmod 600 /private/tmp/viewer-links.json
 ```
 
-The private links identify the desktop and phone viewing capabilities. Each
+The private links identify controlling and viewing-only capabilities. The private
+deployment uses one authenticated `/browser` launcher on all devices; legacy
+`/desktop` and `/phone` launch aliases enter that controlling pilot, while `/view`
+remains explicitly viewing-only. Previously issued viewer tokens retain their role. Each
 start uses a fresh display, native session and controller store; viewer reload
 and reconnect preserve the running browser, while a container restart creates
 a new disposable browser. Loss of the owned Chromium process or the revocation watcher terminates the service so its deployment can restart a fresh generation. Private launchers must refresh their capabilities after generation changes. Failures are diagnosed and corrected, followed by a
@@ -149,11 +152,12 @@ and presented frame using one client-side performance clock. This traverses
 input, the remote page, capture, encoding, transport and client presentation;
 it is not a CDP timing proxy or a physical key-to-screen measurement.
 
-Before production application activation, broaden multi-window/tab agreement,
-queued input and renderer scheduling, repeated reconnects and
-service failures, authentication/logout expiry, actual HTTPS embedding,
-input-to-visible latency and resource use, then conduct owner device acceptance.
-Resource qualification must include sustained public downloads and post-load observation. Check cgroup `memory.events` and renderer survival; a child renderer can be OOM-killed while the stream and container remain alive. The public proxy applies connection bounds, without bandwidth shaping. A fixed maintenance watcher reads the container memory limit and working set (excluding reclaimable file cache). Under pressure it notifies the owned Chromium and collects unreachable objects in each page through fixed private protocol calls. A browser notification alone did not reclaim renderer Blob wrappers reliably during repeated high-speed tests. The maintenance does not inspect heap objects, retrieve page data, change input ownership or limit downloads. Collection can briefly pause a page under pressure. This avoids relying only on the larger host memory signal before a hard container OOM.
+[ADR-0002](../../docs/decisions/0002-selkies-browser-viewer.md) closes the package
+choice in favor of Selkies. The next integration slice binds this adapter to the
+chat-owned principal/conversation/run/browser, replacing the legacy viewer on
+that same browser. Use focused acceptance of the changed contracts; the current
+pilot is an independent disposable browser, not that chat integration.
+When browser binaries, resource policy or proxy behavior change, resource qualification includes sustained public downloads and post-load observation. Reuse the recorded passing qualification for unchanged frozen components. Check cgroup `memory.events` and renderer survival; a child renderer can be OOM-killed while the stream and container remain alive. The public proxy applies connection bounds, without bandwidth shaping. A fixed maintenance watcher reads the container memory limit and working set (excluding reclaimable file cache). Under pressure it notifies the owned Chromium and collects unreachable objects in each page through fixed private protocol calls. A browser notification alone did not reclaim renderer Blob wrappers reliably during repeated high-speed tests. The maintenance does not inspect heap objects, retrieve page data, change input ownership or limit downloads. Collection can briefly pause a page under pressure. This avoids relying only on the larger host memory signal before a hard container OOM.
 The controller extension is implemented; the production web/runtime wiring and
 paired installed-release qualification remain the next integration slice.
 
@@ -163,3 +167,25 @@ paired installed-release qualification remain the next integration slice.
 The private variant retains the existing reviewed native transport boundary and seven-tool Unix channel. It omits background Network-domain initialization for pages and child targets, avoiding unused body inspection during public browsing. Page/Runtime and real HTTP(S) traffic remain available. The default native build and production Hermes executable are separate and unchanged. Explicit native network/HAR commands are outside this trial's restricted adapter.
 
 `native-page-only-lock.json` pins the upstream archive, existing boundary patch, additional source patch, Cargo lock and Rust build profile. Verify and apply the ordinary `runtime/hermes/native-view-only` source gate first, then verify this variant before and after applying `native-page-only.patch` with `verify_native_variant.py`. The additional gate checks every changed source file; it does not download or mutate source. `native-page-only.Dockerfile` builds from that patched tree in a `source/` directory using the pinned toolchain and compile-time `RADHOUSE_NATIVE_PAGE_ONLY=1` policy. Native boundary, stream, browser-initialization and CLI regression suites run before producing `/opt/page-only-agent-browser`. Supply that frozen binary to `prepare.py`; the package rejects a different digest. Build and runtime qualification receipts remain separate.
+
+
+## Unified mobile keyboard
+
+The same viewer works on a phone or desktop. Device/touch state selects layout;
+server capability and the current input lease select authority. On touch clients,
+Keyboard focuses Selkies' existing assist input synchronously from the user tap.
+Its existing input/IME handler sends text through the guarded Selkies connection.
+Pinned upstream `hardware-keyboard.js` detects physical keyboard use and
+`touch-controls.js` supplies the fixed chord helper. The main button is suppressed
+on desktop/hardware-keyboard use; Keys → Keyboard overrides detection.
+
+The Keys menu includes address bar, Tab, Enter, Backspace and Escape. No arbitrary
+text API or new input endpoint is added. The stream adapter exposes boolean
+readiness/touch/hardware status only; local assist data is cleared on dismissal,
+return, authority loss and page exit. Presentation fits the visual viewport when
+the OS keyboard opens without changing the remote resolution. The keyboard's
+actual appearance on iPhone/Android needs owner device acceptance; an emulated
+browser can prove focus, real stream input and handback, not the OS keyboard.
+
+The [browser guide](../../docs/selkies-browser.md) records the component map,
+current scope and the accepted chat-viewer replacement boundary.

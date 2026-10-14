@@ -1,4 +1,6 @@
-// Forward status only; clipboard payloads and input never enter the outer UI.
+// Forward status only; clipboard payloads and input text never enter the outer UI.
+import {installMobileInput} from "./mobile-input.js";
+installMobileInput(value => window.parent.postMessage({type: "mobileInputStatus", ...value}, location.origin));
 window.addEventListener("message", event => {
   if (event.origin !== location.origin || event.source !== window) return;
   if (event.data?.type === "pipelineStatusUpdate") window.parent.postMessage(event.data, location.origin);

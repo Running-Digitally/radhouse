@@ -205,13 +205,17 @@ Local source tests and disposable Linux compatibility evidence do not establish 
 target's installed browser, firewall rules, certificate-forward route or live model
 tool execution. Those remain explicit deployment verification evidence.
 
-## Selkies qualification candidate
+## Accepted Selkies browser replacement
 
-The [isolated Selkies package](../../runtime/selkies/README.md) qualifies desktop
-takeover and phone viewing through the same reviewed native driver and seven-tool
-Unix channel. It adds a streaming input fence and the private
+[ADR-0002](../decisions/0002-selkies-browser-viewer.md) selects Selkies as the
+browser viewer and human-input replacement. The [package](../../runtime/selkies/README.md)
+implements a unified desktop/mobile pilot through the restricted native seven-tool
+Unix channel. It retains the streaming input fence and private
 `HumanReturnObservation` proof for paused-to-fresh-run admission after verified
-human-input quiescence. Existing callers and ordinary paused admission retain
-their current behavior. This synthetic package does not activate a new installed
-Hermes capability; production lifecycle, authentication, browser-tab agreement,
-sandbox and paired-release qualification remain required.
+human-input quiescence. Ordinary paused admission remains denied.
+
+The pilot has a separate disposable profile and test-driver observations. The
+accepted next implementation binds Selkies to the chat's actual owner, run and
+browser, replacing the legacy frame viewer on that same identity. Do not redirect
+a chat browser panel to the independent pilot. The [browser guide](../selkies-browser.md)
+owns current scope, mobile input behavior and the integration call path.

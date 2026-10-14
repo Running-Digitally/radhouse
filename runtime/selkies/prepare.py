@@ -95,8 +95,11 @@ def prepare(archive, native, chrome_archive, output):
     shutil.copytree(core, output / "client-source", ignore=shutil.ignore_patterns("node_modules", "dist"))
     shutil.copyfile(source / "LICENSE", output / "client-source/LICENSE")
     shutil.copyfile(HERE / "web/stream-bridge.js", output / "selkies-web/bridge.js")
+    shutil.copyfile(HERE / "web/mobile-input.js", output / "selkies-web/mobile-input.js")
+    for name in ("hardware-keyboard.js", "touch-controls.js"):
+        shutil.copyfile(core / "lib" / name, output / "selkies-web" / name)
     index = output / "selkies-web/index.html"
-    index.write_text(index.read_text().replace("</head>", '<script src="bridge.js"></script></head>'))
+    index.write_text(index.read_text().replace("</head>", '<script type="module" src="bridge.js"></script></head>'))
     # Selkies packages its frontend; the qualification instead serves the core
     # directly in Radhouse's iframe, without the upstream desktop dashboard.
     bundle = source / "src/selkies/selkies_web"
@@ -124,6 +127,8 @@ def prepare(archive, native, chrome_archive, output):
     receipt = {**lock, "patched_clipboard_source_sha256": sha(target),
         "patched_clipboard_gestures_sha256": sha(gestures),
         "served_core_sha256": sha(output / "selkies-web/selkies-core.js"),
+        "served_mobile_files_sha256": {name: sha(output / "selkies-web" / name)
+            for name in ("bridge.js", "mobile-input.js", "hardware-keyboard.js", "touch-controls.js")},
         "candidate_files": {str(p.relative_to(output / "candidate")):sha(p)
             for p in sorted((output / "candidate").rglob("*")) if p.is_file()},
         "sandbox_qualified": False, "available_modes": ["fixture", "public_web"], "synthetic_only": False}
