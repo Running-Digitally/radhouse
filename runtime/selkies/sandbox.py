@@ -125,7 +125,18 @@ async def _targets(client, endpoint):
         response.raise_for_status()
         targets = await response.json()
     pages = [p for p in targets if p.get('type') == 'page']
-    frames = {p['id'] for p in targets if p.get('type') == 'iframe'}
+    # /json/list omits OOP iframe targets in current Chrome. Discover them
+    # through the browser target, then attach their fixed local page endpoints.
+    async with client.get(endpoint+'/json/version') as response:
+        response.raise_for_status()
+        version = await response.json()
+    import re
+    path = urlsplit(version['webSocketDebuggerUrl']).path
+    if not re.fullmatch(r'/devtools/browser/[A-Fa-f0-9-]{36}', path):
+        raise RuntimeError('page_check_unconfirmed')
+    async with client.ws_connect(f'ws://127.0.0.1:{urlsplit(endpoint).port}'+path) as ws:
+        all_targets = await _rpc(ws, 'Target.getTargets')
+    frames = {p['targetId'] for p in all_targets['targetInfos'] if p.get('type') == 'iframe'}
     if not 1 <= len(pages) <= 16 or len(frames) > 64:
         raise RuntimeError('page_check_unconfirmed')
     return pages, frames
@@ -186,6 +197,15 @@ async def sensitive_clear(endpoint, target):
             ws = await connection(target)
             tree = await _rpc(ws, 'Page.getFrameTree')
             pending = [(tree['frameTree'], target)]
+            # Page.getFrameTree omits OOP children too. Each OOP root carries
+            # its real parentId; join only descendants of the selected page.
+            children_by_parent = {}
+            for frame in oop_frames:
+                peer = await connection(frame)
+                child_tree = (await _rpc(peer, 'Page.getFrameTree'))['frameTree']
+                if child_tree['frame']['id'] != frame or not child_tree['frame'].get('parentId'):
+                    raise RuntimeError('page_check_unconfirmed')
+                children_by_parent.setdefault(child_tree['frame']['parentId'], []).append((child_tree, frame))
             seen = set()
             while pending:
                 node, inherited = pending.pop()
@@ -204,4 +224,5 @@ async def sensitive_clear(endpoint, target):
                     child_tree = await _rpc(peer, 'Page.getFrameTree')
                     children.extend(child_tree['frameTree'].get('childFrames', []))
                 pending.extend((child, owner) for child in children)
+                pending.extend(children_by_parent.get(frame, []))
         return True
