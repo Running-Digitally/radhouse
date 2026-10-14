@@ -120,21 +120,32 @@ async def _isolated_boolean(ws, frame, expression):
     return result
 
 
-async def _targets(client, endpoint):
-    async with client.get(endpoint+'/json/list') as response:
-        response.raise_for_status()
-        targets = await response.json()
-    pages = [p for p in targets if p.get('type') == 'page']
-    # /json/list omits OOP iframe targets in current Chrome. Discover them
-    # through the browser target, then attach their fixed local page endpoints.
+async def _browser_url(client, endpoint):
     async with client.get(endpoint+'/json/version') as response:
         response.raise_for_status()
         version = await response.json()
     import re
     path = urlsplit(version['webSocketDebuggerUrl']).path
     if not re.fullmatch(r'/devtools/browser/[A-Fa-f0-9-]{36}', path):
-        raise RuntimeError('page_check_unconfirmed')
-    async with client.ws_connect(f'ws://127.0.0.1:{urlsplit(endpoint).port}'+path) as ws:
+        raise RuntimeError('browser_endpoint_unconfirmed')
+    return f'ws://127.0.0.1:{urlsplit(endpoint).port}'+path
+
+
+async def notify_memory_pressure(endpoint):
+    # Fixed browser maintenance operation; no page values, input or agent API.
+    from aiohttp import ClientSession, ClientTimeout
+    async with ClientSession(timeout=ClientTimeout(total=8)) as client:
+        async with client.ws_connect(await _browser_url(client, endpoint)) as ws:
+            await _rpc(ws, 'Memory.simulatePressureNotification', {'level':'critical'})
+
+
+async def _targets(client, endpoint):
+    async with client.get(endpoint+'/json/list') as response:
+        response.raise_for_status()
+        targets = await response.json()
+    pages = [p for p in targets if p.get('type') == 'page']
+    # /json/list omits OOP iframe targets in current Chrome.
+    async with client.ws_connect(await _browser_url(client, endpoint)) as ws:
         all_targets = await _rpc(ws, 'Target.getTargets')
     frames = {p['targetId'] for p in all_targets['targetInfos'] if p.get('type') == 'iframe'}
     if not 1 <= len(pages) <= 16 or len(frames) > 64:

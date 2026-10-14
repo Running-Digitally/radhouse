@@ -153,6 +153,6 @@ Before production application activation, broaden multi-window/tab agreement,
 queued input and renderer scheduling, repeated reconnects and
 service failures, authentication/logout expiry, actual HTTPS embedding,
 input-to-visible latency and resource use, then conduct owner device acceptance.
-Resource qualification must include sustained public downloads and post-load observation. Check cgroup `memory.events` and renderer survival; a child renderer can be OOM-killed while the stream and container remain alive. The public proxy applies connection bounds, without bandwidth shaping.
+Resource qualification must include sustained public downloads and post-load observation. Check cgroup `memory.events` and renderer survival; a child renderer can be OOM-killed while the stream and container remain alive. The public proxy applies connection bounds, without bandwidth shaping. A fixed maintenance watcher reads the container memory limit and working set (excluding reclaimable file cache). Under pressure it asks the owned Chromium to reclaim memory through its private browser protocol; no page data or input is involved, and downloads retain full throughput. This avoids relying only on the larger host memory signal before a hard container OOM.
 The controller extension is implemented; the production web/runtime wiring and
 paired installed-release qualification remain the next integration slice.

@@ -45,6 +45,7 @@ control = load("radhouse_browser_control", ROOT / "runtime/hermes/browser_contro
 native = load("radhouse_native_control", ROOT / "runtime/hermes/native_control.py")
 stream = load("radhouse_selkies_control", Path(__file__).with_name("control.py"))
 sandbox = load("radhouse_selkies_sandbox", Path(__file__).with_name("sandbox.py"))
+resources = load("radhouse_selkies_resources", Path(__file__).with_name("resources.py"))
 
 
 def prepare_environment():
@@ -250,7 +251,8 @@ async def run():
             "handover_phase": boundary.phase, "input_inflight": boundary.inflight,
             "input_locked": boundary.input_lock.locked(), "transition_locked": boundary.transition_lock.locked(),
             "buttons": h.button_mask, "keys": len(h.pressed_keys),
-            "generation_matches": generation() == identity.generation})
+            "generation_matches": generation() == identity.generation,
+            "memory_pressure_notifications": pressure_notifications[0]})
 
     async def takeover(request):
         v = viewer(request)
@@ -378,18 +380,28 @@ async def run():
                 await boundary.disconnect(watched[0])
                 watched[0] = None
 
+    pressure_notifications = [0]
+    async def memory_watch():
+        while True:
+            await asyncio.sleep(2)
+            if resources.pressure():
+                await sandbox.notify_memory_pressure(CHROME_ENDPOINT)
+                pressure_notifications[0] += 1
+
     watched = [None]
-    watchdog = asyncio.create_task(watch())
+    watchdogs = [asyncio.create_task(watch()), asyncio.create_task(memory_watch())]
     task = asyncio.current_task()
     # A dead revocation watcher cannot leave a live input service behind.
     # The existing container restart policy starts a fresh pinned generation.
-    watchdog.add_done_callback(lambda done: task.cancel() if not done.cancelled() else None)
+    for watchdog in watchdogs:
+        watchdog.add_done_callback(lambda done: task.cancel() if not done.cancelled() else None)
     asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, task.cancel)
     try:
         await server.run()
     finally:
-        watchdog.cancel()
-        await asyncio.gather(watchdog, return_exceptions=True)
+        for watchdog in watchdogs:
+            watchdog.cancel()
+        await asyncio.gather(*watchdogs, return_exceptions=True)
         channel.close()
 
 
