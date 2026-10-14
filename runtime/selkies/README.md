@@ -139,7 +139,9 @@ Loopback fixture telemetry supplies geometry and assertions, never the input.
 It checks desktop typing, Mac shortcuts and deliberate paste, chat focus,
 competing tabs, fabricated valid phone input, local phone zoom/orientation,
 synthetic private sign-in, held-key handback, fresh native observation, stale
-credentials and viewer reload. Screenshots and bounded JSON results remain
+credentials and viewer reload. Public mode also checks address-bar HTTPS
+navigation and handback from a manually opened visible tab. Each run opens a
+fresh exercise page; report ordering preserves its newest field state. Screenshots and bounded JSON results remain
 private. Emulation is not real-phone or physical-keyboard acceptance.
 The fixture's binary visual marker also measures pointer input to the decoded
 and presented frame using one client-side performance clock. This traverses

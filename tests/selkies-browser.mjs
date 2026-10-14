@@ -24,7 +24,7 @@ function fixture() {
 }
 function active() {
   const pages = Object.values(fixture().pages);
-  return pages.find(p => p.focused) || pages.at(-1);
+  return pages.filter(p => p.focused).at(-1) || pages.at(-1);
 }
 async function until(predicate) {
   for (let n=0; n<50; n++) { if (predicate()) return; await new Promise(r => setTimeout(r, 100)); }
@@ -110,6 +110,12 @@ try {
   diagnosticPage=desktop;diagnosticToken=desktopToken;
   await ready(desktop);
   await expect(desktop.locator("#connection")).toHaveText("Live browser");
+  const initial = (await api(desktop,desktopToken,"state")).value;
+  assert.equal(initial.mode,"agent","live journey requires an idle disposable review");
+  const fresh = await api(desktop,desktopToken,"agent",{tool:"browser_navigate",
+    arguments:{url:"http://127.0.0.1:18081/?journey="+crypto.randomUUID()}});
+  assert.equal(fresh.status,200);
+  await until(()=>active().name === "" && active().notes === "Select a sentence, replace it, and undo the change.");
   const marker = active().marker;
   const baseline=await api(desktop,desktopToken,"agent",{tool:"browser_snapshot",arguments:{}});
   assert.equal(baseline.status,200);
@@ -217,6 +223,38 @@ try {
   assert.equal(active().notes,"Deliberate paste");
   check("viewer reload preserves the same browser without replay or automatic takeover");
   await desktop.screenshot({path:output+"/desktop-handover.png",fullPage:true});
+  if (baseline.value.state.public_web) {
+    await desktop.locator("#take").click();
+    await expect(desktop.locator("#owner")).toHaveText("You have control");
+    await ready(desktop,true);
+    await core(desktop).locator("#videoStream").click({position:{x:20,y:200}});
+    await desktop.keyboard.press("Meta+l");
+    await desktop.keyboard.type("https://example.com/");
+    await desktop.keyboard.press("Enter");
+    await desktop.waitForTimeout(2000);
+    await desktop.locator("#return").click();
+    await expect(desktop.locator("#owner")).toHaveText("Agent has control");
+    const publicPage = await api(desktop,desktopToken,"agent",{tool:"browser_snapshot",arguments:{full:true}});
+    assert.equal(publicPage.status,200);
+    assert.ok(JSON.stringify(publicPage.value.result).includes("Example Domain"));
+    check("public HTTPS navigation through the actual address bar and stream");
+
+    await desktop.locator("#take").click();
+    await expect(desktop.locator("#owner")).toHaveText("You have control");
+    await ready(desktop,true);
+    await core(desktop).locator("#videoStream").click({position:{x:20,y:200}});
+    await desktop.keyboard.press("Meta+t");
+    await desktop.keyboard.type("https://duckduckgo.com/");
+    await desktop.keyboard.press("Enter");
+    await desktop.waitForTimeout(2000);
+    await desktop.locator("#return").click();
+    await expect(desktop.locator("#owner")).toHaveText("Agent has control");
+    const visibleTab = await api(desktop,desktopToken,"agent",{tool:"browser_snapshot",arguments:{full:true}});
+    assert.equal(visibleTab.status,200);
+    assert.ok(JSON.stringify(visibleTab.value.result).includes("DuckDuckGo"));
+    check("handback observes the manually opened visible public tab");
+    await desktop.screenshot({path:output+"/public-browser.png",fullPage:true});
+  }
   assert.deepEqual(failures,[]);
   await phoneContext.close();
   const sorted=[...feedbackSamples].sort((a,b)=>a-b);

@@ -2,8 +2,10 @@
 import http.server
 import json
 from pathlib import Path
+import threading
 
 pages = {}
+pages_lock = threading.Lock()
 
 
 class Fixture(http.server.SimpleHTTPRequestHandler):
@@ -16,7 +18,8 @@ class Fixture(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path != "/state":
             return super().do_GET()
-        payload = json.dumps({"pages": pages}).encode()
+        with pages_lock:
+            payload = json.dumps({"pages": pages}).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(payload)))
@@ -34,9 +37,14 @@ class Fixture(http.server.SimpleHTTPRequestHandler):
         if set(value) != allowed or not isinstance(value["marker"], str):
             self.send_error(400)
             return
-        if len(pages) >= 8 and value["marker"] not in pages:
-            pages.pop(next(iter(pages)))
-        pages[value["marker"]] = value
+        with pages_lock:
+            previous = pages.get(value["marker"])
+            # Concurrent HTTP reports may arrive out of input-event order.
+            # Never replace newer field/feedback state with an older report.
+            if previous is None or value["sequence"] >= previous["sequence"]:
+                if len(pages) >= 8 and value["marker"] not in pages:
+                    pages.pop(next(iter(pages)))
+                pages[value["marker"]] = value
         self.send_response(204)
         self.end_headers()
 
