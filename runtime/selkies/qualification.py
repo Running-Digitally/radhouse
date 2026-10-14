@@ -168,6 +168,10 @@ async def run():
         return target
 
     async def sensitive_clear():
+        nonlocal aligned_target
+        # Human interaction may have reloaded or recovered the same target.
+        # Refresh its native attachment before the handback's fresh snapshot.
+        aligned_target = None
         try:
             async with asyncio.timeout(8):
                 target = await align_visible_page()
