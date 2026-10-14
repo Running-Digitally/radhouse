@@ -86,7 +86,7 @@ def launch_native():
     # Attach to our already sandboxed process. The native driver's automatic
     # container launch heuristic adds --no-sandbox, so it must not launch Chrome.
     result = subprocess.run(["/opt/browser/agent-browser", "--config", "/opt/browser/empty.json",
-        "--cdp", endpoint, "--session", NATIVE_NAME, "--json", "open", "--", FIXTURE],
+        "--cdp", endpoint, "--session", NATIVE_NAME, "--pin-tab", "--json", "open", "--", FIXTURE],
         env=env, capture_output=True, timeout=45, check=False)
     value = json.loads(result.stdout or b"{}")
     if result.returncode or not value.get("success"):
@@ -152,13 +152,19 @@ async def run():
             raise stream.StreamRejected("native_fence_unconfirmed")
         return control.FenceObservation(identity, state.takeover_after, True)
 
+    aligned_target = None
     async def align_visible_page():
-        nonlocal last_handle
+        nonlocal last_handle, aligned_target
         target = await sandbox.visible_target(CHROME_ENDPOINT)
-        last_handle = channel.submit_trusted_target(uuid4().hex, target)
-        selected = await last_handle.wait()
-        if not selected.completed or selected.legacy.get("success") is not True:
-            raise stream.StreamRejected("visible_page_unconfirmed")
+        # The owned native session is pinned: only this serialized adapter can
+        # select its tab. Switching to the same target would clear snapshot
+        # refs before the next click/fill; preserve them until the target changes.
+        if target != aligned_target:
+            last_handle = channel.submit_trusted_target(uuid4().hex, target)
+            selected = await last_handle.wait()
+            if not selected.completed or selected.legacy.get("success") is not True:
+                raise stream.StreamRejected("visible_page_unconfirmed")
+            aligned_target = target
         return target
 
     async def sensitive_clear():

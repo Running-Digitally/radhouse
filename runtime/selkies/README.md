@@ -106,7 +106,7 @@ fixture exception is added. HTTPS certificates remain browser-verified end to
 end. Host policies and private launch links belong in the Homelab change record.
 
 A trusted visibility boolean aligns observations with exactly one visible
-Chrome page through the same native command queue. This tab-selection capability
+Chrome page through the same native command queue. The owned native session is pinned, and alignment selects a tab only when the visible target changes; repeating a same-tab switch would invalidate snapshot refs before click/fill. This tab-selection capability
 is private and is not added to the seven agent tools. Multiple visible browser
 windows remain an unconfirmed boundary rather than choosing an arbitrary page.
 
