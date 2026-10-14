@@ -283,3 +283,69 @@ def test_background_atomic_repeat_cannot_inject_after_expiry_or_during_fence(tmp
         f.handler.keyboard.press(95)
         assert f.events.count("physical-press") == 1
     asyncio.run(scenario())
+
+
+def test_expired_grant_is_drained_before_new_holder(tmp_path):
+    async def scenario():
+        f = fixture(tmp_path)
+        await take(f)
+        old = f.boundary.input_token
+        f.handler.pressed_keys[97] = 1
+        f.handler.button_mask = 1
+        f.clock[0] += 11
+        second = f.boundary.add_viewer(control.OwnerBinding("owner", "c"*64, 1, "second"), can_take=True)
+        await f.boundary.take(second, request_id="new", revision=f.boundary.state().revision, auth_expires_at=2000)
+        assert not f.handler.pressed_keys and f.handler.button_mask == 0
+        assert f.events.index("release-keys") < len(f.events)-1
+        assert f.boundary.input_token != old
+    asyncio.run(scenario())
+
+
+def test_disconnect_after_lease_expiry_still_drains(tmp_path):
+    async def scenario():
+        f = fixture(tmp_path)
+        await take(f)
+        token = f.boundary.input_token
+        f.handler.pressed_keys[97] = 1
+        f.clock[0] += 11
+        await f.boundary.disconnect(token)
+        assert f.boundary.input_token is None and not f.handler.pressed_keys
+        assert f.boundary.state().mode == "paused"
+    asyncio.run(scenario())
+
+
+def test_session_churn_reclaims_idle_viewers_without_role_escalation(tmp_path):
+    async def scenario():
+        f = fixture(tmp_path)
+        f.boundary._viewer_clock = lambda: f.clock[0]
+        f.boundary._pinned_viewers.update((f.desktop.token, f.phone.token))
+        old = None
+        for n in range(25):
+            child = await f.boundary.new_session(f.phone,
+                control.OwnerBinding("owner", "d"*64, 1, "phone-"+str(n)), connected_tokens=set())
+            assert not child.can_take
+            old = old or child
+            f.clock[0] += 20
+        assert len(f.boundary.viewers) <= 16
+        assert f.phone.token in f.boundary.viewers and f.desktop.token in f.boundary.viewers
+        with pytest.raises(stream.StreamRejected): f.boundary.viewer(old.token)
+    asyncio.run(scenario())
+
+
+def test_session_capacity_preserves_connected_viewer_and_holder(tmp_path):
+    async def scenario():
+        f = fixture(tmp_path)
+        f.boundary._viewer_clock = lambda: f.clock[0]
+        f.boundary._pinned_viewers.update((f.desktop.token, f.phone.token))
+        await take(f)
+        children=[]
+        for n in range(14):
+            children.append(await f.boundary.new_session(f.phone,
+                control.OwnerBinding("owner", "e"*64, 1, "connected-"+str(n)), connected_tokens=set()))
+        f.clock[0] += 30
+        with pytest.raises(stream.StreamRejected, match="viewer_capacity"):
+            await f.boundary.new_session(f.phone, control.OwnerBinding("owner", "f"*64, 1, "overflow"),
+                connected_tokens={v.token for v in children})
+        assert f.desktop.token in f.boundary.viewers
+        assert all(v.token in f.boundary.viewers for v in children)
+    asyncio.run(scenario())

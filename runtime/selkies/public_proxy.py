@@ -23,7 +23,7 @@ def endpoint(target, connect=False):
         raise Denied('control_character')
     p = urlsplit('//'+target if connect else target)
     try:
-        port = p.port or (443 if connect else 80)
+        port = p.port if p.port is not None else (443 if connect else 80)
     except ValueError:
         raise Denied('port') from None
     host = p.hostname
@@ -59,7 +59,12 @@ async def connect_public(host, port):
 async def relay(reader, writer):
     while chunk := await asyncio.wait_for(reader.read(65536), 120):
         writer.write(chunk)
-        await writer.drain()
+        await asyncio.wait_for(writer.drain(), 15)
+    # A completed upload is not a completed response. Propagate a TCP half-close
+    # and let the reverse relay finish instead of truncating its later bytes.
+    if writer.can_write_eof():
+        writer.write_eof()
+        await asyncio.wait_for(writer.drain(), 15)
 
 
 class Proxy:
@@ -87,7 +92,7 @@ class Proxy:
             for line in lines[1:-2]:
                 name, value = line.split(':', 1)
                 name, value = name.strip().lower(), value.strip()
-                if not re.fullmatch('[a-z0-9-]+', name):
+                if not re.fullmatch('[a-z0-9-]+', name) or any(ord(c) < 32 and c != '\t' or ord(c) == 127 for c in value):
                     raise Denied('header')
                 fields.append((name,value))
             if len({n for n,_ in fields}) != len(fields):
@@ -105,7 +110,7 @@ class Proxy:
                 upstream.write((f'{method} {path} HTTP/1.1\r\n'+''.join(f'{n}: {v}\r\n' for n,v in fields)+'\r\n').encode('latin1'))
                 await upstream.drain()
             tasks = [asyncio.create_task(relay(reader, upstream)),asyncio.create_task(relay(remote,writer))]
-            await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
         except (Denied, ValueError, UnicodeError, OSError, asyncio.TimeoutError, asyncio.IncompleteReadError, asyncio.LimitOverrunError):
             with contextlib.suppress(OSError):
                 writer.write(b'HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n')

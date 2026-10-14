@@ -29,7 +29,7 @@ flowchart LR
 ```
 
 Phone capabilities cannot obtain an input grant, call agent tools, or acquire a
-desktop capability. Each desktop tab gets a distinct owner binding. Takeover
+desktop capability. Each desktop document, including a reload or duplicated tab, gets a distinct owner binding. Closed idle sessions are reclaimed at the bounded viewer limit; launch capabilities, connected streams and the current holder remain protected. Takeover
 closes agent admission, waits for an in-flight native action and its matching
 fence, then issues a new stream credential. Credentials travel in the iframe
 fragment; a public connection nonce forces the iframe to reload on authority
@@ -43,7 +43,7 @@ Trusted internal punctuation commits remain inside their admitted operation.
 Background key injection and the synchronous X11 repeat path obey the same
 lease fence, including expiry and stale generations.
 
-Handback first checks password/code fields while input is fenced. A verified
+Handback first checks password/code fields while input is fenced. Explicit agent snapshots use the same guard. Checks run in an isolated JavaScript world and inspect child frames, out-of-process frames and open shadow roots, returning only a boolean. A page cannot replace the guard’s DOM methods through its main-world scripts. Closed shadow roots and arbitrary custom secret widgets are outside this guard’s coverage. A verified
 sensitive-field rejection keeps human control so the owner can finish sign-in.
 After revocation, it releases held input, synchronizes the injecting X
 connection, verifies physical key/button state, clears and verifies CLIPBOARD
@@ -85,7 +85,7 @@ chmod 600 /private/tmp/viewer-links.json
 The private links identify the desktop and phone viewing capabilities. Each
 start uses a fresh display, native session and controller store; viewer reload
 and reconnect preserve the running browser, while a container restart creates
-a new disposable browser. Failures are diagnosed and corrected, followed by a
+a new disposable browser. Loss of the owned Chromium process or the revocation watcher terminates the service so its deployment can restart a fresh generation. Private launchers must refresh their capabilities after generation changes. Failures are diagnosed and corrected, followed by a
 new qualified candidate; no rollback operation is implemented.
 
 Chromium is launched directly as the unprivileged review user, then the unchanged
@@ -129,7 +129,8 @@ node tests/selkies-browser.mjs
 ```
 
 The live journey also supports private HTTPS review endpoints: fabricated
-phone and stale-client checks select WSS when the page uses HTTPS. Set
+phone and stale-client checks select WSS when the page uses HTTPS.
+`tests/selkies-security.mjs` adds synthetic isolated-world, framed-field, copied-tab and idle-session regressions using the same environment variables. Fixture mode includes out-of-process frame checks. Set
 `RADHOUSE_SELKIES_ENVIRONMENT` to describe the measured deployment accurately.
 Host configuration, authenticated launchers and deployment receipts belong in
 the private Homelab change record.
@@ -152,5 +153,6 @@ Before production application activation, broaden multi-window/tab agreement,
 queued input and renderer scheduling, repeated reconnects and
 service failures, authentication/logout expiry, actual HTTPS embedding,
 input-to-visible latency and resource use, then conduct owner device acceptance.
+Resource qualification must include sustained public downloads and post-load observation. Check cgroup `memory.events` and renderer survival; a child renderer can be OOM-killed while the stream and container remain alive. The public proxy applies connection bounds, without bandwidth shaping.
 The controller extension is implemented; the production web/runtime wiring and
 paired installed-release qualification remain the next integration slice.

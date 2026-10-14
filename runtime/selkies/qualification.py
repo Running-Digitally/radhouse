@@ -93,6 +93,8 @@ def launch_native():
 
 
 def generation():
+    if CHROME_CHILD is None or CHROME_CHILD.poll() is not None:
+        raise RuntimeError("owned_browser_unavailable")
     info = (SOCKETS / (NATIVE_NAME + ".stream")).stat()
     return hashlib.sha256(f"{NATIVE_NAME}:{info.st_ino}:{info.st_mtime_ns}".encode()).hexdigest()[:32]
 
@@ -156,17 +158,14 @@ async def run():
         selected = await last_handle.wait()
         if not selected.completed or selected.legacy.get("success") is not True:
             raise stream.StreamRejected("visible_page_unconfirmed")
+        return target
 
     async def sensitive_clear():
-        nonlocal last_handle
-        await align_visible_page()
-        # Fixed trusted evaluation returns only a boolean, before any snapshot.
-        expression = "Array.from(document.querySelectorAll('input')).some(e => (e.type === 'password' || e.autocomplete === 'one-time-code') && !!e.value)"
-        last_handle = channel.submit_trusted_evaluation(uuid4().hex, expression)
-        check = await last_handle.wait()
-        if not check.completed or check.legacy.get("success") is not True:
-            raise stream.StreamRejected("native_observation_unconfirmed")
-        return (check.legacy.get("data") or {}).get("result") is False
+        target = await align_visible_page()
+        try:
+            return await sandbox.sensitive_clear(CHROME_ENDPOINT, target)
+        except Exception:
+            raise stream.StreamRejected("page_check_unconfirmed") from None
 
     async def observe():
         nonlocal last_handle, last_observation
@@ -208,8 +207,8 @@ async def run():
     boundary = stream.StreamingControl(c, identity, fence=fence, observe=observe,
         publish=publish, resume=resume, current=generation, clear_clipboard=clear_clipboard,
         sensitive_clear=sensitive_clear)
-    desktop = boundary.add_viewer(control.OwnerBinding("qualification-owner", "a"*64, 1, "desktop"), can_take=True)
-    phone = boundary.add_viewer(control.OwnerBinding("qualification-owner", "b"*64, 1, "phone"))
+    desktop = boundary.add_viewer(control.OwnerBinding("qualification-owner", "a"*64, 1, "desktop"), can_take=True, persistent=True)
+    phone = boundary.add_viewer(control.OwnerBinding("qualification-owner", "b"*64, 1, "phone"), persistent=True)
 
     def viewer(request):
         header = request.headers.get("Authorization", "")
@@ -231,11 +230,9 @@ async def run():
 
     async def new_session(request):
         parent = viewer(request)
-        if len(boundary.viewers) >= 16:
-            raise stream.StreamRejected("viewer_capacity")
-        v = boundary.add_viewer(control.OwnerBinding("qualification-owner", secrets.token_hex(32),
-            1, uuid4().hex), can_take=parent.can_take)
-        await boundary.provision()
+        v = await boundary.new_session(parent,
+            control.OwnerBinding("qualification-owner", secrets.token_hex(32), 1, uuid4().hex),
+            connected_tokens={p.get("token") for p in client_permissions.values()})
         return web.json_response({"token": v.token, "state": public(v)})
 
     async def status(request):
@@ -283,6 +280,8 @@ async def run():
             raise stream.StreamRejected("viewing_only")
         body = await request.json()
         name, args = body["tool"], body.get("arguments", {})
+        # Validate the exact native map and argument shape before inspecting it.
+        native.tool_command(name, args)
         if name == "browser_navigate":
             url = args.get("url", "")
             parsed = urlsplit(url)
@@ -290,19 +289,26 @@ async def run():
                     and parsed.scheme in {"http", "https"} and parsed.hostname
                     and parsed.username is None and parsed.password is None):
                 raise stream.StreamRejected("review_navigation_rejected")
-        # The exact native mapping rejects all other commands and eval/shell.
-        native.tool_command(name, args)
         command_id = uuid4().hex
         admitted = run_binding
         c.reserve_agent(identity, admitted, command_id)
+        outcome = "uncertain"
         try:
-            await align_visible_page()
+            target = await align_visible_page()
+            if name == "browser_snapshot" and not await sandbox.sensitive_clear(CHROME_ENDPOINT, target):
+                # Nothing was sent to the agent driver; this denial must not
+                # strand the owner in uncertain-action recovery.
+                outcome = "completed"
+                raise stream.StreamRejected("sensitive_fields_present")
             last_handle = channel.submit_tool(command_id, name, args)
             ack = await last_handle.wait()
-            c.complete_agent(identity, admitted, command_id, outcome="completed" if ack.completed else "uncertain")
+            outcome = "completed" if ack.completed else "uncertain"
+        except stream.StreamRejected:
+            raise
         except Exception:
-            c.complete_agent(identity, admitted, command_id, outcome="uncertain")
             raise stream.StreamRejected("native_action_unconfirmed") from None
+        finally:
+            c.complete_agent(identity, admitted, command_id, outcome=outcome)
         await boundary.settle_takeover()
         return web.json_response({"state": public(v), "result": ack.legacy})
 
@@ -360,6 +366,8 @@ async def run():
     async def watch():
         while True:
             await asyncio.sleep(0.2)
+            if generation() != identity.generation:
+                raise RuntimeError("owned_browser_unavailable")
             await boundary.reconcile()
             await boundary.settle_takeover()
             connected = {p.get("token") for p in client_permissions.values()}
@@ -373,6 +381,9 @@ async def run():
     watched = [None]
     watchdog = asyncio.create_task(watch())
     task = asyncio.current_task()
+    # A dead revocation watcher cannot leave a live input service behind.
+    # The existing container restart policy starts a fresh pinned generation.
+    watchdog.add_done_callback(lambda done: task.cancel() if not done.cancelled() else None)
     asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, task.cancel)
     try:
         await server.run()

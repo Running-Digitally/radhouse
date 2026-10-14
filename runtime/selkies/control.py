@@ -8,6 +8,7 @@ stored in the controller. This adapter deliberately qualifies X11 only.
 import asyncio
 import base64
 import secrets
+import time
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 
@@ -35,6 +36,9 @@ class StreamingControl:
         self.clear_clipboard = clear_clipboard
         self.sensitive_clear = sensitive_clear
         self.viewers = {}
+        self._viewer_last_seen = {}
+        self._pinned_viewers = set()
+        self._viewer_clock = time.monotonic
         self.input_token = None
         self.input_owner = None
         self.handler = None
@@ -53,17 +57,42 @@ class StreamingControl:
         self._scope = ContextVar("radhouse_stream_injection", default=None)
         self._keyboard = None
 
-    def add_viewer(self, owner, *, can_take=False):
+    def add_viewer(self, owner, *, can_take=False, persistent=False):
         token = secrets.token_urlsafe(32)
         viewer = Viewer(owner, can_take, token)
         self.viewers[token] = viewer
+        self._viewer_last_seen[token] = self._viewer_clock()
+        if persistent:
+            self._pinned_viewers.add(token)
         return viewer
 
     def viewer(self, token):
         viewer = self.viewers.get(token)
         if viewer is None:
             raise StreamRejected("viewer_unavailable")
+        self._viewer_last_seen[token] = self._viewer_clock()
         return viewer
+
+    async def new_session(self, parent, owner, *, connected_tokens):
+        # Root launch capabilities, connected streams and the active holder
+        # survive pruning. Closed idle tabs cannot permanently exhaust the pool.
+        async with self.transition_lock:
+            if self.viewers.get(parent.token) is not parent or owner.principal_id != parent.owner.principal_id:
+                raise StreamRejected("viewer_unavailable")
+            now = self._viewer_clock()
+            if len(self.viewers) >= 16:
+                idle = sorted((seen, token) for token, seen in self._viewer_last_seen.items()
+                    if token not in self._pinned_viewers and token not in connected_tokens
+                    and token != parent.token and self.viewers[token].owner != self.input_owner
+                    and now-seen >= 15)
+                if not idle:
+                    raise StreamRejected("viewer_capacity")
+                _, token = idle[0]
+                del self.viewers[token]
+                del self._viewer_last_seen[token]
+            child = self.add_viewer(owner, can_take=parent.can_take)
+            await self._publish()
+            return child
 
     def state(self):
         return self.controller.state(self.identity)
@@ -223,6 +252,17 @@ class StreamingControl:
             return await self._grant(state)
 
     async def _grant(self, state):
+        # Expiry can win the race with the periodic revocation watcher. Drain
+        # that former holder before publishing any replacement grant.
+        if self.input_token is not None:
+            self.input_token = None
+            try:
+                await self._publish()
+                await self._drain()
+            except Exception:
+                self._blocked = True
+                raise StreamRejected("revocation_unconfirmed") from None
+            self.input_owner = None
         # Both the in-flight native ACK and its same-channel fence are required.
         observation = await self.fence(state)
         async with self.input_lock:
@@ -336,7 +376,11 @@ class StreamingControl:
         async with self.transition_lock:
             if token != self.input_token:
                 return
-            self.controller.pause(self.identity, self.input_owner)
+            state = self.state()
+            # Loading state can itself expire the lease. Input still needs
+            # revocation and draining after that automatic transition.
+            if state.mode == "human" and state.lease and state.lease.owner == self.input_owner:
+                self.controller.pause(self.identity, self.input_owner)
             self.input_token = None
             try:
                 await self._publish()

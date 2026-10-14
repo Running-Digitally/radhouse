@@ -1,0 +1,26 @@
+<!doctype html><meta charset="utf-8"><title>Synthetic page guard regression</title>
+<h1>Synthetic page guard regression</h1><div id="host"></div><input id="field" autocomplete="off">
+<script>
+// Invented values only. No field value is sent to the telemetry endpoint.
+const mode = new URLSearchParams(location.search).get('mode');
+const field = document.getElementById('field');
+if (['main','spoof','otp'].includes(mode)) {
+  field.type = mode === 'otp' ? 'text' : 'password';
+  if (mode === 'otp') field.autocomplete = 'section-login one-time-code';
+  field.value = 'RADHOUSE_GUARD_CANARY';
+}
+if (mode === 'shadow') {
+  const root = document.getElementById('host').attachShadow({mode:'open'});
+  const input = document.createElement('input');input.type='password';input.value='RADHOUSE_GUARD_CANARY';root.append(input);
+}
+if (['frame','oop','nested-oop'].includes(mode)) {
+  const frame=document.createElement('iframe');
+  frame.src = mode === 'frame' ? 'guard.html?mode=main'
+    : 'http://localhost:18081/guard.html?mode='+(mode === 'nested-oop' ? 'frame' : 'main');
+  document.getElementById('host').append(frame);
+}
+if (mode === 'spoof' || mode === 'visibility') {
+  Object.defineProperty(document,'visibilityState',{get:()=> 'hidden'});
+  document.querySelectorAll = () => [];
+}
+</script>

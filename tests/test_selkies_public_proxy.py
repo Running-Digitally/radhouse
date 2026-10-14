@@ -18,7 +18,7 @@ class DestinationTests(unittest.TestCase):
         self.assertEqual(p.endpoint('example.com:443',True),('example.com',443,'/'))
         self.assertEqual(p.endpoint('http://example.com/a?b=2'),('example.com',80,'/a?b=2'))
     def test_protocol_port_credentials_and_control_rejected(self):
-        for value,connect in [('127.0.0.1:22',True),('[::1]:443',True),('example.com:443/x',True),('user:pw@example.com:443',True),('https://example.com/',False),('file:///etc/passwd',False),('http://example.com:8080/',False),('http://example.com/#x',False),('http://a\r\nb/',False)]:
+        for value,connect in [('127.0.0.1:22',True),('example.com:0',True),('http://example.com:0/',False),('[::1]:443',True),('example.com:443/x',True),('user:pw@example.com:443',True),('https://example.com/',False),('file:///etc/passwd',False),('http://example.com:8080/',False),('http://example.com/#x',False),('http://a\r\nb/',False)]:
             with self.subTest(value=value),self.assertRaises(p.Denied):p.endpoint(value,connect)
     def test_nonpublic_and_mixed_dns_answers_rejected(self):
         for address in ['127.0.0.1','192.168.100.200','10.1.2.3','172.20.0.1','169.254.169.254','100.64.0.1','0.0.0.0','224.0.0.1','198.18.0.1']:
@@ -61,6 +61,26 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
                 writer.close();await writer.wait_closed()
         finally:
             front.close();backend_server.close();await front.wait_closed();await backend_server.wait_closed()
+    async def test_client_half_close_preserves_delayed_response(self):
+        async def backend(reader,writer):
+            value=await reader.read()
+            await p.asyncio.sleep(.02)
+            writer.write(value+b"-response");await writer.drain();writer.close()
+        backend_server=await p.asyncio.start_server(backend,'127.0.0.1',0)
+        async def permitted(*args):
+            return await p.asyncio.open_connection('127.0.0.1',backend_server.sockets[0].getsockname()[1])
+        proxy=p.Proxy(['127.0.0.0/8']);front=await p.asyncio.start_server(proxy.handle,'127.0.0.1',0)
+        try:
+            with patch.object(p,'connect_public',side_effect=permitted):
+                reader,writer=await p.asyncio.open_connection('127.0.0.1',front.sockets[0].getsockname()[1])
+                writer.write(b'CONNECT example.com:443 HTTP/1.1\r\nHost: example.com\r\n\r\n');await writer.drain()
+                await reader.readuntil(b'\r\n\r\n')
+                writer.write(b'complete');await writer.drain();writer.write_eof()
+                self.assertEqual(await p.asyncio.wait_for(reader.read(),2),b'complete-response')
+                writer.close();await writer.wait_closed()
+        finally:
+            front.close();backend_server.close();await front.wait_closed();await backend_server.wait_closed()
+
     async def test_ambiguous_request_cannot_open_destination(self):
         proxy=p.Proxy(['127.0.0.0/8']);front=await p.asyncio.start_server(proxy.handle,'127.0.0.1',0)
         try:

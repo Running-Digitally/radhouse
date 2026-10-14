@@ -90,12 +90,12 @@ window.addEventListener("message", event => {
 if (!token) $("notice").textContent = "Open the private desktop or phone trial link.";
 else {
   try {
-    if (suppliedToken) {
-      const session = await api("session", {});
-      token = session.token;
-      sessionStorage.setItem("radhouse-trial-viewer", token);
-      render(session.state);
-    } else render(await api("state"));
+    // A reload or duplicated tab receives its own owner binding. A copied
+    // sessionStorage credential must not clone another tab's input lease.
+    const session = await api("session", {});
+    token = session.token;
+    sessionStorage.setItem("radhouse-trial-viewer", token);
+    render(session.state);
   } catch (error) { $("notice").textContent = error.message; }
 }
 setInterval(async () => {
