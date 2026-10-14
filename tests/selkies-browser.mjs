@@ -159,7 +159,7 @@ try {
   assert.equal((await api(phone,phoneToken,"take",{request_id:crypto.randomUUID(),revision:state.revision})).status,409);
   const before = active().sequence;
   const sent = await phone.evaluate(async token=>{
-    const ws=new WebSocket("ws://"+location.host+"/stream/api/websockets?token="+encodeURIComponent(token));
+    const ws=new WebSocket((location.protocol === "https:" ? "wss://" : "ws://")+location.host+"/stream/api/websockets?token="+encodeURIComponent(token));
     return await new Promise((resolve,reject)=>{ws.onerror=()=>reject(new Error("phone_socket_failed"));ws.onmessage=event=>{
       if(typeof event.data==="string"&&event.data.startsWith("AUTH_SUCCESS,")){
         for(const message of ["kd,97","ku,97","m,100,400,1,0","m,100,400,0,0","r,777x777"])ws.send(message);
@@ -205,7 +205,7 @@ try {
 
   // A formerly authorized credential remains invalid after handback.
   const stale = await desktop.evaluate(async token=>{
-    const socket = new WebSocket("ws://"+location.host+"/stream/api/websockets?token="+encodeURIComponent(token));
+    const socket = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://")+location.host+"/stream/api/websockets?token="+encodeURIComponent(token));
     return await new Promise(resolve=>{socket.onopen=()=>{socket.send("kd,97");socket.send("ku,97");};socket.onclose=()=>resolve(true);setTimeout(()=>{socket.close();resolve(false);},2000);});
   },oldInputToken);
   assert.equal(stale,true);
@@ -220,7 +220,7 @@ try {
   assert.deepEqual(failures,[]);
   await phoneContext.close();
   const sorted=[...feedbackSamples].sort((a,b)=>a-b);
-  const feedback={samples:feedbackSamples.map(v=>Math.round(v)),p50_ms:Math.round(sorted[Math.ceil(sorted.length*.5)-1]),p95_ms:Math.round(sorted[Math.ceil(sorted.length*.95)-1]),max_ms:Math.round(sorted.at(-1)),clock:"one client browser performance clock",environment:"local Linux amd64 Docker fixture under emulation"};
+  const feedback={samples:feedbackSamples.map(v=>Math.round(v)),p50_ms:Math.round(sorted[Math.ceil(sorted.length*.5)-1]),p95_ms:Math.round(sorted[Math.ceil(sorted.length*.95)-1]),max_ms:Math.round(sorted.at(-1)),clock:"one client browser performance clock",environment:process.env.RADHOUSE_SELKIES_ENVIRONMENT || "local Linux amd64 Docker fixture under emulation"};
   await writeFile(output+"/browser-result.json",JSON.stringify({passed:true,checks,feedback,real_phone_tested:false,physical_keyboard_tested:false},null,2)+"\n");
   console.log(JSON.stringify({passed:true,checks,feedback}));
 } catch(error) {

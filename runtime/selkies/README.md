@@ -108,6 +108,12 @@ RADHOUSE_SELKIES_OUTPUT=/private/tmp/radhouse-selkies-evidence \
 node tests/selkies-browser.mjs
 ```
 
+The live journey also supports private HTTPS review endpoints: fabricated
+phone and stale-client checks select WSS when the page uses HTTPS. Set
+`RADHOUSE_SELKIES_ENVIRONMENT` to describe the measured deployment accurately.
+Host configuration, authenticated launchers and deployment receipts belong in
+the private Homelab change record.
+
 The live browser journey performs input through the real Selkies stream.
 Loopback fixture telemetry supplies geometry and assertions, never the input.
 It checks desktop typing, Mac shortcuts and deliberate paste, chat focus,
