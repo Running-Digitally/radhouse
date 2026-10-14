@@ -11,15 +11,24 @@ function layout() {
   const available = window.visualViewport?.height || window.innerHeight;
   document.documentElement.style.setProperty("--available-height", available + "px");
   const top = Math.max(0, $("viewport").getBoundingClientRect().top - (window.visualViewport?.offsetTop || 0));
-  document.documentElement.style.setProperty("--browser-height", Math.max(150, available - top - 46) + "px");
+  const hint = $("hint");
+  const hintStyle = getComputedStyle(hint);
+  const footer = hint.getBoundingClientRect().height + parseFloat(hintStyle.marginTop)
+    + parseFloat(hintStyle.marginBottom) + 12;
+  document.documentElement.style.setProperty("--browser-height", Math.max(96, available - top - footer) + "px");
 }
 function mobileControls() {
   const touch = localTouch || inputStatus.touch;
   const canInput = !!current?.controlling && !viewingOnly;
   $("keyboard").hidden = !canInput || !touch || inputStatus.hardware;
   $("input-tools").hidden = !canInput || !touch;
-  for (const button of [$("keyboard"), ...$("input-tools").querySelectorAll("button")]) button.disabled = busy || !inputStatus.ready;
-  if (!canInput) $("input-tools").open = false;
+  for (const button of [$("keyboard"), $("input-tools"), ...$("key-actions").querySelectorAll("button")]) button.disabled = busy || !inputStatus.ready;
+  if (!canInput || !touch) toggleKeys(false);
+  layout();
+}
+function toggleKeys(open) {
+  $("input-tools").setAttribute("aria-expanded", String(open));
+  $("key-actions").hidden = !open;
   layout();
 }
 function hideKeyboard() { $("stream").contentWindow?.radhouseInput?.hide(); }
@@ -31,6 +40,7 @@ function inputAction(method, argument) {
 }
 compact.addEventListener("change", layout);
 window.visualViewport?.addEventListener("resize", layout);
+window.visualViewport?.addEventListener("scroll", layout);
 window.addEventListener("resize", layout);
 window.addEventListener("touchstart", () => { localTouch = true; layout(); mobileControls(); }, {passive: true});
 document.addEventListener("visibilitychange", () => { if (document.hidden) hideKeyboard(); });
@@ -111,6 +121,7 @@ $("return").addEventListener("click", () => {
   hideKeyboard();
   act(() => api("return", {revision: current.revision, lease_id: current.lease_id}));
 });
+$("input-tools").addEventListener("click", () => toggleKeys($("key-actions").hidden));
 $("keyboard").addEventListener("click", () => inputAction("show", false));
 $("keyboard-override").addEventListener("click", () => inputAction("show", true));
 $("keyboard-hide").addEventListener("click", hideKeyboard);
@@ -126,6 +137,7 @@ $("zoom").addEventListener("click", () => $("viewport").classList.add("zoomed"))
 $("expand").addEventListener("click", () => {
   const expanded = document.body.classList.toggle("expanded");
   $("expand").textContent = expanded ? "Collapse" : "Expand";
+  layout();
 });
 window.addEventListener("message", event => {
   if (event.origin !== location.origin || event.source !== $("stream").contentWindow) return;

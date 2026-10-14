@@ -49,8 +49,12 @@ the local assist buffer. Keyboard events are not replayed after reconnect.
 
 Touch/coarse-pointer state selects a compact layout. Hardware-keyboard detection
 suppresses the main Keyboard button; Keys → Keyboard overrides that heuristic.
-The available visual viewport controls local presentation when a soft keyboard
-opens or the device rotates. The remote browser keeps its fixed resolution.
+The Keys button opens an inline panel across the toolbar width. Mobile controls
+use a three-column grid with 44px minimum targets; every key stays within the
+pane instead of overflowing from the toggle. Empty notices take no space.
+The remaining visual viewport, including the actual hint height, controls local
+presentation when a soft keyboard opens or the device rotates. Short screens
+can scroll to reach the controls. The remote browser keeps its fixed resolution.
 
 ## Using the pilot
 
@@ -77,8 +81,10 @@ The installed unified viewer passed all 13 desktop stream journeys and seven
 focused mobile checks: takeover, ASCII text/preedit replacement/deletion,
 hardware-keyboard override, navigation soft keys, orientation, handback cleanup
 and viewing-only input denial. Desktop emulation verifies the existing assist
-focus and remote values; actual iPhone/Android OS keyboard appearance remains
-owner acceptance.
+focus and remote values. The owner confirmed iPhone keyboard input works and
+reported clipped keys; the responsive correction passed eight viewport/text-size
+cases, including 320px width, landscape and a short viewport. Android keyboard
+appearance and the updated layout on a physical phone remain owner acceptance.
 
 Non-ASCII text is a known pilot limitation. The accented-character and CJK
 probes failed: events reached the synthetic page, but Chromium reported null

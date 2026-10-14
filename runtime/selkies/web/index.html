@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Radhouse browser</title><link rel="stylesheet" href="/qualification/assets/styles.css"></head>
 <body>
 <header><div><strong>Radhouse</strong><span class="badge">Browser pilot</span></div><span id="connection" role="status">Connecting…</span></header>
@@ -9,12 +9,13 @@
 <div class="toolbar"><span id="owner" role="status">Opening browser…</span><div class="actions">
 <button id="take" hidden>Take control</button><button id="return" hidden>Return to agent</button>
 <button id="keyboard" hidden>Keyboard</button>
-<details id="input-tools" hidden><summary>Keys</summary><div class="key-actions">
+<button id="input-tools" aria-expanded="false" aria-controls="key-actions" hidden>Keys</button>
+<button id="fit">Fit screen</button><button id="zoom">Zoom in</button><button id="expand">Expand</button>
+<div class="key-actions" id="key-actions" role="group" aria-label="Browser keys" hidden>
 <button id="keyboard-override">Keyboard</button><button data-key="address">Address bar</button>
 <button data-key="tab">Tab</button><button data-key="enter">Enter</button>
 <button data-key="backspace">Backspace</button><button data-key="escape">Escape</button>
-<button id="keyboard-hide">Dismiss keyboard</button></div></details>
-<button id="fit">Fit screen</button><button id="zoom">Zoom in</button><button id="expand">Expand</button></div></div>
+<button id="keyboard-hide">Dismiss keyboard</button></div></div></div>
 <p id="notice" role="status"></p>
 <div class="viewport" id="viewport"><iframe id="stream" title="Assistant browser" allow="clipboard-read; clipboard-write"></iframe><div id="touch-layer" hidden aria-label="View-only screen"></div></div>
 <p class="hint" id="hint">Click a page field to type after taking control. Click the draft to return keyboard focus to chat.</p>

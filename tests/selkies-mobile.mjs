@@ -19,7 +19,7 @@ async function until(test){for(let n=0;n<60;n++){if(test())return;await page.wai
 async function ready(p,attached=false){await p.waitForFunction(a=>{const w=document.querySelector('#stream')?.contentWindow;return w?.document.querySelector('#videoStream')?.videoWidth>0&&(!a||w.radhouseInput?.status().ready);},attached,{timeout:20000});}
 function core(p=page){return p.frames().find(f=>f.parentFrame());}
 async function text(value,composing=false){await core().locator('#keyboard-input-assist').evaluate((field,{value,composing})=>{field.value=value;field.dispatchEvent(new InputEvent('input',{bubbles:true,data:value,inputType:composing?'insertCompositionText':'insertText',isComposing:composing}));},{value,composing});}
-async function key(name){if(!await page.locator('#input-tools').evaluate(e=>e.open))await page.locator('#input-tools summary').click();await page.locator('[data-key="'+name+'"]').click();}
+async function key(name){if(await page.locator('#input-tools').getAttribute('aria-expanded')!=='true')await page.locator('#input-tools').click();await page.locator('[data-key="'+name+'"]').click();}
 try {
  const initial=await api(root,'state');
  if(initial.value.mode==='paused') {
@@ -36,7 +36,7 @@ try {
  const assist=core().locator('#keyboard-input-assist');await assist.dispatchEvent('compositionstart',{data:''});await text('a',true);await text('e',true);await assist.dispatchEvent('compositionend',{data:'e'});await until(()=>active().name==='Mobile e');
  await key('backspace');await until(()=>active().name==='Mobile ');checks.push('upstream assist sends ASCII text, composition replacement and deletion through real stream');
  await page.locator('#keyboard').click();await page.keyboard.press('Escape');await expect(page.locator('#keyboard')).toBeHidden();
- if(!await page.locator('#input-tools').evaluate(e=>e.open))await page.locator('#input-tools summary').click();await page.locator('#keyboard-override').click();await expect(page.locator('#keyboard')).toBeVisible();checks.push('hardware-keyboard detection has explicit override');
+ if(await page.locator('#input-tools').getAttribute('aria-expanded')!=='true')await page.locator('#input-tools').click();await page.locator('#keyboard-override').click();await expect(page.locator('#keyboard')).toBeVisible();checks.push('hardware-keyboard detection has explicit override');
  await key('tab');await key('escape');const beforeAddress=active().marker;await key('address');await text('http://127.0.0.1:18081/?mobile=address');await key('enter');await until(()=>active().marker!==beforeAddress);checks.push('fixed address-bar and navigation soft keys work');
  await page.setViewportSize({width:844,height:390});await ready(page,true);await page.setViewportSize({width:390,height:844});await ready(page,true);checks.push('orientation preserves live browser and control');
  await page.locator('#return').click();await expect(page.locator('#owner')).toHaveText('Agent has control',{timeout:15000});await ready(page);assert.equal(await core().evaluate(()=>window.radhouseInput.show(true)),false);assert.equal(await core().locator('#keyboard-input-assist').inputValue(),'');await expect(page.locator('#keyboard')).toBeHidden();checks.push('return clears assist and removes mobile input authority');
