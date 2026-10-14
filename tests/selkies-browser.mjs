@@ -75,6 +75,19 @@ async function remotePoint(page, id) {
 async function click(page, id) { const p = await remotePoint(page,id); await page.mouse.click(p.x,p.y); }
 function core(page) { return page.frames().find(f=>f.parentFrame()); }
 
+async function focusStream(page) {
+  // Click Chromium's address bar in the actual presented desktop, accounting
+  // for the video letterbox. Its input overlay receives the pointer gesture.
+  const point = await page.evaluate(() => {
+    const frame=document.getElementById("stream"), outer=frame.getBoundingClientRect();
+    const video=frame.contentDocument.getElementById("videoStream"), r=video.getBoundingClientRect();
+    const scale=Math.min(r.width/video.videoWidth,r.height/video.videoHeight);
+    return {x:outer.x+r.x+(r.width-video.videoWidth*scale)/2+450*scale,
+      y:outer.y+r.y+(r.height-video.videoHeight*scale)/2+75*scale};
+  });
+  await page.mouse.click(point.x,point.y);
+}
+
 async function latency(page) {
   for(let sample=0;sample<20;sample++) {
     const state=active(), r=state.rects.bits;
@@ -227,22 +240,25 @@ try {
     await desktop.locator("#take").click();
     await expect(desktop.locator("#owner")).toHaveText("You have control");
     await ready(desktop,true);
-    await core(desktop).locator("#videoStream").click({position:{x:20,y:200}});
+    await focusStream(desktop);
     await desktop.keyboard.press("Meta+l");
     await desktop.keyboard.type("https://example.com/");
+    await desktop.screenshot({path:output+"/address-bar.png",fullPage:true});
     await desktop.keyboard.press("Enter");
     await desktop.waitForTimeout(2000);
     await desktop.locator("#return").click();
     await expect(desktop.locator("#owner")).toHaveText("Agent has control");
     const publicPage = await api(desktop,desktopToken,"agent",{tool:"browser_snapshot",arguments:{full:true}});
     assert.equal(publicPage.status,200);
-    assert.ok(JSON.stringify(publicPage.value.result).includes("Example Domain"));
+    assert.equal(publicPage.value.result.success,true);
+    assert.equal(new URL(publicPage.value.result.data.origin).hostname,"example.com");
+    assert.ok(JSON.stringify(publicPage.value.result).includes("This domain is for use in documentation examples"));
     check("public HTTPS navigation through the actual address bar and stream");
 
     await desktop.locator("#take").click();
     await expect(desktop.locator("#owner")).toHaveText("You have control");
     await ready(desktop,true);
-    await core(desktop).locator("#videoStream").click({position:{x:20,y:200}});
+    await focusStream(desktop);
     await desktop.keyboard.press("Meta+t");
     await desktop.keyboard.type("https://duckduckgo.com/");
     await desktop.keyboard.press("Enter");
@@ -251,6 +267,8 @@ try {
     await expect(desktop.locator("#owner")).toHaveText("Agent has control");
     const visibleTab = await api(desktop,desktopToken,"agent",{tool:"browser_snapshot",arguments:{full:true}});
     assert.equal(visibleTab.status,200);
+    assert.equal(visibleTab.value.result.success,true);
+    assert.equal(new URL(visibleTab.value.result.data.origin).hostname,"duckduckgo.com");
     assert.ok(JSON.stringify(visibleTab.value.result).includes("DuckDuckGo"));
     check("handback observes the manually opened visible public tab");
     await desktop.screenshot({path:output+"/public-browser.png",fullPage:true});
