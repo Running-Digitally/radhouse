@@ -4,15 +4,21 @@ const {chromium,webkit,expect}=await import(pathToFileURL(process.env.RADHOUSE_P
 const root=new URL('../src/radhouse/chat/static/',import.meta.url),origin='http://127.0.0.1:61484';
 const engine=process.env.RADHOUSE_BROWSER_ENGINE || 'chromium';
 const browser=await ({chromium,webkit})[engine].launch({headless:true,...(engine==='chromium'?{channel:'chrome'}:{})});
-let mode='agent',visibility='private',rev=3,agentActive=true,requestCount=0;
-const c=await browser.newContext({viewport:{width:1360,height:900}}),errors=[];
+let mode='agent',visibility='private',rev=3,agentActive=true,requestCount=0,turns=[];
+const submitted=[];
+const c=await browser.newContext({viewport:{width:1360,height:900},hasTouch:true}),errors=[];
 await c.route(origin+'/**',async route=>{
  const req=route.request(),path=new URL(req.url()).pathname;
  const json=v=>route.fulfill({contentType:'application/json',body:JSON.stringify(v)});
  const state=()=>({state:'live',generation:'generation-1',url:'https://example.org/',title:'Example',viewport:{width:1280,height:900},agent_active:agentActive,
   stream:{path:'/chat/browser/stream/index.html',token:(mode==='human'?'h':'v').repeat(43)},control:{mode,revision:rev,can_take:mode==='agent',...(mode==='human'?{lease_id:'lease-1',lease_expires_at:Date.now()/1000+60,next_sequence:1,observation_mode:visibility,observation_epoch:rev}:{})},page_context:{current:{url:'https://example.org/',title:'Example'},previous:null},can_return:true,vault_enabled:false});
  if(path==='/auth/session')return json({username:'alice',csrf_token:'synthetic',features:{browser:true,browser_control:true,browser_streaming:true,documents:true}});
- if(path==='/chat/history'||path==='/chat/reply')return json({turns:[],older_before:null});
+ if(path==='/chat/history'||path==='/chat/reply')return json({turns,older_before:null});
+ if(path==='/chat/messages'){
+  const body=req.postDataJSON();submitted.push(body);
+  turns.push({seq:2,...body,status:'waiting',output:null,error:null,attachments:[]});
+  return json({turns,older_before:null,accepted_request_id:body.request_id});
+ }
  if(path==='/chat/browser/preferences')return json({revision:0,search_engine:'google',history:[]});
  if(path==='/chat/library')return json({files:[],next_cursor:null});
  if(path==='/chat/browser'){requestCount++;return json(state());}
@@ -105,6 +111,40 @@ try{
  await page.locator('#browser-preview-open').click();
  await expect(page.locator('.browser-stream-frame')).toBeVisible();
  results.push('visual keyboard geometry keeps Send visible in drawer and Chat, restores same browser');
+ // Safari does not focus buttons on pointer-down. Blurring the draft used
+ // to unfold the preview and move Send between press and release, losing the
+ // click. Real mouse/touch gestures must submit once, even at keyboard height.
+ for(const path of ['/', '/browser']){
+  for(const pointer of ['mouse','touch','keyboard']){
+   mode='agent';agentActive=true;rev++;
+   turns=[{seq:1,request_id:'already-running',text:'Existing request',status:'running',output:null,error:null,attachments:[]}];
+   submitted.length=0;
+   await page.setViewportSize({width:390,height:844});await page.goto(origin+path);
+   await expect(page.locator('main')).toHaveClass(/conversation-workspace/);
+   if(path==='/browser')await page.locator('#browser-chat-toggle').click();
+   await page.evaluate(()=>{Object.defineProperty(visualViewport,'height',{configurable:true,value:360});visualViewport.dispatchEvent(new Event('resize'));});
+   await page.locator('#message').fill('Queue this while the first reply runs.');
+   await expect(page.locator('#send')).toBeEnabled();
+   await expect(page.locator('#reply-status')).toContainText('replying');
+   const target=await page.locator('#send').boundingBox();
+   expect(target.y+target.height).toBeLessThanOrEqual(361);
+   if(pointer==='keyboard')await page.locator('#message').press('Control+Enter');
+   else if(pointer==='touch')await page.touchscreen.tap(target.x+target.width/2,target.y+target.height/2);
+   else await page.mouse.click(target.x+target.width/2,target.y+target.height/2);
+   await expect.poll(()=>submitted.length, {message:engine+' '+path+' '+pointer+' follow-up must reach the server'}).toBe(1);
+   expect(submitted[0].text).toBe('Queue this while the first reply runs.');
+   await expect(page.getByText('Saved · Waiting for the current reply to finish…',{exact:true})).toBeVisible();
+   await expect(page.locator('#message')).toHaveValue('');
+   await page.locator('#message').fill('Next unsent draft');await expect(page.locator('#send')).toBeEnabled();
+   expect(submitted.length).toBe(1);
+   // Pointer-down is only focus preservation; releasing outside must not send.
+   const next=await page.locator('#send').boundingBox();
+   await page.mouse.move(next.x+next.width/2,next.y+next.height/2);await page.mouse.down();
+   await page.mouse.move(0,0);await page.mouse.up();
+   expect(submitted.length).toBe(1);await expect(page.locator('#message')).toHaveValue('Next unsent draft');
+   results.push(pointer+' follow-up click at keyboard height in '+(path==='/'?'Chat':'Browser drawer')+'; outside release does not submit');
+  }
+ }
  expect(errors).toEqual([]);
  console.log(JSON.stringify({engine,passed:results.length,checks:results,status_requests:requestCount}));
 }finally{await browser.close();}

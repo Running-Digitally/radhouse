@@ -950,6 +950,14 @@ $("compose").addEventListener("paste",event => { const files=[...(event.clipboar
 $("chat-view").addEventListener("dragover",event => { if ([...event.dataTransfer.types].includes("Files")) { event.preventDefault(); $("compose").classList.add("dragging"); } });
 $("chat-view").addEventListener("dragleave",event => { if (!$("chat-view").contains(event.relatedTarget)) { $("compose").classList.remove("dragging"); } });
 $("chat-view").addEventListener("drop",event => { event.preventDefault(); $("compose").classList.remove("dragging"); addFiles(event.dataTransfer.files); });
+// Safari blurs the draft without focusing the clicked button. Keep focus
+// until click so keyboard-sized layouts cannot move Send before release.
+// Use mousedown: cancelling pointerdown also suppresses WebKit touch clicks.
+$("send").addEventListener("mousedown",event => {
+  if (event.button===0 && document.activeElement===$("message")) {
+    event.preventDefault();
+  }
+});
 $("compose").addEventListener("submit",async event => {
   event.preventDefault();
   if ($("send").disabled) { return; }
