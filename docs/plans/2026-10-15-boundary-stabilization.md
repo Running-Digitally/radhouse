@@ -464,3 +464,12 @@ so this unsupported capability does not allocate endpoints that outlive a
 browser generation. Strict directory cleanup remains: unexpected resources
 must still prevent replacement. Linux acceptance checks the actual endpoint
 inventory and complete close/reopen, without modifying upstream source.
+
+Actual pilot end-to-end testing also checks old paths after a later generation
+has started. Upstream settings are cached for the process lifetime; refreshing
+only the stream listener let the next input initialization recreate an empty
+retired directory. The owned adapter now rebinds stream, input and webcam paths
+and rotates the master capability together before constructing each backend.
+A regression reproduces the cached-settings import and directory allocation;
+Linux acceptance must show both retired directories stay absent after reopen.
+No upstream source or fail-closed cleanup rule is changed.

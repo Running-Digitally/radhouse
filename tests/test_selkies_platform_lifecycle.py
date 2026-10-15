@@ -294,3 +294,76 @@ def test_failed_boundary_cleanup_still_stops_transport_and_retains_ownership(mon
         await current.stop()
         assert platform.runtime is None
     asyncio.run(scenario())
+
+
+def test_reopen_does_not_resurrect_retired_paths_from_cached_settings(monkeypatch, tmp_path):
+    import os
+    import sys
+    from types import ModuleType
+    from pathlib import Path
+
+    cached = None
+    observed = []
+    settings_module = ModuleType('selkies.settings')
+    backend_module = ModuleType('selkies.stream_server')
+
+    def imported_settings(name):
+        nonlocal cached
+        if name != 'settings':
+            raise AttributeError(name)
+        if cached is None:
+            # Upstream settings are initialized from the first generation's
+            # environment and then retained by Python's module cache.
+            cached = SimpleNamespace(**{field: os.environ[variable] for field, variable in (
+                ('unix_socket', 'SELKIES_UNIX_SOCKET'),
+                ('js_socket_path', 'SELKIES_JS_SOCKET_PATH'),
+                ('webcam_socket_path', 'SELKIES_WEBCAM_SOCKET_PATH'),
+                ('master_token', 'SELKIES_MASTER_TOKEN'))})
+        return cached
+
+    def imported_backend(name):
+        if name != 'CentralizedStreamServer':
+            raise AttributeError(name)
+        # Upstream initialization creates its configured input directory even
+        # when no gamepads are enabled. Stop at the external backend boundary.
+        Path(cached.js_socket_path).mkdir(parents=True, exist_ok=True)
+        observed.append(vars(cached).copy())
+        raise RuntimeError('synthetic_backend_boundary')
+
+    settings_module.__getattr__ = imported_settings
+    backend_module.__getattr__ = imported_backend
+    monkeypatch.setitem(sys.modules, 'selkies', ModuleType('selkies'))
+    monkeypatch.setitem(sys.modules, 'selkies.sessions', ModuleType('selkies.sessions'))
+    monkeypatch.setitem(sys.modules, 'selkies.settings', settings_module)
+    monkeypatch.setitem(sys.modules, 'selkies.stream_server', backend_module)
+    monkeypatch.setattr(platform, '_root', tmp_path)
+    monkeypatch.setattr(platform, 'load', lambda *_: object())
+    monkeypatch.setattr(platform, 'runtime', None)
+    # Restore generation configuration after this process-cached import test.
+    monkeypatch.setattr(os, 'environ', os.environ.copy())
+
+    async def scenario():
+        bridge = SimpleNamespace(_control_modules=lambda: (object(), object()))
+        first = platform.Platform(bridge, object())
+        second = None
+        try:
+            with pytest.raises(RuntimeError, match='synthetic_backend_boundary'):
+                await first.start()
+            await first.stop()
+            second = platform.Platform(bridge, object())
+            with pytest.raises(RuntimeError, match='synthetic_backend_boundary'):
+                await second.start()
+            assert not first.socket.parent.exists()
+            assert len(observed) == 2
+            for current, settings in zip((first, second), observed):
+                assert settings['unix_socket'] == str(current.socket)
+                assert settings['js_socket_path'] == str(current.socket.parent)
+                assert settings['webcam_socket_path'] == str(current.socket.parent)
+            assert observed[0]['master_token'] != observed[1]['master_token']
+        finally:
+            if second is not None:
+                await second.stop()
+            # A failing regression may have recreated the first empty path.
+            if first.socket.parent.exists():
+                first.socket.parent.rmdir()
+    asyncio.run(scenario())
