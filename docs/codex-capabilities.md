@@ -67,3 +67,20 @@ period; coverage was 75.8% overall and 69.2% new code. This scope omitted
 `runtime/`. The [stabilization plan](plans/2026-10-15-boundary-stabilization.md)
 records the full-scope review and subsequent expanded-baseline checkpoint.
 Do not reuse the historical six-issue claim as current evidence.
+
+## Expanded runtime baseline: 15 October 2026
+
+Analysis `d23b48b7-a307-4e74-b9da-549c0410bdcb` processed at 17:39:00 UTC
+for merged main `3eb4ec2effc2a32f61c3e0a47bc0e13c0276e9aa`. It includes owned
+runtime source: 749 overall issues, 650 new-code issues, 71.7% overall coverage,
+66.3% new-code coverage, zero reported hotspots and zero accepted issues.
+The gate fails on new issues and coverage; duplication passes. Full qualification
+recorded 1,745 tests with no failures, errors or skips and complete cleanup.
+
+The normal launcher now prepares the exact pinned public Hermes source and
+an empty synthetic profile for native integration checks. This fixes missing
+test prerequisites; it does not analyze general upstream source or access a
+live installation. A nonzero gate exit leaves the local receipt's import flag
+unconfirmed, while processed server measures verify imported runtime coverage.
+The [plan](plans/2026-10-15-boundary-stabilization.md) records evidence and the
+bounded follow-up sequence. None of this asserts that remediation is complete.

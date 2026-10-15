@@ -110,7 +110,26 @@ For a deliberate diagnostic without tests, use `--static-only`; its receipt
 explicitly records that coverage was not imported. Missing coverage data does
 not measure test quality. To qualify a feature branch locally without publishing
 it to SonarQube, run `uv run python scripts/vs0.py verify --coverage` in the
-branch and inspect that run's `.vs0/<run-id>/coverage/` reports. The Community
+branch with the same native fixture environment and inspect that run's
+`.vs0/<run-id>/coverage/` reports. After installing the locked Python/web
+dependencies, the existing preparation helper supplies that environment:
+
+```sh
+uv run --frozen python - <<'PY'
+from pathlib import Path
+import os
+import subprocess
+from scripts.sonarqube import native_fixture
+
+with native_fixture(Path.cwd(), os.environ) as (environment, evidence):
+    subprocess.run(
+        ["uv", "run", "--frozen", "python", "scripts/vs0.py", "verify", "--coverage"],
+        env=environment, check=True,
+    )
+PY
+```
+
+This local candidate verification does not upload analysis. The Community
 Build main project is updated only after the owner merges the reviewed changes.
 
 This lane retains the existing gate, profiles and new-code definition. It does

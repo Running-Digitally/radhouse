@@ -209,25 +209,33 @@ class LocalSonarTests(unittest.TestCase):
     def test_native_fixture_rejects_non_commit_pin_before_fetch(self):
         self.native_lock("main")
         with patch("scripts.sonarqube.subprocess.run") as run:
-            with self.assertRaisesRegex(ScanError, "full pinned"):
-                with native_fixture(self.root, {}):
-                    self.fail("invalid pin admitted")
+            with contextlib.ExitStack() as cleanup:
+                fixture = native_fixture(self.root, {})
+                with self.assertRaisesRegex(ScanError, "full pinned"):
+                    cleanup.enter_context(fixture)
         run.assert_not_called()
 
     def test_native_fixture_cleans_up_after_qualification_exception(self):
         self.native_lock(self.revision)
-        with self.assertRaisesRegex(RuntimeError, "synthetic failure"):
+        source = None
+        def failed_verification():
+            nonlocal source
             with native_fixture(self.root, os.environ, remote=str(self.remote)) as (env, _):
                 source = Path(env["RADHOUSE_TEST_HERMES_SOURCE"])
                 raise RuntimeError("synthetic failure")
+        with self.assertRaisesRegex(RuntimeError, "synthetic failure"):
+            failed_verification()
         self.assertFalse(source.exists())
 
     def test_native_fixture_rejects_upstream_mutation_during_verification(self):
         self.native_lock(self.revision)
-        with self.assertRaisesRegex(ScanError, "changed during verification"):
-            with native_fixture(self.root, os.environ, remote=str(self.remote)) as (env, _):
-                source = Path(env["RADHOUSE_TEST_HERMES_SOURCE"])
-                (source / "source.py").write_text("CHANGED = True\n")
+        with contextlib.ExitStack() as cleanup:
+            fixture = native_fixture(self.root, os.environ, remote=str(self.remote))
+            env, _ = cleanup.enter_context(fixture)
+            source = Path(env["RADHOUSE_TEST_HERMES_SOURCE"])
+            (source / "source.py").write_text("CHANGED = True\n")
+            with self.assertRaisesRegex(ScanError, "changed during verification"):
+                cleanup.close()
         self.assertFalse(source.exists())
 
     def test_main_moving_after_tests_prevents_submission(self):

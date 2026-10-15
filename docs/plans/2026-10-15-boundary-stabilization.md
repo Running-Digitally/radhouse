@@ -1,8 +1,8 @@
 # Immediate boundary stabilization plan
 
 Date: 2026-10-15. Owner: repository maintainer. Implementer: the continuing
-coding session, with review of each bounded change. Status: scope expansion and
-planning prepared; expanded merged-main analysis and final prioritization pending.
+coding session, with review of each bounded change. Status: S0 complete; expanded
+baseline recorded; S1 disposition and bounded implementation ready to continue.
 
 This is the implementation handoff for the current session. It does not claim
 that planned controls, tests or remediation have already been delivered.
@@ -60,6 +60,103 @@ assertions at script level (132), exception-test structure (82), and cognitive
 complexity (58 across Python/JavaScript/TypeScript). Blanket mechanical rewrites
 would be a poor first step. Inspect actual exception boundaries, failure exits,
 state transitions and readable assertions before choosing a fix.
+
+## Expanded baseline and the concrete first iteration
+
+Analysis `d23b48b7-a307-4e74-b9da-549c0410bdcb` processed successfully on
+2026-10-15 at 17:39:00 UTC for merged main
+`3eb4ec2effc2a32f61c3e0a47bc0e13c0276e9aa`. The scope/plan change is
+[PR #89](https://github.com/Running-Digitally/radhouse/pull/89); the reproducible
+native qualification repair is
+[PR #90](https://github.com/Running-Digitally/radhouse/pull/90).
+
+The full qualification recorded 1,745 tests with zero failures, errors or skips,
+three additional browser coverage checks, and complete fixture cleanup. All 21
+owned runtime Python files are in the measured report. All 25 owned runtime
+Python/JavaScript files have confirmed server components. Upstream fixture source
+was fetched at the existing pin into a disposable directory outside analysis;
+no deployment or owner profile was accessed.
+
+| Measure | Expanded result |
+| --- | --- |
+| All open issues / affected files / rules | 749 / 115 / 53 |
+| New-code / older-code issues | 650 / 99 |
+| Security / reliability / maintainability impacts | 19 / 153 / 723; overlapping categories |
+| Overall / new-code coverage | 71.7% / 66.3% |
+| Overall / new-code duplication | 1.2% / 1.32773% |
+| Reported hotspots / accepted issues | 0 / 0 |
+| Gate | Failed: 650 new issues and coverage below the existing 80% new-code threshold; duplication passes. |
+
+All 620 earlier issue keys remain. Exactly 129 were added: 126 under runtime
+(125 production/build/qualification findings and one owned fixture finding),
+and three exception-test-structure findings in the new scan-preparation tests.
+This reconciles the full inventory; it is not 129 newly introduced production
+defects. No issue status, rule, gate or new-code setting was changed.
+
+The launcher conservatively records `test_coverage_imported=false` on the
+nonzero quality-gate exit. Server processing succeeded, and file-level server
+measures confirm that runtime coverage was imported. Preserve both facts in
+the receipt; do not rewrite the launcher result to a successful gate.
+
+| Enforcing/integration source | SonarQube coverage | Planning implication |
+| --- | --- | --- |
+| Hermes browser controller | 88.8% | Preserve its authority/replay guarantees; address specific missing paths. |
+| Hermes vault bridge | 87.2% | No evidence-based case for a vault rewrite; review precise integration risks. |
+| Hermes human-terminal adapter | 75.2% | Preserve explicit human authority, cleanup and uncertainty behavior. |
+| Hermes integration bridge | 64.2% | Prioritize focused admission, lifecycle and error-path evidence. |
+| Selkies platform adapter | 22.6% | Highest measurement gap among these core integration samples; distinguish stubs from actual Linux/viewer qualification. |
+| Selkies viewer JavaScript | 0.0% imported coverage | Static analysis is present; the LCOV import gap remains explicit. |
+
+Percentages prioritize investigation, not a target for line-only tests. Existing
+desktop/mobile and deployed Linux proofs must be reconciled separately with
+their exact source and configuration; this local suite does not replace them.
+
+The next implementation session should proceed in this order:
+
+1. **B1 — Review the 19 security-impact records and active exposure.** Four are
+   newly visible in runtime: two high-impact shared temporary-directory/socket
+   checks, a build-image default-user warning and a loopback qualification-probe
+   warning. Initial source review shows context that may justify some findings;
+   it does not complete their disposition. Verify display ownership/collision
+   handling, build-versus-runtime privilege, loopback binding and synthetic-data
+   scope with relevant tests and private deployment evidence. Do not blindly
+   replace standard socket paths, add TLS to a synthetic canary, or waive all
+   four by citing private-LAN deployment. Fix any demonstrated defect first.
+2. **B2 — Stabilize the stream/runtime contract.** Start with Selkies platform
+   integration and the Hermes browser-session bridge. Map the active native
+   contract and add only missing denial, stale-generation, observation-revocation,
+   uncertain-outcome and cleanup tests. Qualify the actual viewer path where
+   mocks cannot establish the property. This is the first main implementation
+   unit after B1, before a broad complexity pass.
+3. **B3 — Review interruption and recovery before structural refactoring.**
+   Three runtime findings concern broad exception handling in browser launch
+   and qualification cleanup. Source explicitly attempts to retain ownership
+   until children are reaped and outcomes are known. Test interruption and
+   uncertain cleanup before narrowing handlers: a mechanical exception change
+   could weaken the guarantee. Review the 41 runtime complexity findings by
+   responsibility; begin with touched bridge/terminal dispatch or recovery
+   functions only when decomposition makes their invariants easier to prove.
+4. **B4 — Resolve contract-sensitive analyzer feedback with evidence.** Ten
+   runtime type-return findings concern `dataclasses.replace`; six async
+   callback findings concern functions that may be required to return awaitables
+   by their consumers. Verify actual return types/callers. Do not weaken types,
+   insert dummy awaits, or remove `async` from an awaited callback to appease
+   the analyzer. Record individually supported contextual dispositions for
+   separately authorized review.
+5. **B5 — Close the bounded stage, then reduce the remainder steadily.** The
+   handoff narrows the three new scan-preparation exception assertions to the
+   actual entry, verification failure and exit operations, preserving cleanup
+   and mutation checks; verify their closure in the follow-up scan. Group other assertion/style work
+   by behavior, and add meaningful runtime JavaScript coverage when working on
+   the viewer. Do not turn the first iteration into all 749 fixes or all 41
+   runtime refactors. Reconcile the full gate and residual register at S5.
+
+The private export and receipts are under
+`.sonarqube/20261015T173244889921Z-3eb4ec2effc2/` in the preparation worktree.
+The issue register is a provisional routing inventory, not 749 completed risk
+decisions. Public documentation intentionally omits raw issue evidence and
+private operational details. The full risk review, dependency relevance and
+S2-S5 remediation remain to be done by the implementation session.
 
 ## Delivery order and review units
 
@@ -209,7 +306,8 @@ limited scope, not a substitute for either control.
   SonarQube thresholds remain unchanged. Report a failed overall gate honestly;
   unrelated low-risk backlog may remain after this stage with explicit ownership.
 - Every deferred class has an owner, reason and next review date or product
-  trigger. Establish the date at S1 closeout; reassess at each relevant release
+  trigger. Establish the date at S1 closeout, with a first class-level review
+  within 30 days; reassess at each relevant release
   and before onboarding or exposure/authority changes. Do not defer indefinitely
   using only the word "later" or an uncommitted future rewrite.
 - A fresh scan confirms intended fixes. Reduction due to source retirement is
@@ -242,3 +340,11 @@ The owner authorized the scope-change merge and exact-main scan in this session.
 Issue suppression, gate/profile changes, repository-settings changes and live
 deployment remain separate. Completing this planning turn does not claim that
 S1-S5 remediation is already done.
+
+Preparation checkpoint: PRs #89 and #90 are merged, and the expanded scan above
+is complete. The follow-up branch `codex/boundary-stabilization-handoff` carries
+this measured handoff and the three narrowed exception assertions. Verify its
+PR/merge state and subsequent scan receipt, then complete S1/B1 and B2. The final
+same-session handoff must state the latest analyzed SHA and any remaining work.
+The original shared development checkout contains unrelated work and must not
+be reset or reused without inspecting its ownership and dirty state.
