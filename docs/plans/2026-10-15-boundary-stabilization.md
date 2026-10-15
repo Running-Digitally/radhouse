@@ -2,7 +2,7 @@
 
 Date: 2026-10-15. Owner: repository maintainer. Implementer: the continuing
 coding session, with review of each bounded change. Status: S0 complete; expanded
-baseline recorded; S1 disposition and bounded implementation ready to continue.
+baseline recorded; S1/B1 review and bounded B2 implementation in qualification.
 
 This is the implementation handoff for the current session. It does not claim
 that planned controls, tests or remediation have already been delivered.
@@ -157,6 +157,84 @@ The issue register is a provisional routing inventory, not 749 completed risk
 decisions. Public documentation intentionally omits raw issue evidence and
 private operational details. The full risk review, dependency relevance and
 S2-S5 remediation remain to be done by the implementation session.
+
+## S1/B1 and B2 implementation checkpoint
+
+The preparation follow-up [PR #91](https://github.com/Running-Digitally/radhouse/pull/91)
+was merged and analysis `0502ad7c-2390-49e7-ad0e-9d1a38977a4f` processed main
+`8584df46c790698502f06e3dc821276446888189` successfully at 17:58:40 UTC on
+15 October. It confirmed the three preparation findings fixed: 746 open,
+647 new-code, 19 security-impact records, and coverage unchanged at 71.7% overall
+and 66.3% new-code. The gate still fails. The 749-record table above preserves
+the first expanded baseline; use this later revision for implementation deltas.
+
+The bounded B1 pass reviews all 19 security-impact records and both high-impact
+reliability records individually, and assigns the full inventory to review
+routes in a private per-issue register. Routing is not a claim that every
+boundary finding has been adjudicated. Broad exception handling, contract-sensitive
+types/callbacks and wider complexity review remain B3/B4 work. Deferred families
+have a maintainer owner and a 14 November review date, accelerated by changes to
+the affected code, privilege, users, ingress, dependencies or recovery behavior.
+
+| Finding family | Records | Decision and next evidence |
+| --- | ---: | --- |
+| Standard private-network ranges | 9 | Contextual-review candidates: address-class admission/privacy policy constants, not installation addresses. Retain policy-denial tests. |
+| Pseudorandom visual choices/change notifications | 4 | Contextual-review candidates: clip ordering, timing and a profile refresh signal; no credential, identity or grant derives from them. |
+| Local HTTP helpers | 3 | Inspect each binding/caller: synthetic origin-denial canary, loopback static preview and model-catalog listener. The catalog's separate upstream hop needs its own transport assessment. |
+| Shared X11 readiness checks | 2 | Keep open pending collision/failure qualification. Production uses a private authenticated display without TCP; the separate disposable fixture uses its own isolation. A socket's existence alone is not ownership proof. |
+| Build-image default user | 1 | Contextual-review candidate for a pinned compile/test artifact image; it is not the browser service image. Runtime user/sandbox checks remain required independently. |
+| High-reliability CSS/terminal initialization | 2 | CSS override is fix-when-touched; terminal constructor initializes a settled promise without launching I/O. Preserve input sequencing and browser layout checks. |
+
+No server-side finding status, quality profile, gate, new-code window or source
+exclusion changes accompany these decisions. Contextual candidates require the
+separately authorized finding-review process before any server disposition.
+
+Dependency review is a separate evidence stream. The previous application pin
+`cryptography==46.0.3` matched seven advisory groups after alias deduplication.
+The bounded change updates it to `50.0.2`, preserving Fernet/TOTP behavior with
+an actual synthetic ciphertext produced by 46.0.3 and a tamper-denial check.
+The [upstream changelog](https://cryptography.io/en/latest/changelog/#v50-0-2)
+and [wheel/OpenSSL advisory](https://github.com/pyca/cryptography/security/advisories/GHSA-537c-gmf6-5ccf)
+support the update; this is dependency selection, not an upstream fork.
+
+Private read-only observation reconciles selected browser/package artifacts
+and service containment with the latest deployment record. It identifies
+browser and installed-package update prerequisites that remain operational
+work: qualify fixed upstream artifacts before further untrusted browsing.
+The [Chrome security release](https://chromereleases.googleblog.com/2026/10/stable-channel-update-for-desktop_01668083673.html)
+and [multidict advisory](https://github.com/aio-libs/multidict/security/advisories/GHSA-54p9-h82j-f925)
+are tracked privately against the selected versions. Source pins, selected
+artifact versions and a complete live dependency inventory are distinct facts.
+An empty advisory result for another pin is not a safety guarantee. The
+[Selkies default-credential advisory](https://github.com/selkies-project/selkies/security/advisories/GHSA-469m-qcwp-2crf)
+is assessed against the owned authenticated UDS/token configuration; no blanket
+claim covers arbitrary upstream deployments. Hermes publishes no advisories
+on its advisory page at this review; that does not establish absence of defects.
+
+B2 changes only the owned stream lifecycle: concurrent callers share startup;
+request cancellation does not cancel shared startup or cleanup; partial startup
+revokes input and stops its listener; incomplete cleanup retains the generation;
+and browser retirement workers finish before replacement. The relay refuses
+an incompletely started instance. Focused regressions cover actual Unix-listener
+closure, cancellation and retirement failure, service authentication before body
+parsing, invalid owner/expiry/generation denial, and withholding captures that
+outlive a lease or generation. Existing Private/Observe/move/handback checks
+remain part of qualification.
+
+Full qualification exposed a load-sensitive lost-upload-ack fixture: it routed
+the 40 MB body through Playwright before delivering the simulated failure. The
+test now injects connection loss in its synthetic ASGI server after successful
+persistence, keeping the complete large upload on the actual browser transport.
+Original-size, saved-byte/download and no-retransmission assertions remain; no
+production upload code, test size, assertion timeout or required gate is changed.
+
+Portable tests prove these lifecycle and protocol properties, including a real
+Unix socket and authenticated Uvicorn/WebSocket binary path. They do not qualify
+the revised package under Linux X11, installed confinement, real video/input or
+physical-phone conditions. Repeat the existing disposable Linux qualification
+with exact candidate hashes before any paired runtime deployment. Neither this
+code merge nor its main scan deploys the update or closes S3-S5. The immediate
+stage remains open while the operational dependency risks are unresolved.
 
 ## Delivery order and review units
 
