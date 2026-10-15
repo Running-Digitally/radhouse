@@ -941,3 +941,32 @@ def test_close_revokes_before_transport_shutdown(session,monkeypatch):
     status,payload=session.call('close',session.body())
     assert stopped==[True]
     assert status==200 and payload['state']=='idle'
+
+
+def test_positive_retirement_also_clears_retained_process_bookkeeping(session,monkeypatch):
+    session.bind()
+    session.c.retire_browser(session.identity,control.RetirementObservation(session.identity,True,True))
+    monkeypatch.setattr(bridge,'_pid_gone',lambda *args:True)
+    owned,state=bridge._current_owned('conversation','session','alice')
+    assert owned is None and state.retired
+    assert 'session' not in bridge._owned_browsers
+    assert session.released==['session']
+
+
+def test_display_failure_before_native_spawn_does_not_poison_session(session,monkeypatch,tmp_path):
+    monkeypatch.setitem(sys.modules,'psutil',ModuleType('psutil'))
+    module=ModuleType('tools.browser_tool_session')
+    module._session_record=lambda *args:{'session_name':'h_0123456789'}
+    module._read_browser_daemon_pid=lambda *args:None
+    monkeypatch.setitem(sys.modules,module.__name__,module)
+    monkeypatch.setattr(session.browser,'_socket_safe_tmpdir',lambda:str(tmp_path),raising=False)
+    monkeypatch.setattr(session.lifecycle,'_write_owner_pid',lambda *args:None,raising=False)
+    monkeypatch.setattr(session.lifecycle,'_start_browser_cleanup_thread',lambda:None,raising=False)
+    monkeypatch.setattr(bridge,'_browser_configuration',{'chromium_path':'/qualified/chrome','agent_browser_path':'/qualified/native','empty_config_path':'/qualified/empty.json'})
+    retired=[]
+    def fail(*args):raise ValueError('display_unavailable')
+    monkeypatch.setattr(bridge,'_streaming',SimpleNamespace(launch=fail,retire=lambda:retired.append(True)))
+    with pytest.raises(control.ControlRejected,match='browser_launch_failed'):
+        bridge._launch_owned('conversation','session','alice')
+    assert session.browser._active_sessions=={}
+    assert not retired

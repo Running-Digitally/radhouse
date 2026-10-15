@@ -316,7 +316,7 @@
       if(this.control?.next_sequence)this.sequence=Math.max(this.sequence,this.control.next_sequence-1);
       this.canReturn=value?.can_return===true;this.vaultEnabled=value?.vault_enabled===true;
       const unavailable=state==="unavailable";
-      if(state==="idle" || this.state==="unavailable" && !unavailable)this.actionNotice=null;
+      if(this.state==="unavailable" && !unavailable)this.actionNotice=null;
       this.state=state;
       this.container.classList.toggle("browser-view--controlled",this.controlEnabled);
       this.container.classList.toggle("browser-view--active",this.active);

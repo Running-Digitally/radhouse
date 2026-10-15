@@ -1155,9 +1155,11 @@ class OwnedBrowser:
 def _current_owned(conversation_id, session_id, principal_id):
     control, _ = _control_modules()
     state = _controller.current(conversation_id, session_id, principal_id)
-    if state is None or state.retired:
+    if state is None:
         return None, state
     owned = _owned_browsers.get(session_id)
+    if state.retired and owned is None:
+        return None, state
     if owned and owned.identity != state.identity:
         raise control.ControlRejected("stale_browser")
     pid, started = (
@@ -1183,6 +1185,8 @@ def _current_owned(conversation_id, session_id, principal_id):
         with browser._cleanup_lock:
             browser._active_sessions.pop(session_id, None)
         return None, _controller.state(state.identity)
+    if state.retired:
+        raise control.ControlRejected("browser_retirement_unproven")
     stream = _session_stream(session_id)
     if owned and stream is not None:
         if stream[1] != state.identity.generation:
@@ -1256,12 +1260,15 @@ def _launch_owned(conversation_id, session_id, principal_id, *, run=None):
         lifecycle._update_session_activity(session_id)
         lifecycle._start_browser_cleanup_thread()
         channel, identity, pid, started = None, None, None, None
+        native_attempted = stream_started = False
         try:
             if _streaming is not None:
                 endpoint = _streaming.launch(__import__("sys").modules[__name__], directory, environment)
+                stream_started = True
                 argv = [_browser_configuration["agent_browser_path"], "--config",
                     _browser_configuration["empty_config_path"], "--cdp", endpoint,
                     "--session", name, "--pin-tab", "--json", "open", "--", "about:blank"]
+            native_attempted = True
             result = subprocess.run(
                 argv,
                 env=environment,
@@ -1306,10 +1313,15 @@ def _launch_owned(conversation_id, session_id, principal_id, *, run=None):
             lifecycle._start_browser_cleanup_thread()
             return owned
         except BaseException:
-            if _streaming is not None:
+            if stream_started:
                 _streaming.retire()
             if channel is not None:
                 channel.close()
+            if not native_attempted:
+                lifecycle._release_session_resources(session_id, record)
+                with browser._cleanup_lock:
+                    if browser._active_sessions.get(session_id) is record:
+                        browser._active_sessions.pop(session_id)
             # Existing exact-PID lifecycle only; do not delete evidence of an unknown daemon.
             try:
                 pid = pid or session._read_browser_daemon_pid(str(directory), name)
@@ -1877,7 +1889,9 @@ async def handle_browser_session(adapter, request, *, operation, api_server):
                 }
             )
         return web.json_response(response, headers={"Cache-Control": "no-store"})
-    except Exception:
+    except Exception as error:
+        code = str(error) if isinstance(error, ValueError) and re.fullmatch(r"[a-z_]{1,80}",str(error)) else "browser_operation_unavailable"
+        __import__("logging").getLogger(__name__).warning("Browser operation rejected: operation=%s code=%s",operation,code)
         return web.json_response(
             {**base, "error": "browser_control_unavailable"},
             status=409,

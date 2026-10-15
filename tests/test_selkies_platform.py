@@ -157,3 +157,21 @@ def test_dispatch_client_rejects_invalid_takeover_flags_before_network(flags):
                 allowed_tools=('browser_navigate','browser_snapshot'),browser_owner={'principal_id':'alice','conversation_id':'conversation'},
                 browser_context={'generation':'generation','revision':1,'lease_id':'lease','owner':{},'auth_expires_at':10**10,**flags})
     assert not calls
+
+
+def test_dead_browser_watcher_revokes_without_a_human_lease(monkeypatch):
+    async def scenario():
+        events=[]
+        async def publish():events.append('revoke')
+        async def drain():events.append('drain')
+        p=platform.Platform.__new__(platform.Platform)
+        p.owned=SimpleNamespace(identity='identity')
+        p.bridge=SimpleNamespace(_controller=SimpleNamespace(state=lambda identity:SimpleNamespace(lease=None),pause=lambda *args:pytest.fail('no human lease to pause')))
+        p.boundary=SimpleNamespace(_blocked=False,input_token='old',provision=publish,_drain=drain)
+        p.stopped=False
+        monkeypatch.setattr(platform,'_chrome',None)
+        monkeypatch.setattr(platform,'retire',lambda:events.append('retire'))
+        await p.watch()
+        assert p.stopped and p.boundary._blocked and p.boundary.input_token is None
+        assert events==['revoke','drain','retire']
+    asyncio.run(scenario())

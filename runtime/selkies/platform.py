@@ -326,12 +326,18 @@ class Platform:
             raise
         except Exception:
             self.boundary._blocked = True
-            self.bridge._controller.pause(self.owned.identity,self.boundary.input_owner)
             self.boundary.input_token = None
-            await self.boundary.provision()
-            self.stopped = True
-            try: await self.boundary._drain()
-            finally: await asyncio.to_thread(retire)
+            try:
+                state = self.bridge._controller.state(self.owned.identity)
+                if state.lease is not None:
+                    try: self.bridge._controller.pause(self.owned.identity,state.lease.owner)
+                    except Exception:
+                        if self.bridge._controller.state(self.owned.identity).lease is not None: raise
+                await self.boundary.provision()
+                await self.boundary._drain()
+            finally:
+                self.stopped = True
+                await asyncio.to_thread(retire)
 
     async def stop(self):
         global runtime
