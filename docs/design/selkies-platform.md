@@ -145,3 +145,23 @@ unsent draft survived workspace navigation. Strict native qualification separate
 proved the sandbox, owner-bound relay, large asset delivery, live video and
 negative authority cases. The Homelab change record owns frozen selections and
 receipts. Desktop viewport emulation does not prove an actual phone OS keyboard.
+
+
+## Mobile recovery and explicit device transfer
+
+A video play rejection or paused inline video produces an explicit local
+playback prompt. A synchronous same-origin helper retains the trusted tap;
+it changes playback only, outside the remote input target. Playback readiness
+is distinct from the input lease and actual frame presentation. A page resume
+can request playback again but cannot reacquire control.
+
+When another owner tab holds the input lease, expose Move control here rather
+than a dead end. Only an authenticated viewer already eligible for control and
+bound to the same principal can request it, with the current generation/revision
+and an explicit typed move flag. Revoke the old durable lease before waiting for
+the shared input/observation barrier; discard late reads, release held input and
+clipboard state, then fence a new Private lease. Stale/view-only/foreign-owner
+requests do not revoke the holder. Failed drain stays blocked. The old stream
+can never resume input by reconnecting, and an old disconnect cannot revoke the
+new lease. Qualify this boundary on the real native runtime, and test playback
+policy rejection and trusted-tap recovery separately in Chromium and WebKit.

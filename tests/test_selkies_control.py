@@ -349,3 +349,78 @@ def test_session_capacity_preserves_connected_viewer_and_holder(tmp_path):
         assert f.desktop.token in f.boundary.viewers
         assert all(v.token in f.boundary.viewers for v in children)
     asyncio.run(scenario())
+
+
+def test_explicit_phone_move_drains_old_input_and_starts_private(tmp_path):
+    async def scenario():
+        f=fixture(tmp_path)
+        old=await take(f);old_token=f.boundary.input_token
+        observed=f.c.observation_mode(f.identity,f.desktop.owner,old.lease.lease_id,old.revision,'observe')
+        phone=f.boundary.add_viewer(f.phone.owner,can_take=True)
+        entered,finish=asyncio.Event(),asyncio.Event()
+        async def delayed(message,display_id='primary',conn_id=None):
+            f.handler.pressed_keys[97]=True;entered.set();await finish.wait()
+        f.boundary._dispatch=delayed;f.connections[1]=old_token
+        active=asyncio.create_task(f.handler.on_message('kd,97',conn_id=1));await entered.wait()
+        move=asyncio.create_task(f.boundary.move(phone,request_id='move-phone',revision=observed.revision,auth_expires_at=2000))
+        await asyncio.sleep(0)
+        assert not move.done() and f.c.state(f.identity).mode=='paused'
+        assert not f.boundary.authorized(old_token)
+        with pytest.raises(control.ControlRejected):
+            f.c.authorize_observation(f.identity,f.desktop.owner,old.lease.lease_id,observed.lease.observation_epoch)
+        finish.set();await active;state=await move
+        assert state.lease.owner==phone.owner and state.lease.observation_mode=='private'
+        assert f.boundary.input_token!=old_token and not f.handler.pressed_keys
+        assert f.events.index('release-keys')<len(f.events)-1 and f.events[-1]=='native-fence'
+        assert 'fresh-observation' not in f.events
+        token=f.boundary.input_token
+        await f.boundary.disconnect(old_token)
+        assert f.boundary.input_token==token and f.boundary.authorized(token)
+        replay=await f.boundary.move(phone,request_id='move-phone',revision=observed.revision,auth_expires_at=2000)
+        assert replay.lease.lease_id==state.lease.lease_id and f.boundary.input_token==token
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('invalid',['view-only','foreign-owner','stale-revision'])
+def test_phone_move_rejects_unqualified_requests_without_revoking(tmp_path,invalid):
+    async def scenario():
+        f=fixture(tmp_path);state=await take(f);token=f.boundary.input_token
+        phone=f.phone if invalid=='view-only' else f.boundary.add_viewer(
+            control.OwnerBinding('someone-else','c'*64,1,'other') if invalid=='foreign-owner' else f.phone.owner,can_take=True)
+        with pytest.raises(stream.StreamRejected):
+            await f.boundary.move(phone,request_id='move',revision=state.revision-1 if invalid=='stale-revision' else state.revision,auth_expires_at=2000)
+        assert f.boundary.input_token==token and f.boundary.authorized(token)
+    asyncio.run(scenario())
+
+
+def test_phone_move_failed_drain_cannot_grant_input(tmp_path):
+    async def scenario():
+        f=fixture(tmp_path);state=await take(f);token=f.boundary.input_token
+        phone=f.boundary.add_viewer(f.phone.owner,can_take=True)
+        f.handler.xdisplay.query_keymap=lambda:[1]*32
+        with pytest.raises(stream.StreamRejected,match='move_unconfirmed'):
+            await f.boundary.move(phone,request_id='move',revision=state.revision,auth_expires_at=2000)
+        assert f.boundary.input_token is None and f.boundary._blocked
+        assert not f.boundary.authorized(token) and f.c.state(f.identity).lease is None
+    asyncio.run(scenario())
+
+
+def test_move_discards_an_observation_already_in_flight(tmp_path):
+    from tests.test_selkies_platform import platform
+    async def scenario():
+        f=fixture(tmp_path);state=await take(f)
+        state=f.c.observation_mode(f.identity,f.desktop.owner,state.lease.lease_id,state.revision,'observe')
+        p=platform.Platform.__new__(platform.Platform);p.boundary=f.boundary;p.bridge=SimpleNamespace(_controller=f.c);p.owned=SimpleNamespace(identity=f.identity)
+        ctx=SimpleNamespace(run_id='observer',dispatch_key='observer-dispatch')
+        p.observers={(ctx.run_id,ctx.dispatch_key):(f.desktop.owner,state.lease.lease_id,state.lease.observation_epoch)}
+        entered,finish=asyncio.Event(),asyncio.Event()
+        async def capture():entered.set();await finish.wait();return {'page':'must-not-be-delivered'}
+        p.snapshot=capture
+        read=asyncio.create_task(p.observation(ctx));await entered.wait()
+        phone=f.boundary.add_viewer(f.phone.owner,can_take=True)
+        move=asyncio.create_task(f.boundary.move(phone,request_id='move',revision=state.revision,auth_expires_at=2000));await asyncio.sleep(0)
+        assert not move.done() and f.c.state(f.identity).mode=='paused'
+        finish.set()
+        with pytest.raises(control.ControlRejected,match='browser_observation_denied'):await read
+        assert (await move).lease.observation_mode=='private'
+    asyncio.run(scenario())

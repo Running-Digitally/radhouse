@@ -124,3 +124,10 @@ Chat shows a small browser only during agent activity or human takeover; clickin
 it opens Browser emphasis with chat alongside. Phones use a compact chat drawer,
 inline Keys grid and the visual viewport so the OS keyboard does not require a
 separate phone browser implementation.
+
+
+Phone recovery uses an explicit Tap to view browser when local playback requires
+a gesture. Viewing and input authority stay separate. An eligible same-owner
+device can explicitly Move control here; it revokes/drains the former tab and
+starts Private, preserving the same browser. It never silently upgrades a
+viewing-only capability or resumes an observed lease.

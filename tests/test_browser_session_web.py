@@ -488,3 +488,18 @@ def test_stream_websocket_closes_on_session_revocation(app,monkeypatch):
         assert calls[0][1]['protocols']==['selkies',protocol]
         auth.active=False
         assert ws.receive()=={'type':'websocket.close','code':1008,'reason':''}
+
+
+def test_explicit_device_move_is_typed_authenticated_and_csrf_bound(app):
+    client,_,native,_,_=app
+    client.post('/chat/browser/open',headers=HEADERS)
+    body={'generation':'generation-1','revision':3,'request_id':str(uuid4()),'move_here':True}
+    response=client.post('/chat/browser/control/take',headers={**HEADERS,'X-Radhouse-Browser-Tab':OTHER_TAB},json=body)
+    assert response.status_code==200
+    assert native.calls[-1][1]=='control/take' and native.calls[-1][2]['move_here'] is True
+    assert native.calls[-1][2]['owner']['tab_id']==OTHER_TAB
+    before=len(native.calls)
+    for flag in ('true',1):
+        assert client.post('/chat/browser/control/take',headers=HEADERS,json={**body,'move_here':flag}).status_code==422
+    assert client.post('/chat/browser/control/take',headers={**HEADERS,'X-Radhouse-CSRF':'wrong'},json=body).status_code==403
+    assert len(native.calls)==before

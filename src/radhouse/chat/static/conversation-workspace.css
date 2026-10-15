@@ -81,3 +81,7 @@
   .navigation-shell:has(.workspace-browser)>header{min-height:0;padding:4px 0;flex-wrap:nowrap}
   .navigation-shell:has(.workspace-browser)>header .rh-header-identity{display:none}
 }
+
+.browser-playback-start{position:absolute;inset:0;z-index:5;width:100%;height:100%;border:0;border-radius:0;background:rgba(0,0,0,.84);color:#fff;font:inherit;min-height:44px;padding:20px;white-space:normal;cursor:pointer}
+.browser-playback-start[hidden]{display:none}
+.browser-playback-start:focus-visible{outline:3px solid #fff;outline-offset:-5px}

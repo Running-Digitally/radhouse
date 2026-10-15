@@ -6,7 +6,7 @@
       this.view=view;this.info=null;this.preview=false;this.visible=true;this.presented=false;
       this.input={ready:false,touch:matchMedia('(pointer:coarse)').matches,hardware:false,focused:false};
       this.frame=document.createElement('iframe');this.frame.className='browser-stream-frame';
-      this.frame.title='Live assistant browser';this.frame.allow='clipboard-read; clipboard-write';this.frame.tabIndex=-1;
+      this.frame.title='Live assistant browser';this.frame.allow='autoplay; clipboard-read; clipboard-write';this.frame.tabIndex=-1;
       this.tools=document.createElement('div');this.tools.className='browser-stream-tools';this.tools.hidden=true;
       const button=(label,action)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.addEventListener('click',action);return b;};
       this.keyboard=button('Keyboard',()=>this.input.focused?this.hideKeyboard():this.invoke('show',false));
@@ -19,6 +19,17 @@
       this.fit=button('Fit',()=>view.viewport.classList.remove('browser-stream-zoom'));
       this.zoom=button('Zoom',()=>view.viewport.classList.add('browser-stream-zoom'));
       this.tools.append(this.keyboard,this.keys,this.panel);view.viewport.before(this.tools);
+      this.playback='connecting';
+      this.playButton=button('Tap to view browser',()=>{
+        // Synchronous same-origin call retains the browser's user gesture.
+        // This changes local video playback only, never remote input authority.
+        if(!this.frame.contentWindow?.radhousePlayback?.play()){
+          this.notice.textContent='The viewer is connecting. Try again in a moment.';this.notice.hidden=false;
+        }
+      });
+      this.playButton.className='browser-playback-start';this.playButton.hidden=true;
+      view.viewport.append(this.playButton);
+
       view.actions.append(this.fit,this.zoom);
       this.privacy=document.createElement('div');this.privacy.className='browser-privacy';this.privacy.hidden=true;this.privacy.setAttribute('role','group');this.privacy.setAttribute('aria-label','Agent visibility during your takeover');
       this.privateButton=button('Private',()=>this.changeMode('private'));
@@ -31,6 +42,9 @@
         if(event.data?.type==='mobileInputStatus'&&['ready','touch','hardware','focused'].every(k=>typeof event.data[k]==='boolean')){
           this.input=event.data;this.render();
           view.container.dispatchEvent(new CustomEvent('browser-input-focus',{bubbles:true,detail:{focused:this.input.focused}}));
+        }
+        if(event.data?.type==='browserPlaybackStatus'&&['connecting','playing','tap_required','unavailable'].includes(event.data.state)){
+          this.playback=event.data.state;this.render();
         }
         if(event.data?.type==='framePresented'){const first=!this.presented;this.presented=true;this.render();if(first&&!this.preview)this.view.container.closest('#browser-page')?.scrollTo({top:0});}
       };
@@ -58,7 +72,7 @@
     mount(){
       if(!this.info||!this.visible)return;
       const url=this.info.path+'?connection='+encodeURIComponent(this.connectionNonce)+'#token='+encodeURIComponent(this.info.token);
-      if(this.frame.getAttribute('src')!==url){this.hideKeyboard();this.input.ready=false;this.presented=false;this.frame.src=url;}
+      if(this.frame.getAttribute('src')!==url){this.hideKeyboard();this.input.ready=false;this.presented=false;this.playback='connecting';this.frame.src=url;}
       if(!this.frame.isConnected)this.view.viewport.append(this.frame);
       this.view.image.hidden=true;this.view.viewport.hidden=false;
     }
@@ -67,14 +81,19 @@
       const view=this.view,human=view._human(),touch=this.input.touch||matchMedia('(pointer:coarse)').matches;
       view.container.classList.add('browser-view--streaming');view.viewport.hidden=!view.active;
       view.toolbar.hidden=true;view.keyboard.hidden=true;
-      view._decorate(view.take,'pointer','Take control privately');
+      view._decorate(view.take,'pointer',view._canMove()?'Move control here':'Take control privately');
       const mode=view.control?.observation_mode==='observe'?'observe':'private';
       this.privacy.hidden=!human||this.preview;
       this.privateButton.setAttribute('aria-pressed',String(mode==='private'));
       this.observeButton.setAttribute('aria-pressed',String(mode==='observe'));
       this.privateButton.disabled=this.observeButton.disabled=view.actionPending;
       this.privacyText.textContent=mode==='observe'?'Agent can read this page when you ask in chat. You keep control.':'Private. Only you can see the page.';
-      view.connection.textContent=this.presented?'Live':'Connecting';view.connection.dataset.state=this.presented?'live':'pending';
+      const needsTap=this.playback==='tap_required'||this.playback==='unavailable';
+      view.connection.textContent=needsTap?'Tap to view':this.presented?'Live':'Connecting';
+      view.connection.dataset.state=this.presented&&!needsTap?'live':'pending';
+      this.playButton.hidden=!needsTap||this.preview||!this.visible;
+      this.playButton.textContent=this.playback==='unavailable'?'Retry browser video':'Tap to view browser';
+
       view._decorate(view.closeButton,"close","Close browser",true);
       this.tools.hidden=!view.active||this.preview||!human||!touch;
       this.keyboard.textContent=this.input.focused?"Hide keyboard":"Keyboard";
@@ -105,7 +124,7 @@
     }
     clear(){
       this.hideKeyboard();this.frame.remove();this.frame.removeAttribute('src');this.info=null;this.input.ready=false;
-      this.presented=false;this.tools.hidden=true;this.privacy.hidden=true;this.notice.hidden=true;this.toggleKeys(false);
+      this.presented=false;this.playback='connecting';this.playButton.hidden=true;this.tools.hidden=true;this.privacy.hidden=true;this.notice.hidden=true;this.toggleKeys(false);
       this.view.container.classList.remove('browser-view--streaming');this.view.body.inert=false;
     }
     destroy(){this.clear();this.frame.removeEventListener('load',this.frameLoad);window.removeEventListener('message',this.message);document.removeEventListener('focusin',this.focus);}

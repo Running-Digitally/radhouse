@@ -1026,6 +1026,7 @@ async function heartbeatBrowser() {
       || browserView?.actionPending
       || !lastBrowserStatus?.generation || !lastBrowserStatus.control || Date.now()-lastBrowserActivity>120000
       || !(currentPage==="/browser" || currentPage==="/" && browserContextWanted))return;
+  if(lastBrowserStatus.control.mode==="human" && !lastBrowserStatus.control.lease_id)return;
   browserHeartbeat=true;const presentSession=session,epoch=browserEpoch,control=lastBrowserStatus.control;
   try {
     const value=await api("/chat/browser/control/heartbeat",{generation:lastBrowserStatus.generation,

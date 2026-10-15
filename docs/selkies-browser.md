@@ -145,3 +145,20 @@ The standalone pilot and integrated platform are distinct deployments; installat
 and logged-in acceptance are recorded in the Homelab change record. Physical
 iPhone/Android layout acceptance and non-ASCII text remain separate limitations
 from automated responsive and ASCII checks.
+
+
+## Phone playback and moving between devices
+
+If inline video needs a gesture, select **Tap to view browser**. This starts
+local video playback only; it does not take control or send a click to the remote
+page. The viewer reports Live only after frames are presented. Silent inline
+video is requested, with an explicit tap fallback for browser playback policies
+([WebKit policy](https://webkit.org/blog/6784/new-video-policies-for-ios/)).
+
+If another signed-in tab holds the browser, select **Move control here**. This
+explicitly revokes that tab, waits for pending input and observations, releases
+held input and clears clipboard state, then starts a fresh **Private** takeover
+here. The previous tab becomes viewing-only. Neither a playback tap nor merely
+opening the Browser tab transfers control. Use **Let agent observe** again only
+when you want requested read-only page observations on this device. A lost or
+unconfirmed move is not automatically retried.

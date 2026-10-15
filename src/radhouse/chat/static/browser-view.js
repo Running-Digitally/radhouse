@@ -100,6 +100,7 @@
       this.site.hidden = !this.site.textContent;
       if (this.request) this._updateControls(value, state);
       this.streamPresenter?.update(value);
+      if(this.streamPresenter?.enabled)this._renderControlState();
       if (!this.active) { this._cancel(); this._clearImage(); }
       else if (!this.streamPresenter?.enabled && !this.controller && this.timer === null) this._schedule(0);
     }
@@ -240,7 +241,7 @@
       this.connection = document.createElement("span"); this.connection.className="browser-connection";
       this.connection.textContent="Live";this.connection.setAttribute("aria-hidden","true");
       this.sessionActions=document.createElement("div");this.sessionActions.className="browser-session-actions";
-      this.take = this._button("Take control",()=>this._act("/chat/browser/control/take",{...this._binding(),request_id:crypto.randomUUID()}),"pointer");
+      this.take = this._button("Take control",()=>this._act("/chat/browser/control/take",{...this._binding(),request_id:crypto.randomUUID(),...(this._canMove()?{move_here:true}:{})}),"pointer");
       this.returnButton = this._button("Return to agent",()=>this._return(),"agent");
       this.closeButton = this._button("Close browser",()=>this._act("/chat/browser/control/close",this._binding()),"close");
       this.closeButton.classList.add("browser-close");
@@ -343,10 +344,12 @@
         && this.control.lease_expires_at>Date.now()/1000;
     }
 
+    _canMove() { return this.active && this.streamPresenter?.enabled && this.control?.mode==="human" && !this._human(); }
+
     _renderControlState() {
       if(!this.request)return;
       const human=this._human(), input=human && !!this.displayedFrame && !this.actionPending && !this.inputUnconfirmed;
-      const ownerText=human ? "You have control" : {agent:"Agent has control",takeover_pending:"Handing over…",paused:"Browser paused",recovering:"Check the page",human:"Open in another tab"}[this.control?.mode] || "Connecting…";
+      const ownerText=human ? "You have control" : {agent:"Agent has control",takeover_pending:"Handing over…",paused:"Browser paused",recovering:"Check the page",human:"Another tab has control"}[this.control?.mode] || "Connecting…";
       const ownerIcon=human ? "pointer" : ["agent","takeover_pending","paused","recovering"].includes(this.control?.mode) ? "agent" : "browser";
       if(this.owner.textContent!==ownerText){
         this.owner.textContent="";
@@ -358,20 +361,21 @@
       this.connection.textContent=this.image.hidden ? this.status.textContent===labels.unavailable ? "Unavailable" : "Connecting" : "Live";
       this.connection.dataset.state=this.image.hidden ? "pending" : "live";
       this.container.setAttribute("aria-busy",String(this.actionPending));
-      this.controlStatus.classList.toggle("browser-control-status--quiet",!this.actionNotice && !["takeover_pending","paused","recovering"].includes(this.control?.mode) && (!human || this.canReturn));
+      this.controlStatus.classList.toggle("browser-control-status--quiet",!this.actionNotice && !this._canMove() && !["takeover_pending","paused","recovering"].includes(this.control?.mode) && (!human || this.canReturn));
       this.loginToggle.setAttribute("aria-expanded",String(!this.loginPanel.hidden));
       this.openButton.disabled=!this.controlEnabled || this.actionPending || this.state==="unavailable";
       this.illustration.disabled=this.openButton.disabled;
       this.reconnectBrowser.disabled=this.actionPending;
       this.viewport.classList.toggle("browser-interactive",input);
-      this.take.hidden=!this.control?.can_take || human;
+      this.take.hidden=!(this.control?.can_take || this._canMove()) || human;
       this.take.disabled=this.actionPending;
       this.returnButton.hidden=!human;
       this.returnButton.disabled=this.actionPending || !this.canReturn || this.inputUnconfirmed;
       this.reconnectButton.hidden=!this.inputUnconfirmed || !human;
       this.reconnectButton.disabled=this.actionPending;
       this.returnButton.title=this.canReturn ? "" : "Your assistant’s current reply is still finishing.";
-      this.closeButton.disabled=this.actionPending;
+      this.closeButton.disabled=this.actionPending || this._canMove();
+      this.closeButton.title=this._canMove()?"Move control here before closing this browser.":"";
       this.loginToggle.hidden=!human || !this.vaultEnabled;
       this.loginToggle.disabled=this.actionPending || this.inputUnconfirmed;
       for(const element of this.toolbar.elements)element.disabled=!input;
@@ -386,6 +390,7 @@
         takeover_pending:"Waiting for the current browser action to finish…",paused:"Browser actions are paused. Take control to continue.",
         recovering:"A browser action could not be confirmed. Input is paused."}[this.control?.mode] : null;
       if(this.actionNotice)this.controlStatus.textContent=this.actionNotice;
+      else if(this._canMove())this.controlStatus.textContent="Move control here stops input from the other tab and starts Private here.";
       else if(text)this.controlStatus.textContent=human && !this.canReturn ? text+" Its current reply is still finishing." : text;
       else this.controlStatus.textContent="";
     }

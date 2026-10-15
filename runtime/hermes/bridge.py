@@ -1752,7 +1752,10 @@ async def handle_browser_session(adapter, request, *, operation, api_server):
                 state = await runtime.visibility(owner,body)
             elif runtime is not None and operation == "take":
                 viewer = await runtime.viewer(owner)
-                state = await runtime.boundary.take(viewer,request_id=body.get("request_id"),
+                if type(body.get("move_here", False)) is not bool:
+                    raise control.ControlRejected("invalid_binding")
+                take = runtime.boundary.move if body.get("move_here") else runtime.boundary.take
+                state = await take(viewer,request_id=body.get("request_id"),
                     revision=body.get("revision"),auth_expires_at=expiry)
             elif operation == "take":
                 state = _controller.request_takeover(

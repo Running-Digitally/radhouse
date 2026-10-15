@@ -529,6 +529,7 @@ class BrowserVisibilityBody(BrowserControlBody):
 
 
 class BrowserTakeBody(BrowserControlBody):
+    move_here: Annotated[bool, Field(strict=True)] | None = None
     request_id: Annotated[str, Field(pattern=r"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$")]
 
 

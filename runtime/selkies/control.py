@@ -251,6 +251,37 @@ class StreamingControl:
                 return state
             return await self._grant(state)
 
+    async def move(self, viewer, *, request_id, revision, auth_expires_at):
+        """Explicit same-principal transfer; revoke/drain the old tab first."""
+        if not viewer.can_take or self.viewers.get(viewer.token) is not viewer:
+            raise StreamRejected("viewing_only")
+        if self._blocked or self.handler is None or self.current() != self.identity.generation:
+            raise StreamRejected("input_boundary_unavailable")
+        async with self.transition_lock:
+            state = self.state()
+            if state.principal_id != viewer.owner.principal_id:
+                raise StreamRejected("owner_mismatch")
+            lease = state.lease
+            if (state.mode == "human" and lease is not None and lease.owner == viewer.owner
+                    and lease.request_id == request_id and lease.request_revision == revision + 1):
+                return state
+            if (state.mode != "human" or lease is None or lease.owner == viewer.owner
+                    or state.revision != revision or state.active_command is not None):
+                raise StreamRejected("control_lease_unavailable")
+            # Durable revocation wins pending observers before we wait for input.
+            state = self.controller.pause(self.identity, lease.owner)
+            self.input_token = None
+            try:
+                await self._publish()
+                await self._drain()
+                self.input_owner = None
+                state = self.controller.request_takeover(self.identity, viewer.owner,
+                    request_id, revision=state.revision, auth_expires_at=auth_expires_at)
+                return await self._grant(state)
+            except Exception:
+                self._blocked = True
+                raise StreamRejected("move_unconfirmed") from None
+
     async def _grant(self, state):
         # Expiry can win the race with the periodic revocation watcher. Drain
         # that former holder before publishing any replacement grant.
