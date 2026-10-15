@@ -44,6 +44,8 @@ def real_chat(store, clock, tmp_path):
 
 def test_real_auth_cookie_csrf_logout_and_schema_unchanged(real_chat, store):
     auth, service, hermes, code, password = real_chat
+    with store.transaction() as tx:
+        before = tx._connection.execute("SELECT schema_version,migration_sha256 FROM radhouse_metadata").fetchone()
     with TestClient(create_app(auth, service), base_url="http://127.0.0.1") as client:
         assert client.get("/chat/history").status_code == 401
         assert client.get("/chat/agent-profile").status_code == 401
@@ -69,7 +71,7 @@ def test_real_auth_cookie_csrf_logout_and_schema_unchanged(real_chat, store):
         assert client.get("/chat/history").status_code == 401
         assert client.get("/chat/agent-profile").status_code == 401
     with store.transaction() as tx:
-        assert tx._connection.execute("SELECT schema_version FROM radhouse_metadata").fetchone()["schema_version"] == 7
+        assert tx._connection.execute("SELECT schema_version,migration_sha256 FROM radhouse_metadata").fetchone() == before
     assert len(hermes.runs) == 1
 
 
