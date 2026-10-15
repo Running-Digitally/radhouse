@@ -156,6 +156,7 @@ function outgoingBrowserContext() {
 async function returnBrowser(binding) {
   if(!session || busy || pendingTurn())return;
   if(!browserAnchor() && !integratedBrowser()) { browserContextWanted=true;showPage("/",true,true);updateBrowserChip();return; }
+  browserEpoch++;browserStatusRequest?.controller.abort();browserStatusRequest=null;
   const returningSession=session;busy=true;controls();
   try {
     const data=await api("/chat/browser/return",{...binding,request_id:crypto.randomUUID()});
@@ -189,7 +190,7 @@ function syncConversationWorkspace() {
   if(enabled){$("chat-view").hidden=false;$("browser-page").hidden=!browserMode && !preview;}
   browserView?.streamPresenter?.presentation({preview,visible:enabled ? browserMode || preview : currentPage==="/browser"});
 }
-$("assistant-browser").addEventListener("browser-action-settled",syncConversationWorkspace);
+$("assistant-browser").addEventListener("browser-action-settled",()=>{syncConversationWorkspace();void refreshBrowser();});
 $("browser-privacy-toggle").addEventListener("click",()=>browserView?.streamPresenter?.changeMode(lastBrowserStatus?.control?.observation_mode==='observe'?'private':'observe'));
 $("browser-preview-open").addEventListener("click",()=>showPage("/browser",true,true));
 $("browser-minimize").addEventListener("click",()=>{browserView?.streamPresenter?.hideKeyboard();showPage("/",true,true);});
@@ -213,6 +214,7 @@ function stopBrowser() {
   browserRequestId=null; browserView?.stop();
 }
 async function refreshBrowser() {
+  if(browserView?.actionPending)return;
   const controlled=session?.features?.browser_control===true;
   if (!browserView || !session || (!controlled && currentPage!=="/browser") || browserSuspended || openingHistory) {
     stopBrowser(); return;
@@ -237,7 +239,7 @@ async function refreshBrowser() {
     (controlled || currentPage==="/browser" && browserAnchor()===request.anchor) && session.features?.browser===true;
   try {
     const status=await api("/chat/browser",undefined,false,request.controller.signal);
-    if (current()) {
+    if (current() && !(status.generation===lastBrowserStatus?.generation && Number.isInteger(status.control?.revision) && Number.isInteger(lastBrowserStatus?.control?.revision) && status.control.revision<lastBrowserStatus.control.revision)) {
       if(lastBrowserStatus?.state==="live" && status.state==="idle")browserContextWanted=false;
       lastBrowserStatus=status;updateBrowserChip();
       if((currentPage==="/browser" || integratedBrowser() && currentPage==="/") && !browserView.actionPending)browserView.update(status);
@@ -257,7 +259,11 @@ async function refreshBrowser() {
   }
 }
 $("assistant-browser").addEventListener("browser-auth-required",()=>{ if (session) { showLogin(true); } });
-$("assistant-browser").addEventListener("browser-activity",()=>{lastBrowserActivity=Date.now();void refreshBrowser();});
+$("assistant-browser").addEventListener("browser-activity",()=>{
+  lastBrowserActivity=Date.now();
+  if(browserView?.actionPending){browserEpoch++;browserStatusRequest?.controller.abort();browserStatusRequest=null;}
+  else void refreshBrowser();
+});
 $("assistant-browser").addEventListener("browser-state",event=>{
   if(!session)return;
   browserEpoch++;browserStatusRequest?.controller.abort();browserStatusRequest=null;

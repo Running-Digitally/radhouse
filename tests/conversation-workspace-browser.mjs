@@ -42,6 +42,8 @@ try{
  await expect(page.getByRole('button',{name:'Private',exact:true})).toHaveAttribute('aria-pressed','true');
  await page.locator('.browser-privacy').getByRole('button',{name:'Let agent observe',exact:true}).click();
  await expect(page.locator('.browser-privacy-text, .browser-privacy [role=status]')).toContainText('Agent can read');
+ await page.evaluate(()=>browserView.update({...lastBrowserStatus,control:{...lastBrowserStatus.control,revision:lastBrowserStatus.control.revision-1,observation_mode:'private'}}));
+ await expect(page.locator('.browser-privacy').getByRole('button',{name:'Let agent observe',exact:true})).toHaveAttribute('aria-pressed','true');
  expect(new URL(await page.locator('.browser-stream-frame').getAttribute('src'),origin).searchParams.get('connection')).toBe(controlConnection);
  await page.getByRole('button',{name:'Private',exact:true}).click();
  await expect(page.getByRole('button',{name:'Private',exact:true})).toHaveAttribute('aria-pressed','true');

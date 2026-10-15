@@ -77,6 +77,8 @@
     }
 
     update(value) {
+      if(this.controlEnabled && value?.generation===this.generation && Number.isInteger(value?.control?.revision)
+          && Number.isInteger(this.control?.revision) && value.control.revision<this.control.revision)return;
       const state = value && Object.hasOwn(labels, value.state) ? value.state : "unavailable";
       const run = typeof value?.run_id === "string" && identifier.test(value.run_id) ? value.run_id : null;
       const generation = typeof value?.generation === "string" && identifier.test(value.generation) ? value.generation : null;
@@ -493,7 +495,7 @@
       const action=Symbol("browser-return");this.actionToken=action;
       this.actionPending=true;this._renderControlState();this._clearSecrets();
       try {await this.onReturn(this._binding());}
-      finally {if(this.actionToken===action){this.actionToken=null;this.actionPending=false;this._renderControlState();}}
+      finally {if(this.actionToken===action){this.actionToken=null;this.actionPending=false;this._renderControlState();this.container.dispatchEvent(new CustomEvent("browser-action-settled",{bubbles:true}));}}
     }
 
     async _showLogins() {

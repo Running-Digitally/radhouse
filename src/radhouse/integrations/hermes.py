@@ -256,7 +256,9 @@ class HermesRunsClient:
         if browser_context is not None:
             if (type(browser_context) is not dict or browser_owner is None
                     or not {"generation", "revision", "lease_id", "owner", "auth_expires_at"} <= set(browser_context)
-                    or set(browser_context) - {"generation", "revision", "lease_id", "owner", "auth_expires_at", "previous_run_id"}):
+                    or set(browser_context) - {"generation", "revision", "lease_id", "owner", "auth_expires_at", "previous_run_id", "observation_only", "return_to_agent"}
+                    or any(type(browser_context[key]) is not bool for key in ("observation_only","return_to_agent") if key in browser_context)
+                    or browser_context.get("observation_only") is True and browser_context.get("return_to_agent") is True):
                 raise ValueError("invalid_hermes_browser_context")
         session_id = _validated_identifier(session_id, "session")
         dispatch_key = _validated_identifier(dispatch_key, "dispatch")

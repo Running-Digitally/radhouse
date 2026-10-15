@@ -9,7 +9,7 @@
       this.frame.title='Live assistant browser';this.frame.allow='clipboard-read; clipboard-write';this.frame.tabIndex=-1;
       this.tools=document.createElement('div');this.tools.className='browser-stream-tools';this.tools.hidden=true;
       const button=(label,action)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.addEventListener('click',action);return b;};
-      this.keyboard=button('Keyboard',()=>this.invoke('show',false));
+      this.keyboard=button('Keyboard',()=>this.input.focused?this.hideKeyboard():this.invoke('show',false));
       this.keys=button('Keys',()=>this.toggleKeys(this.panel.hidden));this.keys.setAttribute('aria-expanded','false');
       this.panel=document.createElement('div');this.panel.className='browser-stream-keys';this.panel.hidden=true;
       this.panel.id='browser-keys-'+crypto.randomUUID();this.panel.setAttribute('role','group');this.panel.setAttribute('aria-label','Browser keys');this.keys.setAttribute('aria-controls',this.panel.id);
@@ -18,7 +18,8 @@
       this.panel.append(button('Dismiss keyboard',()=>this.hideKeyboard()));
       this.fit=button('Fit',()=>view.viewport.classList.remove('browser-stream-zoom'));
       this.zoom=button('Zoom',()=>view.viewport.classList.add('browser-stream-zoom'));
-      this.tools.append(this.keyboard,this.keys,this.fit,this.zoom,this.panel);view.viewport.before(this.tools);
+      this.tools.append(this.keyboard,this.keys,this.panel);view.viewport.before(this.tools);
+      view.actions.append(this.fit,this.zoom);
       this.privacy=document.createElement('div');this.privacy.className='browser-privacy';this.privacy.hidden=true;this.privacy.setAttribute('role','group');this.privacy.setAttribute('aria-label','Agent visibility during your takeover');
       this.privateButton=button('Private',()=>this.changeMode('private'));
       this.observeButton=button('Let agent observe',()=>this.changeMode('observe'));
@@ -34,6 +35,14 @@
         if(event.data?.type==='framePresented'){this.presented=true;this.render();}
       };
       window.addEventListener('message',this.message);
+      this.frameLoad=()=>{
+        const activity=event=>{
+          if(!event.isTrusted || Date.now()-(this.lastActivity||0)<1000)return;
+          this.lastActivity=Date.now();view.container.dispatchEvent(new CustomEvent('browser-activity',{bubbles:true}));
+        };
+        for(const type of ['pointerdown','keydown','wheel','touchstart'])this.frame.contentDocument?.addEventListener(type,activity,{capture:true,passive:true});
+      };
+      this.frame.addEventListener('load',this.frameLoad);
       this.focus=event=>{if(event.target.closest?.('#compose'))this.hideKeyboard();};document.addEventListener('focusin',this.focus);
     }
     get enabled(){return this.info!==null;}
@@ -66,7 +75,9 @@
       this.privateButton.disabled=this.observeButton.disabled=view.actionPending;
       this.privacyText.textContent=mode==='observe'?'Agent can read this page when you ask in chat. You keep control.':'Private. Only you can see the page.';
       view.connection.textContent=this.presented?'Live':'Connecting';view.connection.dataset.state=this.presented?'live':'pending';
-      this.tools.hidden=!view.active||this.preview;
+      view._decorate(view.closeButton,"close","Close browser",true);
+      this.tools.hidden=!view.active||this.preview||!human||!touch;
+      this.keyboard.textContent=this.input.focused?"Hide keyboard":"Keyboard";
       this.keyboard.hidden=!human||!touch||this.input.hardware;this.keys.hidden=!human||!touch;
       for(const b of [this.keyboard,this.keys,...this.panel.querySelectorAll('button')])b.disabled=!human||!this.input.ready||view.actionPending;
       if(!human||this.preview){this.hideKeyboard();this.toggleKeys(false);}
@@ -97,7 +108,7 @@
       this.presented=false;this.tools.hidden=true;this.privacy.hidden=true;this.notice.hidden=true;this.toggleKeys(false);
       this.view.container.classList.remove('browser-view--streaming');this.view.body.inert=false;
     }
-    destroy(){this.clear();window.removeEventListener('message',this.message);document.removeEventListener('focusin',this.focus);}
+    destroy(){this.clear();this.frame.removeEventListener('load',this.frameLoad);window.removeEventListener('message',this.message);document.removeEventListener('focusin',this.focus);}
   }
   window.RadhouseBrowserStream=BrowserStream;
 })();

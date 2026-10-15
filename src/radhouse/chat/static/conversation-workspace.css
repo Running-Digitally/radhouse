@@ -51,3 +51,25 @@
 .browser-privacy span{flex-basis:100%;color:var(--muted)}
 #browser-privacy-bar{justify-content:space-between;margin-bottom:6px;border:1px solid var(--line);border-radius:10px}
 #browser-privacy-bar[hidden],.browser-privacy[hidden]{display:none}
+
+/* Keep browser controls above a fitted stream, including iframe autofocus. */
+.workspace-browser #browser-page{display:flex;flex-direction:column;overflow:hidden}
+.workspace-browser #browser-page>.workspace-heading{flex-shrink:0}
+.workspace-browser #assistant-browser{display:flex;flex:1;flex-direction:column;min-height:0;margin:0}
+.workspace-browser .browser-view--streaming .browser-view-body{display:flex;flex:1;flex-direction:column;min-height:0;overflow:hidden}
+.browser-view--streaming .browser-view-status,.browser-view--streaming .browser-view-site{display:none}
+.browser-view--streaming .browser-actions{flex-shrink:0;padding:6px;gap:6px;font-size:13px}
+.browser-view--streaming .browser-actions button{min-height:44px;padding:6px;font-size:13px;white-space:normal}
+.workspace-browser .browser-view--streaming .browser-view-viewport{flex:1;min-height:96px;height:auto;aspect-ratio:auto}
+.browser-privacy,.browser-stream-tools,.browser-utilities{flex-shrink:0}
+.browser-privacy span{flex-basis:auto;flex:1;min-width:130px}
+.browser-stream-tools[hidden],.browser-stream-keys[hidden]{display:none}
+@media(max-width:950px){
+  .workspace-browser #browser-page{overflow:auto}
+  .workspace-browser .browser-view--streaming .browser-view-body{overflow:visible}
+  .workspace-browser #assistant-browser{min-height:280px}
+  .browser-privacy span{display:none}
+  .browser-stream-tools{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .conversation-keyboard-open.workspace-browser .browser-utilities{display:none}
+  .conversation-keyboard-open .workspace-browser .browser-actions,.conversation-keyboard-open .workspace-browser .browser-utilities{display:none}
+}

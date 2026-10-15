@@ -128,3 +128,32 @@ def test_actual_authenticated_relay_through_uvicorn_wsproto():
         finally:
             server.should_exit=True;await task;listener.close();await runner.cleanup()
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('flag',['observation_only','return_to_agent'])
+def test_dispatch_client_forwards_typed_takeover_flags(flag):
+    import httpx,json
+    from radhouse.integrations.hermes import HermesRunsClient
+    calls=[]
+    def respond(request):
+        calls.append(json.loads(request.content))
+        return httpx.Response(202,headers={'Idempotency-Replayed':'false'},json={'run_id':'run-1','status':'started','replayed':False})
+    owner={'principal_id':'alice','conversation_id':'conversation'}
+    context={'generation':'generation','revision':1,'lease_id':'lease','owner':{**owner,'auth_session_digest':'a'*64,'binding_revision':1,'tab_id':'tab'},'auth_expires_at':10**10,flag:True}
+    with HermesRunsClient('http://127.0.0.1','synthetic-service',transport=httpx.MockTransport(respond)) as client:
+        client.start_or_attach(input_text='Synthetic takeover check',session_id='session',dispatch_key='dispatch',disable_tools=False,
+            allowed_tools=('browser_navigate','browser_snapshot'),browser_owner=owner,browser_context=context)
+    assert calls[0]['browser_context']==context
+
+
+@pytest.mark.parametrize('flags',[{'observation_only':1},{'return_to_agent':'yes'},{'observation_only':True,'return_to_agent':True}])
+def test_dispatch_client_rejects_invalid_takeover_flags_before_network(flags):
+    import httpx
+    from radhouse.integrations.hermes import HermesRunsClient
+    calls=[]
+    with HermesRunsClient('http://127.0.0.1','synthetic-service',transport=httpx.MockTransport(lambda request:calls.append(request))) as client:
+        with pytest.raises(ValueError,match='invalid_hermes_browser_context'):
+            client.start_or_attach(input_text='Synthetic check',session_id='session',dispatch_key='dispatch',disable_tools=False,
+                allowed_tools=('browser_navigate','browser_snapshot'),browser_owner={'principal_id':'alice','conversation_id':'conversation'},
+                browser_context={'generation':'generation','revision':1,'lease_id':'lease','owner':{},'auth_expires_at':10**10,**flags})
+    assert not calls
