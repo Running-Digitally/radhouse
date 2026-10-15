@@ -104,6 +104,33 @@ def create_app(
             "Cache-Control": "no-store",
         })
 
+    from radhouse.api.schemas import WorkResponse, WorkCommandRequest, WorkCommandResponse
+    from radhouse.application.work_service import WorkService
+    work_service = WorkService(service)
+
+    @app.post("/v1/work", response_model=WorkResponse, status_code=201, responses=errors)
+    def submit_work(body: AdmitRequest, actor: Actor):
+        return work_service.submit(actor, body.envelope.command(), body.start.command())
+
+    @app.get("/v1/work/{work_id}", response_model=WorkResponse, responses=errors)
+    def get_work(work_id: str, actor: Actor, conversation_id: Conversation, binding_revision: BindingRevision):
+        return work_service.get(actor, work_id, envelope=read_envelope(actor, conversation_id, binding_revision))
+
+    @app.post("/v1/work/{work_id}/commands", response_model=WorkCommandResponse, responses=errors)
+    def work_command(work_id: str, body: WorkCommandRequest, actor: Actor):
+        return work_service.apply_command(actor, work_id, body.command(), envelope=body.envelope.command())
+
+    @app.get("/v1/work/{work_id}/artifacts/{artifact_id}", responses=errors)
+    def get_work_artifact(work_id: str, artifact_id: str, actor: Actor,
+                          conversation_id: Conversation, binding_revision: BindingRevision):
+        manifest, content = work_service.artifact(actor, work_id, artifact_id,
+            envelope=read_envelope(actor, conversation_id, binding_revision))
+        # Force download, including Markdown with potentially hostile source text.
+        return Response(content=content, media_type=manifest.media_type, headers={
+            "Content-Disposition": 'attachment; filename="radhouse-artifact.txt"',
+            "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+        })
+
     @app.post("/tasks", response_model=TaskResponse, responses=errors)
     def admit(body: AdmitRequest, actor: Actor):
         return service.admit(actor, body.envelope.command(), body.start.command())
@@ -189,7 +216,7 @@ def _install_security_headers(app):
         if (
             request.url.path == "/app"
             or request.url.path.startswith((
-                "/app/", "/auth/", "/tasks", "/reviews", "/work-home",
+                "/app/", "/auth/", "/tasks", "/reviews", "/work-home", "/v1/work",
                 "/projects", "/conversations", "/agent-enrollment",
             ))
         ):

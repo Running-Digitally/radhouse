@@ -146,7 +146,7 @@ def reconcile_pending_denial(service, task, dispatch, permission):
     return _record_denial_outcome(service, task, dispatch, permission, state, entry)
 
 
-def control(service, actor, task_id, expected, envelope, *, text=None, request_id=None, choice=None, digest=None):
+def control(service, actor, task_id, expected, envelope, *, text=None, request_id=None, choice=None, digest=None, admit=None):
     from radhouse.application.service import fingerprint
 
     kind = "guidance" if text is not None else "permission"
@@ -158,7 +158,7 @@ def control(service, actor, task_id, expected, envelope, *, text=None, request_i
         raise Rejected("invalid_guidance", 422)
     if kind == "guidance":
         _check_guidance_transport(service, actor, task_id, expected, envelope, key)
-    prepared = _submit_control(service, actor, task_id, expected, envelope, kind, text, request_id, choice, digest, identity, key)
+    prepared = _submit_control(service, actor, task_id, expected, envelope, kind, text, request_id, choice, digest, identity, key, admit)
     if isinstance(prepared, Task):
         return prepared
     task, dispatch, method, operation = prepared
@@ -279,7 +279,7 @@ def _control_receipt(kind, key, text, request_id, choice, digest, expected, task
     return receipt
 
 
-def _submit_control(service, actor, task_id, expected, envelope, kind, text, request_id, choice, digest, identity, key):
+def _submit_control(service, actor, task_id, expected, envelope, kind, text, request_id, choice, digest, identity, key, admit):
     with service.store.transaction() as tx:
         task = service._task(tx, task_id)
         service._authorize(tx, actor, task, envelope, write=True)
@@ -299,6 +299,10 @@ def _submit_control(service, actor, task_id, expected, envelope, kind, text, req
         receipt = _control_receipt(kind, key, text, request_id, choice, digest, expected, task, dispatch, envelope)
         operation = Operation(key, task_id, task.attempt_id, "submitted",
                               json.dumps({"fingerprint": identity}))
+        # Internal application hook: work receipt/revision fencing commits with
+        # the existing exact-run intent. Never accept this callback from a caller.
+        if admit is not None:
+            admit(tx, task)
         tx.save_operation(operation)
         tx.save_delivery(Delivery(envelope.channel, envelope.event_id, actor.principal_id, identity, task_id, kind))
         updated = task.evolve(guidance=(*task.guidance, receipt), task_revision=task.task_revision + 1)

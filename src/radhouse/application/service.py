@@ -25,6 +25,10 @@ from radhouse.domain.tasks import (AgentDispatch, Attempt, Delivery, Event,
     RuntimeFailure, RuntimeResult, SavedCommand, StartTask, Task, TaskTitle, Operation,
     agent_task_title, normalize_task_title, runtime_images, runtime_input, validate_input_files)
 
+_RUNTIME_ADMISSION_CODES = {'runtime_unavailable', 'runtime_identity_mismatch',
+    'runtime_version_mismatch', 'runtime_provider_mismatch', 'runtime_contract_unavailable',
+    'runtime_descriptor_stale', 'runtime_admission_held'}
+
 
 _READ_ONLY_TOOL_DIRECTIVE = re.compile(
     r"\buse only\s+((?:read_file|search_files)(?:\s*(?:,|and)\s*(?:read_file|search_files))*)\b",
@@ -71,11 +75,13 @@ def _terminal_outcome(blockers, result):
 class Service:
     def __init__(self, store: Store, work: AgentWorkPort, provider: ProviderPort,
                  clock: Callable[[], datetime], *, approval_commands: dict[str, tuple[str, ...]] | None = None,
-                 conversation_scope: Callable[[ConversationLink], bool] | None = None):
+                 conversation_scope: Callable[[ConversationLink], bool] | None = None,
+                 durable_work_enabled: bool = False):
         self.store, self.work, self.provider, self.clock = store, work, provider, clock
         self.approval_commands = approval_commands or {}
         self.conversation_scope = conversation_scope
         self.review_links = None
+        self.durable_work_enabled = durable_work_enabled
 
     def _now(self) -> datetime:
         value = self.clock()
@@ -103,10 +109,11 @@ class Service:
         binding = tx.binding(actor.channel, actor.subject, envelope.conversation_id)
         verify_envelope(actor, envelope, binding, project_id)
 
-    @staticmethod
-    def _save(tx: UnitOfWork, old: Task, new: Task, kind: str) -> Task:
+    def _save(self, tx: UnitOfWork, old: Task, new: Task, kind: str) -> Task:
         tx.save_task(new, old.state_revision)
         tx.add_event(Event(new.task_id, kind, new.state_revision))
+        from radhouse.application.work_service import reconcile_task
+        reconcile_task(tx, new, self._now())
         return new
 
     def _record_runtime_activity(self, task_id: str, result: RuntimeResult) -> None:
@@ -180,6 +187,11 @@ class Service:
 
 
     def admit(self, actor: AuthContext, envelope: Envelope, start: StartTask) -> Task:
+        with self.store.transaction() as tx:
+            return self._admit(tx, actor, envelope, start)
+
+    def _admit(self, tx: UnitOfWork, actor: AuthContext, envelope: Envelope, start: StartTask,
+               *, output_contract: str | None = None) -> Task:
         start = self._validated_start(start)
         body = asdict(start)
         if not start.disable_tools:
@@ -187,45 +199,47 @@ class Service:
             body.pop("disable_tools")
         if not start.allowed_tools:
             body.pop("allowed_tools")
+        if output_contract is not None:
+            body["output_contract"] = output_contract
         identity = fingerprint(body)
         event_identity = fingerprint({"kind": "start", "key": envelope.command_key, "body": body})
-        with self.store.transaction() as tx:
-            require_access(tx.access(actor.principal_id), start.bot_id, start.project_id, write=True)
-            bot = next(
-                (candidate for candidate in tx.bots(actor.principal_id, start.project_id)
-                 if candidate.bot_id == start.bot_id),
-                None,
-            )
-            if bot is None or bot.state != "ready":
-                raise Rejected("bot_unavailable", 409)
-            if bot.provider_binding != start.provider_binding:
-                raise Rejected("provider_binding_denied", 403)
-            self._binding(tx, actor, envelope, start.project_id)
-            previous_result = self._previous_result(tx, actor, envelope, start)
-            delivery = tx.delivery(envelope.channel, envelope.event_id)
-            if delivery:
-                if delivery.principal_id != actor.principal_id or delivery.fingerprint != event_identity:
-                    raise Rejected("delivery_conflict")
-                task = self._task(tx, delivery.task_id)
-                self._authorize(tx, actor, task, envelope, write=True)
-                return task
-            old = tx.command(actor.principal_id, envelope.command_key)
-            if old:
-                if old.fingerprint != identity:
-                    raise Rejected("command_conflict")
-                task = self._task(tx, old.task_id)
-                self._authorize(tx, actor, task, envelope, write=True)
-            else:
-                task = Task(str(uuid4()), actor.principal_id, start.bot_id, start.project_id,
-                            start.brief, start.provider_binding, start.resource_key, start.budget,
-                            files=start.files, follows_task_id=start.follows_task_id, previous_result=previous_result,
-                            disable_tools=start.disable_tools, allowed_tools=start.allowed_tools)
-                tx.insert_task(task)
-                tx.save_command(SavedCommand(actor.principal_id, envelope.command_key, identity, task.task_id))
-                tx.add_event(Event(task.task_id, "admitted", task.state_revision))
-            tx.save_delivery(Delivery(envelope.channel, envelope.event_id, actor.principal_id,
-                                      event_identity, task.task_id, "start"))
+        require_access(tx.access(actor.principal_id), start.bot_id, start.project_id, write=True)
+        bot = next(
+            (candidate for candidate in tx.bots(actor.principal_id, start.project_id)
+             if candidate.bot_id == start.bot_id),
+            None,
+        )
+        if bot is None or bot.state != "ready":
+            raise Rejected("bot_unavailable", 409)
+        if bot.provider_binding != start.provider_binding:
+            raise Rejected("provider_binding_denied", 403)
+        self._binding(tx, actor, envelope, start.project_id)
+        previous_result = self._previous_result(tx, actor, envelope, start)
+        delivery = tx.delivery(envelope.channel, envelope.event_id)
+        if delivery:
+            if delivery.principal_id != actor.principal_id or delivery.fingerprint != event_identity:
+                raise Rejected("delivery_conflict")
+            task = self._task(tx, delivery.task_id)
+            self._authorize(tx, actor, task, envelope, write=True)
             return task
+        old = tx.command(actor.principal_id, envelope.command_key)
+        if old:
+            if old.fingerprint != identity:
+                raise Rejected("command_conflict")
+            task = self._task(tx, old.task_id)
+            self._authorize(tx, actor, task, envelope, write=True)
+        else:
+            task = Task(str(uuid4()), actor.principal_id, start.bot_id, start.project_id,
+                        start.brief, start.provider_binding, start.resource_key, start.budget,
+                        files=start.files, follows_task_id=start.follows_task_id, previous_result=previous_result,
+                        disable_tools=start.disable_tools, allowed_tools=start.allowed_tools,
+                        output_contract=output_contract)
+            tx.insert_task(task)
+            tx.save_command(SavedCommand(actor.principal_id, envelope.command_key, identity, task.task_id))
+            tx.add_event(Event(task.task_id, "admitted", task.state_revision))
+        tx.save_delivery(Delivery(envelope.channel, envelope.event_id, actor.principal_id,
+                                  event_identity, task.task_id, "start"))
+        return task
 
     def get(self, actor: AuthContext, task_id: str, *, envelope: Envelope) -> Task:
         with self.store.transaction() as tx:
@@ -298,6 +312,11 @@ class Service:
     def advance(self, task_id: str, worker_id: str) -> Task:
         with self.store.transaction() as tx:
             task = self._task(tx, task_id)
+            work = tx.work_for_task(task_id)
+            if work and work.workflow_version != "artifact-v1":
+                from radhouse.application.work_service import reconcile_task
+                reconcile_task(tx, task, self._now())
+                return task
         if task.phase == "closed" or (task.phase != "stopping" and
                 set(task.blockers) & {"human_pause", "grant_withdrawal", "budget_exhausted"}):
             return self.refresh_guidance(task_id)
@@ -380,7 +399,7 @@ class Service:
             return tx.audience(task.bot_id, task.project_id)
 
 
-    def _task_card(self, task, titles, publications, order, can_write):
+    def _task_card(self, task, titles, publications, order, can_write, work_view=None):
         action = lambda enabled, reason: _task_action(can_write, enabled, reason)
         title = titles[task.task_id]
         if title is None:
@@ -390,7 +409,7 @@ class Service:
         pausable = task.phase in {"active", "recovering"} and not paused and cancellable
         resumable = paused and task.phase not in {"closed", "stopping"}
         publication = publications[task.task_id]
-        reviewable = task.outcome == "completed" and task.result is not None and publication is None
+        reviewable = work_view is None and task.outcome == "completed" and task.result is not None and publication is None
         if not can_write:
             review = ActionView(False, "read_only_role")
         else:
@@ -401,7 +420,7 @@ class Service:
             action(pausable, "task_not_pausable"),
             action(resumable, "task_not_paused"),
             review,
-            publication,
+            publication, work_view,
         )
 
 
@@ -425,6 +444,12 @@ class Service:
             )
             publications = {task.task_id: tx.publication(task.task_id) for task in tasks}
             titles = {task.task_id: tx.task_title(task.task_id) for task in tasks}
+            from radhouse.application.work_service import project_work
+            work_views = {}
+            for task in tasks:
+                work = tx.work_for_task(task.task_id)
+                if work:
+                    work_views[task.task_id] = project_work(tx, work, task)
             order = tx.task_admission_order(tuple(task.task_id for task in tasks))
 
         can_write = access.role in {"admin", "operator"}
@@ -436,10 +461,12 @@ class Service:
 
         cards = []
         for task in tasks:
-            cards.append(self._task_card(task, titles, publications, order, can_write))
+            cards.append(self._task_card(task, titles, publications, order, can_write, work_views.get(task.task_id)))
         return WorkHome(
             actor.principal_id, access.role, binding.project_id, project.display_name,
             agents, tuple(sorted(cards, key=lambda card: card.sequence, reverse=True)), start,
+            tuple(view.work_id for view in work_views.values() if view.needs_input),
+            self.durable_work_enabled,
         )
 
     @staticmethod
@@ -474,6 +501,11 @@ class Service:
         with self.store.transaction() as tx:
             task = self._task(tx, task_id)
             if task.phase != "queued":
+                return task
+            work = tx.work_for_task(task_id)
+            if work and work.workflow_version != "artifact-v1":
+                from radhouse.application.work_service import reconcile_task
+                reconcile_task(tx, task, self._now())
                 return task
             blockers = set(task.blockers) - {"resource_busy"}
             try:
@@ -541,12 +573,14 @@ class Service:
             return self._save(tx, task, task.evolve(
                 blockers=blockers, phase=phase), "needs_attention")
 
-    def _runtime_unavailable(self, task_id: str) -> Task:
+    def _runtime_unavailable(self, task_id: str, code='runtime_unavailable') -> Task:
+        if code not in _RUNTIME_ADMISSION_CODES:
+            code = 'runtime_unavailable'
         with self.store.transaction() as tx:
             task = self._task(tx, task_id)
             if task.phase == "closed":
                 return task
-            blockers = tuple(sorted(set(task.blockers) | {"runtime_unavailable"}))
+            blockers = tuple(sorted((set(task.blockers) - _RUNTIME_ADMISSION_CODES) | {code}))
             if blockers == task.blockers and task.phase == "recovering":
                 return task
             return self._save(tx, task, task.evolve(
@@ -595,7 +629,7 @@ class Service:
                 phase = "stopping" if task.phase == "stopping" else "recovering"
                 return self._save(tx, task, task.evolve(
                     phase=phase, blockers=blockers), "needs_attention")
-            dispatch_blockers = set(task.blockers) - {
+            dispatch_blockers = set(task.blockers) - _RUNTIME_ADMISSION_CODES - {
                 "operation_unknown", "runtime_stop", "runtime_unavailable",
             }
             if dispatch_blockers and task.phase != "stopping" and dispatch.state != "accepted":
@@ -620,8 +654,8 @@ class Service:
         try:
             capabilities = self.work.capabilities(task)
             self._validate_capabilities(capabilities)
-        except RuntimeFailure:
-            return self._runtime_unavailable(task_id)
+        except RuntimeFailure as error:
+            return self._runtime_unavailable(task_id, error.code)
         submitted_at = self._now()
         retention_until = submitted_at + timedelta(
             seconds=capabilities.idempotency_retention_seconds
@@ -634,6 +668,12 @@ class Service:
             if latest is None:
                 raise Rejected("missing_dispatch")
             if latest.state == "prepared":
+                if current.phase == "stopping" or set(current.blockers) & {"human_pause", "cancel_requested", "grant_withdrawal"}:
+                    return current
+                try:
+                    require_access(tx.access(current.owner_id), current.bot_id, current.project_id, write=True)
+                except Rejected:
+                    return self._save(tx, current, current.blocked("grant_withdrawal"), "waiting")
                 dispatch = replace(
                     latest, state="submitted",
                     runtime_revision=capabilities.runtime_revision,
@@ -692,6 +732,12 @@ class Service:
             result = self.work.result(current, runtime_dispatch)
         except RuntimeFailure:
             return self._needs_attention(task_id, dispatch.key)
+        try:
+            if not self._accept_runtime_observation(task_id, dispatch, result):
+                with self.store.transaction() as tx:
+                    return self._task(tx, task_id)
+        except RuntimeFailure:
+            return self._needs_attention(task_id, dispatch.key)
         from radhouse.application.runtime_controls import reconcile_pending_denial
         denial_reconciliation = reconcile_pending_denial(
             self, current, runtime_dispatch, result.permission_request
@@ -712,7 +758,7 @@ class Service:
             current = self._task(tx, task_id)
             if current.phase == "closed" or current.phase == "stopping":
                 return current
-            blockers = tuple(x for x in current.blockers if x not in {
+            blockers = tuple(x for x in current.blockers if x not in _RUNTIME_ADMISSION_CODES and x not in {
                 "operation_unknown", "runtime_stop", "runtime_unavailable",
             })
             if denial_reconciliation == "stale":
@@ -738,6 +784,9 @@ class Service:
         if isinstance(snapshot, Task):
             return snapshot
         task, attempt, dispatch = snapshot
+        if dispatch.state == "prepared" and set(task.blockers) & {"human_pause", "cancel_requested"}:
+            reason = "cancel_requested" if "cancel_requested" in task.blockers else "human_pause"
+            return self._finish_hold(task_id, reason, attempt, dispatch)
         if dispatch.state == "prepared":
             submitted = self._submit_dispatch(task_id, task, dispatch)
             if isinstance(submitted, Task):
@@ -765,12 +814,43 @@ class Service:
                 ), current_title.revision)
 
 
+    def _accept_runtime_observation(self, task_id, dispatch, result):
+        """Persist a cursor before consuming output; identical replay can finish
+        application after a crash. An older snapshot cannot overwrite new state.
+        """
+        sequence = result.observation_sequence
+        with self.store.transaction() as tx:
+            current = self._task(tx, task_id)
+            latest = tx.dispatch(dispatch.key)
+            if current.phase == 'closed' or current.attempt_id != dispatch.attempt_id or latest is None:
+                return False
+            if sequence is None:
+                if latest.observation_sequence:
+                    raise RuntimeFailure('runtime_observation_missing')
+                return True  # Explicit legacy compatibility, not v1 qualification.
+            if type(sequence) is not int or not 1 <= sequence <= 2**63-1:
+                raise RuntimeFailure('runtime_malformed_observation')
+            if sequence < latest.observation_sequence:
+                return False
+            observed_digest = fingerprint(asdict(result))
+            if sequence == latest.observation_sequence and observed_digest != latest.observation_digest:
+                raise RuntimeFailure('runtime_observation_conflict')
+            if sequence > latest.observation_sequence:
+                tx.save_dispatch(replace(latest, observation_sequence=sequence, observation_digest=observed_digest))
+            return True
+
     def _finish_work(self, task_id: str, dispatch_key: str, result: RuntimeResult) -> Task:
         content = result.content if result.state == "completed" else None
         if result.state == "completed" and (content is None or not content.strip()):
             return self._needs_attention(task_id, dispatch_key)
+        source_digest = digest(content) if content is not None else None
         if content is not None and len(content.encode()) > 65536:
-            raise Rejected("result_too_large")
+            with self.store.transaction() as tx:
+                managed = tx.work_for_task(task_id) is not None
+            if not managed:
+                raise Rejected("result_too_large")
+            # The run is terminal, but its oversized output is not accepted or retained.
+            content = None
         with self.store.transaction() as tx:
             task = self._task(tx, task_id)
             if task.phase == "closed":
@@ -791,7 +871,7 @@ class Service:
             )
             updated = task.evolve(
                 phase="closed", outcome=terminal, blockers=tuple(sorted(blockers)),
-                result=content, result_digest=digest(content) if content is not None else None,
+                result=content, result_digest=source_digest,
                 permission_request=None,
             )
             saved = self._save(tx, task, updated, terminal)
@@ -892,6 +972,14 @@ class Service:
                               phase="stopping" if task.attempt_id else task.phase), "stop_requested")
             attempt = tx.attempt(task.attempt_id) if task.attempt_id else None
             dispatch = tx.dispatch(task.attempt_id) if task.attempt_id else None
+        return self._finish_hold(task_id, reason, attempt, dispatch)
+
+    def _finish_hold(self, task_id, reason, attempt, dispatch):
+        """Settle an already committed stop intent outside its transaction."""
+        with self.store.transaction() as tx:
+            task = self._task(tx, task_id)
+        if task.phase == "closed":
+            return task
         stopped, exact_run = self._stop_attempt(task, attempt, dispatch)
         return self._held_state(task_id, attempt, stopped, exact_run, reason)
     def cancel(self, actor: AuthContext, task_id: str, expected_state_revision: int, *, envelope: Envelope) -> Task:
@@ -936,6 +1024,8 @@ class Service:
         with self.store.transaction() as tx:
             task = self._task(tx, task_id)
             self._authorize(tx, actor, task, envelope, write=True)
+            if tx.work_for_task(task_id) is not None:
+                raise Rejected("artifact_review_required")
             self._expected(task, expected_state_revision)
             if task.outcome != "completed" or task.result is None:
                 raise Rejected("result_not_ready")

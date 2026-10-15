@@ -1,6 +1,10 @@
 # Bots, projects, and work
 
 Status: layered work model and starters accepted for version 1.0.
+
+The additive [durable outcome foundation](durable-work.md) now separates requested
+work from agent execution. It is opt-in and source-qualified; the full redesign
+and fleet cutover remain pending.
 Research reviewed: 2026-09-10.
 
 The accepted direction connects the operator work home to useful work through

@@ -174,6 +174,7 @@ class Task:
     permission_request: dict | None = None
     disable_tools: bool = False
     allowed_tools: tuple[str, ...] = ()
+    output_contract: str | None = None
 
     def evolve(self, **changes) -> "Task":
         return replace(self, state_revision=self.state_revision + 1, **changes)
@@ -213,6 +214,8 @@ class AgentDispatch:
     runtime_revision: str | None = None
     submitted_at: datetime | None = None
     retention_until: datetime | None = None
+    observation_sequence: int = 0
+    observation_digest: str | None = None
 
 
 @dataclass(frozen=True)
@@ -263,6 +266,7 @@ class RuntimeResult:
     guidance_receipts: tuple[RuntimeGuidanceReceipt, ...] | None = None
     guidance_terminal: bool = False
     activity: RuntimeActivity | None = None
+    observation_sequence: int | None = None
 
 
 def runtime_input(task: Task) -> str:
@@ -278,6 +282,8 @@ def runtime_input(task: Task) -> str:
             )
         else:
             parts.append("Attached reference file: " + file.name + "\n" + file.content)
+    if task.output_contract is not None:
+        parts.append(task.output_contract)
     return "\n\n".join(parts)
 
 

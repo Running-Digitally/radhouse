@@ -119,6 +119,7 @@ def _configured_buzz_cycle(config, service, agent, clock, clients):
         ),
         coordinator=agent.coordinator,
         channel_kind=configured_conversation.kind,
+        workflow_version=configured_conversation.workflow_version,
     )
 
 
@@ -173,9 +174,13 @@ def compose_controller(
                 client,
                 runtime_revision=bot.runtime_revision,
                 clock=clock,
+                expected_bot_id=bot.bot_id, expected_profile=bot.profile,
+                expected_provider_binding=bot.provider_binding,
+                descriptor_required=bot.descriptor_contract == 'radhouse-runtime-v1',
             )
         work = RoutingAgentWork(adapters)
         service = Service(store, work, provider, clock,
+                          durable_work_enabled=config.durable_work_enabled,
                           approval_commands={bot.bot_id: bot.approval_commands for bot in config.bots})
         coordinator = Coordinator(
             service,

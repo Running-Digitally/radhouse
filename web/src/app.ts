@@ -1,3 +1,4 @@
+import { isFinished, attentionFor } from "./view-model.js";
 import { ApiError, RadhouseApi, operatorClient } from "./api.js";
 import type { AuthSession } from "./api.js";
 import { actionReason, blockerMessages, guidanceStatus, phaseLabel } from "./view-model.js";
@@ -43,7 +44,8 @@ function taskPhaseName(task: TaskCard["task"]): string {
 
 export function mountWorkHome(page: HTMLElement, client = operatorClient()): () => void {
 let reviewToken = new URLSearchParams(window.location.hash.slice(1)).get("review");
-let reviewTarget: { task_id: string; project_id: string; conversation_id: string; binding_revision: number } | null = null;
+let reviewTarget: Awaited<ReturnType<RadhouseApi['resolveReview']>> | null = null;
+const artifactContents = new Map<string, string>();
 function clearReviewTarget(): void {
   reviewToken = null; reviewTarget = null;
   window.history.replaceState(null, "", window.location.pathname + window.location.search);
@@ -167,6 +169,7 @@ function loginScreen(message?: string): void {
   // Private display state never crosses an account change.
   drafts.clear(); reviews.clear(); expanded.clear(); timelines.clear(); conversationDrafts.clear(); guidanceDrafts.clear();
   titleDrafts.clear(); openResults.clear(); openMore.clear(); manageOpen = false; recentActivityOpen = false; olderWorkOpen = false;
+  artifactContents.clear();
   projectNameDraft = ""; projectBotDraft.clear(); agentDirectory.clear();
   conversationLinks = []; conversationHistory = null; selectedConversation = "";
   reviewTarget = null;
@@ -304,7 +307,7 @@ function appendTaskHeading(article: HTMLElement, card: TaskCard, home: WorkHome)
     titleGroup.append(editTitle);
   }
   heading.append(titleGroup,
-    element("span", `phase phase--${task.phase}`, taskPhaseName(task)));
+    element("span", `phase phase--${task.phase}`, card.work?.state_label ?? taskPhaseName(task)));
   const agent = home.agents.find((item) => item.bot_id === task.bot_id);
   article.append(heading, element("p", "task-card__context", `${agent?.display_name ?? task.bot_id} · ${home.project_name} · Private task`));
 }
@@ -333,7 +336,7 @@ function appendTitleForm(article: HTMLElement, card: TaskCard): void {
 }
 function appendTaskResult(article: HTMLElement, card: TaskCard, home: WorkHome): void {
   const task = card.task;
-  if (task.result !== null) {
+  if (task.result !== null && !card.work) {
     const summary = task.result.replace(/[#*_`>[\]]/g, "").replace(/\s+/g, " ").trim();
     if (summary !== card.title.title) article.append(element("p", "result-summary",
       summary.length > 220 ? `${summary.slice(0, 219).trim()}…` : summary));
@@ -353,7 +356,8 @@ function appendTaskResult(article: HTMLElement, card: TaskCard, home: WorkHome):
     article.append(notice(`${instruction} — ${status}`));
   }
 }
-function appendTaskGuidance(article: HTMLElement, task: TaskCard["task"], home: WorkHome): void {
+function appendTaskGuidance(article: HTMLElement, card: TaskCard, home: WorkHome): void {
+  const task = card.task;
   if (home.role === "viewer" || task.phase !== "active" || task.blockers.length !== 0) return;
   if (task.permission_request) {
     const permission = element("section", "permission-panel");
@@ -379,7 +383,11 @@ function appendTaskGuidance(article: HTMLElement, task: TaskCard["task"], home: 
     guidance.append(label, send);
     guidance.addEventListener("submit", (event) => {
       event.preventDefault(); const current = api; if (!current) return;
-      void action(send, async () => { await current.guide(task, input.value); guidanceDrafts.delete(task.task_id); await load(); });
+      void action(send, async () => {
+        if (card.work) await current.workCommand(card.work, "guidance", input.value);
+        else await current.guide(task, input.value);
+        guidanceDrafts.delete(task.task_id); await load();
+      });
     });
     article.append(guidance);
   }
@@ -392,7 +400,9 @@ function appendOwnerTaskActions(controls: HTMLElement, secondary: HTMLElement, a
     if ((verb === "pause" && card.resume.enabled) || (verb === "resume" && !card.resume.enabled) || task.phase === "closed") continue;
     const control = button(label, async () => {
       if (!api) return;
-      await api.changeState(task.task_id, verb, task.state_revision); await load();
+      if (card.work) await api.workCommand(card.work, verb);
+      else await api.changeState(task.task_id, verb, task.state_revision);
+      await load();
     });
     control.disabled = !availability.enabled;
     const reason = actionReason(availability); if (reason) control.title = reason;
@@ -415,7 +425,18 @@ function appendTaskActions(article: HTMLElement, card: TaskCard, home: WorkHome)
   more.open = openMore.has(task.task_id);
   more.addEventListener("toggle", () => more.open ? openMore.add(task.task_id) : openMore.delete(task.task_id));
   const secondary = element("div", "task-card__actions");
-  if (task.result !== null) {
+  if (card.work?.artifact) {
+    const retained = artifactContents.get(card.work.artifact.artifact_id);
+    if (retained !== undefined) article.append(resultViewer(retained));
+    controls.append(button("Open artifact", async () => {
+      if (!api || !card.work) return;
+      const content = await api.artifactText(card.work);
+      const previous = article.querySelector(".result-viewer");
+      if (previous) previous.remove();
+      else article.append(resultViewer(content));
+    }, true));
+  }
+  if (task.result !== null && !card.work) {
     controls.append(button(openResults.has(task.task_id) ? "Hide result" : "View result", async () => {
       if (openResults.has(task.task_id)) openResults.delete(task.task_id); else openResults.add(task.task_id);
       await load();
@@ -502,15 +523,18 @@ function appendAttention(home: WorkHome): void {
   attention.append(element("h2", "section-title", "What needs you"));
   const coordination = projects.find((item) => item.project_id === home.project_id)?.coordination;
   const latest = home.tasks.find((card) => card.task.task_id === coordination?.latest_task_id);
-  const pending = home.tasks.filter((card) => card.task.phase === "active" && card.task.permission_request);
+  const requests = attentionFor(home);
   const working = home.tasks.find((card) => card.task.phase === "active");
-  if (pending.length) {
-    attention.append(element("p", undefined, pending.length === 1
+  if (requests.kind === "input") {
+    attention.append(element("p", undefined, requests.tasks.length === 1
       ? "An agent needs your decision to continue."
-      : `${pending.length} agents need your decision to continue.`));
+      : `${requests.tasks.length} agents need your decision to continue.`));
     attention.append(button("View request", async () => {
-      page.querySelector(`[data-task-id="${pending[0]?.task.task_id}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" });
+      page.querySelector(`[data-task-id="${requests.tasks[0]?.task.task_id}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" });
     }));
+  } else if (requests.kind === "waiting") {
+    const count = requests.tasks.length;
+    attention.append(element("p", undefined, `${count} assignment${count === 1 ? " is" : "s are"} waiting. Your work is retained; there is no decision for you right now.`));
   } else if (coordination?.phase === "preview_feedback" && working) {
     const name = home.agents.find((agent) => agent.bot_id === working.task.bot_id)?.display_name ?? "An agent";
     attention.append(element("p", undefined, `${name} is working on an update. The preview may not include it yet; nothing is needed from you right now.`));
@@ -576,8 +600,8 @@ function workSection(home: WorkHome): HTMLElement {
     for (const card of ordered) if (card.task.task_id === reviewTarget.task_id) list.append(taskCard(card, home));
     work.append(list);
   } else {
-    const active = ordered.filter((card) => card.task.phase !== "closed");
-    const finished = ordered.filter((card) => card.task.phase === "closed");
+    const active = ordered.filter((card) => !isFinished(card));
+    const finished = ordered.filter((card) => isFinished(card));
     if (active.length) {
       work.append(element("h3", "work-group__title", `In progress · ${active.length}`));
       const list = element("div", "task-list"); active.forEach((card) => list.append(taskCard(card, home))); work.append(list);
@@ -653,6 +677,21 @@ async function loadConversation(scoped: RadhouseApi, generation: number): Promis
   if (generation !== loadGeneration) { return null; }
   return { links, link, history };
 }
+async function loadReviewArtifact(scoped: RadhouseApi, home: WorkHome, generation: number): Promise<void> {
+  if (!reviewTarget?.work_id) return;
+  const card = home.tasks.find(item => item.task.task_id === reviewTarget?.task_id);
+  const work = card?.work;
+  const artifact = work?.artifact;
+  if (!work || work.work_id !== reviewTarget.work_id || work.scope_revision !== reviewTarget.scope_revision
+      || !artifact || artifact.artifact_id !== reviewTarget.artifact_id || artifact.sha256 !== reviewTarget.digest) {
+    throw new ApiError("review_link_denied", 403);
+  }
+  if (!artifactContents.has(artifact.artifact_id)) {
+    const content = await scoped.artifactText(work);
+    if (generation !== loadGeneration) return;
+    artifactContents.set(artifact.artifact_id, content);
+  }
+}
 function installLoadedHome(scoped: RadhouseApi, available: Project[], project: Project, home: WorkHome, conversation: LoadedConversation): void {
   const { links, link, history } = conversation;
   for (const agent of home.agents) agentDirectory.set(agent.bot_id, agent);
@@ -701,7 +740,7 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
     const list = element("ul", "blockers"); blockers.forEach((text) => { list.append(element("li", "blockers__item", text)); }); article.append(list);
   }
   appendTaskResult(article, card, home);
-  appendTaskGuidance(article, task, home);
+  appendTaskGuidance(article, card, home);
   appendTaskActions(article, card, home);
   const review = reviews.get(task.task_id);
   if (review && !card.publication && review.digest === task.result_digest && review.state_revision === task.state_revision
@@ -715,7 +754,7 @@ function taskCard(card: TaskCard, home: WorkHome): HTMLElement {
 }
 function startPanel(home: WorkHome): HTMLElement {
   const panel = element("section", "start-panel");
-  panel.append(element("h2", "section-title", "What would you like done?"),
+  panel.append(element("h2", "section-title", home.durable_work_enabled ? "What would you like created?" : "What would you like done?"),
     element("p", "muted", `Working in ${home.project_name}. Your assignment and result stay private until you choose to share.`));
   if (home.role === "viewer") { panel.append(notice("Your access is read-only.")); return panel; }
   const draft = drafts.get(home.project_id) ?? { brief: "", files: [], bot: home.agents.find((a) => a.state === "ready")?.bot_id ?? "" };
@@ -733,7 +772,7 @@ function startPanel(home: WorkHome): HTMLElement {
   brief.placeholder = "Ask a clear question or describe the result you need…";
   brief.addEventListener("input", () => { draft.brief = brief.value; });
   briefLabel.append(element("span", "field__label", "Assignment"), brief);
-  const submit = element("button", "button button--primary", "Send assignment"); submit.type = "submit";
+  const submit = element("button", "button button--primary", home.durable_work_enabled ? "Create artifact" : "Send assignment"); submit.type = "submit";
   submit.disabled = !home.start.enabled;
   form.append(label, briefLabel, submit);
   const fileLabel = element("label", "field"); const files = element("input", "field__control");
@@ -770,7 +809,7 @@ function startPanel(home: WorkHome): HTMLElement {
     if (!api || !agent || !brief.value.trim()) return;
     const currentApi = api; const epoch = sessionEpoch;
     void action(submit, async () => {
-      await currentApi.start({ botId: agent.bot_id, projectId: home.project_id, brief: brief.value.trim(), providerBinding: agent.provider_binding, files: draft.files, ...(draft.followsTaskId ? { followsTaskId: draft.followsTaskId } : {}) });
+      await (home.durable_work_enabled ? currentApi.startWork.bind(currentApi) : currentApi.start.bind(currentApi))({ botId: agent.bot_id, projectId: home.project_id, brief: brief.value.trim(), providerBinding: agent.provider_binding, files: draft.files, ...(draft.followsTaskId ? { followsTaskId: draft.followsTaskId } : {}) });
       if (epoch !== sessionEpoch) return;
       draft.brief = ""; draft.files = []; delete draft.followsTaskId;
       await load("Assignment received. You can follow its progress below.");
@@ -860,6 +899,8 @@ async function load(message?: string): Promise<void> {
     if (!await refreshActiveEvents(scoped, home, generation) || generation !== loadGeneration) return;
     const loadedConversation = await loadConversation(scoped, generation);
     if (!loadedConversation || generation !== loadGeneration) return;
+    await loadReviewArtifact(scoped, home, generation);
+    if (generation !== loadGeneration) return;
     installLoadedHome(scoped, available, project, home, loadedConversation);
     render(home, message);
   } catch (error) {

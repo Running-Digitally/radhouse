@@ -1,5 +1,5 @@
-import type { Project, Review, TaskEvents, TaskSummary, WorkHome } from "./types.js";
-import { parseWorkHome } from "./contract.js";
+import type { Project, Review, TaskEvents, TaskSummary, WorkHome, WorkView } from "./types.js";
+import { parseWorkHome, parseWork } from "./contract.js";
 import { CommandLedger } from "./commands.js";
 import type { ConversationLink, ConversationHistory, ConversationMessage } from "./conversations.js";
 import type { AttachedFile } from "./files.js";
@@ -134,8 +134,10 @@ export class RadhouseApi {
     return this.request(`/conversations?${this.query()}`);
   }
 
-  async resolveReview(locator: string): Promise<{ task_id: string; project_id: string; conversation_id: string; binding_revision: number }> {
-    const value = await this.request<{ task_id: string; project_id: string; conversation_id: string; binding_revision: number }>("/reviews/resolve", {
+  async resolveReview(locator: string): Promise<{ task_id: string; project_id: string; conversation_id: string; binding_revision: number;
+    work_id?: string; artifact_id?: string; scope_revision?: number; digest?: string }> {
+    const value = await this.request<{ task_id: string; project_id: string; conversation_id: string; binding_revision: number;
+      work_id?: string; artifact_id?: string; scope_revision?: number; digest?: string }>("/reviews/resolve", {
       method: "POST", body: JSON.stringify({ locator }),
     });
     if (!value || !/^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value.task_id)
@@ -143,6 +145,11 @@ export class RadhouseApi {
         || !Number.isSafeInteger(value.binding_revision) || value.binding_revision < 1) {
       throw new ApiError("invalid_server_response", 502);
     }
+    if ([value.work_id, value.artifact_id, value.scope_revision, value.digest].some(item => item !== undefined)
+        && (!/^work-[a-f0-9]{32}$/.test(value.work_id ?? '')
+          || !/^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value.artifact_id ?? '')
+          || !Number.isSafeInteger(value.scope_revision) || (value.scope_revision ?? 0) < 1
+          || !/^[a-f0-9]{64}$/.test(value.digest ?? ''))) throw new ApiError('invalid_server_response', 502);
     return value;
   }
 
@@ -178,6 +185,34 @@ export class RadhouseApi {
           follows_task_id: input.followsTaskId ?? null,
         },
     });
+  }
+
+  async startWork(input: { botId: string; projectId: string; brief: string; providerBinding: string;
+    files?: AttachedFile[]; followsTaskId?: string }): Promise<WorkView> {
+    return parseWork(await this.command("/v1/work", { start: {
+      bot_id: input.botId, project_id: input.projectId, brief: input.brief,
+      provider_binding: input.providerBinding, resource_key: null, budget: 3,
+      files: input.files ?? [], follows_task_id: input.followsTaskId ?? null,
+    } }));
+  }
+
+  async artifactText(work: WorkView): Promise<string> {
+    if (!work.artifact) throw new ApiError("artifact_not_found", 404);
+    const path = `/v1/work/${encodeURIComponent(work.work_id)}/artifacts/${encodeURIComponent(work.artifact.artifact_id)}?${this.query()}`;
+    const response = await this.transport(path, {});
+    if (!response.ok) throw new ApiError("artifact_unavailable", response.status);
+    return response.text();
+  }
+
+  async workCommand(work: WorkView, kind: "pause" | "resume" | "cancel" | "guidance", text?: string): Promise<WorkView> {
+    const value = await this.command<{ work: unknown; application_state: string }>(`/v1/work/${encodeURIComponent(work.work_id)}/commands`, {
+      kind, expected_state_revision: work.state_revision, scope_revision: work.scope_revision, text: text ?? null,
+    });
+    const current = parseWork(value.work);
+    if (current.work_id !== work.work_id || !["accepted", "applied", "not_applied", "unknown"].includes(value.application_state)) {
+      throw new ApiError("invalid_server_response", 502);
+    }
+    return current;
   }
 
   async changeState(

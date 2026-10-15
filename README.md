@@ -77,6 +77,10 @@ the existing engine behaviour and remains usable during catalog outages. Pair
 this source with its corresponding native overlay before activation; rollback
 must retain the saved runtime choices as well as frozen inputs.
 
+The retained, default-off [durable work foundation](docs/durable-work.md) provides
+artifact status and acceptance checks for the earlier controller. It is not enabled
+in the private chat application.
+
 The earlier fleet, Buzz integration, work/task engine and software delivery code
 are retained for history and recovery. They are excluded from this app. The
 current [roadmap](ROADMAP.md) and [principles](PRINCIPLES.md) replace their previous
