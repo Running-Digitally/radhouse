@@ -9,7 +9,7 @@ await c.route(origin+'/**',async route=>{
  const req=route.request(),path=new URL(req.url()).pathname;
  const json=v=>route.fulfill({contentType:'application/json',body:JSON.stringify(v)});
  const state=()=>({state:'live',generation:'generation-1',url:'https://example.org/',title:'Example',viewport:{width:1280,height:900},agent_active:agentActive,
-  stream:{path:'/chat/browser/stream/index.html',token:'x'.repeat(43)},control:{mode,revision:rev,can_take:mode==='agent',...(mode==='human'?{lease_id:'lease-1',lease_expires_at:Date.now()/1000+60,next_sequence:1,observation_mode:visibility,observation_epoch:rev}:{})},page_context:{current:{url:'https://example.org/',title:'Example'},previous:null},can_return:true,vault_enabled:false});
+  stream:{path:'/chat/browser/stream/index.html',token:(mode==='human'?'h':'v').repeat(43)},control:{mode,revision:rev,can_take:mode==='agent',...(mode==='human'?{lease_id:'lease-1',lease_expires_at:Date.now()/1000+60,next_sequence:1,observation_mode:visibility,observation_epoch:rev}:{})},page_context:{current:{url:'https://example.org/',title:'Example'},previous:null},can_return:true,vault_enabled:false});
  if(path==='/auth/session')return json({username:'alice',csrf_token:'synthetic',features:{browser:true,browser_control:true,browser_streaming:true,documents:true}});
  if(path==='/chat/history'||path==='/chat/reply')return json({turns:[],older_before:null});
  if(path==='/chat/browser/preferences')return json({revision:0,search_engine:'google',history:[]});
@@ -33,11 +33,15 @@ try{
  await page.locator('#browser-preview-open').click();
  await expect(page.locator('main')).toHaveClass(/workspace-browser/);
  expect(await page.locator('.browser-stream-frame').evaluate((e,old)=>e===old,frame)).toBe(true);
+ const viewConnection=new URL(await page.locator('.browser-stream-frame').getAttribute('src'),origin).searchParams.get('connection');
  await page.getByRole('button',{name:'Take control privately',exact:true}).click();
+ const controlConnection=new URL(await page.locator('.browser-stream-frame').getAttribute('src'),origin).searchParams.get('connection');
+ expect(controlConnection).not.toBe(viewConnection);
  await expect(page.locator('.browser-privacy')).toBeVisible();
  await expect(page.getByRole('button',{name:'Private',exact:true})).toHaveAttribute('aria-pressed','true');
  await page.locator('.browser-privacy').getByRole('button',{name:'Let agent observe',exact:true}).click();
  await expect(page.locator('.browser-privacy-text, .browser-privacy [role=status]')).toContainText('Agent can read');
+ expect(new URL(await page.locator('.browser-stream-frame').getAttribute('src'),origin).searchParams.get('connection')).toBe(controlConnection);
  await page.getByRole('button',{name:'Private',exact:true}).click();
  await expect(page.getByRole('button',{name:'Private',exact:true})).toHaveAttribute('aria-pressed','true');
  await page.locator('#browser-minimize').click();

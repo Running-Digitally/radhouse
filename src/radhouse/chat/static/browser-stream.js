@@ -43,11 +43,12 @@
       if(stream.path!=='/chat/browser/stream/index.html'||typeof stream.token!=='string'||!/^[-_A-Za-z0-9]{32,128}$/.test(stream.token)){
         this.clear();return;
       }
+      if(this.info?.token!==stream.token || this.streamGeneration!==this.view.generation){this.connectionNonce=crypto.randomUUID();this.streamGeneration=this.view.generation;}
       this.info={path:stream.path,token:stream.token};this.mount();this.render();
     }
     mount(){
       if(!this.info||!this.visible)return;
-      const url=this.info.path+'?connection='+encodeURIComponent(this.view.generation)+'#token='+encodeURIComponent(this.info.token);
+      const url=this.info.path+'?connection='+encodeURIComponent(this.connectionNonce)+'#token='+encodeURIComponent(this.info.token);
       if(this.frame.getAttribute('src')!==url){this.hideKeyboard();this.input.ready=false;this.presented=false;this.frame.src=url;}
       if(!this.frame.isConnected)this.view.viewport.append(this.frame);
       this.view.image.hidden=true;this.view.viewport.hidden=false;
