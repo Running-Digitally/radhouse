@@ -95,6 +95,17 @@ manifest and supplied reports alongside the redacted scanner log.
 scanner result with that locator. A failed submitted analysis retains submission
 evidence with import unconfirmed, including a processing or quality-gate failure.
 
+Native integration tests also need the exact Hermes source named by
+`runtime/hermes/source-lock.json`. The launcher fetches that commit from the
+public upstream into a disposable directory outside the analyzed checkout and
+checks that it stays clean at that commit. It supplies an empty synthetic
+`HERMES_HOME`, `RADHOUSE_TEST_HERMES_SOURCE`, and a qualification-only Python
+search path. Minimal native test dependencies are locked in the development
+dependency group. No owner profile or deployed runtime is used, and upstream
+source does not enter Radhouse's first-party scan/coverage. The verification
+receipt records the upstream commit and synthetic-profile classification;
+temporary source and profile are removed after qualification.
+
 For a deliberate diagnostic without tests, use `--static-only`; its receipt
 explicitly records that coverage was not imported. Missing coverage data does
 not measure test quality. To qualify a feature branch locally without publishing

@@ -107,6 +107,10 @@ product learning. This is a planning recommendation, not a scheduled automation.
    scanning. Preserve its no-skips, exact-source, digest and cleanup requirements.
    A qualification failure must be repaired; do not silently use `--static-only`
    to manufacture a successful baseline.
+   The initial expanded attempt exposed 28 skipped native checks because the
+   fresh clone lacked its pinned Hermes source. Preparation must supply that
+   exact public source and locked test prerequisites with an empty synthetic
+   profile; it must not borrow a deployed installation or waive the no-skips rule.
 6. Record the merged SHA, server analysis/task ID, timestamp, processing result,
    gate result, overall/new-code measures and scan-context scope. Verify material
    runtime files are indexed. A quality-gate failure is expected to be possible

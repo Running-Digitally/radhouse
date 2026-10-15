@@ -28,8 +28,11 @@ radhouse = "radhouse.cli:main"
 
 [dependency-groups]
 dev = [
+    "psutil==7.2.2",
+    "ptyprocess==0.7.0",
     "pytest==9.1.1",
     "pytest-cov==7.1.0",
+    "ruamel-yaml==0.18.16",
 ]
 
 [tool.pytest.ini_options]
