@@ -456,3 +456,11 @@ selection, credentials, conversations, profiles and stores. Qualification and
 deployment readiness are separate from authorizing pilot promotion. Private
 installation paths, host facts, receipts and deployment controls stay in the
 Homelab records.
+
+Linux qualification found that the pinned upstream input handler allocates
+process-wide gamepad Unix listeners even when gamepad messages are disabled.
+The owned adapter now sets its gamepad count to zero before connecting input,
+so this unsupported capability does not allocate endpoints that outlive a
+browser generation. Strict directory cleanup remains: unexpected resources
+must still prevent replacement. Linux acceptance checks the actual endpoint
+inventory and complete close/reopen, without modifying upstream source.
