@@ -61,6 +61,25 @@ def launch(bridge, directory, environment):
     global _display, _chrome, _endpoint
     if not configuration or (_chrome is not None and _chrome.poll() is None):
         raise ValueError('stream_browser_busy')
+    previous = runtime
+    if previous is not None:
+        # Finish the old server/watcher before spawning another Chrome or
+        # replacing its durable identity. Looking up the old generation after
+        # bind_browser would be stale, and its watcher could retire the new page.
+        old = bridge._controller.state(previous.owned.identity)
+        if not old.retired or not bridge._pid_gone(previous.owned.pid, previous.owned.started):
+            raise ValueError('stream_retirement_unconfirmed')
+        try: calling_loop = asyncio.get_running_loop()
+        except RuntimeError: calling_loop = None
+        if calling_loop is previous.loop or not previous.loop.is_running():
+            raise ValueError('stream_launch_requires_worker')
+        stopped = asyncio.run_coroutine_threadsafe(previous.stop(), previous.loop)
+        try: stopped.result(timeout=20)
+        except BaseException:
+            stopped.cancel()
+            raise
+        if runtime is not None:
+            raise ValueError('stream_retirement_unconfirmed')
     if _display is None:
         display_number = secrets.randbelow(50000) + 100
         auth = Path(tempfile.mkdtemp(prefix='radhouse-display-')) / 'Xauthority'
@@ -110,8 +129,6 @@ def retire():
 
 async def ensure(bridge, owned):
     global runtime
-    if runtime is not None and runtime.owned is not owned and bridge._controller.state(runtime.owned.identity).retired:
-        await runtime.stop()
     if runtime is not None:
         if runtime.owned is not owned:
             raise ValueError('stream_browser_busy')
@@ -349,7 +366,9 @@ class Platform:
         self.watcher.cancel()
         await asyncio.gather(self.watcher,return_exceptions=True)
         await self.server.stop_server()
-        runtime = None
+        self.observers.clear()
+        if runtime is self:
+            runtime = None
 
 
 async def relay(bridge, adapter, request):

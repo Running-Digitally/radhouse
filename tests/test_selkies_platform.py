@@ -175,3 +175,45 @@ def test_dead_browser_watcher_revokes_without_a_human_lease(monkeypatch):
         assert p.stopped and p.boundary._blocked and p.boundary.input_token is None
         assert events==['revoke','drain','retire']
     asyncio.run(scenario())
+
+
+def test_retired_stream_teardown_precedes_replacement_chromium(monkeypatch,tmp_path):
+    async def scenario():
+        events=[]
+        old=SimpleNamespace(owned=SimpleNamespace(identity='old',pid=11,started=12),loop=asyncio.get_running_loop())
+        async def stop():
+            events.append('old-server-stopped')
+            platform.runtime=None
+        old.stop=stop
+        def spawn(*args,**kwargs):
+            assert platform.runtime is None
+            events.append('new-chrome')
+            return SimpleNamespace(pid=22),'http://synthetic'
+        bridge=SimpleNamespace(_controller=SimpleNamespace(state=lambda identity:SimpleNamespace(retired=True)),
+            _pid_gone=lambda pid,started:(pid,started)==(11,12),_browser_configuration={'chromium_path':'synthetic'})
+        monkeypatch.setattr(platform,'runtime',old);monkeypatch.setattr(platform,'_chrome',None)
+        monkeypatch.setattr(platform,'_display',object());monkeypatch.setattr(platform,'configuration',{'synthetic':True})
+        monkeypatch.setattr(platform,'load',lambda *args:SimpleNamespace(launch=spawn,verify=lambda *args,**kwargs:None))
+        monkeypatch.setenv('DISPLAY',':123');monkeypatch.setenv('XAUTHORITY','synthetic')
+        assert await asyncio.to_thread(platform.launch,bridge,tmp_path,{})=='http://synthetic'
+        assert events==['old-server-stopped','new-chrome']
+    asyncio.run(scenario())
+
+
+def test_unretired_stream_cannot_be_replaced(monkeypatch,tmp_path):
+    old=SimpleNamespace(owned=SimpleNamespace(identity='old'))
+    bridge=SimpleNamespace(_controller=SimpleNamespace(state=lambda identity:SimpleNamespace(retired=False)))
+    monkeypatch.setattr(platform,'runtime',old);monkeypatch.setattr(platform,'_chrome',None)
+    monkeypatch.setattr(platform,'configuration',{'synthetic':True})
+    with pytest.raises(ValueError,match='stream_retirement_unconfirmed'):
+        platform.launch(bridge,tmp_path,{})
+
+
+def test_ensure_cannot_teardown_a_previous_generation_after_rebind(monkeypatch):
+    async def scenario():
+        old=SimpleNamespace(owned=object())
+        monkeypatch.setattr(platform,'runtime',old)
+        bridge=SimpleNamespace(_controller=SimpleNamespace(state=lambda identity:pytest.fail('old identity already replaced')))
+        with pytest.raises(ValueError,match='stream_browser_busy'):
+            await platform.ensure(bridge,object())
+    asyncio.run(scenario())
