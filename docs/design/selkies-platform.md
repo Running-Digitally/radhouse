@@ -1,6 +1,6 @@
 # Selkies browser in the Radhouse conversation workspace
 
-Status: accepted owner direction; implementation in progress, 2026-10-14.
+Status: implemented and deployed for the owner’s platform pilot, 2026-10-14.
 Design depth: D2. [ADR-0002](../decisions/0002-selkies-browser-viewer.md) owns
 package selection. This document owns its platform integration and interaction.
 
@@ -28,7 +28,8 @@ move keyboard focus into the remote page, or transfer control.
 - On phones, prioritize the browser and offer a Chat drawer with a message badge
   and the same composer. Chat focus dismisses remote keyboard assistance. Remote
   keyboard focus keeps browser controls reachable; a reduced visual viewport
-  shrinks the stream and allows scrolling rather than clipping the keys.
+  shrinks the stream and allows scrolling rather than clipping the keys. Browser
+  mode uses a compact phone/landscape header to leave room for those controls.
 - Retain the full-width three-column Keys panel, 44px touch targets, safe-area
   padding, explicit keyboard override and compact status. Fit/zoom remains local.
 - Clearly show agent/human/paused/disconnected state. Reconnect must not replay
@@ -121,7 +122,7 @@ them. Make private revokes first, discards pending observations and waits for th
 observation boundary before acknowledging Private. Sensitive-field checks apply
 to observations even in Observe mode. No raw keystroke/event recording or model
 training is introduced. Conversation-only follow-along is the proposed default;
-the owner's reusable-walkthrough preference is being clarified separately.
+reusable walkthroughs require a separate explicit decision.
 
 Expose plain-language status and a single obvious switch while human control is
 active. Take control is labeled private. No silent switch to Observe, including
@@ -129,3 +130,15 @@ on reconnect, agent requests, changing workspace emphasis or new takeovers.
 Qualification must prove default Private, explicit Observe, mutation denial in
 both modes, foreign/expired/stale observer rejection, and no late delivery after
 Make private acknowledges.
+
+## Deployment acceptance
+
+The actual authenticated platform, rather than only the standalone pilot, was
+exercised with synthetic requests and Wikipedia: agent navigation and snapshot,
+Chat mini-preview expansion, direct keyboard navigation in human control,
+default Private snapshot denial, explicit Observe snapshot while retaining human
+control, confirmed privacy revocation, fresh handback and close/reopen. The same
+unsent draft survived workspace navigation. Strict native qualification separately
+proved the sandbox, owner-bound relay, large asset delivery, live video and
+negative authority cases. The Homelab change record owns frozen selections and
+receipts. Desktop viewport emulation does not prove an actual phone OS keyboard.

@@ -75,3 +75,9 @@
 
 .workspace-browser .browser-view--streaming:has(.browser-logins:not([hidden])) .browser-view-body{overflow:auto}
 .workspace-browser .browser-view--streaming .browser-logins{flex-shrink:0}
+
+/* Leave phone and landscape height to the browser, keys and chat drawer. */
+@media(max-width:950px){
+  .navigation-shell:has(.workspace-browser)>header{min-height:0;padding:4px 0;flex-wrap:nowrap}
+  .navigation-shell:has(.workspace-browser)>header .rh-header-identity{display:none}
+}

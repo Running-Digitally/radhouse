@@ -122,7 +122,8 @@ is active. Select that preview for Browser emphasis; Back to chat restores chat
 emphasis without moving the stream or losing the draft. Desktop retains chat
 alongside Browser. On phones the Chat button opens a compact drawer; switching
 focus hides the remote keyboard assist. Keys uses an inline grid with at least
-44-pixel targets. Fit and Zoom change local presentation only.
+44-pixel targets. Browser mode compacts the phone header to preserve vertical
+space; the normal Chat header remains. Fit and Zoom change local presentation only.
 
 Take control privately is the default. Private blocks model page reads and
 mutations; chat attaches neither the current nor previous page. Select Let agent

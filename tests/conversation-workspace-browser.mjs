@@ -54,6 +54,7 @@ try{
  await page.locator('#browser-preview-open').click();
  for(const [width,height]of [[320,640],[375,667],[390,844],[430,932],[844,390],[390,360],[320,360]]){
   await page.setViewportSize({width,height});
+  expect(await page.locator('header').evaluate(e=>e.getBoundingClientRect().height)).toBeLessThanOrEqual(72);
   await page.getByRole('button',{name:'Keys',exact:true}).click();
   const bounds=await page.locator('.browser-stream-keys button').evaluateAll(nodes=>nodes.map(n=>{const r=n.getBoundingClientRect();return {left:r.left,right:r.right,width:r.width,height:r.height}}));
   if(bounds.some(b=>b.left<0||b.right>width+1||b.width<43||b.height<43))throw Error('Keys clipped at '+width+'x'+height+':'+JSON.stringify(bounds));

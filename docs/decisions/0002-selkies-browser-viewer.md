@@ -52,8 +52,8 @@ reclamation. Downloads remain unrestricted.
    only when the chat and Selkies tools demonstrably address that same browser.
    Do not redirect a live chat's browser panel to an independent test browser.
 
-Slice 1 is deployed. Slice 2 is now being implemented and qualified under
-CR-2026-1014-08. The integrated platform uses the actual agent-owned browser;
+Both slices are deployed for owner review. Slice 2 is qualified under
+CR-2026-1014-08, including signed-in native-agent and human-control journeys. The integrated platform uses the actual agent-owned browser;
 the independently deployed pilot remains a separate disposable profile.
 The [platform design](../design/selkies-platform.md) owns the shared Chat/Browser
 workspace and authenticated stream transport.
