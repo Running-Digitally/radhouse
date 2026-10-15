@@ -1,10 +1,10 @@
-# Radhouse browser: Selkies desktop and mobile pilot
+# Radhouse browser: integrated Selkies workspace and mobile pilot
 
 [ADR-0002](decisions/0002-selkies-browser-viewer.md) selects Selkies as the browser
-viewer and human-input implementation. The current feature-branch deployment
-is the unified disposable test browser. The existing production chat browser
-is not yet connected to this separate pilot; chat integration must bind the
-same principal, conversation, run and owned browser before replacing its panel.
+viewer and human-input implementation. The current platform deployment uses the same
+chat-owned Chromium through the integrated Selkies workspace described below.
+The earlier disposable test browser remains a separate pilot. The platform
+binds the same principal, conversation, run and owned browser throughout.
 
 ## What is developed
 
@@ -94,14 +94,14 @@ not yet isolated within the X11/Chromium mapping path. The mobile pilot therefor
 has verified ASCII typing only; full international text acceptance is open.
 No alternate text-injection or clipboard workaround is installed.
 
-## Next implementation boundary
+## Platform implementation boundary
 
-Implement the accepted chat replacement by having the runtime bind Selkies to
-its actual chat-owned browser and controller, then serve a conversation-bound
-stream capability through app authentication. Replace legacy frame polling and
-individual human-operation UI with that viewer. Keep native agent tools and
-fresh handback admission on the same identity. This work must not substitute the
-standalone test browser for the page the chat agent is using.
+The accepted chat replacement is implemented by having the runtime bind Selkies to
+its actual chat-owned browser and controller and serve a conversation-bound
+stream capability through app authentication. The viewer replaces legacy frame
+polling and individual human-operation UI. Native agent tools and fresh handback
+admission use the same identity; the standalone test browser is never substituted
+for the page the chat agent is using.
 
 Build/source controls, sandbox requirements and focused test commands are in
 [`runtime/selkies/README.md`](../runtime/selkies/README.md). The feature's draft PR

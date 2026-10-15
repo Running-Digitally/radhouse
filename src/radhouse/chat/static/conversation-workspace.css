@@ -76,12 +76,36 @@
 .workspace-browser .browser-view--streaming:has(.browser-logins:not([hidden])) .browser-view-body{overflow:auto}
 .workspace-browser .browser-view--streaming .browser-logins{flex-shrink:0}
 
-/* Leave phone and landscape height to the browser, keys and chat drawer. */
-@media(max-width:950px){
-  .navigation-shell:has(.workspace-browser)>header{min-height:0;padding:4px 0;flex-wrap:nowrap}
-  .navigation-shell:has(.workspace-browser)>header .rh-header-identity{display:none}
-}
-
 .browser-playback-start{position:absolute;inset:0;z-index:5;width:100%;height:100%;border:0;border-radius:0;background:rgba(0,0,0,.84);color:#fff;font:inherit;min-height:44px;padding:20px;white-space:normal;cursor:pointer}
 .browser-playback-start[hidden]{display:none}
 .browser-playback-start:focus-visible{outline:3px solid #fff;outline-offset:-5px}
+
+/* Give the current task space without discarding the agent identity. */
+.navigation-shell:has(.workspace-browser)>header{--rh-portrait-size:32px;min-height:64px;padding:4px 0;flex-wrap:nowrap}
+.navigation-shell:has(.workspace-browser)>header .rh-header-identity{display:flex;position:absolute;left:50%;top:4px;transform:translateX(-50%);flex-basis:auto;order:0;margin:0}
+.workspace-browser #browser-page .workspace-heading h1{font-size:24px;margin:0}
+.workspace-browser #browser-page .workspace-heading .intro{display:none}
+@media(max-width:950px){
+  .navigation-shell:has(.conversation-workspace)>header{--rh-portrait-size:32px;min-height:64px;padding:4px 0;flex-wrap:nowrap}
+  .navigation-shell:has(.conversation-workspace)>header .rh-header-identity{display:flex;position:absolute;left:50%;top:4px;transform:translateX(-50%);flex-basis:auto;order:0;margin:0}
+  .navigation-shell:has(.conversation-workspace){height:var(--conversation-viewport-height,100dvh)}
+  .conversation-workspace #message{max-height:min(180px,calc(var(--conversation-viewport-height,100dvh) / 4))}
+  .conversation-workspace .message-options-panel{max-height:min(430px,calc(var(--conversation-viewport-height,100dvh) - var(--composer-height,150px) - 110px))}
+  .conversation-keyboard-open .workspace-browser.chat-drawer-open:has(#compose:focus-within){grid-template-rows:auto minmax(0,1fr);gap:8px}
+  .conversation-keyboard-open .workspace-browser.chat-drawer-open:has(#compose:focus-within) #assistant-browser,
+  .conversation-keyboard-open .workspace-browser.chat-drawer-open:has(#compose:focus-within) #browser-idle-hint{display:none}
+}
+@media(max-width:950px) and (max-height:560px){
+  .workspace-browser.chat-drawer-open:has(#compose:focus-within){grid-template-rows:auto minmax(0,1fr);gap:8px}
+  .workspace-browser.chat-drawer-open:has(#compose:focus-within) #assistant-browser,
+  .workspace-browser.chat-drawer-open:has(#compose:focus-within) #browser-idle-hint{display:none}
+}
+
+@media(max-width:950px){
+  .conversation-keyboard-open .workspace-chat.has-browser-preview:has(#compose:focus-within){grid-template-areas:"chat";grid-template-rows:minmax(0,1fr);gap:0}
+  .conversation-keyboard-open .workspace-chat.has-browser-preview:has(#compose:focus-within) #browser-page{display:none}
+}
+@media(max-width:950px) and (max-height:560px){
+  .workspace-chat.has-browser-preview:has(#compose:focus-within){grid-template-areas:"chat";grid-template-rows:minmax(0,1fr);gap:0}
+  .workspace-chat.has-browser-preview:has(#compose:focus-within) #browser-page{display:none}
+}

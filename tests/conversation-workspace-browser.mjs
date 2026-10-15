@@ -1,8 +1,9 @@
 import {readFile,mkdir} from 'node:fs/promises';
 import {pathToFileURL} from 'node:url';
-const {chromium,expect}=await import(pathToFileURL(process.env.RADHOUSE_PLAYWRIGHT_MODULE).href);
+const {chromium,webkit,expect}=await import(pathToFileURL(process.env.RADHOUSE_PLAYWRIGHT_MODULE).href);
 const root=new URL('../src/radhouse/chat/static/',import.meta.url),origin='http://127.0.0.1:61484';
-const browser=await chromium.launch({headless:true,channel:'chrome'});
+const engine=process.env.RADHOUSE_BROWSER_ENGINE || 'chromium';
+const browser=await ({chromium,webkit})[engine].launch({headless:true,...(engine==='chromium'?{channel:'chrome'}:{})});
 let mode='agent',visibility='private',rev=3,agentActive=true,requestCount=0;
 const c=await browser.newContext({viewport:{width:1360,height:900}}),errors=[];
 await c.route(origin+'/**',async route=>{
@@ -28,7 +29,7 @@ const page=await c.newPage();page.on('pageerror',e=>errors.push(e.message));
 const results=[];
 try{
  await page.goto(origin);await expect(page.locator('main')).toHaveClass(/has-browser-preview/);
- await page.locator('#message').fill('Keep this draft while switching');
+ await page.locator('#message').fill('Keep this draft while switching views. The composer must stay editable and Send must remain reachable when the browser drawer is open.');
  const frame=await page.locator('.browser-stream-frame').elementHandle();
  await page.locator('#browser-preview-open').click();
  await expect(page.locator('main')).toHaveClass(/workspace-browser/);
@@ -48,7 +49,7 @@ try{
  await page.getByRole('button',{name:'Private',exact:true}).click();
  await expect(page.getByRole('button',{name:'Private',exact:true})).toHaveAttribute('aria-pressed','true');
  await page.locator('#browser-minimize').click();
- await expect(page.locator('#message')).toHaveValue('Keep this draft while switching');
+ await expect(page.locator('#message')).toHaveValue('Keep this draft while switching views. The composer must stay editable and Send must remain reachable when the browser drawer is open.');
  expect(await page.locator('.browser-stream-frame').evaluate((e,old)=>e===old,frame)).toBe(true);
  results.push('desktop preview expansion, same stream, privacy switch, minimize and draft retention');
  await page.locator('#browser-preview-open').click();
@@ -62,10 +63,38 @@ try{
   await page.getByRole('button',{name:'Keys',exact:true}).click();
   await page.locator('#browser-chat-toggle').click();
   await expect(page.locator('#message')).toBeVisible();
-  await expect(page.locator('#message')).toHaveValue('Keep this draft while switching');
+  await expect(page.locator('#message')).toHaveValue('Keep this draft while switching views. The composer must stay editable and Send must remain reachable when the browser drawer is open.');
+  const send=await page.locator('#send').boundingBox();
+  expect(send.y+send.height, 'Send stays inside phone viewport '+width+'x'+height).toBeLessThanOrEqual(height+1);
+  expect(send.height).toBeGreaterThanOrEqual(43);
+  expect(await page.locator('.browser-stream-frame').evaluate((e,old)=>e===old,frame)).toBe(true);
   await page.locator('#browser-chat-toggle').click();
   results.push('responsive keys/chat drawer '+width+'x'+height);
  }
+ // Exercise the actual visualViewport listener, as opposed to only resizing
+ // innerHeight. This is a keyboard-geometry simulation, not an OS keyboard test.
+ await page.setViewportSize({width:390,height:844});
+ await page.locator('#browser-chat-toggle').click();
+ await page.evaluate(()=>{Object.defineProperty(visualViewport,'height',{configurable:true,value:360});visualViewport.dispatchEvent(new Event('resize'));});
+ await expect(page.locator('body')).toHaveClass(/conversation-keyboard-open/);
+ let send=await page.locator('#send').boundingBox();expect(send.y+send.height).toBeLessThanOrEqual(361);
+ await expect(page.locator('#browser-chat-toggle')).toBeVisible();
+ expect(await page.locator('.browser-stream-frame').evaluate((e,old)=>e===old,frame)).toBe(true);
+ await page.locator('#browser-minimize').click();
+ await page.locator('#message').focus();
+ send=await page.locator('#send').boundingBox();expect(send.y+send.height).toBeLessThanOrEqual(361);
+ expect(await page.locator('header').evaluate(e=>e.getBoundingClientRect().height)).toBeLessThanOrEqual(72);
+ await page.locator('#message-options-toggle').click();
+ const options=await page.locator('.message-options-panel').boundingBox();
+ expect(options.y).toBeGreaterThanOrEqual(0);expect(options.y+options.height).toBeLessThanOrEqual(361);
+ const hit=await page.locator('.message-options-panel').evaluate(e=>{const r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.left+r.width/2,r.top+5));});expect(hit).toBe(true);
+ await page.locator('#message-options-toggle').click();await page.locator('#message').focus();
+ expect(await page.locator('.browser-stream-frame').evaluate((e,old)=>e===old,frame)).toBe(true);
+ await page.evaluate(()=>{delete visualViewport.height;visualViewport.dispatchEvent(new Event('resize'));});
+ await expect(page.locator('#browser-preview-open')).toBeVisible();
+ await page.locator('#browser-preview-open').click();
+ await expect(page.locator('.browser-stream-frame')).toBeVisible();
+ results.push('visual keyboard geometry keeps Send visible in drawer and Chat, restores same browser');
  expect(errors).toEqual([]);
- console.log(JSON.stringify({passed:results.length,checks:results,status_requests:requestCount}));
+ console.log(JSON.stringify({engine,passed:results.length,checks:results,status_requests:requestCount}));
 }finally{await browser.close();}

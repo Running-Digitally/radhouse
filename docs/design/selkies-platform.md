@@ -165,3 +165,29 @@ requests do not revoke the holder. Failed drain stays blocked. The old stream
 can never resume input by reconnecting, and an old disconnect cannot revoke the
 new lease. Qualify this boundary on the real native runtime, and test playback
 policy rejection and trusted-tap recovery separately in Chromium and WebKit.
+
+
+## Live usability follow-up, 15 October
+
+The owner confirmed iPhone/desktop controls and authorized real browsing/chat
+checks. Live testing found that the large portrait header consumes about 225px
+in phone Chat and 170px on desktop, while a short phone chat drawer can place
+Send below the viewport. The responsive fixture reproduces the latter in
+landscape. This D1 correction changes presentation only: compact the portrait
+header in Browser and phone Chat, keep the Browser heading and Chat toggle
+reachable, and temporarily fold the browser display while the chat composer
+has focus in a short/keyboard viewport. Preserve the same iframe, stream, draft,
+privacy and control lease; restoring height or leaving the composer restores
+the display. The nested app shell must follow the visual viewport height, and the draft
+field and message-options menu must use that height for their bounds. Preserve
+the options menu outside the composer rather than clipping its popup.
+
+Affected files are conversation-workspace.css and the existing workspace browser
+fixture. Verify both Chromium and WebKit, short landscape/phone heights, Send
+bounds and touch size, privacy/context bars, draft retention, stream identity,
+preview expansion/minimize and restored browser display. Then select web source
+only and repeat the signed-in journey. Hermes, Selkies and input authority do
+not change. The remote desktop remains 1280×900; Fit is an overview and Zoom
+requires panning on phones. Persistent post-task previews are a later product
+decision: the current requested behavior hides the preview when agent browser
+work stops. These checks do not emulate a physical iPhone OS keyboard.
