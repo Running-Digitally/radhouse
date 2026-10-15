@@ -221,6 +221,13 @@ parsing, invalid owner/expiry/generation denial, and withholding captures that
 outlive a lease or generation. Existing Private/Observe/move/handback checks
 remain part of qualification.
 
+Full qualification exposed a load-sensitive lost-upload-ack fixture: it routed
+the 40 MB body through Playwright before delivering the simulated failure. The
+test now injects connection loss in its synthetic ASGI server after successful
+persistence, keeping the complete large upload on the actual browser transport.
+Original-size, saved-byte/download and no-retransmission assertions remain; no
+production upload code, test size, assertion timeout or required gate is changed.
+
 Portable tests prove these lifecycle and protocol properties, including a real
 Unix socket and authenticated Uvicorn/WebSocket binary path. They do not qualify
 the revised package under Linux X11, installed confinement, real video/input or

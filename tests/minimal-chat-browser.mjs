@@ -113,10 +113,8 @@ try {
   await expect(page.locator("#draft-files .attachment")).toHaveCount(5);
   await page.reload();
   await expect(page.locator("#draft-files .attachment")).toHaveCount(5);
-  await page.route("**/chat/files/*",async route => {
-    if (route.request().method() === "PUT") { await route.fetch(); await route.abort("failed"); }
-    else await route.continue();
-  },{times:2}); // GET receipt lookup, then lost upload acknowledgement.
+  // The synthetic ASGI fixture drops the large upload's receipt after saving
+  // the complete original. Keep the actual upload on the browser transport.
   await page.locator("#send").click();
   await expect(page.locator(".turn-error")).toContainText("lost the connection",{timeout:30000});
   await expect(page.getByRole("button",{name:"Retry message",exact:true})).toBeEnabled();

@@ -6,6 +6,7 @@ import socket
 import subprocess
 import threading
 import time
+from urllib.parse import parse_qs
 from uuid import uuid4
 
 from cryptography.fernet import Fernet
@@ -87,7 +88,26 @@ def test_actual_browser_login_reload_lost_response_and_text_rendering(real_chat,
     sock = socket.socket(); sock.bind(("127.0.0.1", 0))
     origin = f"http://127.0.0.1:{sock.getsockname()[1]}"
     auth._expected_origin = origin
-    server = uvicorn.Server(uvicorn.Config(create_app(auth, service), log_level="error", access_log=False))
+    app = create_app(auth, service)
+    lost_upload_acks = []
+
+    async def lost_ack_fixture(scope, receive, send):
+        # Keep the 40 MB body on the real browser/server transport. Forwarding
+        # it through Playwright route.fetch made the fault fixture stall under
+        # full coverage. Drop only the successful receipt after persistence.
+        lose_ack = (scope['type'] == 'http' and scope['method'] == 'PUT'
+            and scope['path'].startswith('/chat/files/') and not lost_upload_acks
+            and parse_qs(scope['query_string'].decode()).get('name') == ['large.bin'])
+        async def response(message):
+            await send(message)
+            if lose_ack and message['type'] == 'http.response.start' and message['status'] < 300:
+                lost_upload_acks.append(scope['path'].rsplit('/', 1)[1])
+                # The declared JSON body is deliberately not sent. Uvicorn
+                # closes the started response; XHR reports a network error.
+                raise ConnectionResetError('synthetic_lost_upload_ack')
+        await app(scope, receive, response)
+
+    server = uvicorn.Server(uvicorn.Config(lost_ack_fixture, log_level="error", access_log=False))
     thread = threading.Thread(target=lambda: server.run(sockets=[sock]), daemon=True)
     thread.start()
     root = Path(__file__).resolve().parents[1]
@@ -108,6 +128,8 @@ def test_actual_browser_login_reload_lost_response_and_text_rendering(real_chat,
         assert 'large.bin' in hermes.requests[6][1]['input']
         assert 'original saved, not read' in hermes.requests[6][1]['input']
         assert len({body["session_id"] for _, body in hermes.requests}) == 1
+        assert len(lost_upload_acks) == 1
+        assert service.store.upload('alice', lost_upload_acks[0]).size == (tmp_path / 'large.bin').stat().st_size
         print("MINIMAL_CHAT_SCREENSHOT", tmp_path / "minimal-chat.png")
     finally:
         server.should_exit = True; thread.join(timeout=5); sock.close()
