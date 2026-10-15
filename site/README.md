@@ -11,10 +11,22 @@ clear security boundaries, running on infrastructure the owner controls.
 The private pilot is a compact development note below the vision. Browser
 now describes qualified owner control, return and saved logins. A separate
 workspace section describes Terminal, About You and model controls activated
-in the private pilot on 8 October. Agent Identity remains a design preview, presented in
-one compact Visuals card with four groups of three small portraits. Each theme
-opens the thirteen-character popup gallery; working identity settings are the
+in the private pilot on 8 October. The workspace section pairs three compact
+feature rows with a larger character showcase. The feature list is labeled as
+available in the private pilot; the green identity panel is labeled as a design
+preview. Echo plays between smaller static Beacon and Orbit portraits, with
+Hearthside and Kiln Club links beneath, each showing all its characters as
+small static portraits. The columns stack on narrow screens.
+Paper Trails has been removed from the public preview. Each theme
+opens the ten-character popup gallery; working identity settings are the
 next private-app step. [The update receipt](RELEASE-2026-10-08-WORKSPACE.md) records the evidence.
+Echo uses the approved Blender neutral photograph and A/B/C reactions in the
+Visuals card and featured gallery portrait. Silent A/B/C clips play continuously
+in shuffled order without pauses or immediate repeats. All three clips preload,
+and the previous final frame remains visible until the next clip starts.
+Gallery thumbnails remain static. Pause/Play controls, reduced motion, hidden tabs and offscreen
+portraits suspend playback; unavailable media retains the neutral photograph.
+[The Echo release receipt](RELEASE-2026-10-09-ECHO.md) records sources and checks.
 The hero keeps its original message and uses a tactile conversation notebook.
 Talk, Reply, Away and Return move the scene from day to night and back while
 the notebook stays in place. This is an illustration, not a live agent or a
@@ -59,9 +71,20 @@ node --check site/public/journey.js
 node --check site/public/analytics.js
 node --check site/public/platform-icons.js
 node --check site/public/gallery.js
+node --check site/public/echo.js
 node --test site/test/analytics.test.mjs
 .venv/bin/python -m pytest tests/test_brand_assets.py -q
 git diff --check -- site
+```
+
+The focused video/gallery browser check uses the existing Playwright runtime;
+no site dependencies or build are needed:
+
+```sh
+RADHOUSE_PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs \
+RADHOUSE_BROWSER_CHANNEL=chrome \
+RADHOUSE_BROWSER_ORIGIN=http://127.0.0.1:8931 \
+node site/test/echo-walkthrough.mjs
 ```
 
 The conversation example has a single next action and four keyboard-accessible stages.
@@ -74,7 +97,7 @@ links, the first illustration and a full prose fallback work without enhancement
 The character gallery uses a native modal dialog, collection and portrait
 buttons, previous/next controls and short character stories. Escape and backdrop
 click close it; focus returns to the collection link. Arrow keys and Home/End
-select within each button group. Four native disclosures expose all portraits
+select within each button group. Three native disclosures expose all portraits
 without JavaScript. Reduced motion removes gallery and glyph animation.
 
 The platform glyph module is copied exactly from the qualified app source,
