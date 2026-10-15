@@ -1,5 +1,11 @@
 # Runtime contract and compatibility
 
+Scope note (2026-10-15): this document describes the earlier platform's opt-in
+descriptor lane. It does not establish that the current native chat/runtime API
+implements that descriptor. [ADR-0004](decisions/0004-replaceable-runtime-adapters.md)
+and the [stabilization plan](plans/2026-10-15-boundary-stabilization.md) require
+an explicit inventory of the active native contract before replacement work.
+
 One configured bot owns one authenticated runtime origin and persistent
 workspace. Bot identity, profile, provider binding and runtime revision remain
 deployment pins. They cannot be selected by a task or changed by output.

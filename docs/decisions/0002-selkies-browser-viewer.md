@@ -131,3 +131,13 @@ a gesture. Viewing and input authority stay separate. An eligible same-owner
 device can explicitly Move control here; it revokes/drains the former tab and
 starts Private, preserving the same browser. It never silently upgrades a
 viewing-only capability or resumes an observed lease.
+
+## 2026-10-15 ownership and replacement clarification
+
+Selkies remains the selected pilot viewer. Radhouse's controller, stream adapters,
+patch deltas and deployment qualification are owned code and remain subject to
+analysis and bounded remediation. General upstream cleanup is not part of that
+work. [ADR-0004](0004-replaceable-runtime-adapters.md) defines replacement
+qualification: preserve authority, privacy, state and recovery contracts before
+changing engines. Swappability is an architectural requirement, not evidence
+that another viewer is already compatible or permission to reopen this choice.

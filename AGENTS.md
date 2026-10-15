@@ -18,3 +18,27 @@ Credentials, live chats, server configuration and unrelated files are excluded.
 No issue suppression, rule/profile/gate change, feature-branch analysis, merge
 or deployment is included in the scan capability. Server rollout keeps its
 separate current-task authority and recovery requirements.
+
+### Community Build sequencing and follow-up work
+
+The installed SonarQube Community Build analyzes this project's single main
+branch. It does not provide this repository with branch/PR analysis. The local
+launcher deliberately clones committed remote `main`; changing files only in
+a feature branch or the invoking checkout does not change the analyzed source.
+Never pass a feature commit off as main or bypass the reviewed launcher.
+
+Use the normal review/merge/scan/follow-up cycle when the user authorizes that
+cycle. The owner explicitly authorized it on 15 October 2026 for the runtime
+scope expansion and bounded stabilization effort. Prepare and validate a small
+change, integrate it into main, scan the exact merged SHA, then use a follow-up
+branch/PR for relevant findings. Do not try to reopen a merged PR. Confirm each
+new branch starts from the appropriate updated main and preserve other sessions'
+dirty work. Routine follow-up merges within an explicitly authorized cycle do
+not require asking the same sequencing question again.
+
+A scan-only request still does not independently authorize merge or deployment.
+The post-merge scan is not a pre-merge required check. A quality-gate failure
+does not by itself mean the analysis failed to process; inspect server status,
+SHA and measures. Keep all-code findings as well as new-code findings, and
+honor the bounded remediation scope instead of initiating a zero-issue sweep.
+See the [stabilization plan](docs/plans/2026-10-15-boundary-stabilization.md).

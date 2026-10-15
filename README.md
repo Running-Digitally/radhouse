@@ -2,6 +2,12 @@
 
 A private web assistant on your own infrastructure.
 
+This is a public-source project with a limited private pilot, not a qualified
+public service. See the [security policy](SECURITY.md),
+[runtime ownership](docs/runtime-ownership.md), and
+[immediate stabilization plan](docs/plans/2026-10-15-boundary-stabilization.md)
+for the current development posture and bounded quality work.
+
 The current first slice is deliberately small: sign in, talk to one Hermes
 assistant, close the browser, and return to the same conversation. Use the
 configured private access connection.

@@ -38,10 +38,17 @@ addopts = "-ra"
 markers = ["postgres: requires the owned local PostgreSQL fixture"]
 
 [tool.coverage.run]
-source = ["src/radhouse", "scripts"]
+source = ["src/radhouse", "scripts", "runtime"]
+# Upstream snapshots and synthetic test servers are not production coverage.
+omit = ["runtime/hermes/fixtures/*", "runtime/selkies/fixture/*"]
 relative_files = true
 branch = true
 patch = ["subprocess"]
+
+[tool.coverage.report]
+# Runtime adapters are loaded by path; retain unexecuted files without __init__.py.
+include_namespace_packages = true
+omit = ["runtime/hermes/fixtures/*", "runtime/selkies/fixture/*"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/radhouse"]
