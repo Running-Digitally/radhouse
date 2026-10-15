@@ -46,7 +46,10 @@ shared independent pilot browser or create another controller database.
 
 Launch a private Xvfb display and headed sandboxed Chromium for that owned
 browser; the restricted native driver attaches to the same process. Track and
-retire the display/browser/native processes together. Preserve vault authority
+retire each browser/native/stream generation together. The authenticated X
+display stays private to the service. Stop the retired stream server and watcher
+before launching another Chrome or replacing its durable identity; an active or
+unproven generation cannot be replaced. Preserve vault authority
 and verified browser binary identity. Package Selkies and its client assets in
 a frozen, root-owned release, isolated from the existing Hermes dependency tree;
 verify effective dependency versions and source hashes before activation.
