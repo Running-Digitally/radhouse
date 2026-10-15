@@ -10,7 +10,7 @@ from radhouse.integrations.hermes import browser_network_policy
 
 def policy():
     return {"schema": "radhouse.browser-network-policy.v1", "verified": True,
-        "source": "deployment-target effective firewall receipt sha256:fixture",
+        "source": "the deployment target effective firewall receipt sha256:fixture",
         "verified_at": "2026-10-07T01:00:00+00:00", "enforcement": "vm_firewall",
         "allowed": ["Public HTTP(S) and permitted LAN routes"], "denied": ["As defined by the recorded VM firewall"]}
 

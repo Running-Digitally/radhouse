@@ -1,0 +1,1617 @@
+--- a/agent/agent_init.py
++++ b/agent/agent_init.py
+@@ -2395,6 +2395,7 @@
+     requested_provider: str = None, capabilities: Optional[Dict[str, bool]] = None, cwd: Optional[str] = None,
+     side_agent: bool = False, memory_manager=None,
+     tool_result_metadata_callback: Optional[Callable[..., dict]] = None,
++    provider_request_budget=None,
+ ):
+     _install_safe_stdio()
+ 
+@@ -2436,6 +2437,11 @@
+     agent.acp_args = list(acp_args or args or [])
+     _resolve_api_mode(agent, api_mode, provider_name, base_url)
+     _finalize_routing(agent, api_mode, credential_pool)
++    agent._provider_request_budget = provider_request_budget
++    if provider_request_budget is not None:
++        from agent.provider_request_budget import require_capped_runtime
++        from hermes_cli.config import load_config_readonly
++        require_capped_runtime(agent, load_config_readonly(), fallback_model)
+ 
+     # Platform callbacks are stored under their parameter names verbatim.
+     for _cb in _CALLBACK_PARAMS:
+--- a/agent/agent_runtime_helpers.py
++++ b/agent/agent_runtime_helpers.py
+@@ -1912,6 +1912,11 @@
+             profile = _profile_for_base_url(base_url)
+     if profile is None:
+         return None
++    if getattr(agent, "_provider_request_budget", None) is not None:
++        from providers.base import ProviderProfile
++        if getattr(profile.create_client, "__func__", None) is not ProviderProfile.create_client:
++            # Refuse before a custom factory can start an unguarded native client.
++            raise ValueError("provider_request_budget_client_unsupported")
+     try:
+         return profile.create_client(**client_kwargs)
+     except Exception:
+@@ -2006,6 +2011,11 @@
+                 client_kwargs.setdefault(key, value)
+     except Exception:
+         _ra().logger.debug("Provider client-kwargs hook skipped", exc_info=True)
++    request_budget = getattr(agent, "_provider_request_budget", None)
++    if request_budget is not None and (
++            agent.api_mode != "chat_completions" or agent.provider == "moa"
++            or "http_client" in client_kwargs):
++        raise ValueError("provider_request_budget_client_unsupported")
+     # The MoA virtual provider has no OpenAI wire endpoint; the facade *is* the client. Rebuild the
+     # facade, never a native client (TypeError; relay re-wire).
+     # Rebuilding a native OpenAI client while agent.provider == "moa" (client replacement, stream-retry pool
+@@ -2031,6 +2041,8 @@
+     # provider possible). None (the default) falls through, so existing providers are unaffected.
+     provider_client = _provider_supplied_client(agent, client_kwargs)
+     if provider_client is not None:
++        if request_budget is not None:
++            raise ValueError("provider_request_budget_client_unsupported")
+         _ra().logger.info(
+             "%s client created from provider profile (%s, shared=%s) %s",
+             agent.provider, reason, shared, agent._client_log_context(),
+@@ -2038,6 +2050,8 @@
+         return provider_client
+     from agent.auxiliary_client import _GEMINI_NATIVE_PROVIDER_NAMES
+     if agent.provider in _GEMINI_NATIVE_PROVIDER_NAMES:
++        if request_budget is not None:
++            raise ValueError("provider_request_budget_client_unsupported")
+         client = _gemini_native_client(agent, client_kwargs, httpx_verify, reason=reason, shared=shared)
+         if client is not None:
+             return client
+@@ -2069,6 +2083,12 @@
+         keepalive_http = agent._build_keepalive_http_client(client_kwargs.get("base_url", ""), verify=httpx_verify)
+         if keepalive_http is not None:
+             client_kwargs["http_client"] = keepalive_http
++    if request_budget is not None:
++        # This wrapper is private to this SDK client; its transport pool is shared.
++        # Recreated/request-local/summary clients all retain the same run budget.
++        if client_kwargs.get("http_client") is None:
++            raise ValueError("provider_request_budget_client_unsupported")
++        client_kwargs["http_client"].event_hooks["request"].append(request_budget.before_request)
+     # Retries belong to the outer conversation loop (honors Retry-After); SDK retries would
+     # double-retry inside it. auxiliary_client keeps SDK retries as it isn't wrapped.
+     # Delegate all rate-limit / 5xx retry to hermes's outer conversation loop, which honors Retry-After and
+--- a/agent/chat_completion_helpers.py
++++ b/agent/chat_completion_helpers.py
+@@ -758,6 +758,37 @@
+     return finish(raw_response)
+ 
+ 
++def _with_fresh_custom_cache_salt(agent, api_kwargs: dict) -> dict:
++    """Opt-in vLLM compatibility: isolate each SDK request's prefix, without editing history.
++
++    Called at primary chat dispatch (including existing retry/summary/stream attempts).
++    Internal SDK retries reuse the salt; primary clients already default to zero retries.
++    Provider identity and model are checked again here so switches cannot carry this option
++    onto an unrelated route. No salt is added without an exact boolean opt-in.
++    """
++    provider = str(getattr(agent, "provider", "") or "").strip().lower()
++    if getattr(agent, "api_mode", None) != "chat_completions" or not (
++            provider == "custom" or provider.startswith("custom:")):
++        return api_kwargs
++    from agent.agent_init import _custom_provider_model_matches, _normalized_custom_base_url
++    base_url = _normalized_custom_base_url(getattr(agent, "base_url", None))
++    provider_key = provider.partition(":")[2]
++    if not base_url:
++        return api_kwargs
++    for entry in getattr(agent, "_custom_providers", None) or ():
++        if not isinstance(entry, dict) or entry.get("fresh_cache_salt") is not True:
++            continue
++        if provider_key and provider_key not in {
++                str(entry.get(k, "") or "").strip().lower() for k in ("provider_key", "name")}:
++            continue
++        if (_normalized_custom_base_url(entry.get("base_url")) != base_url
++                or not _custom_provider_model_matches(api_kwargs.get("model", ""), entry)):
++            continue
++        return {**api_kwargs, "extra_body": {
++            **(api_kwargs.get("extra_body") or {}), "cache_salt": uuid.uuid4().hex}}
++    return api_kwargs
++
++
+ def _dispatch_nonstreaming_api_request(agent, api_kwargs: dict, *, make_client):
+     """Run one non-streaming LLM request for the active api_mode and return it.
+ 
+@@ -787,11 +818,13 @@
+             api_kwargs.pop("_moa_prepared_request", None)
+         return agent.client.chat.completions.create(**api_kwargs)
+     request_client = make_client("chat_completion_request")
+-    # #93650: keep the bulk wire-format payload out of the SDK's GIL-holding
+-    # request transform. No-op unless this really is the OpenAI SDK, so the
+-    # MoA facade above and the suite's stand-in clients are unaffected.
++    # Preserve upstream's SDK payload bypass, then observe the scoped response.
+     api_kwargs = bypass_chat_sdk_request_transform(api_kwargs, request_client)
+-    return request_client.chat.completions.create(**api_kwargs)
++    from agent.provider_request_budget import observe_response, response_observation
++    with response_observation(agent):
++        response = request_client.chat.completions.create(**_with_fresh_custom_cache_salt(agent, api_kwargs))
++        observe_response(agent, "sdk_response", response)
++        return response
+ 
+ 
+ def should_use_direct_api_call(agent) -> bool:
+@@ -1542,6 +1575,11 @@
+     """
+     from agent.opencode_affinity import merge_session_affinity_headers
+ 
++    allowed = getattr(agent, "_allowed_tool_names", None)
++    if isinstance(allowed, frozenset):
++        # Session-prefix restoration or dynamic discovery cannot widen this run.
++        tools_for_api = [t for t in (agent.tools if tools_for_api is None else tools_for_api)
++                         if t.get("function", {}).get("name") in allowed]
+     kwargs = _build_api_kwargs_for_mode(agent, api_messages, tools_for_api)
+     return merge_session_affinity_headers(
+         kwargs,
+@@ -1560,6 +1598,12 @@
+     # The one place request_overrides are consumed: static /fast values are already pinned
+     # in agent.request_overrides; auto/cold windows layer the fast override per request.
+     request_overrides = effective_request_overrides(agent)
++    if isinstance(getattr(agent, "_allowed_tool_names", None), frozenset):
++        # Static provider overrides cannot replace this run's admitted schemas.
++        request_overrides = {k: v for k, v in request_overrides.items() if k not in {"tools", "functions"}}
++        if isinstance(request_overrides.get("extra_body"), dict):
++            request_overrides["extra_body"] = {
++                k: v for k, v in request_overrides["extra_body"].items() if k not in {"tools", "functions"}}
+     if agent.api_mode == "anthropic_messages":
+         return _build_anthropic_kwargs(agent, api_messages, tools_for_api, reasoning_config, request_overrides)
+     if agent.api_mode == "bedrock_converse":
+@@ -3011,10 +3055,9 @@
+             self.agent._create_request_openai_client(reason="chat_completion_stream_request", api_kwargs=stream_kwargs))
+         self.last_chunk_time["t"] = time.time()
+         self.agent._touch_activity("waiting for provider response (streaming)")
+-        # #93650: as above — the streaming path carries the same bulk
+-        # messages/tools payload and pays the same client-side walk.
++        # Preserve upstream's request transform bypass on the streaming path.
+         stream_kwargs = bypass_chat_sdk_request_transform(stream_kwargs, request_client)
+-        return request_client.chat.completions.create(**stream_kwargs)
++        return request_client.chat.completions.create(**_with_fresh_custom_cache_salt(self.agent, stream_kwargs))
+ 
+     def _chat_stream_created(self, raw_stream: Any) -> None:
+         response = self._attempt_stream_response = getattr(raw_stream, "response", None)
+--- /dev/null
++++ b/agent/provider_request_budget.py
+@@ -0,0 +1,221 @@
++"""Optional Runs ceiling on attempts by one primary OpenAI HTTP client family.
++
++Runs never resumes an orphaned agent. An in-memory counter therefore enforces the
++ceiling without a second journal; an orphan's exact attempt count stays unknown.
++"""
++import hashlib
++import json
++from contextlib import contextmanager
++from contextvars import ContextVar
++from copy import deepcopy
++from threading import Lock
++from urllib.parse import urlsplit
++
++
++_response_observation = ContextVar("capped_response_observation", default=None)
++_REASONS = frozenset({"stop", "length", "tool_calls", "function_call", "content_filter",
++                      "end_turn", "max_tokens", "tool_use", "stop_sequence", "error"})
++
++
++def _field(value, name):
++    return value.get(name) if isinstance(value, dict) else getattr(value, name, None)
++
++
++def _integer(value):
++    return value if type(value) is int and value >= 0 else None
++
++
++def _reason(value):
++    if value is None or type(value) is int:
++        return value
++    return value if isinstance(value, str) and value in _REASONS else "other"
++
++
++def _response_shape(response):
++    """Read scalars only; malformed/hostile properties never change execution."""
++    try:
++        choices = _field(response, "choices")
++        if not isinstance(choices, (list, tuple)) or len(choices) != 1:
++            return {"observed": False}
++        choice = choices[0]
++        message = _field(choice, "message")
++        if message is None:
++            return {"observed": False}
++        usage = _field(response, "usage")
++        content = _field(message, "content")
++        tools = _field(message, "tool_calls")
++        lengths = {name + "_chars": len(value) if isinstance(value, str) else None
++                   for name in ("content", "reasoning", "reasoning_content")
++                   for value in [_field(message, name)]}
++        return {"observed": True, "finish_reason": _reason(_field(choice, "finish_reason")),
++                "stop_reason": _reason(_field(choice, "stop_reason")),
++                "content_kind": "null" if content is None else "string" if isinstance(content, str) else "other",
++                **lengths, "tool_call_count": 0 if tools is None else len(tools) if isinstance(tools, (list, tuple)) else None,
++                "prompt_tokens": _integer(_field(usage, "prompt_tokens")),
++                "completion_tokens": _integer(_field(usage, "completion_tokens")),
++                "total_tokens": _integer(_field(usage, "total_tokens"))}
++    except Exception:
++        return {"observed": False}
++
++
++def _request_shape(request, body):
++    try:
++        url = urlsplit(str(request.url))
++        if url.scheme not in {"http", "https"} or not url.hostname:
++            return {"observed": False}
++        path = url.path
++        digest = lambda value: hashlib.sha256(json.dumps(
++            value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
++        return {"observed": True, "scheme": url.scheme, "host": url.hostname, "port": url.port,
++                "path": path if path in {"/v1/chat/completions", "/chat/completions"} else None,
++                "path_sha256": hashlib.sha256(path.encode()).hexdigest(),
++                "stream": body.get("stream", False) if type(body.get("stream", False)) is bool else None,
++                **{name + "_sha256": digest(body.get(name)) for name in ("model", "messages", "tools")}}
++    except Exception:
++        return {"observed": False}
++
++
++@contextmanager
++def response_observation(agent, *, fresh=False):
++    """Only ordinal state crosses the existing copied worker Context, never bodies."""
++    token = None
++    try:
++        budget = getattr(agent, "_provider_request_budget", None)
++        current = _response_observation.get()
++        if isinstance(budget, ProviderRequestBudget) and (fresh or current is None or current[0] is not budget):
++            token = _response_observation.set((budget, {"ordinal": None}))
++    except Exception:
++        pass
++    try:
++        yield
++    finally:
++        if token is not None:
++            _response_observation.reset(token)
++
++
++def observe_response(agent, phase, response):
++    """Observation is best-effort and cannot turn a successful call into an error."""
++    try:
++        current = _response_observation.get()
++        budget = getattr(agent, "_provider_request_budget", None)
++        if current is not None and current[0] is budget:
++            budget.observe_response(current[1]["ordinal"], phase, response)
++    except Exception:
++        pass
++
++
++class ProviderRequestBudgetExceeded(RuntimeError):
++    pass
++
++
++def resolve_profile_request_limit(requested: int | None) -> int | None:
++    """Fresh Runs require explicit readable config; replay does not call this.
++
++Without a separate persisted marker, treating a missing/empty profile as defaults
++could silently remove its configured ceiling. A nonempty config with no ceiling
++still permits the upstream uncapped behavior.
++    """
++    from hermes_cli.config import require_readable_config_before_write
++    from hermes_cli.managed_scope import apply_managed_overlay
++    try:
++        # Despite its name this helper only reads and returns the raw mapping.
++        config = require_readable_config_before_write()
++        if not config:
++            raise ValueError("empty or missing config")
++        config = apply_managed_overlay(config)
++    except Exception as exc:
++        raise ValueError("provider_request_budget_config_unavailable") from exc
++    settings = config.get("agent", {})
++    if not isinstance(settings, dict):
++        raise ValueError("provider_request_budget_config_invalid")
++    if "max_provider_requests" not in settings:
++        return requested
++    ceiling = settings["max_provider_requests"]
++    if type(ceiling) is not int or not 1 <= ceiling <= 16:
++        raise ValueError("provider_request_budget_config_invalid")
++    if requested is not None and requested > ceiling:
++        raise ValueError("provider_request_budget_exceeds_profile_limit")
++    return ceiling if requested is None else requested
++
++
++class ProviderRequestBudget:
++    def __init__(self, limit: int):
++        if type(limit) is not int or not 1 <= limit <= 16:
++            raise ValueError("max_provider_requests must be an integer from 1 through 16")
++        self.limit = limit
++        self._reserved = 0
++        self._exhausted = False
++        self._closed = False
++        self._lock = Lock()
++        self._token_limits = []
++
++    def before_request(self, request) -> None:
++        """httpx invokes this before each send, including SDK retries/redirects."""
++        with self._lock:
++            if self._closed:
++                raise ProviderRequestBudgetExceeded("provider_request_budget_closed")
++            if self._reserved >= self.limit:
++                self._exhausted = True
++                raise ProviderRequestBudgetExceeded("provider_request_budget_exhausted")
++            self._reserved += 1
++            # Retain output-limit scalars and sanitized request shape/digests.
++            # Never retain headers, model/prompt text, or a response/stream body.
++            entry = {"ordinal": self._reserved, "observed": False,
++                     "max_tokens": None, "max_completion_tokens": None,
++                     "request_shape": {"observed": False},
++                     "sdk_response": None, "middleware_response": None}
++            try:
++                body = json.loads(request.content)
++                values = {key: body.get(key) for key in ("max_tokens", "max_completion_tokens")}
++                if all(value is None or type(value) is int for value in values.values()):
++                    entry.update(values, observed=True)
++                entry["request_shape"] = _request_shape(request, body)
++            except Exception:
++                pass  # e.g. an unread streaming body; absence of evidence stays explicit
++            self._token_limits.append(entry)
++            current = _response_observation.get()
++            if current is not None and current[0] is self:
++                current[1]["ordinal"] = self._reserved
++
++    def observe_response(self, ordinal, phase, response):
++        if phase not in {"sdk_response", "middleware_response"}:
++            return
++        shape = _response_shape(response)
++        with self._lock:
++            if self._closed or type(ordinal) is not int or not 1 <= ordinal <= len(self._token_limits):
++                return
++            entry = self._token_limits[ordinal - 1]
++            # Streaming aggregates and finalizers without this seam stay unknown.
++            if entry["request_shape"].get("stream") is not False or entry[phase] is not None:
++                return
++            entry[phase] = shape
++
++    def snapshot(self, *, close: bool = False) -> dict:
++        with self._lock:
++            if close:
++                self._closed = True
++            return {"limit": self.limit, "reserved_attempts": self._reserved,
++                    "exhausted": self._exhausted,
++                    "request_token_limits": deepcopy(self._token_limits)}
++
++
++def require_capped_runtime(agent, config: dict, fallback_model) -> None:
++    """Refuse automatic model consumers outside the qualified primary-client seam.
++
++This does not change tool authority or cap programs launched by tools. A capped
++assignment must separately admit only tools that do not launch auxiliary models.
++"""
++    def section(name):
++        value = config.get(name, {})
++        return value if isinstance(value, dict) else {}
++
++    aux = section("auxiliary")
++    if (agent.api_mode != "chat_completions" or agent.provider == "moa"
++            or section("compression").get("enabled") is not False
++            or section("curator").get("enabled") is not False
++            or any(not isinstance(aux.get(name), dict) or aux[name].get("enabled") is not False
++                   for name in ("title_generation", "background_review"))
++            or section("memory").get("provider")
++            or section("context").get("engine") not in (None, "", "compressor")
++            or fallback_model or config.get("fallback_providers")):
++        raise ValueError("provider_request_budget_runtime_unsupported")
+--- /dev/null
++++ b/agent/run_guidance.py
+@@ -0,0 +1,143 @@
++"""Identified user guidance at ordinary post-tool checkpoints of an API run.
++
++The journal owns receipts, while plaintext stays in this run's memory until the
++existing transcript writer persists it. No request is replayed after uncertainty.
++"""
++from __future__ import annotations
++
++import hashlib
++import threading
++from typing import Protocol
++
++MAX_GUIDANCE_RECEIPTS = 64
++MAX_GUIDANCE_INPUT_BYTES = 16384
++
++
++class GuidanceJournal(Protocol):
++    def reserve_guidance(self, scope, run_id, control_id, input_sha256, *, accepting, reason): ...
++    def transition_guidance(self, run_id, control_ids, *, expected_phase, phase, **fields): ...
++    def settle_guidance(self, run_id, reason): ...
++
++
++class GuidedRequestError(RuntimeError):
++    """A guided request must end without an automatic repeat attempt."""
++
++
++class RunGuidance:
++    def __init__(self, journal: GuidanceJournal, scope: str, run_id: str):
++        self.journal, self.scope, self.run_id = journal, scope, run_id
++        self._lock = threading.Lock()
++        self._closed_reason = None
++        self._pending = []
++        self._batch = []
++        self._phase = None
++        self._request_id = None
++        self._checkpoint_number = 0
++
++    @property
++    def awaiting_response(self) -> bool:
++        return bool(self._batch)
++
++    def submit(self, control_id: str, text: str):
++        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
++        with self._lock:
++            outcome, receipt = self.journal.reserve_guidance(
++                self.scope, self.run_id, control_id, digest,
++                accepting=self._closed_reason is None, reason=self._closed_reason)
++            if outcome == "created" and receipt["accepted"]:
++                self._pending.append((control_id, text))
++            return outcome, receipt
++
++    def after_tool_batch(self, *, remaining_iterations: int):
++        with self._lock:
++            if self._closed_reason is not None:
++                return None
++            if not self._pending:
++                return None
++            if remaining_iterations <= 0:
++                self._closed_reason = "iteration_limit"
++                self.journal.settle_guidance(self.run_id, "iteration_limit")
++                self._pending.clear()
++                return None
++            if self._batch:
++                raise GuidedRequestError("guidance_previous_request_unconfirmed")
++            self._batch, self._pending = self._pending, []
++            self._checkpoint_number += 1
++            checkpoint_id = f"{self.run_id}:guidance:{self._checkpoint_number}"
++            self.journal.transition_guidance(
++                self.run_id, self._ids(), expected_phase="queued", phase="prepared",
++                checkpoint_id=checkpoint_id)
++            self._phase = "prepared"
++            # Real user input, framed so send-time outer whitespace normalization
++            # cannot change its leading/trailing bytes. IDs are non-secret correlation.
++            content = "\n\n".join(self._frame(control_id, text) for control_id, text in self._batch)
++            return {"role": "user", "content": content, "display_metadata": {
++                "run_guidance": {"run_id": self.run_id, "checkpoint_id": checkpoint_id,
++                                 "control_ids": self._ids()}}}
++
++    @staticmethod
++    def _frame(control_id, text):
++        return f"[User guidance {control_id}]\n{text}\n[/User guidance {control_id}]"
++
++    def _ids(self):
++        return [control_id for control_id, _ in self._batch]
++
++    def request_started(self, api_request_id: str, request: dict):
++        with self._lock:
++            if not self._batch:
++                return
++            if self._closed_reason is not None:
++                raise GuidedRequestError("guidance_run_stopping")
++            if self._phase != "prepared":
++                raise GuidedRequestError("guided_request_already_attempted")
++            contents = []
++            for message in request.get("messages", []):
++                if not isinstance(message, dict) or message.get("role") != "user":
++                    continue
++                content = message.get("content")
++                if isinstance(content, list):
++                    content = "".join(part.get("text", "") for part in content
++                                      if isinstance(part, dict) and part.get("type") == "text")
++                contents.append(content)
++            if not all(any(isinstance(content, str) and self._frame(cid, text) in content
++                           for content in contents) for cid, text in self._batch):
++                raise GuidedRequestError("guidance_missing_from_request")
++            self.journal.transition_guidance(
++                self.run_id, self._ids(), expected_phase="prepared", phase="request_started",
++                api_request_id=api_request_id)
++            self._request_id, self._phase = api_request_id, "request_started"
++
++    def response_completed(self, api_request_id: str):
++        with self._lock:
++            if not self._batch:
++                return
++            if self._phase != "request_started" or self._request_id != api_request_id:
++                raise GuidedRequestError("guidance_request_confirmation_mismatch")
++            self.journal.transition_guidance(
++                self.run_id, self._ids(), expected_phase="request_started", phase="settled",
++                state="applied")
++            self._phase = "settled"
++            self._batch = []
++
++    def close_admission(self, reason: str):
++        with self._lock:
++            self._closed_reason = reason
++
++    def finish(self, reason: str):
++        with self._lock:
++            self._closed_reason = reason
++            self.journal.settle_guidance(self.run_id, reason)
++            self._pending.clear()
++
++
++def failed_guided_result(agent, messages, api_call_count, reason):
++    """Return through the existing API-loop terminal exit, with no retry/fallback."""
++    agent._run_guidance.finish(reason)
++    return {"final_response": "The guided request stopped without an automatic retry.",
++            "messages": messages, "api_calls": api_call_count, "completed": False,
++            "failed": True, "error": reason, "failure_reason": reason, "failure_retryable": False}
++
++
++def guidance_for(agent) -> RunGuidance | None:
++    value = getattr(agent, "_run_guidance", None)
++    return value if isinstance(value, RunGuidance) else None
+--- a/agent/tool_executor.py
++++ b/agent/tool_executor.py
+@@ -462,6 +462,9 @@
+     scope_block = None
+     if parse_error is None:
+         name, args, scope_block = _unwrap_tool_search_call(agent, name, args, flatten_probe=flatten_probe)
++    allowed = getattr(agent, "_allowed_tool_names", None)
++    if isinstance(allowed, frozenset) and (tool_call.function.name not in allowed or name not in allowed):
++        scope_block = "Tool is outside this run's exact allowed_tools restriction."
+     return _ParsedCall(tool_call, name, args, [], parse_error, scope_block)
+ 
+ 
+--- a/agent/turn_api_call.py
++++ b/agent/turn_api_call.py
+@@ -92,6 +92,10 @@
+                 next_api_kwargs, allow_stream=False, is_github_responses=agent._is_copilot_url(),
+                 sanitize_harmony_tokens=agent._is_codex_backend(),
+             )
++        from agent.run_guidance import guidance_for
++        guidance = guidance_for(agent)
++        if guidance is not None:
++            guidance.request_started(api_request_id, next_api_kwargs)
+         if _use_streaming:
+             return agent._interruptible_streaming_api_call(
+                 next_api_kwargs, on_first_delta=_stop_spinner
+@@ -130,13 +134,16 @@
+         if _model_request_active is not None:
+             _model_request_active.set()
+     try:
+-        response = run_llm_execution_middleware(
+-            api_kwargs, _perform_api_call, original_request=_original_api_kwargs,
+-            task_id=effective_task_id, turn_id=turn_id, api_request_id=api_request_id,
+-            session_id=agent.session_id or "", platform=agent.platform or "", model=agent.model,
+-            provider=agent.provider, base_url=agent.base_url, api_mode=agent.api_mode,
+-            api_call_count=api_call_count, middleware_trace=list(_llm_middleware_trace),
+-        )
++        from agent.provider_request_budget import observe_response, response_observation
++        with response_observation(agent, fresh=True):
++            response = run_llm_execution_middleware(
++                api_kwargs, _perform_api_call, original_request=_original_api_kwargs,
++                task_id=effective_task_id, turn_id=turn_id, api_request_id=api_request_id,
++                session_id=agent.session_id or "", platform=agent.platform or "", model=agent.model,
++                provider=agent.provider, base_url=agent.base_url, api_mode=agent.api_mode,
++                api_call_count=api_call_count, middleware_trace=list(_llm_middleware_trace),
++            )
++            observe_response(agent, "middleware_response", response)
+     finally:
+         with _bracket:
+             if _model_request_active is not None:
+--- a/agent/turn_api_error.py
++++ b/agent/turn_api_error.py
+@@ -78,6 +78,12 @@
+         thinking_spinner = None
+     if agent.thinking_callback:
+         agent.thinking_callback("")
++
++    from agent.run_guidance import failed_guided_result, guidance_for
++    guidance = guidance_for(agent)
++    if guidance is not None and guidance.awaiting_response:
++        return _verdict("return", failed_guided_result(
++            agent, messages, api_call_count, "guided_request_failed"))
+ 
+     _recovered, active_system_prompt = recover_before_classification(
+         agent, api_error, messages=messages, api_messages=api_messages, api_kwargs=api_kwargs,
+--- a/agent/turn_final_response.py
++++ b/agent/turn_final_response.py
+@@ -15,6 +15,7 @@
+ from agent.reasoning_promotion import answer_in_reasoning_capability
+ from agent.repetition_guard import STOP_PATH_MIN_CHARS, is_runaway_repetition
+ from agent.turn_failure_copy import stamp_failure
++from agent.run_guidance import guidance_for
+ from agent.turn_empty_response import recover_empty_response
+ from agent.turn_stop_gates import apply_stop_gates
+ from agent.turn_truncation import partial_result, repetition_copy
+@@ -357,6 +358,12 @@
+         else:
+             final_msg["content"] = final_response
+ 
++    guidance = guidance_for(agent)
++    if guidance is not None:
++        # A completed text answer ends the task. Guidance never buys an extra
++        # model call; the shared admission lock settles anything that missed it.
++        guidance.finish("no_next_model_turn")
++
+     append_message(messages, final_msg)
+     # Make the answer durable before leaving the loop (_DB_PERSISTED_MARKER keeps
+     # _persist_session idempotent). Failure must NOT abort the turn: finalize retries.
+--- a/agent/turn_response_check.py
++++ b/agent/turn_response_check.py
+@@ -129,6 +129,18 @@
+         logging.debug(f"API Response received - Model: {resp_model}, Usage: {response.usage if hasattr(response, 'usage') else 'N/A'}")
+ 
+     response_invalid, error_details = validate_response_shape(agent, response)
++    from agent.run_guidance import failed_guided_result, guidance_for
++    guidance = guidance_for(agent)
++    guided = guidance is not None and guidance.awaiting_response
++    if guided:
++        from agent.turn_truncation import normalize_response_for_agent
++        from agent.trajectory import has_incomplete_scratchpad
++        candidate = None if response_invalid else normalize_response_for_agent(agent, response)
++        if (candidate is None or candidate.finish_reason not in {"stop", "tool_calls"}
++                or not (candidate.tool_calls or agent._has_content_after_think_block(candidate.content or ""))
++                or has_incomplete_scratchpad(candidate.content or "")):
++            return _verdict("return", failed_guided_result(
++                agent, messages, api_call_count, "guided_response_unconfirmed"))
+     if response_invalid:
+         _iv = retry_invalid_response(
+             agent, response=response, error_details=error_details, _retry=_retry,
+@@ -197,6 +209,8 @@
+         api_duration=api_duration, compression_attempts=compression_attempts,
+         max_compression_attempts=max_compression_attempts,
+     )
++    if guided:
++        guidance.response_completed(api_request_id)
+     compression_attempts = _usage_outcome.compression_attempts
+     if _usage_outcome.rearmed:
+         _preflight_compression_blocked = False
+--- a/agent/turn_tool_round.py
++++ b/agent/turn_tool_round.py
+@@ -14,6 +14,7 @@
+ 
+ from agent.message_metadata import append_message
+ from agent.message_sanitization import coalesce_tool_call_id, normalize_provider_tool_call_ids
++from agent.run_guidance import failed_guided_result, guidance_for
+ from agent.turn_preflight import compress_after_tool_results
+ from agent.turn_tool_validation import validate_tool_calls
+ 
+@@ -217,6 +218,20 @@
+     if _ptc.end_turn:
+         return _verdict("break")
+ 
++    guidance = guidance_for(agent)
++    if guidance is not None:
++        if agent._interrupt_requested:
++            guidance.close_admission("run_stopping")
++        update = guidance.after_tool_batch(remaining_iterations=min(
++            agent.max_iterations - api_call_count, agent.iteration_budget.remaining))
++        if update is not None:
++            # Append the actual user input after the completed batch. Tool rows
++            # are already durable; do not rewrite them or the cached prefix.
++            append_message(messages, update)
++            if agent._flush_messages_to_session_db(messages, conversation_history) is not True:
++                return _verdict("return", failed_guided_result(
++                    agent, messages, api_call_count, "guidance_transcript_not_durable"))
++
+     # Save session log incrementally (so progress is visible even if interrupted)
+     agent._session_messages = messages
+     # Touch activity so slow post-tool work plus a slow follow-up API call can't exceed
+--- a/agent/turn_tool_validation.py
++++ b/agent/turn_tool_validation.py
+@@ -82,6 +82,17 @@
+ 
+     tool_calls = assistant_message.tool_calls
+     valid_names = agent.valid_tool_names
++    allowed = getattr(agent, "_allowed_tool_names", None)
++    if isinstance(allowed, frozenset) and any(tc.function.name not in allowed for tc in tool_calls):
++        # Exact restrictions do not auto-repair a different provider-supplied name,
++        # execute the valid siblings, or spend another model call trying again.
++        agent._persist_session(messages, conversation_history)
++        return ToolValidationVerdict("return", {
++            "final_response": "", "messages": messages, "api_calls": api_call_count,
++            "completed": False, "failed": True, "error": "run_tool_not_allowed",
++        }, False)
++    if isinstance(allowed, frozenset):
++        valid_names = valid_names & allowed
+ 
+     def _verdict(action: str, result: Optional[Dict[str, Any]] = None) -> ToolValidationVerdict:
+         return ToolValidationVerdict(action=action, result=result, mixed_invalid_batch=_mixed_invalid_batch)
+@@ -101,7 +112,7 @@
+     # Repair mismatched tool names before validating (model hallucinations).
+     repaired_ids = set()
+     for tc in tool_calls:
+-        if tc.function.name not in valid_names:
++        if tc.function.name not in valid_names and not isinstance(allowed, frozenset):
+             repaired = agent._repair_tool_call(tc.function.name)
+             if repaired:
+                 agent._vprint(f"{agent.log_prefix}🔧 Auto-repaired tool name: '{tc.function.name}' -> '{repaired}'",
+--- a/gateway/platforms/api_server.py
++++ b/gateway/platforms/api_server.py
+@@ -138,6 +138,7 @@
+ from gateway.platforms import api_server_room_dispatch as _room_dispatch
+ from gateway.platforms import api_server_room_grants as _room_grants
+ from gateway.platforms import api_server_runs as _api_runs
++from gateway.platforms import api_server_runtime_contract as _runtime_contract
+ from gateway.platforms.api_server_openai_routes import OpenAICompatRoutesMixin
+ from gateway.platforms.api_server_memory_sessions import ApiServerMemorySessions
+ from gateway.platforms.base import (
+@@ -939,7 +940,9 @@
+         if auth_err:
+             return auth_err
+         draining = self._draining_response()
+-        if draining is not None:
++        recoverable_runs = (getattr(self, "_runtime_contract_enabled", False)
++                            and request.path.endswith("/v1/runs"))
++        if draining is not None and not recoverable_runs:
+             return draining
+         reservation = {"active": True}
+         token = _api_agent_request_reservation.set(reservation)
+@@ -1234,6 +1237,7 @@
+         self._max_concurrent_runs: int = self._resolve_max_concurrent_runs()  # 0 disables
+         self._history_tool_output_max_chars = self._resolve_api_server_int(
+             "history_tool_output_max_chars", default=0)
++        _runtime_contract.configure(self)
+         # In-flight _run_agent() turns (/v1/runs tracks its own via _active_run_tasks).
+         # Concurrency cap shared across all agent-serving endpoints (/v1/chat/completions, /v1/responses,
+         # /v1/runs, /api/sessions/{id}/chat[/stream]). Read from config.yaml
+@@ -1760,6 +1764,7 @@
+             ("POST", "/api/jobs/{job_id}/run", self._handle_run_job)]
+         routes.extend(_room_grants._http_routes(self))
+         routes.extend(_api_runs._http_routes(self))
++        routes.append(("GET", "/v1/radhouse/descriptor", self._handle_runtime_descriptor))
+         if _CRON_AVAILABLE:
+             # Chronos fire webhook (NAS -> agent): authenticated by a NAS-minted JWT.
+             routes.append(("POST", "/api/cron/fire", self._handle_cron_fire))
+@@ -2343,7 +2348,9 @@
+         model_options: Optional[Dict[str, Any]] = None, route: Optional[Dict[str, Any]] = None,
+         session_model: Optional[str] = None, confirmed_runtime_lock: bool = False,
+         room_dispatch: Optional[Dict[str, Any]] = None,
+-        room_execution_policy: Optional[Dict[str, Any]] = None) -> Any:
++        room_execution_policy: Optional[Dict[str, Any]] = None,
++        disable_tools: bool = False, provider_request_budget=None,
++        allowed_tools: Optional[List[str]] = None) -> Any:
+         """Create an AIAgent from the gateway runtime config + platform toolsets.
+         ``gateway_session_key`` persists across transcripts (memory scope), unlike ``session_id``;
+         ``route`` / ``session_model`` are mutually exclusive; ``confirmed_runtime_lock`` beats the
+@@ -2382,6 +2389,9 @@
+             policy = RoomExecutionPolicy.from_mapping(room_execution_policy or {})
+             enabled_toolsets = list(policy.enabled_toolsets)
+             max_iterations = policy.max_iterations
++        if disable_tools:
++            # Restrict this fresh agent; never mutate the profile or another run.
++            enabled_toolsets = []
+         # Reasoning resolves against the model that actually runs (per-model overrides), so only
+         # after the precedence chain settles; an explicit request wins.
+         if request_reasoning_config is None:
+@@ -2409,7 +2419,17 @@
+             "memory_manager": self._memory_sessions.checkout(session_id)}
+         if request_service_tier is not _REQUEST_OPTION_MISSING:
+             agent_kwargs["service_tier"] = request_service_tier
++        if provider_request_budget is not None:
++            agent_kwargs["provider_request_budget"] = provider_request_budget
+         agent = AIAgent(**agent_kwargs)
++        if allowed_tools is not None:
++            from gateway.platforms.api_server_runs import _configured_run_tools
++            if disable_tools or agent.api_mode != "chat_completions":
++                raise ValueError("allowed_tools_requires_chat_completions")
++            # Recheck at construction: configuration may have narrowed since admission.
++            agent.tools = _configured_run_tools(allowed_tools, room_execution_policy)
++            agent._allowed_tool_names = frozenset(allowed_tools)
++            agent.valid_tool_names = set(allowed_tools)
+         route_source = (
+             "session_model_lock" if confirmed_runtime_lock
+             else "session_model_override" if session_override
+@@ -2525,6 +2545,20 @@
+                 "chat_completions": True, "chat_completions_streaming": True,
+                 "responses_api": True, "responses_streaming": True, "run_submission": True,
+                 "runs_idempotency": _api_runs._idempotency_capabilities(self, store_type=RunIdempotencyStore),
++                "runs_disable_tools": {"supported": True},
++                "runs_allowed_tools": {"supported": True, "version": 1,
++                                       "mode": "exact_subset_of_profile", "max_names": 32,
++                                       "durable": self._run_idempotency_store.durable},
++                "runs_provider_request_budget": {
++                    "supported": True, "min": 1, "max": 16,
++                    "scope": "primary_openai_http_attempts", "orphan_count": "unknown",
++                    "profile_default_and_ceiling": "agent.max_provider_requests",
++                    "fresh_runs_require_nonempty_config": True},
++                "runs_steering_receipts": {
++                    "supported": True, "durable": self._run_idempotency_store.durable,
++                    "version": 1, "max_receipts": 64, "checkpoint": "after_tool_batch",
++                    "max_extra_model_calls": 0,
++                    "applied_evidence": "completed_provider_response"},
+                 **_STATIC_FEATURE_FLAGS,
+                 "cors": bool(self._cors_origins),
+                 # Always advertised for feature-detection; enabled follows config.
+@@ -4404,6 +4438,9 @@
+     def _release_run_owner_if_forgotten(self, run_id: str) -> None:
+         _api_runs._release_run_owner_if_forgotten(self, run_id)
+ 
++    async def _handle_runtime_descriptor(self, request: "web.Request") -> "web.Response":
++        return await _runtime_contract.handle_descriptor(self, request, request_profile=_api_request_profile.get())
++
+     _handle_get_run = _run_route_delegate("_handle_get_run")
+     _handle_run_events = _run_route_delegate("_handle_run_events")
+     _handle_run_approval = _run_route_delegate("_handle_run_approval")
+--- a/gateway/platforms/api_server_run_idempotency.py
++++ b/gateway/platforms/api_server_run_idempotency.py
+@@ -1,6 +1,7 @@
+ """Durable idempotency reservations for API server runs."""
+ 
+ import hmac
++import hashlib
+ import json
+ import logging
+ import sqlite3
+@@ -11,6 +12,8 @@
+ from typing import Any, Dict
+ 
+ from hermes_cli.sqlite_util import add_column_if_missing
++
++from agent.run_guidance import MAX_GUIDANCE_RECEIPTS
+ 
+ 
+ # Keep the extracted store's log records on the API server logger.
+@@ -106,9 +109,69 @@
+                 add_column_if_missing(self._conn, "run_idempotency", column, f"{column} {ddl}")
+         self._conn.execute(
+             "CREATE UNIQUE INDEX IF NOT EXISTS run_idempotency_run_id ON run_idempotency(run_id)")
++        self._conn.execute(
++            """CREATE TABLE IF NOT EXISTS run_guidance (
++                run_id TEXT NOT NULL, control_id TEXT NOT NULL,
++                receipt_json TEXT NOT NULL, phase TEXT NOT NULL,
++                PRIMARY KEY (run_id, control_id)
++            )""")
+         self._conn.commit()
+         self._lock = threading.Lock()
++        self.observations_enabled = False
+         self._tighten_permissions()
++
++    def enable_observations(self):
++        """Add cursors only for an explicitly opted-in durable runtime."""
++        if not self.durable:
++            raise ValueError("runtime_durable_store_required")
++        with self._immediate_txn():
++            columns = {row[1] for row in self._conn.execute("PRAGMA table_info(run_idempotency)")}
++            if "observation_sequence" not in columns:
++                self._conn.execute("ALTER TABLE run_idempotency ADD COLUMN observation_sequence INTEGER NOT NULL DEFAULT 0")
++            if "observation_digest" not in columns:
++                self._conn.execute("ALTER TABLE run_idempotency ADD COLUMN observation_digest TEXT")
++            self._conn.commit()
++        self.observations_enabled = True
++
++    def _observation_locked(self, run_id):
++        row = self._conn.execute(
++            "SELECT status_json,observation_sequence,observation_digest FROM run_idempotency WHERE run_id=?",
++            (run_id,)).fetchone()
++        if row is None:
++            return None
++        status, sequence, previous = json.loads(row[0]), row[1], row[2]
++        if (type(sequence) is not int or not 0 <= sequence <= 2**63 - 1
++                or (sequence == 0 and previous is not None)
++                or (sequence > 0 and (not isinstance(previous, str) or len(previous) != 64
++                                     or any(c not in "0123456789abcdef" for c in previous)))):
++            raise ValueError("runtime_observation_cursor_invalid")
++        receipts = [json.loads(item[0]) for item in self._conn.execute(
++            "SELECT receipt_json FROM run_guidance WHERE run_id=? ORDER BY rowid", (run_id,)).fetchall()]
++        payload = {**status, "guidance_receipts": receipts}
++        digest = hashlib.sha256(_encode_status(payload).encode()).hexdigest()
++        if previous != digest:
++            if sequence == 2**63 - 1:
++                raise ValueError("runtime_observation_sequence_exhausted")
++            sequence += 1
++            self._conn.execute(
++                "UPDATE run_idempotency SET observation_sequence=?,observation_digest=? WHERE run_id=?",
++                (sequence, digest, run_id))
++        return {**payload, "observation_sequence": sequence}
++
++    def _refresh_observation_locked(self, run_id):
++        if self.observations_enabled:
++            self._observation_locked(run_id)
++
++    def observation_for_run(self, scope, run_id):
++        """Status, receipts and cursor come from one committed, owned snapshot."""
++        if not self.durable or not self.observations_enabled:
++            raise ValueError("runtime_observations_unavailable")
++        with self._immediate_txn():
++            owned = self._conn.execute(
++                "SELECT 1 FROM run_idempotency WHERE scope=? AND run_id=?", (scope, run_id)).fetchone()
++            result = self._observation_locked(run_id) if owned else None
++            self._conn.commit()
++        return result
+ 
+     def _tighten_permissions(self) -> None:
+         for suffix in ("", "-wal", "-shm") if self._db_path else ():
+@@ -151,6 +214,7 @@
+                 ") VALUES(?,?,?,?,?,?,?,?,?,?)",
+                 (scope, key, fingerprint, run_id, encoded, int(owner_pid or 0), int(owner_started or 0),
+                  retention_until, now, now))
++            self._refresh_observation_locked(run_id)
+             self._conn.commit()
+             return "created", _record(run_id, encoded, owner_pid, owner_started, now) | {"status": status}
+ 
+@@ -170,19 +234,20 @@
+         """Prune aged replay records only once their stored run is terminal (caller holds the
+         lock + transaction): a long or disconnected room turn may outlive the retention window."""
+         stale = self._conn.execute(
+-            """SELECT scope, idempotency_key, status_json
++            """SELECT scope, idempotency_key, status_json, run_id
+                  FROM run_idempotency
+                 WHERE acknowledged_at <= ?
+                    OR (retention_until > 0 AND retention_until <= ?)
+                    OR (retention_until <= 0 AND updated_at < ?)""",
+             (now - self.ACKNOWLEDGED_RETENTION_SECONDS, now, now - self.RETENTION_SECONDS),
+         ).fetchall()
+-        for stale_scope, stale_key, stale_status in stale:
++        for stale_scope, stale_key, stale_status, stale_run_id in stale:
+             try:
+                 terminal = json.loads(stale_status).get("status") in TERMINAL_STATUSES
+             except Exception:
+                 terminal = False
+             if terminal:
++                self._conn.execute("DELETE FROM run_guidance WHERE run_id=?", (stale_run_id,))
+                 self._conn.execute(
+                     "DELETE FROM run_idempotency WHERE scope=? AND idempotency_key=?", (stale_scope, stale_key))
+ 
+@@ -218,10 +283,86 @@
+         return row is not None
+ 
+     def update_status(self, run_id: str, status: Dict[str, Any]) -> None:
+-        with self._lock:
++        with self._immediate_txn():
++            if status.get("status") in TERMINAL_STATUSES:
++                self._settle_guidance_locked(run_id, "run_" + status["status"])
+             self._conn.execute(
+                 "UPDATE run_idempotency SET status_json=?, updated_at=? WHERE run_id=?",
+                 (_encode_status(status), time.time(), run_id))
++            self._refresh_observation_locked(run_id)
++            self._conn.commit()
++
++    def reserve_guidance(self, scope, run_id, control_id, input_sha256, *, accepting, reason):
++        """Reserve a receipt before enqueueing; same-ID replay never enqueues twice."""
++        if not self.durable:
++            raise ValueError("guidance_durable_store_required")
++        with self._immediate_txn():
++            owner = self._conn.execute(
++                "SELECT status_json FROM run_idempotency WHERE scope=? AND run_id=?", (scope, run_id)).fetchone()
++            if owner is None:
++                raise ValueError("guidance_durable_run_required")
++            row = self._conn.execute(
++                "SELECT receipt_json FROM run_guidance WHERE run_id=? AND control_id=?",
++                (run_id, control_id)).fetchone()
++            if row is not None:
++                receipt = json.loads(row[0])
++                self._conn.commit()
++                return ("reused" if hmac.compare_digest(receipt["input_sha256"], input_sha256)
++                        else "conflict"), receipt
++            count = self._conn.execute("SELECT count(*) FROM run_guidance WHERE run_id=?", (run_id,)).fetchone()[0]
++            if count >= MAX_GUIDANCE_RECEIPTS:
++                raise ValueError("guidance_receipt_limit")
++            if json.loads(owner[0]).get("status") in TERMINAL_STATUSES:
++                accepting, reason = False, "run_closed"
++            receipt = dict(run_id=run_id, control_id=control_id, input_sha256=input_sha256,
++                           accepted=bool(accepting), state="accepted" if accepting else "too_late",
++                           revision=1, reason=None if accepting else reason,
++                           checkpoint_id=None, api_request_id=None)
++            self._conn.execute("INSERT INTO run_guidance VALUES(?,?,?,?)",
++                               (run_id, control_id, _encode_status(receipt), "queued" if accepting else "settled"))
++            self._refresh_observation_locked(run_id)
++            self._conn.commit()
++            return "created", receipt
++
++    def transition_guidance(self, run_id, control_ids, *, expected_phase, phase, **fields):
++        """Commit a whole checkpoint transition or none; terminal evidence is immutable."""
++        with self._immediate_txn():
++            for control_id in control_ids:
++                row = self._conn.execute(
++                    "SELECT receipt_json,phase FROM run_guidance WHERE run_id=? AND control_id=?",
++                    (run_id, control_id)).fetchone()
++                if row is None or row[1] != expected_phase:
++                    raise ValueError("guidance_phase_conflict")
++                receipt = json.loads(row[0])
++                receipt.update(fields, revision=receipt["revision"] + 1)
++                self._conn.execute("UPDATE run_guidance SET receipt_json=?,phase=? WHERE run_id=? AND control_id=?",
++                                   (_encode_status(receipt), phase, run_id, control_id))
++            self._refresh_observation_locked(run_id)
++            self._conn.commit()
++
++    def guidance_receipts(self, scope, run_id):
++        with self._lock:
++            rows = self._conn.execute(
++                "SELECT g.receipt_json FROM run_guidance g JOIN run_idempotency r ON r.run_id=g.run_id "
++                "WHERE r.scope=? AND r.run_id=? ORDER BY g.rowid", (scope, run_id)).fetchall()
++        return [json.loads(row[0]) for row in rows]
++
++    def _settle_guidance_locked(self, run_id, reason):
++        rows = self._conn.execute(
++            "SELECT control_id,receipt_json,phase FROM run_guidance WHERE run_id=? AND phase<>'settled'",
++            (run_id,)).fetchall()
++        for control_id, encoded, phase in rows:
++            receipt = json.loads(encoded)
++            uncertain = phase == "request_started"
++            receipt.update(state="unknown" if uncertain else "not_applied", revision=receipt["revision"] + 1,
++                           reason="provider_completion_unconfirmed" if uncertain else reason)
++            self._conn.execute("UPDATE run_guidance SET receipt_json=?,phase='settled' WHERE run_id=? AND control_id=?",
++                               (_encode_status(receipt), run_id, control_id))
++
++    def settle_guidance(self, run_id, reason):
++        with self._immediate_txn():
++            self._settle_guidance_locked(run_id, reason)
++            self._refresh_observation_locked(run_id)
+             self._conn.commit()
+ 
+     def close(self) -> None:
+--- a/gateway/platforms/api_server_runs.py
++++ b/gateway/platforms/api_server_runs.py
+@@ -6,6 +6,7 @@
+ import logging
+ import os
+ import threading
++import re
+ import time
+ import uuid
+ from collections import deque
+@@ -26,6 +27,10 @@
+ 
+ from gateway.platforms.api_server_room_grants import _json_error, _room_grant_error_response
+ from gateway.platforms.api_server_run_idempotency import TERMINAL_STATUSES
++from gateway.platforms import api_server_runtime_contract as _runtime_contract
++from agent.message_content import flatten_message_text
++from agent.run_guidance import MAX_GUIDANCE_INPUT_BYTES, RunGuidance
++from agent.provider_request_budget import ProviderRequestBudget, resolve_profile_request_limit
+ 
+ 
+ logger = logging.getLogger("gateway.platforms.api_server")
+@@ -271,7 +276,8 @@
+         current.pop("approval", None)
+     self._run_statuses[run_id] = current
+     should_persist = (
+-        status != previous_status
++        getattr(self, "_runtime_contract_enabled", False)
++        or status != previous_status
+         or status in TERMINAL_STATUSES
+         or bool(field_names & {
+             "output", "error", "usage", "pending_steer", "session_id", "shutdown_requested_at"}))
+@@ -279,6 +285,8 @@
+         try:
+             self._run_idempotency_store.update_status(run_id, current)
+         except Exception:
++            if getattr(self, "_runtime_contract_enabled", False):
++                self._runtime_persistence_failed = True
+             logger.exception("[api_server] failed to persist idempotent run status %s", run_id)
+     return current
+ 
+@@ -617,6 +625,32 @@
+             _api_server._api_request_profile.reset(token)
+ 
+ 
++def _configured_run_tools(allowed_tools, room_execution_policy=None):
++    """Resolve an exact subset of the configured API surface, never the global catalog."""
++    from gateway.run import _load_gateway_config
++    from hermes_cli.tools_config import _get_platform_tools
++    from agent.skill_utils import parse_config_string_list
++    from model_tools import get_tool_definitions
++
++    config = _load_gateway_config()
++    disabled = parse_config_string_list((config.get("agent") or {}).get("disabled_toolsets") or [])
++    configured = get_tool_definitions(
++        enabled_toolsets=sorted(_get_platform_tools(config, "api_server")),
++        disabled_toolsets=disabled,
++        quiet_mode=True, skip_tool_search_assembly=True)
++    if room_execution_policy is not None:
++        from gateway.hosted_room_execution_policy import RoomExecutionPolicy
++        policy = RoomExecutionPolicy.from_mapping(room_execution_policy)
++        room_names = {t["function"]["name"] for t in get_tool_definitions(
++            enabled_toolsets=list(policy.enabled_toolsets), quiet_mode=True,
++            skip_tool_search_assembly=True)}
++        configured = [t for t in configured if t["function"]["name"] in room_names]
++    names = {t["function"]["name"] for t in configured}
++    if not set(allowed_tools) <= names:
++        raise ValueError("allowed_tools_not_configured")
++    return [t for t in configured if t["function"]["name"] in allowed_tools]
++
++
+ async def _handle_runs(self, request: "web.Request", *, _api_server) -> "web.Response":
+     """POST /v1/runs — start an agent run, return run_id immediately."""
+     _openai_error = _api_server._openai_error
+@@ -631,6 +665,30 @@
+     body, room_error = await self._normalize_room_dispatch(request, body)
+     if room_error is not None:
+         return room_error
++    if not isinstance(body, dict):
++        return _json_error(_openai_error, "Request body must be a JSON object", status=400)
++    disable_tools = body.get("disable_tools", False)
++    if type(disable_tools) is not bool:
++        return _json_error(
++            _openai_error, "'disable_tools' must be a boolean",
++            code="invalid_disable_tools", status=400)
++    allowed_tools = body.get("allowed_tools")
++    if "allowed_tools" in body:
++        if (not isinstance(allowed_tools, list) or not 1 <= len(allowed_tools) <= 32
++                or any(not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", name)
++                       for name in allowed_tools)
++                or len(set(allowed_tools)) != len(allowed_tools)):
++            return _json_error(_openai_error, "'allowed_tools' must contain 1-32 unique exact tool names",
++                               code="invalid_allowed_tools", status=400)
++        if disable_tools:
++            return _json_error(_openai_error, "Use either disable_tools or allowed_tools",
++                               code="conflicting_tool_restrictions", status=400)
++    max_provider_requests = body.get("max_provider_requests")
++    if "max_provider_requests" in body and (
++            type(max_provider_requests) is not int or not 1 <= max_provider_requests <= 16):
++        return _json_error(_openai_error,
++                           "'max_provider_requests' must be an integer from 1 through 16",
++                           code="invalid_max_provider_requests", status=400)
+     room_dispatch, room_execution_policy = (
+         v if isinstance(v, dict) else None for v in (
+             (body.get("hosted_room_dispatch"), body.get("_room_execution_policy"))
+@@ -682,6 +740,36 @@
+             retention_until=_room_retention_until(request))
+         if outcome == "conflict" or (outcome == "reused" and record is not None):
+             return _replay_or_conflict(self, request, outcome, record, gateway_session_key, _openai_error)
++    if getattr(self, "_runtime_contract_enabled", False):
++        # Draining rejects fresh work, but cannot hide an already committed start key.
++        draining = self._draining_response()
++        if draining is not None:
++            return draining
++    runtime_error = _runtime_contract.fresh_admission_error(
++        self, idempotency_key=idempotency_key, request_profile=_api_server._api_request_profile.get())
++    if runtime_error:
++        return _json_error(_openai_error, runtime_error, code=runtime_error, status=503)
++    # Resolve only for fresh work. Recovery uses the admitted limit even if the
++    # profile changed or became unavailable after the original reservation.
++    try:
++        max_provider_requests = resolve_profile_request_limit(max_provider_requests)
++    except ValueError as exc:
++        code = str(exc)
++        return _json_error(_openai_error, code, code=code,
++                           status=400 if code.endswith("exceeds_profile_limit") else 503)
++    if max_provider_requests is not None and (
++            not idempotency_key or not self._run_idempotency_store.durable):
++        return _json_error(_openai_error, "Provider request cap requires durable keyed admission",
++                           code="provider_request_budget_requires_idempotency", status=400)
++    if allowed_tools is not None:
++        if not idempotency_key or not self._run_idempotency_store.durable:
++            return _json_error(_openai_error, "Exact tool restriction requires durable keyed admission",
++                               code="allowed_tools_requires_idempotency", status=400)
++        try:
++            await asyncio.to_thread(_configured_run_tools, allowed_tools, room_execution_policy)
++        except ValueError:
++            return _json_error(_openai_error, "Requested tools are outside the configured API surface",
++                               code="allowed_tools_not_configured", status=400)
+     # Enforce concurrency only for a genuinely new run.
+     limited = self._concurrency_limited_response()
+     if limited is not None:
+@@ -717,6 +805,12 @@
+     self._run_approval_sessions[run_id] = run_id  # approval session key (see _RunLaunch)
+     initial_status = self._set_run_status(
+         run_id, "queued", created_at=created_at, session_id=session_id, model=body.get("model", self._model_name))
++    if allowed_tools is not None:
++        initial_status["allowed_tools"] = list(allowed_tools)
++    if max_provider_requests is not None:
++        initial_status["provider_request_budget"] = {
++            "limit": max_provider_requests, "reserved_attempts": None, "exhausted": None,
++            "request_token_limits": None}
+     if idempotency_key:
+         outcome, record = self._run_idempotency_store.reserve(
+             idempotency_scope, idempotency_key, idempotency_fingerprint, run_id, initial_status,
+@@ -734,6 +828,8 @@
+         agent_kwargs=dict(
+             ephemeral_system_prompt=instructions, session_id=session_id, gateway_session_key=gateway_session_key,
+             route=route, room_dispatch=room_dispatch, room_execution_policy=room_execution_policy,
++            disable_tools=disable_tools,
++            **({"allowed_tools": allowed_tools} if allowed_tools is not None else {}),
+             **{k: agent_overrides.get(k) for k in ("requested_model", "requested_provider", "model_options")}),
+         request_profile=_api_server._api_request_profile.get(),
+         browser_control_principal=_api_server._api_request_browser_control_principal.get(),
+@@ -917,6 +1013,9 @@
+     _redact_api_error_text = _api_server._redact_api_error_text
+     run_id, loop = run.run_id, asyncio.get_running_loop()
+     _run_started_at = time.perf_counter()
++    guidance = None
++    admitted_budget = self._run_statuses[run_id].get("provider_request_budget")
++    request_budget = ProviderRequestBudget(admitted_budget["limit"]) if admitted_budget else None
+ 
+     def _text_cb(delta: Optional[str]) -> None:
+         if delta is None or run_id not in self._run_streams:
+@@ -941,6 +1040,22 @@
+             status = "interrupted"
+             fields = {"error": "Gateway shutdown interrupted the run."}
+             extra = {}
++        if request_budget is not None:
++            fields["provider_request_budget"] = request_budget.snapshot(close=True)
++            if fields["provider_request_budget"]["exhausted"]:
++                status = "failed"
++                fields["error"] = "provider_request_budget_exhausted"
++                fields.pop("output", None)
++        if guidance is not None:
++            try:
++                guidance.finish("run_" + status)
++            except Exception:
++                # The executor has ended even if SQLite cannot record its control
++                # outcomes. Fail visibly; a later GET settles receipts when storage
++                # returns, rather than leaving a phantom running agent.
++                self._set_run_status(run_id, "failed", error="guidance_receipt_storage_unavailable",
++                                     last_event="run.failed")
++                raise
+         self._set_run_status(run_id, status, **fields, last_event=f"run.{status}", **extra)
+         with suppress(Exception):
+             # A worker can finish before its Future is wrapped, so awaiting it
+@@ -958,9 +1073,16 @@
+             _finish("cancelled")
+             return
+         with self._profile_scope(run.request_profile):
++            if request_budget is not None:
++                run.agent_kwargs["provider_request_budget"] = request_budget
+             agent = self._create_agent(
+                 stream_delta_callback=_text_cb, tool_progress_callback=self._make_run_event_callback(run_id, loop),
+                 interim_assistant_callback=_interim_cb, **run.agent_kwargs)
++        # Guidance belongs only to the ordinary chat-completions loop.
++        if (run_id in self._run_idempotency_ids and self._run_idempotency_store.durable
++                and getattr(agent, "api_mode", None) == "chat_completions"):
++            guidance = RunGuidance(self._run_idempotency_store, self._run_owners[run_id], run_id)
++            agent._run_guidance = guidance
+         self._active_run_agents[run_id] = agent
+         approval_notify = _make_approval_notify(self, run, _api_server=_api_server)
+         result, usage, served_runtime = await _submit_api_worker(
+@@ -975,6 +1097,11 @@
+         elif result.get("failed"):
+             # Non-retryable client errors (401/400) return failed=True rather than raising.
+             _finish("failed", fields, error=_redact_api_error_text(result.get("error") or "agent run failed"))
++        elif not flatten_message_text(result.get("final_response")).strip():
++            # Thinking-only recovery may exhaust the loop without a visible answer.
++            extra = {"pending_steer": result["pending_steer"]} if result.get("pending_steer") else {}
++            _finish("failed", extra, error="agent_run_incomplete_no_output",
++                    terminal_reason="no_visible_final_response", usage=usage)
+         else:
+             # ``runtime`` rides on both the pollable status and the run.completed event via _finish, in the
+             # canonical shape every other api_server surface emits (route_source/requested, cleaned ids).
+@@ -1056,9 +1183,30 @@
+ 
+ async def _handle_get_run(self, request: "web.Request", *, _api_server) -> "web.Response":
+     """GET /v1/runs/{run_id} — return pollable run status for external UIs."""
+-    _, status, _, _, err = _load_owned_run(
++    if getattr(self, "_runtime_contract_enabled", False) and not self._expected_api_key():
++        return _json_error(_api_server._openai_error, "Runtime authentication required", status=401)
++    run_id, status, _, _, err = _load_owned_run(
+         self, request, _api_server=_api_server, permission="status", active_fallback=True)
+-    return err or web.json_response(status)
++    if err is not None:
++        return err
++    if getattr(self, "_runtime_contract_enabled", False):
++        try:
++            if getattr(self, "_runtime_persistence_failed", False):
++                raise ValueError("runtime_persistence_failed")
++            observed = self._run_idempotency_store.observation_for_run(self._run_idempotency_scope(request), run_id)
++            if observed is None:
++                return _run_not_found(_api_server._openai_error, run_id)
++            return web.json_response(observed)
++        except Exception:
++            return _json_error(_api_server._openai_error, "Durable observation unavailable",
++                               code="runtime_observation_unavailable", status=503)
++    receipts = self._run_idempotency_store.guidance_receipts(self._run_idempotency_scope(request), run_id)
++    if status.get("status") in TERMINAL_STATUSES and any(row["state"] == "accepted" for row in receipts):
++        # Reconcile a terminal write that previously failed; no executor or model
++        # work is resumed. update_status atomically settles unsent/uncertain rows.
++        self._run_idempotency_store.update_status(run_id, status)
++        receipts = self._run_idempotency_store.guidance_receipts(self._run_idempotency_scope(request), run_id)
++    return web.json_response({**status, "guidance_receipts": receipts})
+ 
+ 
+ async def _handle_run_events(self, request: "web.Request", *, _api_server) -> "web.StreamResponse":
+@@ -1223,14 +1371,16 @@
+         self, request, _api_server=_api_server, permission=None, active_fallback=False)
+     if err is not None:
+         return err
++    body, err = await self._read_json_body(request)
++    if err is None and "control_id" in body:
++        return _identified_steer(self, request, run_id, body, _api_server=_api_server)
+     # /stop keeps agent refs during cooperative shutdown, so the status gate (not the
+     # agent ref) is what rejects stop-then-steer.
+     if status.get("status") != "running" or not hasattr(agent, "steer"):
+         return _json_error(
+             _openai_error, f"Run is not currently accepting steer input: {run_id}",
+             code="run_not_accepting_steer", status=409)
+-    body, err = await self._read_json_body(request)
+-    if err:
++    if err is not None:
+         return err
+     raw_text = body.get("input") or body.get("message") or body.get("text") or ""
+     steer_text = _api_server._normalize_chat_content(raw_text).strip()
+@@ -1248,6 +1398,46 @@
+             _openai_error, f"Run did not accept steer text: {run_id}", code="steer_not_accepted", status=409)
+     _mark_run_event(self, run_id, "run.steered", accepted=True)
+     return web.json_response({"object": "hermes.run.steer", "run_id": run_id, "accepted": True})
++
++
++def _identified_steer(self, request, run_id, body, *, _api_server):
++    """Opt-in durable receipts; resolve duplicates before considering the live window."""
++    error = _api_server._openai_error
++    control_id, text = body.get("control_id"), body.get("input")
++    try:
++        valid = (isinstance(control_id, str) and re.fullmatch(r"control:[a-f0-9]{64}", control_id)
++                 and isinstance(text, str) and text.strip()
++                 and len(text.encode("utf-8")) <= MAX_GUIDANCE_INPUT_BYTES)
++    except UnicodeEncodeError:
++        valid = False
++    if not valid:
++        return _json_error(error, "Invalid identified guidance input", code="invalid_guidance_input", status=400)
++    store, scope = self._run_idempotency_store, self._run_idempotency_scope(request)
++    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
++    receipt = next((row for row in store.guidance_receipts(scope, run_id) if row["control_id"] == control_id), None)
++    if receipt is not None:
++        outcome = "reused" if receipt["input_sha256"] == digest else "conflict"
++    else:
++        agent = self._active_run_agents.get(run_id)
++        tracker = getattr(agent, "_run_guidance", None)
++        try:
++            if isinstance(tracker, RunGuidance):
++                outcome, receipt = tracker.submit(control_id, text)
++            elif self._run_statuses.get(run_id, {}).get("status") in TERMINAL_STATUSES | {"stopping"}:
++                outcome, receipt = store.reserve_guidance(
++                    scope, run_id, control_id, digest, accepting=False, reason="run_closed")
++            else:
++                return _json_error(error, "This run has no identified-guidance checkpoint",
++                                   code="guidance_checkpoint_unavailable", status=409)
++        except ValueError as exc:
++            code = str(exc)
++            if code not in {"guidance_durable_store_required", "guidance_durable_run_required", "guidance_receipt_limit"}:
++                raise
++            return _json_error(error, code, code=code, status=429 if code == "guidance_receipt_limit" else 409)
++    if outcome == "conflict":
++        return _json_error(error, "Control ID was used with different input",
++                           code="guidance_control_id_conflict", status=409)
++    return web.json_response({"object": "hermes.run.steer", **receipt, "replayed": outcome == "reused"})
+ 
+ 
+ async def _handle_stop_run(self, request: "web.Request", *, _api_server) -> "web.Response":
+@@ -1266,6 +1456,9 @@
+     self._set_run_status(run_id, "stopping", last_event="run.stopping")
+     self._stopping_run_ids.add(run_id)
+     if agent is not None:
++        tracker = getattr(agent, "_run_guidance", None)
++        if isinstance(tracker, RunGuidance):
++            tracker.close_admission("run_stopping")
+         with suppress(Exception):
+             _api_server.request_hard_interrupt(agent, "Stop requested via API")
+         # Reap only this run's background processes (epoch-gated inside, so a concurrent
+--- /dev/null
++++ b/gateway/platforms/api_server_runtime_contract.py
+@@ -0,0 +1,152 @@
++"""Opt-in Radhouse deployment descriptor; no model or lifecycle actuation."""
++
++import json
++import os
++import re
++import stat
++import time
++from pathlib import Path
++
++CONFIG_PATH = Path("/etc/radhouse/runtime-contract.json")
++HOLD_PATH = Path("/var/lib/radhouse-maintenance/hermes-held.json")
++CONTRACT = "radhouse-runtime-v1"
++HOLD_REASONS = frozenset({"maintenance", "manual_stop", "storage_pressure",
++                          "model_unavailable", "runtime_upgrade"})
++_FIELDS = frozenset({"contract", "bot_id", "profile", "runtime_revision", "provider_binding",
++                     "workspace", "max_parallel_runs", "admission", "hold_reason"})
++
++
++def _unique_object(pairs):
++    value = {}
++    for key, item in pairs:
++        if key in value:
++            raise ValueError("duplicate_runtime_field")
++        value[key] = item
++    return value
++
++
++def read_root_json(path: Path):
++    """The agent's filesystem tools must not manufacture deployment identity or unhold.
++
++    Reject writable/symlink parents and files; only genuine absence is optional.
++    Read one bounded regular file through its checked descriptor.
++    """
++    try:
++        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
++    except FileNotFoundError:
++        return None
++    try:
++        for parent in reversed(path.parents):
++            info = parent.lstat()
++            if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
++                raise ValueError("unsafe_runtime_parent")
++        info = os.fstat(fd)
++        if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0
++                or info.st_mode & 0o022 or info.st_size > 16384):
++            raise ValueError("unsafe_runtime_file")
++        with os.fdopen(fd, "rb", closefd=False) as source:
++            content = source.read(16385)
++        if len(content) > 16384:
++            raise ValueError("oversize_runtime_file")
++        return json.loads(content, object_pairs_hook=_unique_object)
++    finally:
++        os.close(fd)
++
++
++def validate_config(value):
++    if not isinstance(value, dict) or set(value) != _FIELDS or value["contract"] != CONTRACT:
++        raise ValueError("invalid_runtime_config")
++    for name in ("bot_id", "profile", "runtime_revision", "provider_binding"):
++        if not isinstance(value[name], str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", value[name]):
++            raise ValueError("invalid_runtime_pin")
++    workspace = value["workspace"]
++    if (not isinstance(workspace, str) or not workspace.startswith("/")
++            or ".." in Path(workspace).parts or str(Path(workspace)) != workspace):
++        raise ValueError("invalid_runtime_workspace")
++    if type(value["max_parallel_runs"]) is not int or not 1 <= value["max_parallel_runs"] <= 16:
++        raise ValueError("invalid_runtime_capacity")
++    admission, reason = value["admission"], value["hold_reason"]
++    if (admission not in ("ready", "held", "unavailable")
++            or (admission == "ready" and reason is not None)
++            or (admission != "ready" and reason not in HOLD_REASONS)):
++        raise ValueError("invalid_runtime_admission")
++    return dict(value)
++
++
++def configure(adapter):
++    adapter._runtime_contract_enabled = False
++    adapter._runtime_persistence_failed = False
++    try:
++        value = read_root_json(CONFIG_PATH)
++        if value is None:
++            return
++        adapter._runtime_contract_enabled = True
++        validate_config(value)
++        adapter._run_idempotency_store.enable_observations()
++    except (OSError, ValueError, TypeError, RecursionError):
++        adapter._runtime_contract_enabled = True
++        adapter._runtime_persistence_failed = True
++    except Exception:
++        # An opted-in store that cannot migrate may never fall back to memory/legacy.
++        adapter._runtime_contract_enabled = True
++        adapter._runtime_persistence_failed = True
++
++
++def descriptor(adapter, *, request_profile=None):
++    if not getattr(adapter, "_runtime_contract_enabled", False):
++        return None
++    value = validate_config(read_root_json(CONFIG_PATH))
++    if request_profile is not None and request_profile != value["profile"]:
++        raise ValueError("runtime_profile_mismatch")
++    store = adapter._run_idempotency_store
++    workspace = Path(value["workspace"])
++    retained = (workspace.is_dir() and not workspace.is_symlink() and workspace.resolve() == workspace
++                and os.access(workspace, os.R_OK | os.W_OK | os.X_OK))
++    admission, reason = value["admission"], value["hold_reason"]
++    if read_root_json(HOLD_PATH) is not None:
++        # Hold contents cannot broaden authority; the existing root-owned hold wins.
++        admission, reason = "held", "maintenance"
++    if (getattr(adapter, "_runtime_persistence_failed", False) or not store.durable
++            or not store.observations_enabled or not retained
++            or adapter._max_concurrent_runs != value["max_parallel_runs"]):
++        admission, reason = "unavailable", "runtime_upgrade"
++    return dict(contract=CONTRACT, **{name: value[name] for name in
++                ("bot_id", "profile", "runtime_revision", "provider_binding", "max_parallel_runs")},
++                result_protocol="work-result-v1", observations="durable-sequence-v1",
++                durable_runs=bool(store.durable and store.observations_enabled),
++                durable_workspace=bool(retained), admission=admission, hold_reason=reason,
++                observed_at=int(time.time()), guidance_receipts=bool(store.durable))
++
++
++async def handle_descriptor(adapter, request, *, request_profile=None):
++    from aiohttp import web
++    # Manual test wiring can permit no key on other endpoints. This contract cannot.
++    if not adapter._expected_api_key():
++        return web.json_response({"error": "runtime_auth_required"}, status=401)
++    error = adapter._check_auth(request)
++    if error is not None:
++        return error
++    try:
++        value = descriptor(adapter, request_profile=request_profile)
++    except Exception:
++        return web.json_response({"error": "runtime_contract_unavailable"}, status=503)
++    if value is None:
++        return web.json_response({"error": "runtime_contract_not_enabled"}, status=404)
++    return web.json_response(value)
++
++
++def fresh_admission_error(adapter, *, idempotency_key, request_profile=None):
++    """Called only after same-key replay. Holds never erase the accepted run."""
++    if not getattr(adapter, "_runtime_contract_enabled", False):
++        return None
++    if not adapter._expected_api_key():
++        return "runtime_auth_required"
++    try:
++        value = descriptor(adapter, request_profile=request_profile)
++        if value["admission"] != "ready":
++            return "runtime_admission_held"
++        if not idempotency_key:
++            return "runtime_durable_key_required"
++    except Exception:
++        return "runtime_contract_unavailable"
++    return None
+--- a/hermes_cli/config.py
++++ b/hermes_cli/config.py
+@@ -972,7 +972,7 @@
+ # runtime_provider.py and auxiliary_client.py).
+ _VALID_CUSTOM_PROVIDER_FIELDS = {
+     "name", "base_url", "api_key", "api_mode", "model", "models",
+-    "context_length", "rate_limit_delay", "extra_body",
++    "context_length", "rate_limit_delay", "extra_body", "fresh_cache_salt",
+     "ssl_ca_cert", "ssl_verify", "key_env", "catalog_provider"}
+ 
+ # Fields that look like they should be inside custom_providers, not at root
+--- a/hermes_cli/config_providers.py
++++ b/hermes_cli/config_providers.py
+@@ -119,7 +119,7 @@
+     "api_mode", "transport", "model", "default_model", "models", "models_discovered",
+     "context_length", "rate_limit_delay", "request_timeout_seconds", "stale_timeout_seconds",
+     "discover_models", "extra_body", "extra_headers", "capabilities", "ssl_ca_cert", "ssl_verify",
+-    "catalog_provider", "session_affinity_header"}
++    "catalog_provider", "session_affinity_header", "fresh_cache_salt"}
+ 
+ 
+ def _pick_provider_base_url(entry: Dict[str, Any], provider_key: str) -> str:
+@@ -262,6 +262,7 @@
+         ("context_length", lambda v: isinstance(v, int) and v > 0),
+         ("rate_limit_delay", lambda v: isinstance(v, (int, float)) and v >= 0),
+         ("discover_models", lambda v: isinstance(v, (bool, str))),
++        ("fresh_cache_salt", lambda v: isinstance(v, bool)),
+     ):
+         if ok(entry.get(field)):
+             normalized[field] = entry[field]
+@@ -292,7 +293,7 @@
+     provider_entry: Dict[str, Any] = {"api": normalized["base_url"]}
+     for field in (
+         "name", "api_key", "key_env", "key_cmd", "models", "models_discovered", "context_length",
+-        "rate_limit_delay", "discover_models", "extra_body", "extra_headers",
++        "rate_limit_delay", "discover_models", "extra_body", "extra_headers", "fresh_cache_salt",
+         "session_affinity_header", "ssl_ca_cert", "ssl_verify", "catalog_provider"):
+         if field in normalized:
+             provider_entry[field] = normalized[field]
+--- a/run_agent.py
++++ b/run_agent.py
+@@ -276,6 +276,7 @@
+         capabilities: Dict[str, bool] | None = None, cwd: str | None = None,
+         side_agent: bool = False, memory_manager=None,
+         tool_result_metadata_callback: Optional[Callable[..., dict]] = None,
++        provider_request_budget=None,
+     ):
+         """Forwarder — see ``agent.agent_init.init_agent`` (same keyword parameters, minus ``tool_delay``)."""
+         init_kwargs = {k: v for k, v in locals().items() if k not in ("self", "tool_delay")}
+--- a/tools/mcp_tool_agent.py
++++ b/tools/mcp_tool_agent.py
+@@ -27,6 +27,11 @@
+ def agent_tool_names(agent) -> list:
+     """Names of ``agent.tools`` in wire order (unnamed entries skipped)."""
+     return [name for name in map(_def_name, _agent_tool_defs(agent)) if name]
++
++
++def _restrict_run_tools(agent, definitions: list) -> list:
++    allowed = getattr(agent, "_allowed_tool_names", None)
++    return [t for t in definitions if _def_name(t) in allowed] if isinstance(allowed, frozenset) else definitions
+ 
+ 
+ def _resolve_refresh_toolsets(agent, enabled_override, disabled_override):
+@@ -79,6 +84,9 @@
+         if prefix_registered is not None:
+             new_defs, new_names = _merge_preserving_prefix(current_defs, new_defs, prefix_registered)
+         new_defs, new_names = _drop_session_tools(agent, new_defs, new_names)
++        new_defs = _restrict_run_tools(agent, new_defs)
++        new_names = {_def_name(t) for t in new_defs}
++        staged_engine_names = staged_engine_names & new_names
+         # Record the generation even when unchanged so an in-flight older caller can't clobber.
+         agent._tool_snapshot_generation = max(published_gen, snapshot_generation)
+         # Same NAME set: no change for MCP-reload callers. Content-aware callers
+@@ -167,7 +175,7 @@
+     if not db or not session_id:
+         return
+     try:
+-        db.update_session_tool_names(session_id, {"version": tool_pin_version(), "tools": _agent_tool_defs(agent)})
++        db.update_session_tool_names(session_id, {"version": tool_pin_version(), "tools": _restrict_run_tools(agent, _agent_tool_defs(agent))})
+     except Exception:  # noqa: BLE001
+         logger.debug("tool_names persist skipped", exc_info=True)
+ 
+@@ -230,6 +238,8 @@
+     merged_names = {_def_name(t) for t in merged}
+     _reinject_authorized_dynamic_tools(agent, merged, merged_names)
+     merged, merged_names = _drop_session_tools(agent, merged, merged_names)
++    merged = _restrict_run_tools(agent, merged)
++    merged_names = {_def_name(t) for t in merged}
+     changed = merged != fresh_defs
+     if changed:
+         with _agent_tools_lock:

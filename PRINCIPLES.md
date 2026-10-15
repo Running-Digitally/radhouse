@@ -11,3 +11,6 @@
    introduce wider effects through deliberate later slices.
 5. **Keep the first slice small.** One assistant and one conversation. Release that
    experience before adding routines, delegation, work management or a fleet.
+6. **Make choices clear without instructions.** The best user manual is no user
+   manual. Put dependent choices in order, make their effects visible, and keep
+   optional details out of the first decision.

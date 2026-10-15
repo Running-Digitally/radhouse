@@ -18,6 +18,8 @@ from urllib.parse import urlsplit
 import httpx
 
 from radhouse.application.ports import AgentWorkPort
+from radhouse.domain.fleet import RuntimeDescriptor
+from pydantic import ValidationError
 from radhouse.domain.tasks import (
     Attempt, InputFile, Rejected, RuntimeActivity, RuntimeCapabilities, RuntimeDispatch, RuntimeFailure, RuntimeGuidanceReceipt, RuntimeResult, Task,
     runtime_images, runtime_input,
@@ -54,6 +56,14 @@ class HermesGatewayError(RuntimeFailure):
         super().__init__(code)
 
 
+class HermesBrowserAdmissionRejected(HermesGatewayError):
+    """Positive, fixed proof that an expired browser handoff created no run."""
+
+
+class HermesInferenceAdmissionRejected(HermesGatewayError):
+    """A fixed catalog rejection with positive proof that no run was admitted."""
+
+
 @dataclass(frozen=True)
 class HermesDispatch:
     run_id: str
@@ -73,6 +83,7 @@ class HermesRun:
     session_id: str | None = None
     dispatch_key: str | None = None
     allowed_tools: tuple[str, ...] | None = None
+    observation_sequence: int | None = None
 
 
 @dataclass(frozen=True)
@@ -84,6 +95,10 @@ class HermesCapabilities:
     document_scope: bool = False
     browser_view: bool = False
     browser_network_policy: dict | None = None
+    file_share: bool = False
+    browser_control: bool = False
+    browser_streaming: bool = False
+    browser_credential_vault: bool = False
 
 
 class HermesRunsClient:
@@ -169,6 +184,9 @@ class HermesRunsClient:
         steering = features.get("runs_steering_receipts")
         documents = features.get("runs_document_scope")
         browser = features.get("runs_browser_view")
+        sharing = features.get("runs_file_share")
+        control = features.get("runs_browser_control")
+        vault = features.get("browser_credential_vault")
         identified_steering = (isinstance(steering, dict)
             and steering.get("supported") is True and steering.get("durable") is True
             and type(steering.get("version")) is int and steering["version"] == 1
@@ -190,12 +208,33 @@ class HermesRunsClient:
             browser_view=(isinstance(browser, dict) and browser.get("supported") is True
                 and type(browser.get("version")) is int and browser["version"] == 1
                 and browser.get("mode") == "same_session_view_only"),
-            browser_network_policy=browser_network_policy(features.get("browser_network_policy")))
+            browser_network_policy=browser_network_policy(features.get("browser_network_policy")),
+            file_share=(isinstance(sharing, dict) and sharing.get("supported") is True
+                and type(sharing.get("version")) is int and sharing["version"] == 1),
+            browser_streaming=(isinstance(features.get("runs_browser_streaming"),dict)
+                and features["runs_browser_streaming"].get("supported") is True
+                and features["runs_browser_streaming"].get("version") == 1
+                and features["runs_browser_streaming"].get("mode") == "owner_session"),
+            browser_control=(isinstance(control, dict) and control.get("supported") is True
+                and type(control.get("version")) is int and control["version"] == 1
+                and control.get("mode") == "owner_session"),
+            browser_credential_vault=(isinstance(vault, dict) and vault.get("supported") is True
+                and type(vault.get("version")) is int and vault["version"] == 1
+                and vault.get("scope") == "local_login_only"))
+
+    def descriptor(self) -> RuntimeDescriptor:
+        payload, _ = self._request('GET', 'v1/radhouse/descriptor', expected_status=200)
+        try:
+            return RuntimeDescriptor.model_validate(payload)
+        except ValidationError:
+            raise HermesGatewayError('runtime_contract_unavailable') from None
 
     def start_or_attach(
         self, *, input_text: str, session_id: str, dispatch_key: str, disable_tools: bool = False,
         allowed_tools: tuple[str, ...] = (), images: tuple[InputFile, ...] = (),
         document_scope_token: str | None = None,
+        browser_owner: dict | None = None, browser_context: dict | None = None,
+        model: str | None = None, provider: str | None = None, model_options: dict | None = None,
     ) -> HermesDispatch:
         if not input_text or len(input_text.encode("utf-8")) > MAX_INPUT_BYTES:
             raise ValueError("invalid_hermes_input")
@@ -206,6 +245,31 @@ class HermesRunsClient:
                 or disable_tools or not {"document_search", "document_read"} <= set(allowed_tools)):
             raise ValueError("invalid_hermes_document_scope")
         _validate_images(images)
+        for value in (model, provider):
+            if value is not None and (type(value) is not str or not value or len(value) > 512
+                                      or any(ord(c) < 32 for c in value)):
+                raise ValueError("invalid_hermes_model")
+        if model_options is not None and (type(model_options) is not dict
+                or set(model_options) - {"reasoning"}
+                or type(model_options.get("reasoning")) is not dict
+                or set(model_options["reasoning"]) - {"enabled", "effort"}
+                or type(model_options["reasoning"].get("enabled")) is not bool
+                or ("effort" in model_options["reasoning"] and (
+                    type(model_options["reasoning"]["effort"]) is not str
+                    or len(model_options["reasoning"]["effort"]) > 32))):
+            raise ValueError("invalid_hermes_model_options")
+        if browser_owner is not None:
+            if (type(browser_owner) is not dict or set(browser_owner) != {"principal_id", "conversation_id"}
+                    or not all(type(v) is str and _IDENTIFIER.fullmatch(v) for v in browser_owner.values())
+                    or not {"browser_navigate", "browser_snapshot"} <= set(allowed_tools)):
+                raise ValueError("invalid_hermes_browser_owner")
+        if browser_context is not None:
+            if (type(browser_context) is not dict or browser_owner is None
+                    or not {"generation", "revision", "lease_id", "owner", "auth_expires_at"} <= set(browser_context)
+                    or set(browser_context) - {"generation", "revision", "lease_id", "owner", "auth_expires_at", "previous_run_id", "observation_only", "return_to_agent"}
+                    or any(type(browser_context[key]) is not bool for key in ("observation_only","return_to_agent") if key in browser_context)
+                    or browser_context.get("observation_only") is True and browser_context.get("return_to_agent") is True):
+                raise ValueError("invalid_hermes_browser_context")
         session_id = _validated_identifier(session_id, "session")
         dispatch_key = _validated_identifier(dispatch_key, "dispatch")
         payload, response_headers = self._request(
@@ -222,7 +286,13 @@ class HermesRunsClient:
                 ), "session_id": session_id,
                   **({"disable_tools": True} if disable_tools else {}),
                   **({"allowed_tools": list(allowed_tools)} if allowed_tools else {}),
-                  **({"document_scope_token": document_scope_token} if document_scope_token else {})},
+                  **({"document_scope_token": document_scope_token} if document_scope_token else {}),
+                  **({"model": model} if model is not None else {}),
+                  **({"provider": provider} if provider is not None else {}),
+                  **({"model_options": model_options} if model_options is not None else {}),
+                  **({"radhouse_inference": True} if model is not None or provider is not None or model_options is not None else {}),
+                  **({"browser_owner": browser_owner} if browser_owner is not None else {}),
+                  **({"browser_context": browser_context} if browser_context is not None else {})},
             headers={"Idempotency-Key": dispatch_key},
         )
         replayed = payload.get("replayed")
@@ -244,6 +314,9 @@ class HermesRunsClient:
         payload, _ = self._request("GET", f"v1/runs/{run_id}", expected_status=200)
         if _response_identifier(payload, "run_id") != run_id:
             raise HermesGatewayError("runtime_response_mismatch")
+        sequence = payload.get('observation_sequence')
+        if sequence is not None and (type(sequence) is not int or not 1 <= sequence <= 2**63-1):
+            raise HermesGatewayError('runtime_malformed_observation')
         output = payload.get("output")
         if output is not None and not isinstance(output, str):
             raise HermesGatewayError("runtime_malformed_response")
@@ -265,6 +338,7 @@ class HermesRunsClient:
             permission_request=permission,
             guidance_receipts=receipts,
             activity=activity,
+            observation_sequence=sequence,
             session_id=session_id, dispatch_key=dispatch_key,
             allowed_tools=tuple(tools) if tools is not None else None,
         )
@@ -330,6 +404,25 @@ class HermesRunsClient:
                     if len(data) > MAX_RESPONSE_BYTES:
                         raise HermesGatewayError("runtime_response_too_large")
                 if response.status_code != expected_status:
+                    if response.status_code == 409 and path == "v1/runs" and body is not None and body.get("radhouse_inference") is True:
+                        try:
+                            rejection = json.loads(data)
+                        except (UnicodeDecodeError, json.JSONDecodeError):
+                            rejection = None
+                        if (type(rejection) is dict and set(rejection) == {"error", "admitted"}
+                                and rejection["admitted"] is False and type(rejection["error"]) is str and rejection["error"] in {
+                                    "inference_catalog_unavailable", "inference_selection_changed",
+                                    "inference_selection_invalid", "inference_model_unavailable",
+                                    "inference_thinking_unavailable"}):
+                            raise HermesInferenceAdmissionRejected(rejection["error"])
+                    if (response.status_code == 409 and path == "v1/runs"
+                            and body is not None and body.get("browser_context") is not None):
+                        try:
+                            rejection = json.loads(data)
+                        except (UnicodeDecodeError, json.JSONDecodeError):
+                            rejection = None
+                        if rejection == {"error": "browser_context_rejected", "admitted": False}:
+                            raise HermesBrowserAdmissionRejected("browser_context_changed")
                     raise HermesGatewayError(_status_code(response.status_code, path))
         except HermesGatewayError:
             raise
@@ -339,12 +432,21 @@ class HermesRunsClient:
             raise HermesGatewayError("runtime_unavailable") from None
 
         try:
-            payload = json.loads(data)
-        except (UnicodeDecodeError, json.JSONDecodeError):
+            payload = json.loads(data, object_pairs_hook=_unique_fields)
+        except (UnicodeDecodeError, ValueError):
             raise HermesGatewayError("runtime_malformed_response") from None
         if not isinstance(payload, dict):
             raise HermesGatewayError("runtime_malformed_response")
         return payload, response.headers
+
+
+def _unique_fields(pairs):
+    value = {}
+    for name, part in pairs:
+        if name in value:
+            raise ValueError('duplicate_runtime_field')
+        value[name] = part
+    return value
 
 
 def browser_network_policy(value):
@@ -438,15 +540,48 @@ class HermesAgentWorkAdapter(AgentWorkPort):
         *,
         runtime_revision: str,
         clock=lambda: datetime.now(timezone.utc),
+        expected_bot_id=None, expected_profile=None, expected_provider_binding=None,
+        descriptor_required=False,
     ):
         if _IDENTIFIER.fullmatch(runtime_revision) is None:
             raise ValueError("invalid_hermes_runtime_revision")
         self.client = client
         self.runtime_revision = runtime_revision
         self.clock = clock
+        self.expected_bot_id, self.expected_profile = expected_bot_id, expected_profile
+        self.expected_provider_binding, self.descriptor_required = expected_provider_binding, descriptor_required
+        if descriptor_required and not all(isinstance(value, str) and _IDENTIFIER.fullmatch(value)
+            for value in (expected_bot_id, expected_profile, expected_provider_binding)):
+            raise ValueError('runtime_descriptor_identity_required')
+
+    def describe(self, bot_id, *, require_ready=False):
+        if not self.descriptor_required:
+            return None
+        descriptor = self.client.descriptor()
+        if bot_id != self.expected_bot_id or descriptor.bot_id != self.expected_bot_id or descriptor.profile != self.expected_profile:
+            raise HermesGatewayError('runtime_identity_mismatch')
+        if descriptor.runtime_revision != self.runtime_revision:
+            raise HermesGatewayError('runtime_version_mismatch')
+        if descriptor.provider_binding != self.expected_provider_binding:
+            raise HermesGatewayError('runtime_provider_mismatch')
+        now = int(self.clock().timestamp())
+        if not now-60 <= descriptor.observed_at <= now+5:
+            raise HermesGatewayError('runtime_descriptor_stale')
+        if require_ready and descriptor.admission != 'ready':
+            raise HermesGatewayError('runtime_admission_held')
+        return descriptor
+
+    def _check(self, task, *, require_ready=False):
+        descriptor = self.describe(task.bot_id, require_ready=require_ready)
+        if descriptor is not None and task.provider_binding != descriptor.provider_binding:
+            raise HermesGatewayError('runtime_provider_mismatch')
+        return descriptor
 
     def capabilities(self, _task: Task) -> RuntimeCapabilities:
+        descriptor = self._check(_task, require_ready=True)
         capabilities = self.client.capabilities()
+        if descriptor is not None and descriptor.guidance_receipts != capabilities.guidance_receipts:
+            raise HermesGatewayError('runtime_contract_unavailable')
         if _task.disable_tools and not capabilities.disable_tools:
             raise HermesGatewayError("runtime_tools_restriction_unavailable")
         if _task.allowed_tools and not capabilities.allowed_tools:
@@ -482,7 +617,10 @@ class HermesAgentWorkAdapter(AgentWorkPort):
         )
 
     def result(self, _task: Task, dispatch: RuntimeDispatch) -> RuntimeResult:
+        self._check(_task)
         run = self.client.status(dispatch.run_id)
+        if self.descriptor_required and run.observation_sequence is None:
+            raise HermesGatewayError('runtime_contract_unavailable')
         if any(item.get("protocol") == "hermes-guidance-v1" and item.get("run_id") == dispatch.run_id
                for item in _task.guidance) and run.guidance_receipts is None:
             raise HermesGatewayError("runtime_guidance_receipts_unavailable")
@@ -493,14 +631,17 @@ class HermesAgentWorkAdapter(AgentWorkPort):
                 permission_request=run.permission_request,
                 guidance_receipts=receipts,
                 activity=run.activity,
+                observation_sequence=run.observation_sequence,
             )
         if run.status == "completed":
             return RuntimeResult(
-                "completed", run.output, guidance_receipts=receipts, activity=run.activity
+                "completed", run.output, guidance_receipts=receipts, activity=run.activity,
+                observation_sequence=run.observation_sequence,
             )
         if run.status == "cancelled":
             return RuntimeResult(
-                "cancelled", run.output, guidance_receipts=receipts, activity=run.activity
+                "cancelled", run.output, guidance_receipts=receipts, activity=run.activity,
+                observation_sequence=run.observation_sequence,
             )
         if run.status == "interrupted":
             return RuntimeResult(
@@ -508,23 +649,28 @@ class HermesAgentWorkAdapter(AgentWorkPort):
                 guidance_receipts=receipts,
                 guidance_terminal=True,
                 activity=run.activity,
+                observation_sequence=run.observation_sequence,
             )
         return RuntimeResult(
-            "failed", run.output, guidance_receipts=receipts, activity=run.activity
+            "failed", run.output, guidance_receipts=receipts, activity=run.activity,
+            observation_sequence=run.observation_sequence,
         )
 
     def stop(self, _task: Task, dispatch: RuntimeDispatch) -> bool:
+        self._check(_task)
         return self.client.stop(dispatch.run_id).status in {
             "stopping", "cancelled", "completed", "failed", "interrupted",
         }
 
     def steer(self, _task: Task, dispatch: RuntimeDispatch, text: str, *, control_id: str) -> RuntimeGuidanceReceipt:
+        self._check(_task)
         receipt = self.client.steer(dispatch.run_id, text, control_id=control_id)
         if not isinstance(receipt, RuntimeGuidanceReceipt):
             raise HermesGatewayError("runtime_malformed_guidance")
         return receipt
 
     def approve(self, _task: Task, dispatch: RuntimeDispatch, request_id: str, choice: str) -> bool:
+        self._check(_task)
         return self.client.approve(dispatch.run_id, request_id, choice)
 
 
@@ -544,6 +690,12 @@ class RoutingAgentWork:
 
     def capabilities(self, task: Task) -> RuntimeCapabilities:
         return self._adapter(task).capabilities(task)
+
+    def describe(self, bot_id):
+        try:
+            return self.adapters[bot_id].describe(bot_id)
+        except KeyError:
+            raise RuntimeFailure('runtime_not_configured') from None
 
     def start_or_attach(
         self, task: Task, attempt: Attempt, dispatch_key: str,
@@ -673,5 +825,3 @@ def _validate_tool_restriction(allowed_tools, disable_tools):
             or any(re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value) is None for value in allowed_tools)
             or disable_tools and allowed_tools):
         raise ValueError("invalid_hermes_tool_restriction")
-
-

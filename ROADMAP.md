@@ -27,7 +27,7 @@ runtime; another installation must qualify its own connections before activation
    the assistant keeps control. Further infrastructure retirement still requires
    verified dependencies and explicit data disposition.
 
-Human browser takeover, scanned-document OCR, audio transcription and editable
+Scanned-document OCR, audio transcription and editable infrastructure
 administration remain future work. Image understanding needs its own recorded
 real-runtime qualification. Incremental assistant reply streaming and a
 trustworthy Stop action also need qualification before exposure; current replies
@@ -44,6 +44,10 @@ correction, useful tools, routines, delegation and software delivery are possibl
 later slices. None is required to release the basic conversation, and no standing
 fleet or new service is assumed for them.
 
-The next browser design focuses on deliberate human takeover and returning
-control to the assistant in the same session. It is planned, with implementation
-and activation following agreement on the handover contract.
+The current release branch includes deliberate human takeover and the native
+login vault, Terminal, About You and saved agent identity/appearance. The
+address/search and follow-ups source slice adds saved search preferences, local
+destination suggestions and durable ordered messages during an active reply.
+Its qualification covers synthetic desktop/mobile journeys and pinned native
+contracts; live activation remains a separate release decision. See the
+[slice contract](docs/design/browser-followups.md).

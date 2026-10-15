@@ -1,0 +1,229 @@
+def _routed_check_fn(name: str):
+    """Per-action availability gate (a named function, as the registry expects)."""
+    def check() -> bool:
+        return check_browser_routed_requirements(name)
+    check.__name__ = check.__qualname__ = f"check_{name}_requirements"
+    return check
+
+
+def _routed_handler(name: str, fallback):
+    def handler(args, **kw):
+        return record_browser_call(lambda legacy: routed_browser_handler(
+            name, args, fallback=lambda: legacy(lambda: fallback(args, kw)),
+            task_id=kw.get("task_id"), session_id=kw.get("session_id"),
+        ), _cloud.browser_backend_name)
+    return handler
+
+
+def browser_navigate(url: str, task_id: Optional[str] = None) -> str:
+    """Navigate to ``url``; JSON with title, compact snapshot and, on first nav, stealth features.
+    Hybrid routing decides BEFORE the safety checks whether this URL goes to a local sidecar
+    (the cloud provider never sees it then, so the private-address checks are relaxed)."""
+    url, safety_error = _secret_url_error_normalized(url)
+    if safety_error is not None:
+        return json.dumps(safety_error)
+
+    effective_task_id = task_id or "default"
+    nav_session_key = _navigation_session_key(effective_task_id, url)
+    auto_local_this_nav = _is_local_sidecar_key(nav_session_key)
+
+    safety_error = _url_policy_error(url, auto_local=auto_local_this_nav)
+    if safety_error is not None:
+        return json.dumps(safety_error)
+
+    if _is_camofox_mode():
+        return _camofox("camofox_navigate", url, task_id)
+
+    if auto_local_this_nav:
+        logger.info("browser_navigate: auto-routing %s to local Chromium sidecar (cloud provider %s stays on "
+                    "cloud for public URLs; set browser.auto_local_for_private_urls: false to disable)",
+                    url, type(_cloud._get_cloud_provider()).__name__ if _cloud._get_cloud_provider() else "none")
+
+    session_info = _session._get_session_info(nav_session_key)
+    is_first_nav = session_info.get("_first_nav", True)
+    if is_first_nav:
+        session_info["_first_nav"] = False
+        _maybe_start_recording(nav_session_key)
+
+    result = _session._run_browser_command(nav_session_key, "open", [url],
+                                  timeout=_get_open_command_timeout(first_open=is_first_nav))
+    if not result.get("success"):
+        return _dumps(_err(result.get("error", "Navigation failed")))
+
+    data = result.get("data", {})
+    title = data.get("title", "")
+    final_url = data.get("url", url)
+    blocked = _post_redirect_block(nav_session_key, url, final_url, auto_local_this_nav)
+    if blocked is not None:
+        return blocked
+
+    response = {"success": True, "url": final_url, "title": title}
+    features = session_info.get("features") or {}
+    if features.get("real_profile"):  # auditability: this ran on the user's real-profile copy-browser
+        response["used_real_profile"] = True
+    # Only a successful, non-blocked navigation becomes the task owner: failed opens
+    # and blocked redirects must not retarget follow-up clicks to an irrelevant session.
+    _last_active_session_key[effective_task_id] = nav_session_key
+    _lp._copy_fallback_warning(response, result)
+    _add_navigate_warnings(response, title, session_info if is_first_nav else None)
+    _attach_auto_snapshot(response, nav_session_key)
+    return _dumps(response)
+
+
+def browser_snapshot(
+    full: bool = False, task_id: Optional[str] = None, user_task: Optional[str] = None
+) -> str:
+    """Text snapshot of the page's accessibility tree (compact unless ``full``).
+    ``user_task`` is deprecated and unused (oversized snapshots always truncate-and-store)."""
+    if _is_camofox_mode():
+        return _camofox("camofox_snapshot", full, task_id)
+    effective_task_id = _last_session_key(task_id or "default")
+    result = _session._run_browser_command(effective_task_id, "snapshot", [] if full else ["-c"])
+    if not result.get("success"):
+        return _failed_response(result, "Failed to get snapshot")
+
+    blocked = _blocked_private_page_content(effective_task_id)
+    if blocked is not None:
+        return blocked
+
+    response = {"success": True, **_snapshot_fields(result)}
+    _lp._copy_fallback_warning(response, result)
+
+    # Merge supervisor state (pending dialogs + frame tree) when a CDP supervisor is
+    # attached. See website/docs/developer-guide/browser-supervisor.md.
+    try:
+        from tools.browser_supervisor import SUPERVISOR_REGISTRY  # type: ignore[import-not-found]
+        _supervisor = SUPERVISOR_REGISTRY.get(effective_task_id)
+        if _supervisor is not None:
+            _sv_snap = _supervisor.snapshot()
+            if _sv_snap.active:
+                response.update(_snapshot._redact_browser_output(_sv_snap.to_dict()))
+    except Exception as _sv_exc:
+        logger.debug("supervisor snapshot merge failed: %s", _sv_exc)
+
+    return _dumps(response)
+
+
+def browser_click(ref: str, task_id: Optional[str] = None) -> str:
+    """Click the element ``ref`` (e.g. "@e5")."""
+    if _is_camofox_mode():
+        return _camofox("camofox_click", ref, task_id)
+    ref = _at_ref(ref)
+    return _guarded_action(task_id, "click", "click", [ref], {"clicked": ref}, f"Failed to click {ref}")
+
+
+def browser_type(ref: str, text: str, task_id: Optional[str] = None) -> str:
+    """Type ``text`` into the element ``ref`` (fill: clears, then types)."""
+    if _is_camofox_mode():
+        return _camofox("camofox_type", ref, text, task_id)
+    effective_task_id = _last_session_key(task_id or "default")
+    blocked = _blocked_private_page_action(effective_task_id, "type")
+    if blocked is not None:
+        return blocked
+    ref = _at_ref(ref)
+    result = _session._run_browser_command(effective_task_id, "fill", [ref, text])
+    from agent.display import redact_browser_typed_text_for_display, redact_tool_args_for_display
+    # Typed text goes through the secret-pattern redactor so API keys / tokens don't
+    # leak into tool progress or chat history (the raw value already went to the browser).
+    display_text = (redact_tool_args_for_display("browser_type", {"text": text}) or {})["text"]
+    if result.get("success"):
+        response = {"success": True, "typed": display_text, "element": ref}
+    else:
+        response = _err(result.get("error", f"Failed to type into {ref}"))
+    return _dumps(redact_browser_typed_text_for_display(_lp._copy_fallback_warning(response, result), text))
+
+
+def browser_scroll(direction: str, task_id: Optional[str] = None) -> str:
+    """Scroll the page ``direction`` ("up"/"down") by about half a viewport."""
+    if direction not in {"up", "down"}:
+        return _dumps(_err(f"Invalid direction '{direction}'. Use 'up' or 'down'."))
+    _SCROLL_PIXELS = 500  # ~half a viewport in one call instead of 5x subprocess calls
+    if _is_camofox_mode():  # Camofox REST API has no pixel argument; use repeated calls
+        return [_camofox("camofox_scroll", direction, task_id) for _ in range(5)][-1]
+    effective_task_id = _last_session_key(task_id or "default")
+    result = _session._run_browser_command(effective_task_id, "scroll", [direction, str(_SCROLL_PIXELS)])
+    return _tool_response(result, {"scrolled": direction}, f"Failed to scroll {direction}")
+
+
+def browser_back(task_id: Optional[str] = None) -> str:
+    """Navigate back in browser history."""
+    if _is_camofox_mode():
+        return _camofox("camofox_back", task_id)
+    effective_task_id = _last_session_key(task_id or "default")
+    result = _session._run_browser_command(effective_task_id, "back", [])
+    if result.get("success"):
+        # History can land on a private/internal/metadata address the navigate
+        # preflight never saw (earlier redirect chain, manipulated client-side history).
+        blocked = _blocked_private_page(effective_task_id, "Browser history navigation (back) landed on this address.")
+        if blocked is not None:
+            return blocked
+    return _tool_response(result, {"url": result.get("data", {}).get("url", "")}, "Failed to go back")
+
+
+def browser_press(key: str, task_id: Optional[str] = None) -> str:
+    """Press a keyboard key (e.g. "Enter", "Tab")."""
+    if _is_camofox_mode():
+        return _camofox("camofox_press", key, task_id)
+    return _guarded_action(task_id, "press", "press", [key], {"pressed": key}, f"Failed to press {key}")
+
+
+def _guarded_action(task_id: Optional[str], action: str, command: str, args: list, ok: Dict[str, Any], err: str) -> str:
+    """Input action on the task's current page, refused when the SSRF guard flags the page."""
+    effective_task_id = _last_session_key(task_id or "default")
+    blocked = _blocked_private_page_action(effective_task_id, action)
+    if blocked is not None:
+        return blocked
+    return _tool_response(_session._run_browser_command(effective_task_id, command, args), ok, err)
+
+
+def _at_ref(ref: str) -> str:
+    return ref if ref.startswith("@") else f"@{ref}"
+
+
+def _tool_response(result: Dict[str, Any], ok: Dict[str, Any], default_error: str) -> str:
+    """``{"success": True, **ok}`` or ``{"success": False, "error": result.error or default}``, plus fallback metadata."""
+    if not result.get("success"):
+        return _failed_response(result, default_error)
+    return _json_with_fallback({"success": True, **ok}, result)
+
+
+def _failed_response(result: Dict[str, Any], default_error: str) -> str:
+    # ``code`` = machine-readable refusal (human_has_control), same shape as computer_use's.
+    extra = {"code": result["code"]} if result.get("code") else {}
+    return _json_with_fallback(_err(result.get("error", default_error), **extra), result)
+
+
+def _json_with_fallback(response: Dict[str, Any], result: Dict[str, Any]) -> str:
+    """``json.dumps`` of ``response`` with the Lightpanda fallback metadata copied from ``result``."""
+    return _dumps(_lp._copy_fallback_warning(response, result))
+
+
+def _attach_auto_snapshot(response: Dict[str, Any], nav_session_key: str) -> None:
+    """Add a compact snapshot to a navigate response so the model can act without browser_snapshot."""
+    try:
+        snap_result = _session._run_browser_command(nav_session_key, "snapshot", ["-c"])
+        if snap_result.get("success"):
+            response.update(_snapshot_fields(snap_result))
+            _merge_fallback_warning(response, snap_result)
+    except Exception as e:
+        logger.debug("Auto-snapshot after navigate failed: %s", e)
+
+
+def _add_navigate_warnings(response: Dict[str, Any], title: str, first_nav_session: Optional[Dict[str, Any]]) -> None:
+    """Bot-detection hint from the page title; on first navigation, the session's stealth features."""
+    title_lower = title.lower()
+    if any(pattern in title_lower for pattern in _BOT_DETECTION_TITLE_PATTERNS):
+        response["bot_detection_warning"] = (
+            f"Page title '{title}' suggests bot detection. The site may have blocked this request. "
+            "Options: 1) Try adding delays between actions, 2) Access different pages first, "
+            "3) Enable advanced stealth (BROWSERBASE_ADVANCED_STEALTH=true, requires Scale plan), "
+            "4) Some sites have very aggressive bot detection that may be unavoidable."
+        )
+    if first_nav_session is not None and "features" in first_nav_session:
+        features = first_nav_session["features"]
+        if not features.get("proxies"):
+            response["stealth_warning"] = (
+                "Running WITHOUT residential proxies. Bot detection may be more aggressive. "
+                "Consider upgrading Browserbase plan for proxy support."
+            )
+        response["stealth_features"] = [k for k, v in features.items() if v]

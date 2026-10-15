@@ -1,0 +1,150 @@
+--- a/README.md
++++ b/README.md
+@@ -2039,3 +2039,6 @@
+ ## License
+ 
+ Apache-2.0
++
++
++Private Radhouse builds may compile with `RADHOUSE_NATIVE_PAGE_ONLY=1` to leave background Network inspection dormant during page initialization, including automatically attached child frames. This compile-time policy preserves Page/Runtime and actual HTTP(S) traffic; the private adapter exposes only its seven page tools, so HAR, request-body inspection and native dashboard network tools are outside that adapter. Normal builds retain their existing initialization policy. CLI and MCP share the same native policy; no command or MCP tool is added.
+--- a/cli/src/mcp.rs
++++ b/cli/src/mcp.rs
+@@ -7,6 +7,8 @@
+ //! parser and daemon as direct commands.
+ //! Owned Windows Chrome uses the same private headless desktop and Job Object
+ //! lifetime through MCP; headed and external-connection semantics are unchanged.
++//! A private RADHOUSE_NATIVE_PAGE_ONLY build shares its native domain policy
++//! across CLI and MCP; it adds no command or MCP tool.
+ 
+ use base64::{engine::general_purpose::STANDARD, Engine};
+ use serde_json::{json, Value};
+--- a/cli/src/native/actions.rs
++++ b/cli/src/native/actions.rs
+@@ -3691,9 +3691,11 @@
+     client
+         .send_command_no_params("Runtime.enable", Some(session_id))
+         .await?;
+-    client
+-        .send_command_no_params("Network.enable", Some(session_id))
+-        .await?;
++    if crate::native::browser::network_inspection_enabled() {
++        client
++            .send_command_no_params("Network.enable", Some(session_id))
++            .await?;
++    }
+     let _ = client
+         .send_command(
+             "Target.setAutoAttach",
+--- a/cli/src/native/browser.rs
++++ b/cli/src/native/browser.rs
+@@ -241,6 +241,12 @@
+     lower.starts_with("element not found")
+         || lower.starts_with("no element found")
+         || lower.starts_with("no element at index")
++}
++
++// Private page-tool build: avoid retaining network bodies that the restricted
++// adapter never requests. Explicit network tools remain outside that adapter.
++pub(crate) fn network_inspection_enabled() -> bool {
++    !matches!(option_env!("RADHOUSE_NATIVE_PAGE_ONLY"), Some("1"))
+ }
+ 
+ #[derive(Debug, Clone)]
+@@ -841,9 +847,11 @@
+         self.client
+             .send_command_no_params("Runtime.enable", Some(session_id))
+             .await?;
+-        self.client
+-            .send_command_no_params("Network.enable", Some(session_id))
+-            .await?;
++        if network_inspection_enabled() {
++            self.client
++                .send_command_no_params("Network.enable", Some(session_id))
++                .await?;
++        }
+         let _ = self
+             .client
+             .send_command_no_params("WebMCP.enable", Some(session_id))
+@@ -996,9 +1004,11 @@
+             .client
+             .send_command_no_params("Runtime.runIfWaitingForDebugger", None)
+             .await;
+-        self.client
+-            .send_command_no_params("Network.enable", None)
+-            .await?;
++        if network_inspection_enabled() {
++            self.client
++                .send_command_no_params("Network.enable", None)
++                .await?;
++        }
+         let _ = self
+             .client
+             .send_command_no_params("WebMCP.enable", None)
+@@ -3210,6 +3220,19 @@
+         direct: bool,
+         existing: bool,
+     ) {
++        if fail_method == "Network.enable" && !network_inspection_enabled() {
++            // In the private page-only build, an unsupported Network domain
++            // must not prevent Page/Runtime initialization or close the owner.
++            let (url, server) = initialization_server(fail_method, existing, 1, false).await;
++            let mut manager = BrowserManager::connect_cdp_inner(&url, direct, None)
++                .await.unwrap();
++            manager.close().await.unwrap();
++            let observed = server.await.unwrap();
++            assert!(observed[0].iter().any(|m| m == "Page.enable"));
++            assert!(observed[0].iter().any(|m| m == "Runtime.enable"));
++            assert!(!observed[0].iter().any(|m| m == "Network.enable" || m == "Browser.close"));
++            return;
++        }
+         let (url, server) = initialization_server(fail_method, existing, 2, false).await;
+         let error = BrowserManager::connect_cdp_inner(&url, direct, None)
+             .await
+@@ -3369,6 +3392,9 @@
+             ("Network.enable", false),
+             ("Network.enable", true),
+         ] {
++            let method = if method == "Network.enable" && !network_inspection_enabled() {
++                "Runtime.enable"
++            } else { method };
+             let (url, server) = initialization_server(method, false, 1, ignore_close).await;
+             let (dir, options) = initialization_process(&url);
+             let error = BrowserManager::launch(options, None)
+@@ -3385,7 +3411,8 @@
+     #[cfg(unix)]
+     #[tokio::test]
+     async fn test_failed_lightpanda_initialization_disconnects_before_retry() {
+-        let (url, server) = initialization_server("Network.enable", false, 2, false).await;
++        let method = if network_inspection_enabled() { "Network.enable" } else { "Runtime.enable" };
++        let (url, server) = initialization_server(method, false, 2, false).await;
+         let (dir, options) = initialization_process(&url);
+         let process = tokio::task::spawn_blocking(move || launch_chrome(&options))
+             .await
+--- a/cli/src/output.rs
++++ b/cli/src/output.rs
+@@ -4149,6 +4149,7 @@
+   AGENT_BROWSER_SESSION_NAME     Legacy auto-save/load state persistence name
+   AGENT_BROWSER_STATE_EXPIRE_DAYS Auto-delete saved states older than N days (default: 30)
+   AGENT_BROWSER_ENCRYPTION_KEY   64-char hex key for AES-256-GCM session encryption
++  RADHOUSE_NATIVE_PAGE_ONLY      Build-time private policy: omit background network inspection
+   AGENT_BROWSER_STREAM_PORT      Override WebSocket streaming port (default: OS-assigned)
+   AGENT_BROWSER_STREAM_QUALITY   JPEG quality 0-100 (default: 80)
+   AGENT_BROWSER_STREAM_MAX_WIDTH  Cap frame width in pixels (default: the viewport)
+--- a/docs/src/app/network/page.mdx
++++ b/docs/src/app/network/page.mdx
+@@ -92,3 +92,6 @@
+ ```
+ 
+ Launching with `open` and no URL leaves the browser on `about:blank`, which gives routes time to register before the first real navigation.
++
++
++Private Radhouse builds may compile with `RADHOUSE_NATIVE_PAGE_ONLY=1` to leave background Network inspection dormant during page initialization, including automatically attached child frames. This compile-time policy preserves Page/Runtime and actual HTTP(S) traffic; the private adapter exposes only its seven page tools, so HAR, request-body inspection and native dashboard network tools are outside that adapter. Normal builds retain their existing initialization policy. CLI and MCP share the same native policy; no command or MCP tool is added.
+--- a/skill-data/core/SKILL.md
++++ b/skill-data/core/SKILL.md
+@@ -576,3 +576,6 @@
+ - `references/proxy-support.md`: proxy configuration and CA certificates for HTTPS interception proxies
+ - `references/webgpu.md` — screenshots/video of WebGPU pages (three.js, Babylon.js), Linux/CI setup
+ - `templates/*` — starter shell scripts for auth, capture, form automation
++
++
++Private Radhouse builds may compile with `RADHOUSE_NATIVE_PAGE_ONLY=1` to leave background Network inspection dormant during page initialization, including automatically attached child frames. This compile-time policy preserves Page/Runtime and actual HTTP(S) traffic; the private adapter exposes only its seven page tools, so HAR, request-body inspection and native dashboard network tools are outside that adapter. Normal builds retain their existing initialization policy. CLI and MCP share the same native policy; no command or MCP tool is added.

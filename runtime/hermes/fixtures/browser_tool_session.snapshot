@@ -1,16 +1,21 @@
 def _browser_command_preflight() -> Dict[str, Any]:
     """Fail fast before spawning (missing CLI, Termux gap, interrupt, no Chromium in local
     mode — else every call hangs for command_timeout). Error result, or ``{"browser_cmd": path}``."""
+    from tools.bot_desktop import placement, runtime as _bd_runtime
+    try:
+        where = _bd_runtime.tool_placement()  # starts the sandbox screen on demand; raises for refused / down
+    except RuntimeError as e:
+        return {"success": False, "error": f"The browser cannot run here: {e}"}
+    if where == placement.TERMINAL:
+        from tools.interrupt import is_interrupted
+        if is_interrupted():
+            return {"success": False, "error": "Interrupted"}
+        return {"browser_cmd": _SANDBOX_AGENT_BROWSER}  # resolved inside the sandbox, not on this host
     try:
         browser_cmd = _install._find_agent_browser()
     except FileNotFoundError as e:
         _bt.logger.warning("agent-browser CLI not found: %s", e)
         return {"success": False, "error": str(e)}
-
-    if _install._requires_real_termux_browser_install(browser_cmd):
-        error = _install._termux_browser_install_error()
-        _bt.logger.warning("browser command blocked on Termux: %s", error)
-        return {"success": False, "error": error}
 
     # Skip when engine=lightpanda — LP doesn't need Chromium for navigation.
     if (

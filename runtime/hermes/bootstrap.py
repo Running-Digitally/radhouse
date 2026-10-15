@@ -1,4 +1,4 @@
-"""Fixed browser release lifecycle source. Running it on deployment-target requires a separate live gate.
+"""Browser release lifecycle source. Activation requires a separately approved target.
 
 No npm lifecycle scripts, model calls, new keys or permanent service. Network downloads
 are official HTTPS metadata/artifacts; every promoted release is immutable and qualified.
@@ -75,13 +75,13 @@ def policy(path):
             or value.get("agent_browser_channel") != "reviewed"):
         raise ValueError("maintenance_policy_unverified")
     files = value.get("runtime_files_sha256")
-    if (type(files) is not dict or not 1 <= len(files) <= 32
+    if (type(files) is not dict or not 1 <= len(files) <= 35
             or any(type(name) is not str or Path(name).is_absolute() or ".." in Path(name).parts
                    or type(digest) is not str or re.fullmatch(r"[a-f0-9]{64}", digest) is None for name, digest in files.items())
             or hashlib.sha256(canonical(files)).hexdigest() != value.get("runtime_sha256")):
         raise ValueError("maintenance_runtime_unverified")
     hermes = Path(value.get("hermes_root", ""))
-    expected = Path("/opt/hermes/2237be355906fbe6065ce1815711eee52b2d646e")
+    expected = Path("/opt/hermes/818c13be1dc4fd28987e1e881a9408224afd4535")
     if hermes != expected or value.get("hermes_python") != str(expected / "venv/bin/python"):
         raise ValueError("maintenance_runtime_unverified")
     for name, digest in files.items():

@@ -25,12 +25,15 @@ from radhouse.storage.postgres import (
     ApplicationStorageError,
     _application_connection_parameters,
     schema_digest,
-    SCHEMA_VERSION,
 )
 
 
 _USERNAME = re.compile(r"^[a-z0-9][a-z0-9._-]{2,63}$")
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+# The private chat app uses the deployed schema-7 authentication tables. The
+# retained controller's additive work migrations do not change that contract.
+# Admit only explicitly qualified versions with their exact migration digest.
+_AUTH_SCHEMA_VERSIONS = frozenset({7, 10})
 
 
 class LocalAuthError(ValueError):
@@ -47,6 +50,8 @@ class LocalSession:
     conversation_id: str
     binding_revision: int
     project_id: str
+    # Effective validated idle/absolute expiry, never an authentication secret.
+    expires_at: datetime | None = None
 
 
 def _digest(value: str) -> str:
@@ -75,8 +80,9 @@ def _verified_connection(connection, deployment_id: str, database: str) -> None:
     if (
         len(rows) != 1
         or rows[0]["deployment_id"] != deployment_id
-        or rows[0]["schema_version"] != SCHEMA_VERSION
-        or rows[0]["migration_sha256"] != schema_digest()
+        or type(rows[0]["schema_version"]) is not int
+        or rows[0]["schema_version"] not in _AUTH_SCHEMA_VERSIONS
+        or rows[0]["migration_sha256"] != schema_digest(rows[0]["schema_version"])
         or rows[0]["database"] != database
     ):
         raise LocalAuthError("database_identity_mismatch")
@@ -475,7 +481,7 @@ class LocalAuthService:
                 )
                 binding = self._binding(connection, credential["principal_id"], credential["username"])
                 return LocalSession(token, csrf, credential["principal_id"], credential["username"],
-                                    assurance_until, **binding)
+                                    assurance_until, **binding, expires_at=min(now + idle_ttl, now + session_ttl))
         except Rejected:
             raise
         except (psycopg.Error, ApplicationStorageError):
@@ -569,7 +575,7 @@ class LocalAuthService:
                 binding = self._binding(connection, row["principal_id"], row["username"])
                 csrf = request.headers.get("x-radhouse-csrf", "")
                 return LocalSession(token, csrf, row["principal_id"], row["username"],
-                                    row["assurance_until"], **binding)
+                                    row["assurance_until"], **binding, expires_at=idle_expires)
         except Rejected:
             raise
         except (psycopg.Error, ApplicationStorageError):
@@ -617,5 +623,4 @@ def _initial_work_home(initial_work_home, initial_fields):
     elif initial_fields or not isinstance(initial_work_home, InitialWorkHome):
         raise TypeError("supply one InitialWorkHome or its keyword fields")
     return initial_work_home
-
 

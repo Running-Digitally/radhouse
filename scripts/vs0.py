@@ -26,6 +26,7 @@ PINNED_IMAGE = IMAGE_TAG + "@sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b3
 LABEL = "org.radhouse.vs0.run-id"
 LIMIT_SECONDS = 900
 COVERAGE_DIRECTORY = "coverage"
+COVERAGE_DATA_FILE = ".coverage"
 PYTHON_COVERAGE_XML = "python.xml"
 
 
@@ -186,8 +187,15 @@ class Run:
                 if time.monotonic() >= ready_deadline:
                     raise FixtureError("owned PostgreSQL did not become ready within 60 seconds") from None
                 time.sleep(0.2)
+        connection.close()
+        self.initialize(owner_dsn, port)
+
+    def initialize(self, owner_dsn, port):
+        import psycopg
+        from psycopg import sql
+        from psycopg.conninfo import make_conninfo
         runtime_password = secrets.token_urlsafe(32)
-        with connection:
+        with psycopg.connect(owner_dsn) as connection:
             # Empty schema plus exact database and container ownership are mandatory.
             if connection.execute("SELECT current_database()").fetchone()[0] != self.manifest["database"]:
                 raise FixtureError("bootstrap database identity mismatch")
@@ -269,7 +277,7 @@ def service_for_environment(env, *, crash=False):
 
 def controller_child(action, task_id):
     manifest = json.loads(Path(os.environ["RADHOUSE_VS0_MANIFEST"]).read_text())
-    if manifest["run_id"] != os.environ["RADHOUSE_VS0_RUN_ID"] or not manifest.get("container_id"):
+    if manifest["run_id"] != os.environ["RADHOUSE_VS0_RUN_ID"] or not (manifest.get("container_id") or manifest.get("native_cluster_id") == manifest["run_id"]):
         raise FixtureError("child controller fixture ownership mismatch")
     service, _ = service_for_environment(os.environ, crash=action == "run")
     if action == "run":
@@ -313,14 +321,14 @@ def demonstration(run: Run):
     print("PASS: both simulated channel directions, duplicate admission, separate-process recovery, one run per completed task, protected publication, unknown runtime stays blocked")
 
 
-def main():
+def main(run_factory=Run):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("verify", "demo"))
     parser.add_argument("--coverage", action="store_true", help="collect Python and browser/Node coverage during verify")
     args = parser.parse_args()
     if args.coverage and args.mode != "verify":
         parser.error("--coverage requires verify")
-    run = Run()
+    run = run_factory()
     def deadline_expired(signum, frame):
         raise FixtureError("VS0 reached its 15-minute execution limit")
     signal.signal(signal.SIGALRM, deadline_expired)
@@ -349,10 +357,15 @@ def main():
         run.cleanup()
         if measurement is not None:
             succeeded = _save_measurement(run, measurement) and succeeded
+    return _report_result(run, args.mode, succeeded, prerequisite_missing)
+
+
+def _report_result(run, mode, succeeded, prerequisite_missing):
     if run.output.exists():
         print(f"Sanitized run manifest: {run.manifest_path.relative_to(ROOT)}")
     if succeeded:
-        print(f"PASS: offline {args.mode}; Python {run.manifest['python']}; source {run.manifest['source_commit']}; image {run.manifest['image']}")
+        backend = run.manifest.get("image") or run.manifest.get("postgres_version", "unqualified")
+        print(f"PASS: offline {mode}; Python {run.manifest['python']}; source {run.manifest['source_commit']}; database {backend}")
     if prerequisite_missing:
         return 2
     if succeeded and run.manifest.get("cleanup") == "complete":
@@ -405,13 +418,13 @@ def _demonstrate_direction(run, service, work, clock, index, source, destination
 def _prepare_coverage(run):
     directory = run.output / COVERAGE_DIRECTORY
     directory.mkdir()
-    run.env.update(COVERAGE_FILE=str(directory / ".coverage"),
+    run.env.update(COVERAGE_FILE=str(directory / COVERAGE_DATA_FILE),
                    RADHOUSE_COVERAGE_DIR=str(directory / "browser"),
                    NODE_V8_COVERAGE=str(directory / "node"))
     # Build once before browser tests so their coverage maps to the tested TS.
     run.command(["npm", "--prefix", "web", "run", "build"])
     from coverage import Coverage
-    measurement = Coverage(data_file=str(directory / ".coverage"), data_suffix=True)
+    measurement = Coverage(data_file=str(directory / COVERAGE_DATA_FILE), data_suffix=True)
     measurement.start()
     run.env["COVERAGE_PROCESS_CONFIG"] = os.environ["COVERAGE_PROCESS_CONFIG"]
     return measurement
@@ -425,7 +438,7 @@ def _save_measurement(run, measurement):
     try:
         from coverage import Coverage
         directory = run.output / COVERAGE_DIRECTORY
-        combined = Coverage(data_file=str(directory / ".coverage"))
+        combined = Coverage(data_file=str(directory / COVERAGE_DATA_FILE))
         combined.load()
         combined.combine()
         combined.save()

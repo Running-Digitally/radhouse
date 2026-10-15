@@ -1,0 +1,15 @@
+.owner-terminal { border:1px solid var(--border,#ccd4c8); border-radius:16px; background:var(--surface,#fff); overflow:hidden; }
+.owner-terminal-header { display:flex; align-items:center; gap:12px; padding:16px 20px; border-bottom:1px solid var(--border,#ccd4c8); flex-wrap:wrap; }
+.owner-terminal-header h2 { margin:0 auto 0 0; font-size:1.2rem; }
+.owner-terminal-status { padding:0 20px; min-height:1.5em; }
+.owner-terminal-placeholder { text-align:center; padding:48px 20px; color:var(--muted,#55675a); }
+.owner-terminal-symbol { display:block; font:48px monospace; color:var(--text,#243d32); }
+.owner-terminal-viewport { --rh-terminal-bg:#17231e; --rh-terminal-text:#f4f3ec; background:var(--rh-terminal-bg); color:var(--rh-terminal-text); color-scheme:dark; height:460px; padding:12px; box-sizing:border-box; }
+.owner-terminal-context { display:flex; align-items:center; gap:8px; margin:16px 20px 4px; }
+.owner-terminal-context input { width:auto; }
+.owner-terminal-context-help { margin:4px 20px 20px; color:var(--muted,#55675a); font-size:.9rem; }
+.owner-terminal [hidden] { display:none !important; }
+@media(max-width:600px) { .owner-terminal-viewport { height:360px; } }
+
+/* Terminal output keeps its own contrast, independent of page appearance. */
+.owner-terminal-viewport .xterm { color:var(--rh-terminal-text); background:var(--rh-terminal-bg); }

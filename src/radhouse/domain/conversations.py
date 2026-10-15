@@ -30,6 +30,9 @@ class ConversationLink:
     # It delegates each accepted owner message to one specialist link.
     coordinator: bool = False
     channel_kind: Literal["dm", "stream"] = "dm"
+    # Frozen at enrollment. Changing configuration cannot hand existing work
+    # back to the legacy project planner or replace its execution owner.
+    workflow_version: Literal["legacy", "artifact-v1"] = "legacy"
 
 
 @dataclass(frozen=True)
@@ -56,3 +59,6 @@ class MessageRoute:
     task_id: str | None = None
     expected_revision: int | None = None
     follows_task_id: str | None = None
+    work_id: str | None = None
+    work_revision: int | None = None
+    scope_revision: int | None = None

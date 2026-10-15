@@ -47,7 +47,7 @@ class SyntheticHermes:
                 raise httpx.ReadError("synthetic lost acknowledgement", request=request)
             return httpx.Response(202, headers={"Idempotency-Replayed": "true" if replayed else "false"}, json={"run_id": run_id, "status": self.status if replayed else "started", "replayed": replayed})
         run_id = request.url.path.split("/")[-1]
-        return httpx.Response(200, json={"run_id": run_id, "status": self.status, "output": self.output if self.status == "completed" else None})
+        return httpx.Response(200, json={"run_id": run_id, "status": self.status, "output": self.output if self.status in {"completed", "failed"} else None})
 
 
 class SyntheticAuth:
@@ -195,20 +195,21 @@ def test_expired_unknown_dispatch_never_sends_again(chat):
     service.clock = lambda: 4540
     with pytest.raises(Rejected, match="reply_recovery_required"):
         service.send("alice", key, "Uncertain")
-    with pytest.raises(Rejected, match="reply_pending"):
-        service.send("alice", str(uuid4()), "Another")
+    response = service.send("alice", str(uuid4()), "Another")
+    assert response["turns"][-1]["status"] == "waiting"
+    service.poll("alice")
     assert len(hermes.requests) == 1
 
 
-def test_conflicting_replay_and_second_pending_message_are_refused(chat):
+def test_conflicting_replay_is_refused_and_second_message_waits(chat):
     service, hermes = chat
     key = str(uuid4()); service.send("alice", key, "Original")
     with pytest.raises(Rejected, match="message_conflict"): service.send("alice", key, "Changed")
-    with pytest.raises(Rejected, match="reply_pending"): service.send("alice", str(uuid4()), "Second")
+    assert service.send("alice", str(uuid4()), "Second")["turns"][-1]["status"] == "waiting"
     assert len(hermes.requests) == 1
 
 
-def test_concurrent_messages_reserve_only_one_pending_turn(chat):
+def test_concurrent_messages_reserve_only_one_active_turn(chat):
     service, hermes = chat
     def send(_):
         try: service.send("alice", str(uuid4()), "Concurrent")
@@ -216,7 +217,7 @@ def test_concurrent_messages_reserve_only_one_pending_turn(chat):
         return "accepted"
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(send, range(2)))
-    assert sorted(results) == ["accepted", "reply_pending"]
+    assert sorted(results) == ["accepted", "accepted"]
     assert len(hermes.runs) == 1
 
 
@@ -241,6 +242,20 @@ def test_terminal_failure_is_honest_and_allows_next_turn(chat, state, output, er
     assert turn['error'] == error
     assert turn['output'] is None
     assert service.store.pending("alice") is None
+
+
+@pytest.mark.parametrize("output,retained",[("A useful partial finding.",True),("  ",False),(None,False)])
+def test_failed_partial_reply_is_retained_without_claiming_completion(chat,output,retained):
+    service,hermes=chat
+    request_id=str(uuid4());service.send("alice",request_id,"Question")
+    hermes.status,hermes.output="failed",output
+    turn=service.poll("alice")["turns"][0]
+    assert turn["status"]=="failed" and turn["error"]=="reply_failed"
+    assert turn["output"]==(output if retained else None)
+    assert service.store.pending("alice") is None
+    restarted=ChatStore(service.store.path).history("alice")["turns"][0]
+    assert restarted["status"]=="failed" and restarted["output"]==turn["output"]
+    assert len(hermes.requests)==1
 
 
 def test_status_outage_keeps_saved_run_for_later_observation(chat):

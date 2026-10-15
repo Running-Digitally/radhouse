@@ -30,6 +30,7 @@ class EffectiveSettings:
     message_character_limit: int = 16000
     upload_size_limit_bytes: int | None = None
     upload_count_limit: int | None = None
+    browser_control_enabled: bool = False
 
 
 @dataclass(frozen=True)
@@ -94,7 +95,8 @@ class AdminService:
                 "document_formats": ["text", "pdf", "docx", "xlsx", "pptx"],
                 "audio_transcription_enabled": values.transcription_enabled},
             "documents": {"selective_access_enabled": values.document_access_enabled},
-            "browser": {"enabled": values.browser_enabled, "mode": "view_only"},
+            "browser": {"enabled": values.browser_enabled,
+                "mode": "owner_session" if values.browser_control_enabled else "view_only"},
         }
 
     def _network_policy(self):

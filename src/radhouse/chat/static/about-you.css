@@ -1,0 +1,8 @@
+.about-you-sources { display: grid; gap: 1.25rem; margin-top: 1.25rem; }
+.about-you-source { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); padding: 1.25rem; }
+.about-you-source h2 { margin: 0 0 .5rem; }
+.about-you-description, .about-you-source-meta, .about-you-status { color: var(--muted); }
+.about-you-source-meta { font-size: .9rem; overflow-wrap: anywhere; }
+.about-you-notes { margin: 1rem 0 0; padding-left: 1.25rem; }
+.about-you-notes li { white-space: pre-wrap; overflow-wrap: anywhere; margin-bottom: .75rem; }
+.about-you-empty { margin-bottom: 0; }

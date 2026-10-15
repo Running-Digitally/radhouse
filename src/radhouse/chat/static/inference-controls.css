@@ -1,0 +1,10 @@
+.inference-controls { display: flex; flex-wrap: wrap; gap: .65rem; align-items: end; margin: .75rem 0; }
+.inference-controls label { display: grid; gap: .2rem; font-size: .85rem; }
+.inference-controls select { min-width: 8rem; max-width: min(28rem, 80vw); padding: .45rem .6rem; }
+.inference-controls .inference-status { color: var(--muted, #536158); font-size: .85rem; }
+.inference-controls label[hidden] { display: none; }
+.message-options-panel .inference-controls{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:12px 8px;margin:14px 0 0;padding-top:14px;border-top:1px solid var(--line)}
+.message-options-panel .inference-controls select{width:100%;max-width:100%;min-width:0;min-height:44px;background:var(--panel);color:inherit;border:1px solid var(--line);border-radius:8px;font:inherit}
+.message-options-panel .inference-controls button{border:0}
+.message-options-panel .inference-controls .inference-status{grid-column:1/-1;font-size:12px}
+.message-options-panel .inference-controls .inference-status:empty{display:none}

@@ -92,7 +92,7 @@ No DNS, access, bindings, VM or private application change is included.
 
 Both public endpoints' eleven served baseline assets and real 404 body were
 verified against public `main`. The pre-release archive is retained outside
-Git at `/private/tmp/radhouse-public-pre-workspace-20261008.tar`, SHA-256
+Git at `[private release workspace]`, SHA-256
 `4fcb24f6aea7f95490a7622d95f9eea5d3ac86a062b82458fc18df09b5e2454a`.
 Retain the existing deployment identity before upload. Follow the existing
 hosting contract: review the final source, perform a normal merge, then

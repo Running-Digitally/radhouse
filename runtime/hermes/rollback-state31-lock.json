@@ -1,0 +1,16 @@
+{
+  "schema": "radhouse.old-state-compat-source.v1",
+  "upstream_commit": "2237be355906fbe6065ce1815711eee52b2d646e",
+  "files": {
+    "hermes_state.py": {
+      "before_sha256": "9353e4fa0a8353b3e50b1945a87a898cf88b647ef726a4bab8ce5f65dffec431",
+      "after_sha256": "78333209039c271779fd8c69ca6d217cbeace7082bd80d69c0716fafc26d6814"
+    },
+    "hermes_state_sessions.py": {
+      "before_sha256": "a2f35ae3c296a0beb2869b51d0a1761ae17c2e5163278c6298ee9a0ba9fae931",
+      "after_sha256": "1b65eaa0dbf4a908a4350e8224be032acc1ff1ae82a41cc1b8f36ba912c2cf9e"
+    }
+  },
+  "patch_sha256": "bac003d71d00c594ded21c042604d658a43f9e6810ea375e2d1816fd2c5b39d7",
+  "scope": "Only paired old-runtime rollback compatibility; preserve referenced tool-pin blobs and decode ordered names."
+}

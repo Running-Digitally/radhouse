@@ -1,0 +1,36 @@
+def _vault_scope() -> str:
+    from hermes_constants import get_hermes_home
+    return str(get_hermes_home())
+
+
+def register_vault_redaction_value(value) -> None:
+    """Register an exact vault secret value for model-facing redaction.
+
+    Called by the vault fill path BEFORE the injection happens, so no later browser tool result
+    can echo the value back into model context. Also registers the form a text input normalizes
+    it to (CR/LF stripped), since that is what the page holds.
+    """
+    if not isinstance(value, str) or not value:
+        return
+    normalized = value.replace("\r", "").replace("\n", "")
+    with _VAULT_REDACTION_LOCK:
+        bucket = _VAULT_REDACTION_VALUES.setdefault(_vault_scope(), {})
+        for v in (value, normalized):
+            if v:
+                bucket.pop(v, None)  # re-registering refreshes recency
+                bucket[v] = None
+        while len(bucket) > _VAULT_REDACTION_MAX_PER_PROFILE:
+            del bucket[next(iter(bucket))]
+
+
+def redact_registered_vault_values(text: str) -> str:
+    """Exact-substring scrub of every vault secret value registered for the current profile."""
+    if not isinstance(text, str) or not text:
+        return text
+    with _VAULT_REDACTION_LOCK:
+        bucket = _VAULT_REDACTION_VALUES.get(_vault_scope())
+        values = sorted(bucket, key=len, reverse=True) if bucket else ()  # longest first: a substring never shadows its superstring
+    for value in values:
+        if value in text:
+            text = text.replace(value, "«redacted-vault-secret»")
+    return text

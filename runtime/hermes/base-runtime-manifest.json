@@ -1,0 +1,82 @@
+{
+  "agent/agent_init.py": {
+    "before_sha256": "6e10efdbedc52a9204538a66eeacd320efb6add23a784a45f28fb70e5a5aa8f3",
+    "after_sha256": "63bdbe16e8e89e482cb6d633d6a3a3106f6102a862296189bd9e14700f3131cc"
+  },
+  "agent/agent_runtime_helpers.py": {
+    "before_sha256": "ae10b9299f7813ba7b460d75774f213bdbfb0b8907611a3f3fdebf6f01cb3946",
+    "after_sha256": "8f661a1a4621f4e4179b4005ae65709399f42aff9c37faa7b0882259e8cb634f"
+  },
+  "agent/chat_completion_helpers.py": {
+    "before_sha256": "fed555d9314d51552ffff3a4941b0472e63234158e86c758005e7f07086d9b2e",
+    "after_sha256": "0c3c32636fd6fafd3ea96cda1106f6edc162a1087c693442dda0ef0bec9524e7"
+  },
+  "agent/provider_request_budget.py": {
+    "before_sha256": null,
+    "after_sha256": "0d203eba21b3df954ca74b2ae24cb3a4ee7330a09ce67f34b1da0e93be89ad29"
+  },
+  "agent/run_guidance.py": {
+    "before_sha256": null,
+    "after_sha256": "55d0d22d37edd2477dcc2ebbc84af7d1244e89d36419c9d5dff1b2837997f096"
+  },
+  "agent/tool_executor.py": {
+    "before_sha256": "cdf2587c1a559d09d88efa0431184c781ad7b466e110a9a77b86ff2fbaa84194",
+    "after_sha256": "64b0fd3a5bcbfeb11b529c2547999a83586e6b159a046a9fcd56ed7464947567"
+  },
+  "agent/turn_api_call.py": {
+    "before_sha256": "a2bb50d40b8c541ef38c24fc57e0800ed179852e69fef095a835d442ecc585da",
+    "after_sha256": "49c2f7e83503142131731f50c38e0d4d6dcb7e206d46389bb8ddfcdc6d73865e"
+  },
+  "agent/turn_api_error.py": {
+    "before_sha256": "3af11f52ed6de18191c45d812d67877a03f600be99d19c5e5b9ce71b2e4e1601",
+    "after_sha256": "1f780a3b3fd17090863ae0ec06870e98094e9d077e9da079c0e08247bab16200"
+  },
+  "agent/turn_final_response.py": {
+    "before_sha256": "2e937817af2aa2e710593bfa52c6abdff11299031e4d4435aac7c11865d4579e",
+    "after_sha256": "f8c51744aacc4c7886f20c1c3af8c47673499829747505aabbea3e654fb64fc4"
+  },
+  "agent/turn_response_check.py": {
+    "before_sha256": "6a699bd729529f88fed94900de7ce0f8eef73d0c0cc43c2fbcfd2ad6f6ee7f23",
+    "after_sha256": "f3ba9d58813c6e545441195261334ff3fa30a38706ea824ac7c7876ec82d0408"
+  },
+  "agent/turn_tool_round.py": {
+    "before_sha256": "8afef412460a4a6a0d3df0ec219919a736ba376f4add81864fd49c0e758c531f",
+    "after_sha256": "8ed99d285761fe8e8ca080b7205c8739b2643aad01ef2e729b8ddc0d344e9b34"
+  },
+  "agent/turn_tool_validation.py": {
+    "before_sha256": "e15b186e4d2ec9b661a82f3b17dc031237492d72b1ad2d621d0c8dd736f2fe1c",
+    "after_sha256": "74de81dd6358ea2f2935422268d103a305082a67fef0f648ba5392eacc40ab15"
+  },
+  "gateway/platforms/api_server.py": {
+    "before_sha256": "359c8be9d02e3bfb24272f829321dd5da3cefd31923cf7785d1bf36ea1f87420",
+    "after_sha256": "90bf45e5ef65ba364245eb2882b5b3f61c74ac90dae1b2462dea2453bea4f143"
+  },
+  "gateway/platforms/api_server_run_idempotency.py": {
+    "before_sha256": "c3f25711695a5aad97b207581e0c532d1291bb9f12ca3c1e32add19e5f0f153a",
+    "after_sha256": "50373034678d93626e0df2e16699324a2d2aeabbd2fa3a1c01989d1859e953aa"
+  },
+  "gateway/platforms/api_server_runs.py": {
+    "before_sha256": "67315fb146f3f5d124675c4dd0e2c5fbe233618c94af2799c438175592dfba97",
+    "after_sha256": "337a2c2aaf1b6d967a2f642a9bf36d0104f6c3a4b7d88c5cdf7d40bd9cc2eaec"
+  },
+  "gateway/platforms/api_server_runtime_contract.py": {
+    "before_sha256": null,
+    "after_sha256": "7909370c30dfd1c535c609de1c6b1bf29d3f4a19867119728df90cc0b3349bc2"
+  },
+  "hermes_cli/config.py": {
+    "before_sha256": "d8118b064bb442e10ce6a90e8e23c7f347b6ff532781febab206d9c652f3c7dd",
+    "after_sha256": "58ace504dcdf8f0840c150bb98fe8b3a186315914ebc13c8bda2e21490a211af"
+  },
+  "hermes_cli/config_providers.py": {
+    "before_sha256": "a0a4c27f93261b53783ded9f1d58ea2520cf963a39dc51b1656b89077f5d73b8",
+    "after_sha256": "64084de348425782a36bc273901b12899c49902f8f955fc735f84e18cddcee61"
+  },
+  "run_agent.py": {
+    "before_sha256": "73efa221f42be96a41a6b8a1ee144caf47041e06f5c7d32b3bbd898d8dc250b2",
+    "after_sha256": "d429b54ebfff817136d8151a095a21c0893f7b67e8f1c33a3dc84fd9b943e4bb"
+  },
+  "tools/mcp_tool_agent.py": {
+    "before_sha256": "bdc9b941dcd613c077d4a19973cd4f83354343918a669fc3cc935f2c5684a0a5",
+    "after_sha256": "79bb2369b340d1ac767e87b97d54c7cd1f7721ec054c49cf52d43c458c6ee012"
+  }
+}

@@ -11,24 +11,13 @@ This supersedes the assignment illustration in
 
 ## Accepted scope and evidence
 
-The owner asked to remove Buzz integration and supplied the chat
-**private product-scope review**, session
-`private-session-id`, started 5 October 2026 at
-12:56 PM EDT in `/path/to/private-workspace`.
-The session retrieval skill verified its title, workspace and transcript
-metadata. Recent and older visible turns were read through the app's thread
-reader. The owner's accepted first slice is opening Radhouse, talking to one
+The owner asked to remove Buzz integration. The accepted first slice is
+opening Radhouse, talking to one
 assistant, closing the browser and returning later to the same conversation.
 
-Grounding was checked against these local sources, read without editing them:
-
-- `private-installation-record`.
-- `private-installation-record`
-  and its `deployment-proof.json` artifact.
-- README, ROADMAP, PRINCIPLES, chat UI and service in
-  `/private/tmp/radhouse-hermes-first-20261005`, branch
-  `codex/radhouse-minimal-web`, source
-  `2e7abde5b074ddeb1b71ba2466485c8006d94710`.
+Grounding was checked against the README, ROADMAP, PRINCIPLES, chat UI and
+service at public source `2e7abde5b074ddeb1b71ba2466485c8006d94710`, with
+separately retained validation evidence.
 
 The later completed deployment record establishes the small private text pilot:
 two real Hermes replies, including recall after the web app restarted, pinned

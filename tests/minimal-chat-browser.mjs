@@ -278,7 +278,7 @@ await cover(staleTab);
   await page.locator("#file-picker").setInputFiles(fixtures+"/notes.txt");
   await page.locator("#send").click();
   await expect(page.getByRole("button",{name:"Edit message",exact:true})).toBeEnabled();
-  await expect(page.getByRole("button",{name:"Retry message",exact:true})).toBeDisabled();
+  await expect(page.getByRole("button",{name:"Retry message",exact:true})).toBeEnabled();
   await page.getByRole("button",{name:"Edit message",exact:true}).click();
   await expect(page.locator("#message")).toHaveValue("A rejected message I can still edit");
   await expect(page.locator("#draft-files")).toContainText("notes.txt");
@@ -419,7 +419,7 @@ await cover(staleTab);
   await page.route("**/chat/messages/cached-pending-fixture",route => route.fulfill({status:200,contentType:"application/json",
     body:JSON.stringify({turn:{...cached,status:"completed",output:"Recovered completed reply"}})}));
   await page.evaluate(turn => { turns.clear(); turns.set(turn.seq,turn); render(); },cached);
-  await expect(page.locator("#send")).toBeDisabled();
+  await expect(page.locator("#send")).toBeEnabled();
   await page.evaluate(() => refreshHistory());
   await expect(page.locator('[data-request-id="cached-pending-fixture"]')).toContainText("Recovered completed reply");
   await expect(page.locator("#send")).toBeEnabled();

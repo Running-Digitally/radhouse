@@ -1,5 +1,4 @@
-from __future__ import annotations
-
+"""Pinned native lifecycle functions."""
 def _get_session_info(task_id: Optional[str] = None) -> Dict[str, Any]:
     """Get or create session info for a session key (thread-safe); also starts the
     inactivity thread and touches activity. A ``::local`` key forces local Chromium

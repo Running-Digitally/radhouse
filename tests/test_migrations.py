@@ -8,11 +8,11 @@ import pytest
 
 from radhouse.storage.migrations import MigrationError, initialize_database
 from radhouse.storage.postgres import ApplicationPostgresStore
-from radhouse.storage.postgres import ApplicationStorageError, schema_digest
+from radhouse.storage.postgres import ApplicationStorageError, schema_digest, SCHEMA_VERSION
 
 
 @pytest.mark.postgres
-@pytest.mark.parametrize("legacy_version", [1, 2, 3, 4, 5, 6])
+@pytest.mark.parametrize("legacy_version", [1, 2, 3, 4, 5, 6, 7, 8, 9])
 def test_legacy_upgrade_preserves_tasks_and_requires_exact_version_digest(store, service, alice, envelope, start, legacy_version):
     task = service.admit(alice, envelope(), start)
     owner = os.environ["RADHOUSE_VS0_OWNER_DSN"]
@@ -20,6 +20,11 @@ def test_legacy_upgrade_preserves_tasks_and_requires_exact_version_digest(store,
     database = f"radhouse_vs0_{run_id}"
     arguments = dict(expected_database=database, deployment_id=f"fixture-{run_id}", runtime_role="radhouse_runtime")
     with psycopg.connect(owner) as connection:
+        connection.execute('ALTER TABLE agent_dispatches DROP CONSTRAINT runtime_observation_cursor')
+        if legacy_version < 9:
+            connection.execute("DROP TABLE work_commands")
+        for table in (() if legacy_version >= 8 else ("work_verifications", "work_artifacts", "work_steps", "work_items")):
+            connection.execute(sql.SQL("DROP TABLE {}").format(sql.Identifier(table)))
         # Reconstruct the genuine old schema in this exclusively owned fixture.
         if legacy_version < 7:
             connection.execute("DROP TABLE project_coordination")
@@ -49,9 +54,18 @@ def test_legacy_upgrade_preserves_tasks_and_requires_exact_version_digest(store,
     runtime = ApplicationPostgresStore(os.environ["RADHOUSE_VS0_DSN"], database, f"fixture-{run_id}")
     with pytest.raises(ApplicationStorageError, match="database_identity_mismatch"):
         with runtime.transaction(): pass
+    if legacy_version == 7:
+        from cryptography.fernet import Fernet
+        from radhouse.auth.local import LocalAuthService
+        # The real deployed schema lacks all work tables. Private chat sign-in
+        # must remain available without upgrading the retained controller.
+        auth = LocalAuthService(os.environ["RADHOUSE_VS0_DSN"],
+            expected_database=database, deployment_id=f"fixture-{run_id}",
+            encryption_key=Fernet.generate_key().decode(), expected_origin="https://synthetic.invalid")
+        auth.health()
     receipt = initialize_database(owner, **arguments)
     assert receipt.result == 'upgraded'
-    assert receipt.schema_version == 7
+    assert receipt.schema_version == SCHEMA_VERSION
     with runtime.transaction() as tx:
         assert tx.task(task.task_id) == task
         assert tx.task_title(task.task_id).title == "Prepare the synthetic offline report."
@@ -62,7 +76,7 @@ def test_legacy_upgrade_preserves_tasks_and_requires_exact_version_digest(store,
             initialize_database(owner, **arguments)
     finally:
         with psycopg.connect(owner) as connection:
-            connection.execute("UPDATE radhouse_metadata SET schema_version=7,migration_sha256=%s", (schema_digest(),))
+            connection.execute("UPDATE radhouse_metadata SET schema_version=%s,migration_sha256=%s", (SCHEMA_VERSION, schema_digest()))
 
 
 @pytest.mark.postgres
@@ -79,7 +93,7 @@ def test_owner_initializer_is_idempotent_for_the_exact_current_database(store):
 
     assert first == second
     assert first.result == "current"
-    assert first.schema_version == 7
+    assert first.schema_version == SCHEMA_VERSION
     assert len(first.migration_sha256) == 64
 
 

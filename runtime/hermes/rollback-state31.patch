@@ -1,0 +1,48 @@
+--- a/hermes_state.py
++++ b/hermes_state.py
+@@ -388,7 +388,8 @@
+     def _delete_unreferenced_system_prompts(conn) -> None:
+         conn.execute(
+             "DELETE FROM system_prompts WHERE NOT EXISTS ("
+-            "SELECT 1 FROM sessions WHERE sessions.system_prompt_hash = system_prompts.hash)"
++            "SELECT 1 FROM sessions WHERE sessions.system_prompt_hash = system_prompts.hash "
++            "OR sessions.tool_names = system_prompts.hash)"
+         )
+ 
+     @staticmethod
+--- a/hermes_state_sessions.py
++++ b/hermes_state_sessions.py
+@@ -735,11 +735,30 @@
+         """Get a session by ID (drains queued token deltas first so cost readers see exact totals)."""
+         self.flush_token_counts()
+         row = self._read_one(
+-            "SELECT s.*, COALESCE(sp.prompt, s.system_prompt) AS _system_prompt_resolved "
+-            "FROM sessions s LEFT JOIN system_prompts sp ON sp.hash = s.system_prompt_hash WHERE s.id = ?",
++            "SELECT s.*, COALESCE(sp.prompt, s.system_prompt) AS _system_prompt_resolved, "
++            "COALESCE(tp.prompt, s.tool_names) AS _tool_names_resolved "
++            "FROM sessions s LEFT JOIN system_prompts sp ON sp.hash = s.system_prompt_hash "
++            "LEFT JOIN system_prompts tp ON tp.hash = s.tool_names WHERE s.id = ?",
+             (session_id,),
+         )
+-        return self._session_row_dict(row) if row else None
++        if row is None:
++            return None
++        data = self._session_row_dict(row)
++        payload = data.pop("_tool_names_resolved")
++        try:
++            pin = json.loads(payload) if payload else None
++        except (ValueError, TypeError):
++            pin = None
++        if isinstance(pin, dict):
++            # New builds store complete definitions; this old runtime expects
++            # only their stable order of names and rebuilds its own schemas.
++            tools = pin.get("tools")
++            names = [tool.get("function", {}).get("name") for tool in tools
++                     if isinstance(tool, dict) and isinstance(tool.get("function"), dict)] if isinstance(tools, list) else []
++            data["tool_names"] = json.dumps([name for name in names if isinstance(name, str) and name])
++        else:
++            data["tool_names"] = payload if isinstance(pin, list) else None
++        return data
+ 
+     def get_dominant_session_model_route(self, session_id: str) -> Optional[Dict[str, Any]]:
+         """Main-loop model route that served most API calls (``session_model_usage`` keeps the coherent

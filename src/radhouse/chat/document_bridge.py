@@ -1,10 +1,11 @@
-"""Two read-only callbacks, authorized by a saved turn rather than model claims."""
+"""Document reads and text sharing, authorized by a saved turn rather than model claims."""
 import base64
 import asyncio
 from dataclasses import asdict
 import hashlib
 import hmac
 import json
+from pathlib import PurePath
 import re
 import time
 from typing import Annotated
@@ -14,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from radhouse.domain.tasks import Rejected
 from radhouse.integrations.hermes import HermesGatewayError
-from .attachments import FILE_ID
+from .attachments import AUDIO, OFFICE, FILE_ID, classify, validate_name
 from .document_access import DocumentAccess
 
 IDENTIFIER = r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$"
@@ -31,6 +32,15 @@ class DocumentCall(BaseModel):
     query: Annotated[str, Field(min_length=1, max_length=512)] | None = None
     locator: Annotated[str, Field(max_length=1024)] | None = None
     cursor: Annotated[str, Field(max_length=4096)] | None = None
+
+
+class FileShareCall(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    run_id: Annotated[str, Field(pattern=IDENTIFIER)]
+    session_id: Annotated[str, Field(pattern=IDENTIFIER)]
+    dispatch_key: Annotated[str, Field(pattern=IDENTIFIER)]
+    name: Annotated[str, Field(min_length=1, max_length=200)]
+    content: str
 
 
 class DocumentBridge:
@@ -123,6 +133,31 @@ class DocumentBridge:
         self._authorize(token, call)
         return result
 
+    def share(self, token, call):
+        grant = self._authorize(token, call)
+        if "file_share" not in grant["allowed_tools"]:
+            raise Rejected("document_access_denied", 403)
+        validate_name(call.name)
+        # This tool creates UTF-8 text, not a binary artifact with a misleading
+        # extension. Ordinary text/code/CSV/Markdown remain downloadable text.
+        binary_extensions = set(OFFICE) | set(AUDIO) | {
+            ".pdf", ".doc", ".xls", ".ppt", ".docm", ".xlsm", ".pptm", ".png", ".jpg", ".jpeg",
+            ".webp", ".gif", ".heic", ".bmp", ".ico", ".tif", ".tiff", ".zip", ".gz", ".7z",
+            ".rar", ".tar", ".epub", ".odt", ".ods", ".odp", ".exe", ".dmg", ".iso", ".mp4",
+            ".mov", ".avi", ".mkv", ".mpeg", ".mpg", ".parquet", ".sqlite", ".sqlite3", ".db"}
+        try:
+            call.name.encode("utf-8")
+            data = call.content.encode("utf-8")
+        except UnicodeEncodeError:
+            raise Rejected("shared_file_invalid", 422) from None
+        if (PurePath(call.name).suffix.lower() in binary_extensions
+                or any(ord(c) < 32 and c not in "\n\r\t" for c in call.content)
+                or classify(call.name, data[:4096])[1] != "text"):
+            raise Rejected("shared_file_text_required", 422)
+        result = self.store.share_file(token, call.run_id, call.session_id, call.dispatch_key,
+            call.name, data, clock=self.clock, before_publish=lambda: self._authorize(token, call))
+        return {"kind": "file", "file": result}
+
 
 def create_document_router(bridge):
     router = APIRouter()
@@ -130,17 +165,21 @@ def create_document_router(bridge):
     async def execute(request, operation):
         header = request.headers.get("authorization", "")
         token = header[7:] if header.startswith("Bearer ") else ""
-        await asyncio.to_thread(bridge.grant, token)  # Deny before body or runtime probes.
+        grant = await asyncio.to_thread(bridge.grant, token)  # Deny before body or runtime probes.
+        if operation == "share" and "file_share" not in grant["allowed_tools"]:
+            raise Rejected("document_access_denied", 403)
         body = bytearray()
         async for chunk in request.stream():
-            if len(body) + len(chunk) > 16 * 1024:
+            if operation != "share" and len(body) + len(chunk) > 16 * 1024:
                 raise Rejected("invalid_request", 422)
             body.extend(chunk)
         try:
-            call = DocumentCall.model_validate_json(body)
+            call = (FileShareCall if operation == "share" else DocumentCall).model_validate_json(body)
         except ValidationError:
             raise Rejected("invalid_request", 422) from None
         # The app's async loop remains available for callback/cancel observations.
+        if operation == "share":
+            return await asyncio.to_thread(bridge.share, token, call)
         return await asyncio.to_thread(bridge.execute, token, call, operation)
 
     @router.post("/internal/documents/search")
@@ -150,5 +189,9 @@ def create_document_router(bridge):
     @router.post("/internal/documents/read")
     async def read(request: Request):
         return await execute(request, "read")
+
+    @router.post("/internal/documents/share")
+    async def share(request: Request):
+        return await execute(request, "share")
 
     return router

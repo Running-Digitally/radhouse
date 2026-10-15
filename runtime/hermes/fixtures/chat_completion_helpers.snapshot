@@ -1,5 +1,4 @@
-from __future__ import annotations
-
+"""Pinned cleanup entrypoint."""
 def cleanup_task_resources(agent, task_id: str) -> None:
     """Per-turn VM + browser cleanup for a task. Skips ``cleanup_vm`` for persistent
     terminal envs (``_cleanup_inactive_envs`` reaps them after ``terminal.lifetime_seconds``)
