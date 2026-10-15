@@ -424,3 +424,23 @@ def test_move_discards_an_observation_already_in_flight(tmp_path):
         with pytest.raises(control.ControlRejected,match='browser_observation_denied'):await read
         assert (await move).lease.observation_mode=='private'
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("changed", [
+    {"request_id": ""}, {"request_id": None},
+    {"revision": None}, {"revision": True}, {"revision": "3"},
+    {"auth_expires_at": 999}, {"auth_expires_at": float("nan")},
+])
+def test_malformed_phone_transfer_preserves_current_human_lease(tmp_path, changed):
+    async def scenario():
+        f = fixture(tmp_path)
+        state = await take(f)
+        token = f.boundary.input_token
+        phone = f.boundary.add_viewer(f.phone.owner, can_take=True)
+        values = {"request_id": "move", "revision": state.revision, "auth_expires_at": 2000, **changed}
+        with pytest.raises(control.ControlRejected):
+            await f.boundary.move(phone, **values)
+        assert f.boundary.state() == state
+        assert f.boundary.input_token == token and f.boundary.authorized(token)
+        assert not f.boundary._blocked
+    asyncio.run(scenario())

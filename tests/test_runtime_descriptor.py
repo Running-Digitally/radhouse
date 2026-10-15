@@ -184,3 +184,32 @@ def test_stale_and_conflicting_runtime_observations_cannot_promote_output(work_s
     fake_work.result=lambda *_: RuntimeResult('completed',result(work),observation_sequence=3)
     service.recover(work.task_id)
     assert work_service.get(alice,work.work_id,envelope=envelope()).state=='completed'
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize("terminal", [False, True])
+def test_newer_cursor_wins_race_between_admission_and_state_application(work_service, service,
+        alice, envelope, start, fake_work, store, monkeypatch, terminal):
+    work = work_service.submit(alice, envelope(), start)
+    old = RuntimeResult("completed", result(work), observation_sequence=1) if terminal else RuntimeResult(
+        "running", permission_request={"run_id": "synthetic-run", "request_id": "old", "command": "old decision"},
+        observation_sequence=1)
+    newer = RuntimeResult("running", observation_sequence=2)
+    fake_work.result = lambda *_: old
+    original = service._finish_work if terminal else service._running_result
+
+    def race(task_id, *args):
+        with store.transaction() as tx:
+            task = tx.task(task_id)
+            dispatch = tx.dispatch(task.attempt_id)
+        assert service._accept_runtime_observation(task_id, dispatch, newer)
+        return original(task_id, *args)
+
+    monkeypatch.setattr(service, "_finish_work" if terminal else "_running_result", race)
+    service.run(work.task_id)
+    with store.transaction() as tx:
+        task = tx.task(work.task_id)
+        dispatch = tx.dispatch(task.attempt_id)
+        assert dispatch.observation_sequence == 2 and dispatch.state == "accepted"
+        assert task.phase != "closed" and task.result is None and task.permission_request is None
+        assert tx.work_for_task(task.task_id).artifact_id is None

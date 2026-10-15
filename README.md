@@ -151,7 +151,9 @@ schema-1/2 chat files to schema 3 while retaining messages, legacy BLOB original
 saved sessions, frozen inputs and run receipts. Keep a compatible reader on rollback;
 previous binaries refuse schema 3. Do not replace the transcript with an older
 copy and lose newer messages. Startup verifies the exact existing authentication database, deployment marker,
-schema version 7 and migration digest. It does not provision users or migrate
+schema version 7 or 10 and its exact migration digest. The private pilot can retain
+schema 7; the default-off controller work foundation requires an explicit migration
+to schema 10. It does not provision users or migrate
 PostgreSQL. Do not start this version against a divergent or newer schema.
 
 The intended listener is loopback behind the existing private ingress, which

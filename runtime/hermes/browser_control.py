@@ -509,15 +509,20 @@ class BrowserController:
             self._save(db, state)
             return state
 
-    def request_takeover(self, identity: BrowserIdentity, owner: OwnerBinding,
-                         request_id: str, *, revision: int, auth_expires_at: float) -> ControlState:
-        """Retries retain their original revision; closed requests cannot reopen."""
+    def validate_takeover_request(self, request_id, revision, auth_expires_at):
+        """Validate transfer inputs before revoking any existing human lease."""
         _identifier(request_id)
         _positive(revision)
         now = self._now()
         if (type(auth_expires_at) not in (int, float) or not math.isfinite(auth_expires_at)
                 or auth_expires_at <= now):
             raise ControlRejected("authentication_expired")
+        return now
+
+    def request_takeover(self, identity: BrowserIdentity, owner: OwnerBinding,
+                         request_id: str, *, revision: int, auth_expires_at: float) -> ControlState:
+        """Retries retain their original revision; closed requests cannot reopen."""
+        now = self.validate_takeover_request(request_id, revision, auth_expires_at)
         with self._transaction() as db:
             self._admission()
             state = self._load(db, identity)

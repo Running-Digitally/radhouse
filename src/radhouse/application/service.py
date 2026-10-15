@@ -758,6 +758,8 @@ class Service:
             current = self._task(tx, task_id)
             if current.phase == "closed" or current.phase == "stopping":
                 return current
+            if not self._observation_is_current(tx.dispatch(current.attempt_id), result):
+                return current
             blockers = tuple(x for x in current.blockers if x not in _RUNTIME_ADMISSION_CODES and x not in {
                 "operation_unknown", "runtime_stop", "runtime_unavailable",
             })
@@ -814,6 +816,17 @@ class Service:
                 ), current_title.revision)
 
 
+    @staticmethod
+    def _observation_is_current(dispatch, result):
+        # Cursor admission and application use separate transactions. Another
+        # poll can commit a newer cursor in between; recheck under the write lock.
+        if dispatch is None:
+            return False
+        if result.observation_sequence is None:
+            return dispatch.observation_sequence == 0
+        return (dispatch.observation_sequence == result.observation_sequence
+                and dispatch.observation_digest == fingerprint(asdict(result)))
+
     def _accept_runtime_observation(self, task_id, dispatch, result):
         """Persist a cursor before consuming output; identical replay can finish
         application after a crash. An older snapshot cannot overwrite new state.
@@ -858,6 +871,8 @@ class Service:
             dispatch = tx.dispatch(dispatch_key)
             if dispatch is None or dispatch.state != "accepted" or task.attempt_id != dispatch.attempt_id:
                 raise Rejected("task_state_inconsistent")
+            if not self._observation_is_current(dispatch, result):
+                return task
             tx.save_dispatch(replace(dispatch, state="closed"))
             tx.finish_attempt(dispatch.attempt_id)
             blockers = set(task.blockers) - {

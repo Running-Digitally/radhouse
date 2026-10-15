@@ -258,6 +258,7 @@ class StreamingControl:
         if self._blocked or self.handler is None or self.current() != self.identity.generation:
             raise StreamRejected("input_boundary_unavailable")
         async with self.transition_lock:
+            self.controller.validate_takeover_request(request_id, revision, auth_expires_at)
             state = self.state()
             if state.principal_id != viewer.owner.principal_id:
                 raise StreamRejected("owner_mismatch")

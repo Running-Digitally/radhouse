@@ -54,6 +54,15 @@ def test_legacy_upgrade_preserves_tasks_and_requires_exact_version_digest(store,
     runtime = ApplicationPostgresStore(os.environ["RADHOUSE_VS0_DSN"], database, f"fixture-{run_id}")
     with pytest.raises(ApplicationStorageError, match="database_identity_mismatch"):
         with runtime.transaction(): pass
+    if legacy_version == 7:
+        from cryptography.fernet import Fernet
+        from radhouse.auth.local import LocalAuthService
+        # The real deployed schema lacks all work tables. Private chat sign-in
+        # must remain available without upgrading the retained controller.
+        auth = LocalAuthService(os.environ["RADHOUSE_VS0_DSN"],
+            expected_database=database, deployment_id=f"fixture-{run_id}",
+            encryption_key=Fernet.generate_key().decode(), expected_origin="https://synthetic.invalid")
+        auth.health()
     receipt = initialize_database(owner, **arguments)
     assert receipt.result == 'upgraded'
     assert receipt.schema_version == SCHEMA_VERSION
