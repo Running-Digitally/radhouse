@@ -35,6 +35,7 @@ try{
  expect(await page.locator('.browser-stream-frame').evaluate((e,old)=>e===old,frame)).toBe(true);
  const viewConnection=new URL(await page.locator('.browser-stream-frame').getAttribute('src'),origin).searchParams.get('connection');
  await page.getByRole('button',{name:'Take control privately',exact:true}).click();
+ await expect(page.locator('.browser-privacy')).toBeVisible();
  const controlConnection=new URL(await page.locator('.browser-stream-frame').getAttribute('src'),origin).searchParams.get('connection');
  expect(controlConnection).not.toBe(viewConnection);
  await expect(page.locator('.browser-privacy')).toBeVisible();
