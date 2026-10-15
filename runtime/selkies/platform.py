@@ -129,17 +129,28 @@ def retire():
 
 async def ensure(bridge, owned):
     global runtime
-    if runtime is not None:
-        if runtime.owned is not owned:
-            raise ValueError('stream_browser_busy')
-        return runtime
-    runtime = Platform(bridge, owned)
-    try:
-        await runtime.start()
-    except BaseException:
-        runtime = None
-        raise
-    return runtime
+    if runtime is None:
+        runtime = Platform(bridge, owned)
+        runtime.startup = asyncio.create_task(runtime.activate())
+        runtime.startup.add_done_callback(consume_failure)
+    current = runtime
+    if current.owned is not owned:
+        raise ValueError('stream_browser_busy')
+    if current.stopped:
+        raise ValueError('stream_retirement_unconfirmed')
+    # A disconnected request cannot cancel a startup shared with other callers.
+    # Nobody receives the instance until its server and boundary are ready.
+    await asyncio.shield(current.startup)
+    if runtime is not current or current.stopped:
+        raise ValueError('stream_retirement_unconfirmed')
+    return current
+
+
+def consume_failure(task):
+    # Startup/shutdown can outlive their HTTP request. Keep their result on the
+    # instance for subsequent callers without an unobserved task exception.
+    if not task.cancelled():
+        task.exception()
 
 
 class Platform:
@@ -154,6 +165,23 @@ class Platform:
         self.stopped = False
         self.connected_input = None
         self.pressure_checked = 0
+        self.ready = False
+        self.startup = None
+        self.shutdown = None
+        self.server = None
+        self.data = None
+        self.watcher = None
+        self.retirement = None
+        self.cleaned = False
+
+    async def activate(self):
+        try:
+            await self.start()
+            self.ready = not self.stopped
+        except BaseException:
+            self.stopped = True
+            await self.cleanup()
+            raise
 
     async def start(self):
         bridge, owned = self.bridge, self.owned
@@ -354,21 +382,66 @@ class Platform:
                 await self.boundary._drain()
             finally:
                 self.stopped = True
-                await asyncio.to_thread(retire)
+                self.retirement = asyncio.create_task(asyncio.to_thread(retire))
+                self.retirement.add_done_callback(consume_failure)
+                await asyncio.shield(self.retirement)
 
     async def stop(self):
-        global runtime
         self.stopped = True
-        self.boundary._blocked = True
-        self.boundary.input_token = None
-        await self.boundary.provision()
-        await self.boundary._drain()
-        self.watcher.cancel()
-        await asyncio.gather(self.watcher,return_exceptions=True)
-        await self.server.stop_server()
+        self.ready = False
+        if self.boundary is not None:
+            self.boundary._blocked = True
+            self.boundary.input_token = None
+        if (self.shutdown is None or self.shutdown.cancelled()
+                or self.shutdown.done() and self.shutdown.exception() is not None):
+            self.shutdown = asyncio.create_task(self.finish_stop())
+            self.shutdown.add_done_callback(consume_failure)
+        await asyncio.shield(self.shutdown)
+
+    async def finish_stop(self):
+        # A stop requested during startup cannot race later server allocation.
+        if self.startup is not None:
+            try:
+                await asyncio.shield(self.startup)
+            except Exception:
+                pass  # Cleanup may be retried, but failed ownership is retained.
+        await self.cleanup()
+
+    async def cleanup(self):
+        global runtime
+        if self.cleaned:
+            return
+        # Even failed revocation/draining must attempt to stop the transport.
+        # Only a fully confirmed cleanup releases the generation reservation.
+        try:
+            if self.boundary is not None:
+                self.boundary._blocked = True
+                self.boundary.input_token = None
+                if self.data is not None:
+                    await self.boundary.provision()
+                if self.boundary.handler is not None:
+                    await self.boundary._drain()
+        finally:
+            await self.stop_transport()
         self.observers.clear()
+        self.socket.unlink(missing_ok=True)
+        self.socket.parent.rmdir()
+        self.cleaned = True
         if runtime is self:
             runtime = None
+
+    async def stop_transport(self):
+        try:
+            if self.watcher is not None:
+                self.watcher.cancel()
+                await asyncio.gather(self.watcher, return_exceptions=True)
+            # Cancelling an asyncio waiter cannot stop an already-running thread.
+            # Its result must be known before another generation can launch.
+            if self.retirement is not None:
+                await asyncio.shield(self.retirement)
+        finally:
+            if self.server is not None:
+                await self.server.stop_server()
 
 
 async def relay(bridge, adapter, request):
@@ -379,7 +452,7 @@ async def relay(bridge, adapter, request):
         return error
     current = runtime
     tail = request.match_info['tail']
-    if current is None or current.stopped or '..' in tail or tail.startswith('/'):
+    if current is None or current.stopped or not current.ready or '..' in tail or tail.startswith('/'):
         return web.Response(status=409)
     path = '/chat/browser/stream/'+tail
     # The service-authenticated web relay asserts its freshly checked cookie

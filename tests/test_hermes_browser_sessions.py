@@ -970,3 +970,35 @@ def test_display_failure_before_native_spawn_does_not_poison_session(session,mon
         bridge._launch_owned('conversation','session','alice')
     assert session.browser._active_sessions=={}
     assert not retired
+
+
+def test_stream_service_authentication_precedes_body_and_runtime_access(session, monkeypatch):
+    async def scenario():
+        denial = Response({'error': 'unauthorized'}, status=401)
+        session.value._check_auth = lambda req: denial
+        async def forbidden_json():
+            pytest.fail('unauthenticated body was parsed')
+        req = SimpleNamespace(json=forbidden_json)
+        monkeypatch.setattr(bridge, '_streaming', object())
+        response = await bridge.handle_browser_session(
+            session.value, req, operation='open', api_server=None)
+        assert response is denial
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('invalid', ['expiry', 'generation', 'principal'])
+def test_invalid_stream_binding_never_reaches_runtime(session, monkeypatch, invalid):
+    session.bind()
+    body = session.body()
+    if invalid == 'expiry':
+        body['auth_expires_at'] = 0
+    elif invalid == 'generation':
+        body['generation'] = 'stale-generation'
+    else:
+        body['owner']['principal_id'] = 'other-owner'
+    async def forbidden_ensure(*args):
+        pytest.fail('invalid binding reached stream runtime')
+    monkeypatch.setattr(bridge, '_streaming', SimpleNamespace(ensure=forbidden_ensure))
+    status, payload = session.call('status', body)
+    assert status == 409
+    assert payload['error'] == 'browser_control_unavailable'

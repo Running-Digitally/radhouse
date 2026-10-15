@@ -426,6 +426,39 @@ def test_move_discards_an_observation_already_in_flight(tmp_path):
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize('revocation', ['expiry', 'retirement'])
+def test_late_platform_capture_cannot_outlive_lease_or_generation(tmp_path, revocation):
+    from tests.test_selkies_platform import platform
+    async def scenario():
+        f = fixture(tmp_path)
+        state = await take(f)
+        state = f.c.observation_mode(f.identity, f.desktop.owner,
+            state.lease.lease_id, state.revision, 'observe')
+        p = platform.Platform.__new__(platform.Platform)
+        p.boundary = f.boundary
+        p.bridge = SimpleNamespace(_controller=f.c)
+        p.owned = SimpleNamespace(identity=f.identity)
+        context = SimpleNamespace(run_id='observer', dispatch_key='observer-dispatch')
+        p.observers = {(context.run_id, context.dispatch_key):
+            (f.desktop.owner, state.lease.lease_id, state.lease.observation_epoch)}
+        entered, finish = asyncio.Event(), asyncio.Event()
+        async def capture():
+            entered.set()
+            await finish.wait()
+            return {'page': 'synthetic-withheld-page'}
+        p.snapshot = capture
+        read = asyncio.create_task(p.observation(context))
+        await entered.wait()
+        if revocation == 'expiry':
+            f.clock[0] += 11
+        else:
+            f.c.retire_browser(f.identity, control.RetirementObservation(f.identity, True, True))
+        finish.set()
+        with pytest.raises(control.ControlRejected, match='browser_observation_denied'):
+            await read
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("changed", [
     {"request_id": ""}, {"request_id": None},
     {"revision": None}, {"revision": True}, {"revision": "3"},
