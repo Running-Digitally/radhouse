@@ -148,6 +148,8 @@ class Platform:
             'SELKIES_MASTER_TOKEN':secrets.token_urlsafe(32),
             'SELKIES_MODE':'websockets','SELKIES_SUBFOLDER':'/chat/browser/stream',
             'SELKIES_WEB_ROOT':str(_root / 'web'),'SELKIES_UNIX_SOCKET':str(self.socket),
+            'SELKIES_JS_SOCKET_PATH':str(self.socket.parent),
+            'SELKIES_WEBCAM_SOCKET_PATH':str(self.socket.parent),
             'SELKIES_ENABLE_BASIC_AUTH':'false','SELKIES_ENABLE_DUAL_MODE':'false',
             'SELKIES_AUDIO_ENABLED':'false','SELKIES_ENABLE_RESIZE':'false',
             'SELKIES_GAMEPAD_ENABLED':'false|locked','SELKIES_PRINTING_ENABLED':'false|locked',

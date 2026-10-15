@@ -1204,6 +1204,14 @@ def _launch_owned(conversation_id, session_id, principal_id, *, run=None):
             return owned
         if _browser_configuration is None or maintenance_held():
             raise control.ControlRejected("browser_control_unavailable")
+        if _streaming is not None:
+            # The embedded display owns one browser. Reject a second identity
+            # before creating a launch record or entering failed-launch cleanup.
+            for previous in list(_owned_browsers.values()):
+                old = _controller.state(previous.identity)
+                _current_owned(previous.identity.conversation_id, previous.identity.session_id, old.principal_id)
+            if _owned_browsers:
+                raise control.ControlRejected("browser_control_busy")
         with browser._cleanup_lock:
             if session_id in browser._active_sessions:
                 raise control.ControlRejected("previous_generation_unresolved")
@@ -1775,11 +1783,13 @@ async def handle_browser_session(adapter, request, *, operation, api_server):
                     await runtime.boundary.reconcile()
                 state = await asyncio.to_thread(_pause_owned, owned, owner)
             elif operation == "close":
-                if runtime is not None:
-                    await runtime.stop()
+                # Revoke durable authority before awaiting transport shutdown;
+                # another chat admission cannot enter the shutdown interval.
                 result = await asyncio.to_thread(
                     _owner_close, adapter, request, owned, owner, body
                 )
+                if runtime is not None:
+                    await runtime.stop()
                 if not result.completed:
                     raise control.ControlRejected("retirement_unproven")
                 deadline = time.monotonic() + 3

@@ -913,3 +913,30 @@ def test_streaming_return_requires_explicit_return_and_typed_drain_proof(session
         assert session.c.state(session.identity).admitted_run.run_id=='fresh'
         assert runtime.handover is None
     asyncio.run(scenario())
+
+
+def test_second_stream_identity_cannot_retire_existing_browser(session,monkeypatch):
+    session.bind()
+    monkeypatch.setitem(sys.modules,'tools.browser_tool_session',ModuleType('tools.browser_tool_session'))
+    retired=[]
+    monkeypatch.setattr(bridge,'_streaming',SimpleNamespace(retire=lambda:retired.append(True)))
+    with pytest.raises(control.ControlRejected,match='browser_control_busy'):
+        bridge._launch_owned('other-conversation','other-session','alice')
+    assert not retired
+    assert bridge._owned_browsers['session'] is session.owned
+    assert session.browser._active_sessions=={}
+
+
+def test_close_revokes_before_transport_shutdown(session,monkeypatch):
+    session.bind();gone=[False]
+    monkeypatch.setattr(bridge,'_pid_gone',lambda *args:gone[0])
+    stopped=[]
+    async def stop():
+        assert session.c.state(session.identity).mode=='paused'
+        stopped.append(True);gone[0]=True
+    runtime=SimpleNamespace(stop=stop)
+    async def ensure(*args):return runtime
+    monkeypatch.setattr(bridge,'_streaming',SimpleNamespace(ensure=ensure,retire=lambda:None))
+    status,payload=session.call('close',session.body())
+    assert stopped==[True]
+    assert status==200 and payload['state']=='idle'
