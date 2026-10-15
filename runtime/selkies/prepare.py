@@ -95,11 +95,18 @@ def prepare(archive, native, chrome_archive, output):
     shutil.copytree(core, output / "client-source", ignore=shutil.ignore_patterns("node_modules", "dist"))
     shutil.copyfile(source / "LICENSE", output / "client-source/LICENSE")
     shutil.copyfile(HERE / "web/stream-bridge.js", output / "selkies-web/bridge.js")
+    shutil.copyfile(HERE / "web/transport.js", output / "selkies-web/transport.js")
     shutil.copyfile(HERE / "web/mobile-input.js", output / "selkies-web/mobile-input.js")
     for name in ("hardware-keyboard.js", "touch-controls.js"):
         shutil.copyfile(core / "lib" / name, output / "selkies-web" / name)
     index = output / "selkies-web/index.html"
-    index.write_text(index.read_text().replace("</head>", '<script type="module" src="bridge.js"></script></head>'))
+    html = index.read_text()
+    if "<head>" not in html:
+        raise ValueError("selkies_html_unqualified")
+    # A classic external script executes before the deferred core module and
+    # works with the existing CSP; do not rely on module fetch/evaluation races.
+    index.write_text(html.replace("<head>", '<head><script src="./transport.js"></script>', 1)
+        .replace("</head>", '<script type="module" src="bridge.js"></script></head>'))
     # Selkies packages its frontend; the qualification instead serves the core
     # directly in Radhouse's iframe, without the upstream desktop dashboard.
     bundle = source / "src/selkies/selkies_web"

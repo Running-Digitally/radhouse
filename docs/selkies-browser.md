@@ -162,3 +162,7 @@ here. The previous tab becomes viewing-only. Neither a playback tap nor merely
 opening the Browser tab transfers control. Use **Let agent observe** again only
 when you want requested read-only page observations on this device. A lost or
 unconfirmed move is not automatically retried.
+
+The embedded viewer pins its WebSocket transport before the upstream core loads.
+An old dashboard/WebRTC preference or an earlier transient connection rejection
+cannot select a transport that this deployment does not expose.
