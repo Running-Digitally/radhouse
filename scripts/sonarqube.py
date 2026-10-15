@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -17,14 +18,15 @@ import tomllib
 ROOT = Path(__file__).resolve().parents[1]
 KEYCHAIN_SERVICE = "radhouse-sonarqube"
 KEYCHAIN_ACCOUNT = "local-analysis"
+HERMES_SOURCE = "https://github.com/NousResearch/hermes-agent.git"
 
 
 class ScanError(Exception):
     """A prerequisite or merged-source check failed before analysis."""
 
 
-def git(root: Path, *args: str) -> str:
-    result = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True)
+def git(root: Path, *args: str, env=None) -> str:
+    result = subprocess.run(["git", *args], cwd=root, env=env, capture_output=True, text=True)
     if result.returncode:
         raise ScanError(f"git {args[0]} failed; check origin access and main branch availability")
     return result.stdout.strip()
@@ -105,29 +107,69 @@ def _verified_reports(checkout, fixture, manifest_path, manifest):
     return reports
 
 
+@contextmanager
+def native_fixture(checkout, environment, *, remote=HERMES_SOURCE):
+    """Supply exact upstream test source outside analysis; never use an owner profile."""
+    pin = json.loads((checkout / "runtime/hermes/source-lock.json").read_text())["upstream_commit"]
+    if not isinstance(pin, str) or len(pin) != 40 or any(c not in "0123456789abcdef" for c in pin):
+        raise ScanError("native qualification requires a full pinned Hermes commit")
+    env = environment.copy()
+    env.pop("SONAR_TOKEN", None)
+    with tempfile.TemporaryDirectory(prefix="radhouse-native-qualification-") as temporary:
+        root = Path(temporary)
+        source = root / "source"
+        commands = (["git", "init", "--quiet", str(source)],
+                    ["git", "-C", str(source), "remote", "add", "origin", remote],
+                    ["git", "-C", str(source), "fetch", "--quiet", "--depth=1", "origin", pin],
+                    ["git", "-C", str(source), "checkout", "--quiet", "--detach", "FETCH_HEAD"])
+        for args in commands:
+            result = subprocess.run(args, env=env, capture_output=True, text=True, timeout=300)
+            if result.returncode:
+                raise ScanError("pinned Hermes qualification source preparation failed")
+        if git(source, "rev-parse", "HEAD", env=env) != pin or git(source, "status", "--porcelain", env=env):
+            raise ScanError("native qualification source must be clean at the pinned commit")
+        home = root / "synthetic-home"
+        home.mkdir(mode=0o700)
+        env.update(RADHOUSE_TEST_HERMES_SOURCE=str(source), HERMES_HOME=str(home),
+                   PYTHONPATH=os.pathsep.join((str(checkout / "src"), str(checkout), str(source))))
+        yield env, {"repository": remote, "source_commit": pin, "profile": "disposable_synthetic"}
+        if git(source, "rev-parse", "HEAD", env=env) != pin or git(source, "status", "--porcelain", env=env):
+            raise ScanError("native qualification source changed during verification")
+
+
 def qualify(checkout, revision, output):
     env = os.environ.copy()
     env.pop("SONAR_TOKEN", None)
     commands = [(["uv", "sync", "--frozen"], "Python dependencies"),
-                (["npm", "--prefix", "web", "ci"], "web dependencies"),
-                (["uv", "run", "--frozen", "python", "scripts/vs0.py", "verify", "--coverage"], "owned test and coverage verification")]
+                (["npm", "--prefix", "web", "ci"], "web dependencies")]
     result = None
     for args, label in commands:
         print(f"Preparing {label} from merged source", flush=True)
         result = subprocess.run(args, cwd=checkout, env=env, text=True, capture_output=True, timeout=1200)
         if result.returncode:
             raise ScanError(f"{label} failed (exit {result.returncode}); no analysis submitted")
+    print("Preparing pinned Hermes source and disposable synthetic profile", flush=True)
+    with native_fixture(checkout, env) as (fixture_env, fixture_evidence):
+        print("Preparing owned test and coverage verification from merged source", flush=True)
+        result = subprocess.run(
+            ["uv", "run", "--frozen", "python", "scripts/vs0.py", "verify", "--coverage"],
+            cwd=checkout, env=fixture_env, text=True, capture_output=True, timeout=1200,
+        )
+        if result.returncode:
+            raise ScanError(f"owned test and coverage verification failed (exit {result.returncode}); no analysis submitted")
     locators = [line.removeprefix("Sanitized run manifest: ") for line in result.stdout.splitlines()
                 if line.startswith("Sanitized run manifest: ")]
     if len(locators) != 1:
         raise ScanError("test verification did not identify exactly one owned fixture manifest")
     manifest, reports = verified_coverage(checkout, revision, checkout / locators[0])
+    manifest["native_fixture"] = fixture_evidence
     for name, path in reports.items():
         destination = output / path.name
         shutil.copyfile(path, destination)
         reports[name] = destination
     (output / "verification.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    return reports, {"tests": manifest["tests"], "reports": manifest["coverage"]}
+    return reports, {"tests": manifest["tests"], "reports": manifest["coverage"],
+                     "native_fixture": fixture_evidence}
 
 
 def scan_process(args, checkout, env, credential, output):

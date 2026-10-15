@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from scripts.sonarqube import ScanError, analyze, prerequisites, qualify, verified_coverage
+from scripts.sonarqube import ScanError, analyze, native_fixture, prerequisites, qualify, verified_coverage
 
 
 class LocalSonarTests(unittest.TestCase):
@@ -169,13 +169,66 @@ class LocalSonarTests(unittest.TestCase):
             locator = f"Sanitized run manifest: {path.relative_to(self.root)}\n"
             return subprocess.CompletedProcess(args, 0, locator, "")
         with patch.dict(os.environ, {"SONAR_TOKEN": "synthetic-secret"}):
-            with patch("scripts.sonarqube.subprocess.run", side_effect=run):
-                reports, evidence = qualify(self.root, self.revision, output)
+            fixture = contextlib.nullcontext(({}, {"source_commit": "synthetic-upstream"}))
+            with patch("scripts.sonarqube.native_fixture", return_value=fixture):
+                with patch("scripts.sonarqube.subprocess.run", side_effect=run):
+                    reports, evidence = qualify(self.root, self.revision, output)
         self.assertEqual(evidence["tests"]["tests"], 1)
+        self.assertEqual(evidence["native_fixture"]["source_commit"], "synthetic-upstream")
         self.assertTrue((output / "verification.json").is_file())
         for report in reports.values():
             self.assertEqual(report.parent, output)
             self.assertTrue(report.is_file())
+
+    def native_lock(self, revision):
+        directory = self.root / "runtime/hermes"
+        directory.mkdir(parents=True)
+        (directory / "source-lock.json").write_text(json.dumps({"upstream_commit": revision}))
+
+    def test_native_fixture_uses_pinned_source_and_isolated_home_then_cleans_up(self):
+        self.native_lock(self.revision)
+        (self.remote / "source.py").write_text("LATER = True\n")
+        self.command(self.remote, "commit", "-am", "later upstream")
+        environment = {**os.environ, "SONAR_TOKEN": "synthetic-secret",
+                       "HERMES_HOME": "/synthetic-owner-profile", "PYTHONPATH": "/foreign-source"}
+        with native_fixture(self.root, environment, remote=str(self.remote)) as (env, evidence):
+            source = Path(env["RADHOUSE_TEST_HERMES_SOURCE"])
+            home = Path(env["HERMES_HOME"])
+            self.assertEqual(self.command(source, "rev-parse", "HEAD"), self.revision)
+            self.assertEqual((source / "source.py").read_text(), "MERGED = True\n")
+            self.assertFalse(source.is_relative_to(self.root))
+            self.assertEqual(list(home.iterdir()), [])
+            self.assertEqual(home.stat().st_mode & 0o777, 0o700)
+            self.assertNotIn("SONAR_TOKEN", env)
+            self.assertNotIn("/foreign-source", env["PYTHONPATH"])
+            self.assertEqual(evidence["source_commit"], self.revision)
+        self.assertFalse(source.exists())
+        self.assertFalse(home.exists())
+        self.assertEqual(environment["HERMES_HOME"], "/synthetic-owner-profile")
+
+    def test_native_fixture_rejects_non_commit_pin_before_fetch(self):
+        self.native_lock("main")
+        with patch("scripts.sonarqube.subprocess.run") as run:
+            with self.assertRaisesRegex(ScanError, "full pinned"):
+                with native_fixture(self.root, {}):
+                    self.fail("invalid pin admitted")
+        run.assert_not_called()
+
+    def test_native_fixture_cleans_up_after_qualification_exception(self):
+        self.native_lock(self.revision)
+        with self.assertRaisesRegex(RuntimeError, "synthetic failure"):
+            with native_fixture(self.root, os.environ, remote=str(self.remote)) as (env, _):
+                source = Path(env["RADHOUSE_TEST_HERMES_SOURCE"])
+                raise RuntimeError("synthetic failure")
+        self.assertFalse(source.exists())
+
+    def test_native_fixture_rejects_upstream_mutation_during_verification(self):
+        self.native_lock(self.revision)
+        with self.assertRaisesRegex(ScanError, "changed during verification"):
+            with native_fixture(self.root, os.environ, remote=str(self.remote)) as (env, _):
+                source = Path(env["RADHOUSE_TEST_HERMES_SOURCE"])
+                (source / "source.py").write_text("CHANGED = True\n")
+        self.assertFalse(source.exists())
 
     def test_main_moving_after_tests_prevents_submission(self):
         def move_main(*args):
