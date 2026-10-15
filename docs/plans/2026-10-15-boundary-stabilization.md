@@ -426,3 +426,41 @@ PR/merge state and subsequent scan receipt, then complete S1/B1 and B2. The fina
 same-session handoff must state the latest analyzed SHA and any remaining work.
 The original shared development checkout contains unrelated work and must not
 be reset or reused without inspecting its ownership and dirty state.
+
+## Patched Linux/X11 qualification candidate
+
+The next bounded candidate pairs B2 with Chrome for Testing `155.0.8059.79`
+for Linux amd64, replacing the previous frozen Chrome bytes. The upstream
+[Stable metadata](https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json)
+identified revision `1697595`; the downloaded archive SHA-256 is
+`bcd9a79130d7e44d70f93be87042e9bcee7fe0f0b3898e06b8c9bed5fb619dcd`.
+The source lock verifies the executable SHA-256 independently. The reviewed
+page-only driver and Selkies source remain frozen.
+
+Qualify installed `cryptography==50.0.2` and `multidict==6.9.1` with this browser
+and the merged runtime before pilot promotion. Updating a requirements file
+does not update an installed environment: freeze and verify the actual loaded
+distributions, preserve Hermes dependency precedence, and use a separate
+immutable environment for this proof. This is an upstream package selection,
+without modifying general Hermes or Selkies implementation. The installed
+`aiohttp==3.14.3` requires `multidict<7`; select the patched 6.9.1 release rather
+than introducing an incompatible major version. The separately built Selkies
+image has its own newer aiohttp/requirements contract.
+
+Acceptance requires actual Linux/X11 public navigation, authenticated UDS video,
+real input and revocation, Private/Observe isolation, drained handback,
+retirement/reopen with B2 cleanup, and renderer namespace/BPF and bounded-resource
+evidence. Retain dependency compatibility and old Fernet/TOTP ciphertext checks.
+Use synthetic state and a fresh browser profile; preserve the running pilot's
+selection, credentials, conversations, profiles and stores. Qualification and
+deployment readiness are separate from authorizing pilot promotion. Private
+installation paths, host facts, receipts and deployment controls stay in the
+Homelab records.
+
+Linux qualification found that the pinned upstream input handler allocates
+process-wide gamepad Unix listeners even when gamepad messages are disabled.
+The owned adapter now sets its gamepad count to zero before connecting input,
+so this unsupported capability does not allocate endpoints that outlive a
+browser generation. Strict directory cleanup remains: unexpected resources
+must still prevent replacement. Linux acceptance checks the actual endpoint
+inventory and complete close/reopen, without modifying upstream source.

@@ -264,6 +264,10 @@ class Platform:
         class Data(DataStreamingServer):
             def initialize(inner):
                 super().initialize()
+                # The upstream handler otherwise creates process-wide gamepad
+                # listeners, even with gamepad messages disabled. This adapter
+                # owns only keyboard/pointer input and retires per generation.
+                inner.input_handler.num_gamepads = 0
                 boundary.attach(inner.input_handler, lambda cid: next((p.get('token') for ws,p in client_permissions.items() if id(ws)==cid),None))
                 async def no_clipboard_monitor():
                     return
