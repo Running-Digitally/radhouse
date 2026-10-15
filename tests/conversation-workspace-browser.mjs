@@ -53,6 +53,16 @@ try{
  expect(await page.locator('.browser-stream-frame').evaluate((e,old)=>e===old,frame)).toBe(true);
  results.push('desktop preview expansion, same stream, privacy switch, minimize and draft retention');
  await page.locator('#browser-preview-open').click();
+ await page.getByRole('button',{name:'Zoom',exact:true}).click();
+ const zoom=await page.locator('.browser-view-viewport').evaluate(e=>{const r=e.getBoundingClientRect(),f=e.querySelector('iframe').getBoundingClientRect();return {left:f.left-r.left,top:f.top-r.top,width:e.scrollWidth,height:e.scrollHeight};});
+ expect(zoom.left,'Zoom keeps the left browser edge reachable').toBeGreaterThanOrEqual(-1);
+ expect(zoom.top,'Zoom keeps Chrome controls reachable').toBeGreaterThanOrEqual(-1);
+ expect(zoom.width).toBeGreaterThanOrEqual(1280);expect(zoom.height).toBeGreaterThanOrEqual(900);
+ await page.getByRole('button',{name:'Fit',exact:true}).click();
+ await page.locator('#browser-minimize').click();
+ results.push('Zoom preserves reachable top/left and the complete scroll range');
+
+ await page.locator('#browser-preview-open').click();
  for(const [width,height]of [[320,640],[375,667],[390,844],[430,932],[844,390],[390,360],[320,360]]){
   await page.setViewportSize({width,height});
   expect(await page.locator('header').evaluate(e=>e.getBoundingClientRect().height)).toBeLessThanOrEqual(72);

@@ -191,3 +191,10 @@ not change. The remote desktop remains 1280×900; Fit is an overview and Zoom
 requires panning on phones. Persistent post-task previews are a later product
 decision: the current requested behavior hides the preview when agent browser
 work stops. These checks do not emulate a physical iPhone OS keyboard.
+
+
+Live Zoom geometry also exposed unreachable left/top edges: the enlarged
+1280×900 iframe inherited centered flex alignment, leaving negative offsets
+that a scroll container cannot reveal. Anchor the zoomed iframe at the top
+left so Chrome controls and the complete display are reachable by panning.
+A regression checks both edges and the full scroll range, then returns to Fit.
