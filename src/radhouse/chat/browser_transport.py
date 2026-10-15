@@ -49,9 +49,13 @@ def install_stream_routes(app, auth, service, browser):
             headers['X-Radhouse-Stream-Token'] = token
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15),trust_env=False) as client:
             async with client.get(url,headers=headers,allow_redirects=False) as upstream:
-                body = await upstream.content.read(MAX_ASSET+1)
-                if len(body)>MAX_ASSET:
-                    raise Rejected('browser_stream_unavailable',503)
+                chunks=[];size=0
+                async for chunk in upstream.content.iter_chunked(64*1024):
+                    size+=len(chunk)
+                    if size>MAX_ASSET:
+                        raise Rejected('browser_stream_unavailable',503)
+                    chunks.append(chunk)
+                body=b''.join(chunks)
                 after = await asyncio.to_thread(authenticate,request)
                 if (before.token,before.principal_id,before.conversation_id,before.binding_revision) != (after.token,after.principal_id,after.conversation_id,after.binding_revision):
                     raise Rejected('browser_binding_changed',409)

@@ -435,7 +435,8 @@ def test_stream_http_strips_owner_cookies_and_rechecks_binding(app,monkeypatch):
     native._runs=SimpleNamespace(_client=SimpleNamespace(base_url='http://127.0.0.1:8642/',headers={'Authorization':'Bearer synthetic-service'}))
     calls=[]
     class Body:
-        async def read(self,limit): return b'<html>synthetic stream</html>'
+        async def iter_chunked(self,size):
+            for chunk in (b'<html>',b'synthetic ',b'stream</html>'):yield chunk
     class Reply:
         status=200;headers={'Content-Type':'text/html'};content=Body()
         async def __aenter__(self):return self
@@ -448,6 +449,7 @@ def test_stream_http_strips_owner_cookies_and_rechecks_binding(app,monkeypatch):
     monkeypatch.setattr(aiohttp,'ClientSession',Session)
     response=client.get('/chat/browser/stream/index.html?ignored=1',headers={'Sec-Fetch-Site':'same-origin'})
     assert response.status_code==200
+    assert response.content==b'<html>synthetic stream</html>'
     assert calls[0][0]=='http://127.0.0.1:8642/v1/browser-stream/index.html'
     headers=calls[0][1]['headers']
     assert set(headers)=={'Authorization','X-Radhouse-Stream-Owner'}

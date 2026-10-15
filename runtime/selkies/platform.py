@@ -392,7 +392,11 @@ async def relay(bridge, adapter, request):
                     await asyncio.gather(*tasks,return_exceptions=True)
                     await downstream.close()
                 return downstream
-        async with client.get(url,headers={'Authorization':'Bearer '+token} if token else {}) as response:
-            body = await response.content.read(16*1024*1024+1)
-            if len(body)>16*1024*1024: return web.Response(status=502)
+        async with client.get(url,headers={'Authorization':'Bearer '+token} if token else {},timeout=ClientTimeout(total=15)) as response:
+            chunks=[];size=0
+            async for chunk in response.content.iter_chunked(64*1024):
+                size+=len(chunk)
+                if size>16*1024*1024: return web.Response(status=502)
+                chunks.append(chunk)
+            body=b''.join(chunks)
             return web.Response(body=body,status=response.status,headers={'Content-Type':response.headers.get('Content-Type','application/octet-stream'),'Cache-Control':'no-store'})
