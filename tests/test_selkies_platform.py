@@ -45,3 +45,38 @@ def test_private_waits_for_and_discards_inflight_observation(tmp_path):
         assert (await private).lease.observation_mode=='private'
         with pytest.raises(control.ControlRejected): await p.observation(context)
     asyncio.run(scenario())
+
+
+def test_real_uvicorn_websocket_upgrade_and_binary_transfer():
+    """TestClient alone cannot detect an absent production WS server backend."""
+    import socket
+    import aiohttp
+    import uvicorn
+    async def scenario():
+        payload=b'qualified-video-packet'*16000
+        async def app(scope,receive,send):
+            assert scope['type']=='websocket'
+            assert (await receive())['type']=='websocket.connect'
+            await send({'type':'websocket.accept','subprotocol':'selkies'})
+            assert (await receive())['text']=='START_VIDEO'
+            await send({'type':'websocket.send','bytes':payload})
+            await send({'type':'websocket.close','code':1000})
+        listener=socket.socket();listener.bind(('127.0.0.1',0));listener.listen(5)
+        server=uvicorn.Server(uvicorn.Config(app,ws='wsproto',lifespan='off',log_config=None,access_log=False))
+        task=asyncio.create_task(server.serve(sockets=[listener]))
+        try:
+            for _ in range(100):
+                if server.started:break
+                await asyncio.sleep(.01)
+            assert server.started
+            async with aiohttp.ClientSession() as client:
+                async with client.ws_connect('http://127.0.0.1:'+str(listener.getsockname()[1]),protocols=['selkies']) as ws:
+                    assert ws.protocol=='selkies'
+                    await ws.send_str('START_VIDEO')
+                    message=await ws.receive(timeout=3)
+                    assert message.type==aiohttp.WSMsgType.BINARY and message.data==payload
+        finally:
+            server.should_exit=True
+            await task
+            listener.close()
+    asyncio.run(scenario())
