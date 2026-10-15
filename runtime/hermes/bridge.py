@@ -1312,7 +1312,7 @@ def _launch_owned(conversation_id, session_id, principal_id, *, run=None):
             lifecycle._update_session_activity(session_id)
             lifecycle._start_browser_cleanup_thread()
             return owned
-        except BaseException:
+        except BaseException as error:
             if stream_started:
                 _streaming.retire()
             if channel is not None:
@@ -1349,7 +1349,11 @@ def _launch_owned(conversation_id, session_id, principal_id, *, run=None):
                             )
             except Exception:
                 pass  # Remains tracked/unresolved; observations and another Open fail closed.
-            raise control.ControlRejected("browser_launch_failed") from None
+            if isinstance(error, Exception):
+                raise control.ControlRejected("browser_launch_failed") from None
+            # Cleanup must also run on cancellation and process termination,
+            # but those signals must still reach the owning executor.
+            raise
 
 
 @contextmanager

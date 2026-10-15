@@ -1256,7 +1256,8 @@ def test_qualification_observation_timeout_waits_for_child_finally(tmp_path):
     assert marker.read_text() == "cleaned"
 
 
-def test_qualification_repeated_termination_is_deferred_until_native_exit(monkeypatch):
+@pytest.mark.parametrize("wait_error", [OSError, KeyboardInterrupt, SystemExit, asyncio.CancelledError])
+def test_qualification_repeated_termination_is_deferred_until_native_exit(monkeypatch, wait_error):
     bootstrap = load("radhouse_browser_qualification_signal_test", RUNTIME / "bootstrap.py")
     handlers, originals, waits = {}, {}, []
     def install(sig, handler):
@@ -1286,7 +1287,7 @@ def test_qualification_repeated_termination_is_deferred_until_native_exit(monkey
         for sig in (bootstrap.signal.SIGTERM, bootstrap.signal.SIGINT):
             handlers[sig](sig, None)
         if len(waits) < 3:
-            raise OSError("failed observation")
+            raise wait_error("failed observation")
         return pid, 0
     monkeypatch.setattr(bootstrap.signal, "signal", install)
     monkeypatch.setattr(bootstrap.subprocess, "Popen", lambda *args, **kwargs: child)
@@ -1298,13 +1299,14 @@ def test_qualification_repeated_termination_is_deferred_until_native_exit(monkey
     assert handlers == originals
 
 
-def test_qualification_failed_wait_still_reaps_real_child_cleanup(tmp_path, monkeypatch):
+@pytest.mark.parametrize("wait_error", [RuntimeError, KeyboardInterrupt, SystemExit, asyncio.CancelledError])
+def test_qualification_failed_wait_still_reaps_real_child_cleanup(tmp_path, monkeypatch, wait_error):
     bootstrap = load("radhouse_browser_qualification_wait_failure_test", RUNTIME / "bootstrap.py")
     marker = tmp_path / "finally-finished"
     real_process = bootstrap.subprocess.Popen
     class BrokenObserver(real_process):
         def wait(self, timeout=None):
-            raise RuntimeError("diagnostic wait failed")
+            raise wait_error("diagnostic wait failed")
         def poll(self):
             pytest.fail("fallback must not depend on Popen polling")
     monkeypatch.setattr(bootstrap.subprocess, "Popen", BrokenObserver)
