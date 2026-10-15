@@ -32,7 +32,7 @@
           this.input=event.data;this.render();
           view.container.dispatchEvent(new CustomEvent('browser-input-focus',{bubbles:true,detail:{focused:this.input.focused}}));
         }
-        if(event.data?.type==='framePresented'){this.presented=true;this.render();}
+        if(event.data?.type==='framePresented'){const first=!this.presented;this.presented=true;this.render();if(first&&!this.preview)this.view.container.closest('#browser-page')?.scrollTo({top:0});}
       };
       window.addEventListener('message',this.message);
       this.frameLoad=()=>{
@@ -40,7 +40,7 @@
           if(!event.isTrusted || Date.now()-(this.lastActivity||0)<1000)return;
           this.lastActivity=Date.now();view.container.dispatchEvent(new CustomEvent('browser-activity',{bubbles:true}));
         };
-        for(const type of ['pointerdown','keydown','wheel','touchstart'])this.frame.contentDocument?.addEventListener(type,activity,{capture:true,passive:true});
+        for(const type of ['pointerdown','keydown','wheel','touchstart','input','compositionend'])this.frame.contentDocument?.addEventListener(type,activity,{capture:true,passive:true});
       };
       this.frame.addEventListener('load',this.frameLoad);
       this.focus=event=>{if(event.target.closest?.('#compose'))this.hideKeyboard();};document.addEventListener('focusin',this.focus);

@@ -70,6 +70,5 @@
   .workspace-browser #assistant-browser{min-height:280px}
   .browser-privacy span{display:none}
   .browser-stream-tools{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .conversation-keyboard-open.workspace-browser .browser-utilities{display:none}
   .conversation-keyboard-open .workspace-browser .browser-actions,.conversation-keyboard-open .workspace-browser .browser-utilities{display:none}
 }
