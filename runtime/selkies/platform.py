@@ -210,7 +210,12 @@ class Platform:
         from aiohttp import web
         from selkies import sessions
         from selkies.settings import settings
+        # Upstream settings are process-cached. Rebind every generation-owned
+        # endpoint and master capability before constructing another backend.
         settings.unix_socket = str(self.socket)
+        settings.js_socket_path = str(self.socket.parent)
+        settings.webcam_socket_path = str(self.socket.parent)
+        settings.master_token = os.environ['SELKIES_MASTER_TOKEN']
         from selkies.stream_server import CentralizedStreamServer
         from selkies.websockets_mode import DataStreamingServer, client_permissions, reconcile_clients
         for name in ('input', 'ws'):
