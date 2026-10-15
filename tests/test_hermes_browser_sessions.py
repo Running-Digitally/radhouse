@@ -610,10 +610,11 @@ def test_saved_vault_values_are_redacted_as_string_leaves_before_json_escaping(
 
 
 @pytest.mark.parametrize("verified", [True, False])
+@pytest.mark.parametrize("launch_error", [None, KeyboardInterrupt, SystemExit, asyncio.CancelledError])
 def test_failed_native_bootstrap_retires_only_with_positive_process_identity(
-    session, monkeypatch, tmp_path, verified
+    session, monkeypatch, tmp_path, verified, launch_error
 ):
-    # Keep the real launch/failure path while injecting a malformed native launch ACK.
+    # Keep the real launch/failure path with an invalid ACK or interrupted launch.
     browser_session = ModuleType("tools.browser_tool_session")
     browser_session._session_record = lambda *args: {
         "session_name": "h_0123456789",
@@ -649,14 +650,22 @@ def test_failed_native_bootstrap_retires_only_with_positive_process_identity(
         },
     )
     launches = []
+    interruption = launch_error() if launch_error is not None else None
 
     def launch(argv, **kwargs):
         launches.append((argv, kwargs["umask"]))
+        if interruption is not None:
+            raise interruption
         return SimpleNamespace(returncode=0, stdout=b"invalid JSON")
 
     monkeypatch.setattr(bridge.subprocess, "run", launch)
-    with pytest.raises(control.ControlRejected, match="browser_launch_failed"):
+    expected = launch_error or control.ControlRejected
+    with pytest.raises(expected) as rejected:
         bridge._launch_owned("conversation", "session", "alice")
+    if interruption is not None:
+        assert rejected.value is interruption
+    else:
+        assert str(rejected.value) == "browser_launch_failed"
     assert launches[0][0][-2:] == ["--", "about:blank"] and launches[0][1] == 0o077
     assert ("session" not in session.browser._active_sessions) is verified
     assert (
@@ -953,7 +962,8 @@ def test_positive_retirement_also_clears_retained_process_bookkeeping(session,mo
     assert session.released==['session']
 
 
-def test_display_failure_before_native_spawn_does_not_poison_session(session,monkeypatch,tmp_path):
+@pytest.mark.parametrize('failure_type', [ValueError, KeyboardInterrupt, SystemExit, asyncio.CancelledError])
+def test_display_failure_before_native_spawn_does_not_poison_session(session,monkeypatch,tmp_path,failure_type):
     monkeypatch.setitem(sys.modules,'psutil',ModuleType('psutil'))
     module=ModuleType('tools.browser_tool_session')
     module._session_record=lambda *args:{'session_name':'h_0123456789'}
@@ -964,10 +974,16 @@ def test_display_failure_before_native_spawn_does_not_poison_session(session,mon
     monkeypatch.setattr(session.lifecycle,'_start_browser_cleanup_thread',lambda:None,raising=False)
     monkeypatch.setattr(bridge,'_browser_configuration',{'chromium_path':'/qualified/chrome','agent_browser_path':'/qualified/native','empty_config_path':'/qualified/empty.json'})
     retired=[]
-    def fail(*args):raise ValueError('display_unavailable')
+    failure = failure_type('display_unavailable')
+    def fail(*args):raise failure
     monkeypatch.setattr(bridge,'_streaming',SimpleNamespace(launch=fail,retire=lambda:retired.append(True)))
-    with pytest.raises(control.ControlRejected,match='browser_launch_failed'):
+    expected = control.ControlRejected if failure_type is ValueError else failure_type
+    with pytest.raises(expected) as rejected:
         bridge._launch_owned('conversation','session','alice')
+    if failure_type is ValueError:
+        assert str(rejected.value) == 'browser_launch_failed'
+    else:
+        assert rejected.value is failure
     assert session.browser._active_sessions=={}
     assert not retired
 

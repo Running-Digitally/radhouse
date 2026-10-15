@@ -26,6 +26,14 @@ version and capability negotiation; redaction; update qualification; and recover
 Upstream maintainers own their general implementation and release processes.
 Radhouse still owns the decision to use a particular version on an enabled path.
 
+Recovery includes the adapter's interruption and callback contracts. Cleanup must
+retain ownership of uncertain effects; process termination and executor
+cancellation must not silently become an ordinary retryable launch failure.
+Qualification may defer interruption until owned child cleanup finishes, but
+must then report an unsuccessful observation. Preserve concrete state types and
+awaitable callback interfaces when addressing analyzer feedback. A warning is
+not permission to weaken those contracts; record evidence for contextual review.
+
 Inventory the active native chat/runtime contract separately from the earlier
 platform's opt-in descriptor in `docs/runtime-contract.md`. Reuse existing typed
 contracts and tests. Do not imply that a descriptor from the earlier lane already

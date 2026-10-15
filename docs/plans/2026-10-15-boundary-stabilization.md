@@ -1,8 +1,10 @@
 # Immediate boundary stabilization plan
 
 Date: 2026-10-15. Owner: repository maintainer. Implementer: the continuing
-coding session, with review of each bounded change. Status: S0 complete; expanded
-baseline recorded; S1/B1 review and bounded B2 implementation in qualification.
+coding session, with review of each bounded change. Status: S0 and S1/B1 complete;
+bounded B2 and patched dependencies qualified and deployed. B3/B4 source review
+and candidate verification are complete; the overall immediate stage remains
+open pending exact-main analysis and closeout.
 
 This is the implementation handoff for the current session. It does not claim
 that planned controls, tests or remediation have already been delivered.
@@ -473,3 +475,18 @@ and rotates the master capability together before constructing each backend.
 A regression reproduces the cached-settings import and directory allocation;
 Linux acceptance must show both retired directories stay absent after reopen.
 No upstream source or fail-closed cleanup rule is changed.
+
+
+## B3/B4 source-review checkpoint
+
+The [bounded interruption and contract review](2026-10-15-boundary-b3-b4-review.md)
+continues from the deployed S1/B1 and B2 slice. It records one owned interruption
+fix, evidence for retaining two qualification handlers and sixteen type/callback
+contracts, and the responsibility-based routing of complexity debt. Candidate
+verification passes 1,782 tests with no failures, errors or skips, coverage checks
+pass and fixture cleanup is complete. Exact-main analysis remains the separate
+post-merge check, with its receipt retained privately.
+Contextual findings remain open pending separate server disposition authority.
+This checkpoint supersedes earlier implementation-status prose; the historical
+scan tables remain attributable to their original revisions. S5 and effective
+deployed browser-network policy evidence are not closed by this source review.
