@@ -917,6 +917,7 @@ def test_streaming_return_requires_explicit_return_and_typed_drain_proof(session
 
 def test_second_stream_identity_cannot_retire_existing_browser(session,monkeypatch):
     session.bind()
+    monkeypatch.setitem(sys.modules,'psutil',ModuleType('psutil'))
     monkeypatch.setitem(sys.modules,'tools.browser_tool_session',ModuleType('tools.browser_tool_session'))
     retired=[]
     monkeypatch.setattr(bridge,'_streaming',SimpleNamespace(retire=lambda:retired.append(True)))
