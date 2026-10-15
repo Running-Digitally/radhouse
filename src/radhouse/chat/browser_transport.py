@@ -76,7 +76,9 @@ def install_stream_routes(app, auth, service, browser):
                 raise Rejected('request_origin_denied',403)
             before = await asyncio.to_thread(authenticate,request)
             url, authorization = target('api/websockets')
-            protocols = [p.strip() for p in ws.headers.get('sec-websocket-protocol','').split(',')]
+            protocols = list(ws.scope.get('subprotocols',()))
+            if any(type(p) is not str for p in protocols):
+                raise Rejected('browser_stream_unavailable',403)
             carried = [p for p in protocols if p.startswith('selkies.token.')]
             if len(protocols)!=2 or 'selkies' not in protocols or len(carried)!=1 or not re.fullmatch(r'selkies\.token\.[A-Za-z0-9_-]{40,180}',carried[0]):
                 raise Rejected('browser_stream_unavailable',403)

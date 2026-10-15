@@ -80,3 +80,51 @@ def test_real_uvicorn_websocket_upgrade_and_binary_transfer():
             await task
             listener.close()
     asyncio.run(scenario())
+
+
+def test_actual_authenticated_relay_through_uvicorn_wsproto():
+    """ASGI owns subprotocols; wsproto removes their original HTTP header."""
+    import base64,hashlib,socket
+    import aiohttp
+    from aiohttp import web
+    from fastapi import FastAPI
+    import uvicorn
+    from radhouse.chat.browser_transport import install_stream_routes
+    from tests.test_minimal_chat import SyntheticAuth
+    async def scenario():
+        token='x'*43;payload=b'qualified-frame'*20000;calls=[]
+        async def native(request):
+            assert request.headers['Authorization']=='Bearer synthetic-service'
+            assert not request.cookies
+            owner=__import__('json').loads(request.headers['X-Radhouse-Stream-Owner'])
+            assert owner['auth_session_digest']==hashlib.sha256(b'synthetic-cookie').hexdigest()
+            calls.append(True)
+            ws=web.WebSocketResponse(protocols=['selkies']);await ws.prepare(request)
+            await ws.send_str('AUTH_SUCCESS,synthetic');await ws.send_bytes(payload)
+            async for message in ws:pass
+            return ws
+        upstream=web.Application();upstream.router.add_get('/v1/browser-stream/api/websockets',native)
+        runner=web.AppRunner(upstream,access_log=None);await runner.setup()
+        site=web.TCPSite(runner,'127.0.0.1',0);await site.start()
+        endpoint='http://127.0.0.1:'+str(site._server.sockets[0].getsockname()[1])+'/'
+        browser=SimpleNamespace(hermes=SimpleNamespace(_runs=SimpleNamespace(_client=SimpleNamespace(base_url=endpoint,headers={'Authorization':'Bearer synthetic-service'}))))
+        app=FastAPI();install_stream_routes(app,SyntheticAuth(),SimpleNamespace(authorize=lambda session:None),browser)
+        listener=socket.socket();listener.bind(('127.0.0.1',0));listener.listen(5)
+        server=uvicorn.Server(uvicorn.Config(app,ws='wsproto',lifespan='off',log_config=None,access_log=False))
+        task=asyncio.create_task(server.serve(sockets=[listener]))
+        try:
+            for _ in range(100):
+                if server.started:break
+                await asyncio.sleep(.01)
+            origin='http://127.0.0.1:'+str(listener.getsockname()[1])
+            protocol='selkies.token.'+base64.urlsafe_b64encode(token.encode()).decode().rstrip('=')
+            async with aiohttp.ClientSession(cookies={'radhouse_session':'synthetic-cookie'}) as client:
+                async with client.ws_connect(origin+'/chat/browser/stream/api/websockets',headers={'Origin':origin},protocols=['selkies',protocol]) as ws:
+                    assert ws.protocol=='selkies'
+                    assert (await ws.receive(timeout=3)).data=='AUTH_SUCCESS,synthetic'
+                    message=await ws.receive(timeout=3)
+                    assert message.type==aiohttp.WSMsgType.BINARY and message.data==payload
+            assert calls==[True]
+        finally:
+            server.should_exit=True;await task;listener.close();await runner.cleanup()
+    asyncio.run(scenario())
