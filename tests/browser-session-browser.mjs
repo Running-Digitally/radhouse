@@ -209,9 +209,10 @@ try{
   if(await page.evaluate(()=>lastBrowserStatus.control?.mode)!=="paused")throw new Error("Idle regression omitted retained paused controller metadata");
   await expect(page.getByRole("button",{name:"Take control",exact:true})).toBeHidden();
   await expect(page.locator(".browser-control-status")).toHaveText("");
+  // Passive idle polls must not erase the error from a rejected Open action.
   await page.evaluate(()=>{browserView.actionNotice="That action was not applied. Check the page before trying another action.";browserView._renderControlState();});
   await page.evaluate(()=>refreshBrowser());
-  await expect(page.locator(".browser-control-status")).toHaveText("");
+  await expect(page.locator(".browser-control-status")).toHaveText("That action was not applied. Check the page before trying another action.");
   await expect(page.locator("#assistant-browser img")).not.toHaveAttribute("src",/.+/);
   const count=openCalls;await page.waitForTimeout(2200);if(openCalls!==count||native)throw new Error("Closed browser was automatically reopened");
   await navigate("Chat");await expect(page.locator("#browser-context-label")).toHaveText("Use previous page: Example sign-in");
