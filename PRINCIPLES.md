@@ -4,7 +4,7 @@
    assistant. Keep infrastructure and implementation choices out of the conversation.
 2. **Return to where you left off.** Keep the conversation and pending reply across
    browser and app restarts. Show an honest error when continuity cannot be confirmed.
-3. **Reuse what already works.** Keep existing sign-in and Warp access. Let Hermes
+3. **Reuse what already works.** Keep existing sign-in and configured private access. Let Hermes
    own agent context and memory. Add a component only for a demonstrated need.
 4. **People retain consequential decisions.** Model text, memory and retrieved
    content do not grant authority. Begin with conversation and tools disabled;
@@ -14,3 +14,14 @@
 6. **Make choices clear without instructions.** The best user manual is no user
    manual. Put dependent choices in order, make their effects visible, and keep
    optional details out of the first decision.
+7. **Own the boundaries around reused components.** Keep engines replaceable
+   through explicit, qualified contracts. Radhouse owns the authority, data
+   handling, patches and recovery it adds around them.
+8. **Reduce real risk while learning.** Establish safety and quality habits now,
+   fix material boundary defects promptly, and reduce remaining debt as the
+   product evolves. Keep measurement honest; do not trade away protections for
+   a better dashboard count. Public development uses synthetic examples and
+   private handling of sensitive evidence.
+
+These principles are applied through [ADR-0003](docs/decisions/0003-proportionate-security-and-public-development.md)
+and [ADR-0004](docs/decisions/0004-replaceable-runtime-adapters.md).

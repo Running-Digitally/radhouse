@@ -60,10 +60,19 @@ Receipts, redacted logs and the server task locator remain under `.sonarqube/`.
 There is no automatic scheduler or Git hook; run the command after a merge.
 
 The scan covers first-party Python, TypeScript, JavaScript, CSS, HTML and
-supported configuration files under `src`, `scripts`, `web`, `site` and `deploy`.
+supported configuration files under `src`, `scripts`, `web`, `site`, `deploy`
+and `runtime`.
 Test source is classified separately. Generated builds, dependency trees and
 vendored third-party site code are excluded. Exclusions do not suppress
 first-party security findings.
+
+The runtime scope includes Radhouse-owned adapters, controls and qualification
+code. Immutable upstream snapshots in `runtime/hermes/fixtures/` are excluded;
+owned synthetic files in `runtime/selkies/fixture/` are classified as tests.
+Python coverage includes runtime modules, including unexecuted modules loaded
+by path. Runtime viewer JavaScript is analyzed but its execution coverage is
+not yet imported by the existing LCOV converter. Raw patches also require delta
+review and pinned-source qualification. See [runtime ownership](runtime-ownership.md).
 
 The normal command first installs locked development dependencies in the fresh
 merged clone, builds web sources with source maps, and runs

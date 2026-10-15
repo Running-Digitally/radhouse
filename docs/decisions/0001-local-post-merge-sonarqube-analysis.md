@@ -87,3 +87,18 @@ Any revised flow must preserve accurate source attribution and scoped credential
 References: [Community Build features](https://docs.sonarsource.com/sonarqube-community-build/feature-comparison-table),
 [analysis overview](https://docs.sonarsource.com/sonarqube-community-build/analyzing-source-code/analysis-overview),
 and [setup PR #69](https://github.com/Running-Digitally/radhouse/pull/69).
+
+## 2026-10-15 scope and workflow clarification
+
+Include Radhouse-owned source under `runtime/`, including adapters, permission
+enforcement, build/qualification helpers and owned patch transformations. Keep
+immutable upstream source snapshots separate from first-party scoring, and scan
+owned synthetic fixtures as tests. The [ownership map](../runtime-ownership.md)
+records the boundary and limitations of raw patch/coverage analysis.
+
+The owner accepts the Community Build review/merge/scan/follow-up cycle. Once
+that cycle is authorized, use a follow-up branch/PR for bounded findings from
+the exact merged source; no feature-branch substitution or pre-merge SonarQube
+gate is implied. The existing launcher, gate, profiles, new-code definition,
+source attribution and deployment separation remain in force. A scope increase
+establishes a new comparable baseline rather than proving code deterioration.

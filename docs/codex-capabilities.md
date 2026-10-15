@@ -25,6 +25,12 @@ feature-branch analysis, arbitrary uploads, rule/profile/gate changes or issue
 suppression require separate authority. Merge and server deployment remain
 separate actions with their existing review and recovery requirements.
 
+For an explicitly authorized merge/rescan effort, follow the Community Build
+sequence in [AGENTS.md](../AGENTS.md): merge a reviewed bounded change, analyze
+exact remote main, and use a new follow-up branch/PR for relevant findings.
+The owner authorized this sequence for the 15 October runtime-scope and bounded
+stabilization effort. A scan-only request does not authorize unrelated merges.
+
 ## Codex configuration and limits
 
 [AGENTS.md](../AGENTS.md) exposes the capability to agents. The project-local
@@ -44,13 +50,20 @@ and does not establish payload authorization. If automatic review rejects an
 otherwise matching scan, surface its stated reason and stop that upload rather
 than changing modes or bypassing it.
 
-## Latest authoritative baseline
+## Historical baseline: 8 October 2026
 
 Merged source `bfb66f309cfb9e7bc4b872c7c7b68acbc7866342` was scanned on
 8 October 2026 at 02:29 UTC. The processed dashboard shows 81.3% new-code coverage
 (required 80%), 81.4% overall coverage, zero new security/reliability issues and
 six new maintainability issues in verification/parser tests. The quality gate
 fails only on the six new issues. Existing contextual security flags remain open.
-This follow-up addresses the six findings without lowering the gate or changing
-profiles/exclusions. Authoritative proof requires another owner-requested scan
-of merged main after this follow-up is reviewed and merged.
+This is historical evidence, not the current quality state.
+
+## Review baseline: 15 October 2026
+
+The 14:32:23 UTC analysis of `c67faa907fad844e9b3bf0d57e9b9efb3ee08e7c`
+contained 620 open overall issues, including 542 in the configured new-code
+period; coverage was 75.8% overall and 69.2% new code. This scope omitted
+`runtime/`. The [stabilization plan](plans/2026-10-15-boundary-stabilization.md)
+records the full-scope review and subsequent expanded-baseline checkpoint.
+Do not reuse the historical six-issue claim as current evidence.
