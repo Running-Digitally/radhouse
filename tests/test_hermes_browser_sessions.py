@@ -1018,3 +1018,60 @@ def test_invalid_stream_binding_never_reaches_runtime(session, monkeypatch, inva
     status, payload = session.call('status', body)
     assert status == 409
     assert payload['error'] == 'browser_control_unavailable'
+
+
+@pytest.mark.parametrize("failure", [
+    native.NativeRejected("browser_metadata_unavailable"),
+    ValueError("browser_metadata_unavailable"),
+])
+def test_stream_status_preserves_private_control_without_stale_page_metadata(session, monkeypatch, failure):
+    session.bind()
+    state = session.human()
+    session.owned.metadata()
+    assert session.owned.current_page is not None
+    async def viewer(owner):
+        return SimpleNamespace(token="v" * 48)
+    runtime = SimpleNamespace(
+        viewer=viewer,
+        boundary=SimpleNamespace(input_owner=None, input_token=None, authorized=lambda token: False),
+    )
+    async def ensure(*args):
+        return runtime
+    monkeypatch.setattr(bridge, "_streaming", SimpleNamespace(ensure=ensure))
+    def unavailable():
+        raise failure
+    monkeypatch.setattr(session.owned, "metadata", unavailable)
+    status, payload = session.call("status", session.body(state))
+    assert status == 200
+    assert payload["state"] == "live"
+    assert payload["generation"] == session.identity.generation
+    assert payload["stream"]["token"] == "v" * 48
+    assert payload["url"] is None
+    assert payload["page_context"]["current"] is None
+    assert payload["viewport"] is None
+    assert session.c.state(session.identity) == state
+    assert payload["control"]["observation_mode"] == "private"
+
+
+@pytest.mark.parametrize("failure", [
+    native.NativeChannelError("native_connection_lost"),
+    native.NativeRejected("native_ack_pending"),
+])
+def test_stream_metadata_fallback_does_not_hide_transport_or_ack_failure(session, monkeypatch, failure):
+    session.bind()
+    monkeypatch.setattr(bridge, "_streaming", object())
+    def unavailable():
+        raise failure
+    monkeypatch.setattr(session.owned, "metadata", unavailable)
+    with pytest.raises(type(failure), match=str(failure)):
+        bridge._metadata_observation(session.owned)
+
+
+def test_nonstream_metadata_rejection_stays_strict(session, monkeypatch):
+    session.bind()
+    monkeypatch.setattr(bridge, "_streaming", None)
+    def unavailable():
+        raise native.NativeRejected("browser_metadata_unavailable")
+    monkeypatch.setattr(session.owned, "metadata", unavailable)
+    with pytest.raises(native.NativeRejected, match="browser_metadata_unavailable"):
+        bridge._metadata_observation(session.owned)

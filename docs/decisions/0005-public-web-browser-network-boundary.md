@@ -1,7 +1,7 @@
 # ADR-0005: Public-web-only browser networking
 
-Date: 2026-10-15. Status: accepted policy; enforcement qualification and rollout
-remain open. Owner: repository maintainer.
+Date: 2026-10-15. Status: accepted policy; isolated enforcement selected in the
+owner-only pilot on 2026-10-16; final S5 acceptance remains open. Owner: repository maintainer.
 
 ## Context
 
@@ -69,7 +69,11 @@ production readiness. Raw deployment/network findings remain private.
 Validation must cover real browser HTTP/HTTPS, redirects, DNS changes/mixed
 answers, private and IPv6 destinations, bypass routes, proxy loss, native endpoint
 authorization, actual input/video/privacy/handback and complete generation cleanup.
-Record actual coverage and untested conditions separately.
+Record actual coverage and untested conditions separately. A blocked/error page may
+refuse the native metadata evaluation. Keep independently verified owner video
+and controls available with unknown current URL/title; clear stale page context.
+This does not grant agent observation, waive transport/acknowledgement failures
+or make an unverified page safe for handback.
 
 Alternatives rejected: setting the descriptor to verified; relying only on proxy
 flags, classifiers, renderer namespaces or LAN-only ingress; giving the browser

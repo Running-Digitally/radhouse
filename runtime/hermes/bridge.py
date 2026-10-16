@@ -1871,7 +1871,9 @@ async def handle_browser_session(adapter, request, *, operation, api_server):
             **base,
             "state": "live",
             "generation": stream[1],
-            **_redacted(owned.current_page or {"url": result["url"], "title": ""}),
+            **_redacted(owned.current_page or {
+                "url": None if _streaming is not None else result["url"], "title": ""
+            }),
             "control": _control_public(after, owner),
             "viewport": owned.viewport,
             "page_context": {
@@ -1949,7 +1951,16 @@ def _metadata_observation(owned):
             "recovering",
             "takeover_pending",
         }):
-            return owned.metadata()
+            try:
+                return owned.metadata()
+            except ValueError as error:
+                if _streaming is None or str(error) != "browser_metadata_unavailable":
+                    raise
+                # A denied/error page can refuse the native metadata evaluation.
+                # Keep the separately verified stream and owner controls usable;
+                # never present the last page as current or relax agent reads.
+                owned.current_page = owned.viewport = None
+                _controller.record_page(owned.identity, None, owned.previous_page)
 
 
 def owned_session_record(task_id):

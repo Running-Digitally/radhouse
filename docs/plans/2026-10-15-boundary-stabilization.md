@@ -552,3 +552,56 @@ aggregate task ceilings are384/512; memory and CPU ceilings remain unchanged.
 This correction requires a new bounded operational window and qualification.
 Do not disable renderer/site isolation or loosen acknowledgement deadlines to
 make an undersized task envelope appear healthy.
+
+
+### S5 pilot selection and residual review — 16 October
+
+PR99 merged as `1bc9cb5`; the exact-main full gate passed 1,810 tests with zero
+failures, errors or skips and complete synthetic-fixture cleanup. Its processed
+Sonar analysis reports 758 open issues: 19 security, 154 reliability and 731
+maintainability impacts (categories overlap), 71.3% overall coverage and 1.2%
+duplication. The overall quality gate still fails. The receipt's conservative
+coverage-import flag remains unchanged; server measures establish imported
+coverage. No issue status, rule, gate, profile or source scope changed.
+
+Disposable Linux/X11 acceptance passed public HTTPS/WSS, actual HTTP302 to
+loopback denial, private/metadata/IPv6 destinations, direct-route denial, mixed
+DNS, rebinding, proxy loss, video/input, Private/Observe/revocation, device move,
+handback and strict two-generation cleanup. The same public-origin canary worked
+before proxy loss and failed afterward with `ERR_EMPTY_RESPONSE`; requiring only
+`ERR_PROXY_CONNECTION_FAILED` was an overly narrow test. Failed evidence was
+retained. All resource counters were present, with zero OOM or task denials.
+All 663 selected payload files matched the qualified package.
+
+The owner-only pilot selected the isolated worker/proxy/X11 boundary. Installed
+read-only proof confirmed distinct service identities, renderer user/PID/network
+namespaces and BPF filters, direct TCP/UDP/IPv6 and private-file denials, and the
+aggregate finite resource limits. Patched dependency origins, strict TLS, 45
+served assets and unauthenticated endpoint denial passed. These are limited
+pilot observations, not broader deployment or production-readiness evidence.
+
+Live negative navigation exposed an owned recovery defect: a refused native
+metadata evaluation hid a still-owned stream and its controls. The bounded
+follow-up preserves independently verified owner streaming with unknown metadata,
+clears stale page context, and retains strict transport, acknowledgement and
+agent-observation checks. S5 remains open through its qualification, selection,
+explicit Close/reopen and final model-backed E2E; the public-only policy is not
+weakened to make an error page navigable.
+
+The net issue increase is 13; 14 newly created records were reviewed individually.
+There are no new security impacts. Retain these open with the maintainer as owner,
+review by **2026-11-14**, and earlier on the next edit to the affected responsibility:
+
+| Responsibility / new records | Disposition and required preservation |
+| --- | --- |
+| Worker startup/dispatch, client relay and proxy serve complexity (4) | Extract real responsibilities when touched; preserve reserved ownership, unknown acknowledgements, numeric DNS pinning, half-close and positive cleanup tests. |
+| Worker synchronous process creation inside async startup (1 reliability) | Explicit monitored tradeoff: assign the root-selected child before any readiness await; long readiness/waits run off-loop. Keep cancellation/failed-retirement tests. Revisit on observed event-loop delay or the next startup edit; an async conversion must retain positive child ownership. |
+| ASCII display identifiers (2) | Contextual review: `\d` accepts Unicode digits without an ASCII constraint. Preserve the narrow protocol grammar. |
+| Dictionary/set comprehensions (2), launch URL conditional (1) | Low-risk readability cleanup in the next coherent responsibility change. |
+| Legacy launch parameter (1) | Remove with the adapter-call contract cleanup; preserve the current caller contract meanwhile. |
+| Composite worker test assertions (3) | Improve individual failure diagnostics with the next worker change; current assertions evaluate every required invariant. |
+
+The record count is 14. No server disposition is implied. Accelerate review on a failed boundary test, engine replacement, added
+users/co-tenancy, a LAN grant or ingress/authority expansion. Product work should
+resume after S5 with the existing maintenance allocation rather than a repository
+or upstream-engine cleanup sweep.

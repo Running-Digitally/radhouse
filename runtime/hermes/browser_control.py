@@ -402,7 +402,7 @@ class BrowserController:
             return state
 
     def record_page(
-        self, identity: BrowserIdentity, current: dict, previous: dict | None
+        self, identity: BrowserIdentity, current: dict | None, previous: dict | None
     ) -> None:
         """Bounded, already-redacted URL/title only; no revision or action history."""
         for page in (current, previous):
