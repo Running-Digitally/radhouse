@@ -16,6 +16,15 @@ def _text(value, *, optional=False):
     return value
 
 
+
+def _normalize_engine(value):
+    if value is None:
+        return None
+    if type(value) is not dict:
+        raise ValueError("inference_response_invalid")
+    return {"id": _text(value.get("id")), "label": _text(value.get("label"))}
+
+
 def _normalize_engines(rows, default):
     if type(rows) is not list or not 1 <= len(rows) <= 4:
         raise ValueError("inference_response_invalid")
@@ -86,11 +95,7 @@ def normalize_catalog(value):
         _text(checked)
         if datetime.fromisoformat(checked.replace("Z", "+00:00")).tzinfo is None:
             raise ValueError("inference_response_invalid")
-    engine = value.get("engine")
-    if engine is not None:
-        if type(engine) is not dict:
-            raise ValueError("inference_response_invalid")
-        engine = {key: _text(engine.get(key)) for key in ("id", "label")}
+    engine = _normalize_engine(value.get("engine"))
     engines = _normalize_engines(value["engines"], engine) if value.get("engines") is not None else None
     models = value.get("models")
     if type(models) is not list:
