@@ -252,7 +252,8 @@ def test_automatic_retirement_closes_listener_before_allowing_replacement(monkey
                 with pytest.raises(ValueError, match='synthetic_retirement_unconfirmed'):
                     await asyncio.wait_for(current.watcher, timeout=2)
                 assert platform.runtime is current
-                assert current.stopped and current.boundary._blocked
+                assert current.stopped
+                assert current.boundary._blocked
                 assert current.shutdown is None
                 assert current.socket.parent.exists()
                 with pytest.raises(ValueError, match='stream_browser_busy'):
