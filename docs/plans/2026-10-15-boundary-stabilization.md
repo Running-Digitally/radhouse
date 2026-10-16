@@ -651,3 +651,35 @@ credentials and traceback locals are excluded. It does not change lifecycle
 success criteria, add an observer/service or claim the installed failure fixed.
 The final all-code scan on main4f617ca has737 issues; its sole introduced test
 assertion finding is CLOSED/FIXED. The overall gate remains failed.
+
+
+### Observed owner-pilot acceptance after diagnostic selection
+
+The selected PR106 diagnostic build passed two normal inactivity/reopen cycles,
+including a cycle after private human keyboard navigation and drained handback.
+Actual native records confirm public navigation and snapshots. Eight browser
+stream generations were exercised; all eight retired directories and listeners
+were absent after the final Close, including paths from earlier generations.
+Existing conversation rows retained their original fingerprint. The selected
+runtime and browser network policy were unchanged from the real-agent
+Private/Observe/revocation and LAN/metadata-denial evidence above.
+
+Fresh private video and keyboard navigation also passed in ordinary native
+Chrome, without refreshing. An automation-attached tab stalled the iframe
+request before a server response; an unclaimed native tab did not reproduce
+that symptom. Keep this test-environment limitation separate from product
+failures; do not add a production retry or weaken a boundary to hide it.
+
+One Close lost its worker acknowledgement. The existing positive-retirement
+reconciliation subsequently reached idle and admitted a normal new generation,
+without a restart, forced deletion or relaxed ownership check. Retain this as
+an intermittent reliability follow-up. The earlier installed cleanup failure
+also remains without a proven root cause; diagnostics alone are not a claimed
+correction. The current owner-only pilot passes the observed S5 boundary and
+functional acceptance, with those limitations explicitly retained.
+
+Resume product work with the existing maintenance allocation. The maintainer
+must reopen lifecycle investigation immediately on recurrence, before wider
+users/co-tenancy or any LAN/ingress expansion, and review retained evidence by
+**2026-11-14**. Persistent alternate-provider rollout remains separate. No issue
+suppression, upstream-engine cleanup or overall quality-gate waiver follows.
