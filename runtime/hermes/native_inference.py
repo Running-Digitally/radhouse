@@ -2,6 +2,7 @@
 import asyncio
 import ast
 from copy import deepcopy
+from contextvars import copy_context
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
@@ -148,23 +149,26 @@ def configured_engine(enrollment=None):
     headers = runtime.get("extra_headers") or {}
     selectors = ((requested, provider) if runtime.get("provider") == "custom" and provider != "custom"
         else (requested, provider, runtime.get("provider")))
-    def read_identity(value):
-        identity = _config_identity(value, selectors)
-        if enrollment is not None:
-            # A named provider owns its route; unrelated default changes do not.
-            identity.update(selector=requested, model={}, enrollment=[
-                {key: row.get(key) for key in ("provider", "model")}
-                for row in _enrollments(value) if row["provider"] == requested])
-        return identity
-    identity = read_identity(config)
+    identity = _engine_identity(config, selectors, enrollment)
     if enrollment is not None:
         label = enrollment["label"]
     return Engine(provider, current, label, str(runtime.get("base_url") or ""),
         runtime.get("api_key") or "", str(runtime.get("api_mode") or "chat_completions"),
         dict(headers) if isinstance(headers, dict) else {}, _qualified_wire(profile), identity,
-        lambda: read_identity(load_config_readonly()),
+        lambda: _engine_identity(load_config_readonly(), selectors, enrollment),
         _native_model_mode_reader(provider, str(runtime.get("base_url") or "")))
 
+
+
+
+def _engine_identity(config, selectors, enrollment):
+    identity = _config_identity(config, selectors)
+    if enrollment is not None:
+        # A named provider owns its route; unrelated default changes do not.
+        identity.update(selector=enrollment["provider"], model={}, enrollment=[
+            {key: row.get(key) for key in ("provider", "model")}
+            for row in _enrollments(config) if row["provider"] == enrollment["provider"]])
+    return identity
 
 
 def _enrollments(config):
@@ -210,6 +214,11 @@ def configured_engines():
     config = load_config_readonly()
     rows = _enrollments(config)
     default = _engine_target(config)
+    label = config.get("radhouse_inference", {}).get("default_label")
+    if label is not None:
+        if not _identifier(label):
+            raise ValueError("inference_enrollment_invalid")
+        default = replace(default, label=label)
     engines = [default]
     for row in rows:
         if row["provider"] == default.provider:
@@ -439,7 +448,9 @@ class EnrolledInferenceCatalog:
                     children[engine.provider] = NativeInferenceCatalog(
                         load_engine=lambda e=engine: e, fetch=self.fetch, clock=self.clock)
                 with ThreadPoolExecutor(max_workers=len(children)) as pool:
-                    catalogs = list(pool.map(lambda child: child.options(refresh=True), children.values()))
+                    futures = [pool.submit(copy_context().run, child.options, refresh=True)
+                        for child in children.values()]
+                    catalogs = [future.result() for future in futures]
                 # Real engines check private configuration without resolving
                 # credentials again. Injected engines can recheck their loader.
                 for provider, child in children.items():

@@ -51,6 +51,12 @@ class InferenceSelection(BaseModel):
     model: Annotated[str | None, Field(min_length=1, max_length=512)] = None
     thinking: Annotated[str, Field(min_length=1, max_length=32)] = "default"
 
+    def snapshot(self):
+        result = self.model_dump()
+        if result["provider"] is None:
+            result.pop("provider")
+        return result
+
 
 class Message(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
@@ -178,8 +184,7 @@ def create_app(auth, service, *, admin=None, documents=None, browser=None, about
     def send(body: Message, request: Request):
         session = auth.session(request)
         principal = service.authorize(session)
-        selection = (body.inference.model_dump(exclude={"provider"} if body.inference.provider is None else set())
-            if body.inference is not None else None)
+        selection = body.inference.snapshot() if body.inference is not None else None
         existing = service.store.find(principal, body.request_id)
         if existing and existing.get("request_options"):
             import json

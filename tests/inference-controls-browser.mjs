@@ -3,8 +3,10 @@ import {createServer} from "node:http";
 import {readFile} from "node:fs/promises";
 import {pathToFileURL} from "node:url";
 import assert from "node:assert/strict";
+import {test} from "node:test";
 const moduleUrl=process.env.RADHOUSE_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.RADHOUSE_PLAYWRIGHT_MODULE).href : new URL("../web/node_modules/@playwright/test/index.mjs",import.meta.url).href;
 const {chromium,expect}=await import(moduleUrl);
+await test("inference choices preserve provider pairs, capabilities and unavailable selections", async () => {
 const browser=await chromium.launch({headless:true,...(process.env.RADHOUSE_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.RADHOUSE_CHROMIUM_EXECUTABLE_PATH}:{})});
 const root=new URL("../src/radhouse/chat/static/",import.meta.url);
 const unknown={state:"unknown",choices:[],can_disable:false,can_enable:false};
@@ -80,3 +82,5 @@ try{
 }finally{
   await browser.close();await new Promise(resolve=>server.close(resolve));
 }
+
+});

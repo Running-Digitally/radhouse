@@ -16,6 +16,76 @@ def _text(value, *, optional=False):
     return value
 
 
+
+def _normalize_engine(value):
+    if value is None:
+        return None
+    if type(value) is not dict:
+        raise ValueError("inference_response_invalid")
+    return {"id": _text(value.get("id")), "label": _text(value.get("label"))}
+
+
+def _normalize_engines(rows, default):
+    if type(rows) is not list or not 1 <= len(rows) <= 4:
+        raise ValueError("inference_response_invalid")
+    result, seen = [], set()
+    for row in rows:
+        if type(row) is not dict or type(row.get("available")) is not bool:
+            raise ValueError("inference_response_invalid")
+        item = {key: _text(row.get(key)) for key in ("id", "label", "current_model")}
+        item["available"] = row["available"]
+        if item["id"] in seen:
+            raise ValueError("inference_response_invalid")
+        seen.add(item["id"])
+        result.append(item)
+    if default is None or default["id"] not in seen:
+        raise ValueError("inference_response_invalid")
+    return result
+
+
+def _normalize_thinking(value):
+    if type(value) is not dict or value.get("state") not in {"supported", "unsupported", "unknown"}:
+        raise ValueError("inference_response_invalid")
+    choices = value.get("choices")
+    if type(choices) is not list or any(
+        type(choice) is not str or not choice.isascii() or not choice.isalpha() or len(choice) > 20
+        for choice in choices
+    ) or len(set(choices)) != len(choices):
+        raise ValueError("inference_response_invalid")
+    if type(value.get("can_disable")) is not bool or type(value.get("can_enable")) is not bool:
+        raise ValueError("inference_response_invalid")
+    if value["state"] != "supported" and (choices or value["can_disable"] or value["can_enable"]):
+        raise ValueError("inference_response_invalid")
+    return {"state": value["state"], "choices": list(choices),
+        "can_disable": value["can_disable"], "can_enable": value["can_enable"]}
+
+
+
+def _check_model_availability(row, state, engine, enrolled):
+    if not row["available"]:
+        if row.get("reason") is None:
+            raise ValueError("inference_response_invalid")
+        return
+    if row.get("reason") is not None or engine is None or state != "available":
+        raise ValueError("inference_response_invalid")
+    if enrolled and not engine["available"]:
+        raise ValueError("inference_response_invalid")
+
+
+def _normalize_model(row, state, default, engines):
+    if type(row) is not dict or type(row.get("available")) is not bool or row.get("reason") not in REASONS:
+        raise ValueError("inference_response_invalid")
+    provider = _text(row.get("provider")) if engines is not None else None
+    engine = next((item for item in engines if item["id"] == provider), None) if engines is not None else default
+    if engines is not None and engine is None:
+        raise ValueError("inference_response_invalid")
+    _check_model_availability(row, state, engine, engines is not None)
+    return {**({"provider": provider} if engines is not None else {}),
+        "id": _text(row.get("id")), "label": _text(row.get("label")),
+        "available": row["available"], "reason": row.get("reason"),
+        "thinking": _normalize_thinking(row.get("thinking"))}
+
+
 def normalize_catalog(value):
     """Allowlist the public shape; provider URLs, headers and credentials stay native."""
     if type(value) is not dict or value.get("schema") != SCHEMA or value.get("state") not in {"available", "unavailable"}:
@@ -25,63 +95,22 @@ def normalize_catalog(value):
         _text(checked)
         if datetime.fromisoformat(checked.replace("Z", "+00:00")).tzinfo is None:
             raise ValueError("inference_response_invalid")
-    engine = value.get("engine")
-    if engine is not None:
-        if type(engine) is not dict:
-            raise ValueError("inference_response_invalid")
-        engine = {key: _text(engine.get(key)) for key in ("id", "label")}
-    engines = value.get("engines")
-    engine_rows = []
-    if engines is not None:
-        if type(engines) is not list or not 1 <= len(engines) <= 4:
-            raise ValueError("inference_response_invalid")
-        for row in engines:
-            if type(row) is not dict or type(row.get("available")) is not bool:
-                raise ValueError("inference_response_invalid")
-            item = {key: _text(row.get(key)) for key in ("id", "label", "current_model")}
-            item["available"] = row["available"]
-            if any(known["id"] == item["id"] for known in engine_rows):
-                raise ValueError("inference_response_invalid")
-            engine_rows.append(item)
-        if engine is None or engine["id"] not in {row["id"] for row in engine_rows}:
-            raise ValueError("inference_response_invalid")
+    engine = _normalize_engine(value.get("engine"))
+    engines = _normalize_engines(value["engines"], engine) if value.get("engines") is not None else None
     models = value.get("models")
     if type(models) is not list:
         raise ValueError("inference_response_invalid")
     result, seen = [], set()
     for row in models:
-        if type(row) is not dict or type(row.get("available")) is not bool or row.get("reason") not in REASONS:
-            raise ValueError("inference_response_invalid")
-        model = _text(row.get("id"))
-        provider = _text(row.get("provider")) if engines is not None else None
-        identity = (provider, model)
-        if engines is not None and provider not in {item["id"] for item in engine_rows}:
-            raise ValueError("inference_response_invalid")
+        model = _normalize_model(row, value["state"], engine, engines)
+        identity = (model.get("provider"), model["id"])
         if identity in seen:
             raise ValueError("inference_response_invalid")
         seen.add(identity)
-        thinking = row.get("thinking")
-        if type(thinking) is not dict or thinking.get("state") not in {"supported", "unsupported", "unknown"}:
-            raise ValueError("inference_response_invalid")
-        choices = thinking.get("choices")
-        if type(choices) is not list or any(
-            type(choice) is not str or not choice.isascii() or not choice.isalpha() or len(choice) > 20
-            for choice in choices
-        ) or len(set(choices)) != len(choices) or type(thinking.get("can_disable")) is not bool or type(thinking.get("can_enable")) is not bool:
-            raise ValueError("inference_response_invalid")
-        if thinking["state"] != "supported" and (choices or thinking["can_disable"] or thinking["can_enable"]):
-            raise ValueError("inference_response_invalid")
-        if (row["available"] and (row.get("reason") is not None or engine is None or value["state"] != "available")
-                or not row["available"] and row.get("reason") is None):
-            raise ValueError("inference_response_invalid")
-        if row["available"] and engines is not None and not next(item["available"] for item in engine_rows if item["id"] == provider):
-            raise ValueError("inference_response_invalid")
-        result.append({**({"provider": provider} if engines is not None else {}), "id": model, "label": _text(row.get("label")), "available": row["available"],
-            "reason": row.get("reason"), "thinking": {"state": thinking["state"],
-                "choices": list(choices), "can_disable": thinking["can_disable"], "can_enable": thinking["can_enable"]}})
+        result.append(model)
     return {"schema": SCHEMA, "state": value["state"], "checked_at": checked, "engine": engine,
         "current_model": _text(value.get("current_model"), optional=True), "models": result,
-        **({"engines": engine_rows} if engines is not None else {})}
+        **({"engines": engines} if engines is not None else {})}
 
 
 def validate_selection(selection, catalog):
