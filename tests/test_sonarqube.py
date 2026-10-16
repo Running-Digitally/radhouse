@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from scripts.sonarqube import ScanError, analyze, native_fixture, prerequisites, qualify, verified_coverage
+from scripts.sonarqube import ScanError, analyze, native_fixture, prerequisites, qualify, retain_failed_verification, verified_coverage
 
 
 class LocalSonarTests(unittest.TestCase):
@@ -179,6 +179,63 @@ class LocalSonarTests(unittest.TestCase):
         for report in reports.values():
             self.assertEqual(report.parent, output)
             self.assertTrue(report.is_file())
+
+    def test_failed_qualification_retains_only_typed_fixture_diagnostics(self):
+        path, manifest = self.coverage_fixture()
+        manifest.update(result="failed", tests={"tests": 2, "failures": 1, "errors": 0, "skipped": 0},
+                        private_value="synthetic-private-value")
+        path.write_text(json.dumps(manifest))
+        (path.parent / "pytest.xml").write_text(
+            '<testsuites><testsuite><testcase classname="tests.test_fixture" '
+            'name="test_boundary[synthetic-private-value]"><failure message="synthetic-private-value">'
+            'synthetic-private-value</failure></testcase></testsuite></testsuites>')
+        output = self.root / "proof"
+        output.mkdir()
+        def run(args, **kwargs):
+            code = 1 if "verify" in args else 0
+            return subprocess.CompletedProcess(args, code,
+                f"Sanitized run manifest: {path.relative_to(self.root)}\n", "synthetic-private-value")
+        fixture = contextlib.nullcontext(({}, {}))
+        with patch("scripts.sonarqube.native_fixture", return_value=fixture):
+            with patch("scripts.sonarqube.subprocess.run", side_effect=run):
+                with self.assertRaisesRegex(ScanError, "no analysis submitted"):
+                    qualify(self.root, self.revision, output)
+        raw = (output / "failed-verification.json").read_text()
+        details = json.loads(raw)
+        self.assertEqual(details["state"], "retained")
+        self.assertEqual(details["tests"], manifest["tests"])
+        self.assertTrue(details["cleanup_complete"])
+        self.assertEqual(details["failed_tests"], ["tests.test_fixture.test_boundary"])
+        self.assertNotIn("synthetic-private-value", raw)
+
+    def test_failure_diagnostics_reject_external_manifest_and_report_symlinks(self):
+        path, _ = self.coverage_fixture()
+        output = self.root / "proof"
+        output.mkdir()
+        outside = self.root.parent / "outside.xml"
+        outside.write_text('<testsuites/>')
+        (path.parent / "pytest.xml").symlink_to(outside)
+        for locator in (str(outside), "../outside.xml", str(path.relative_to(self.root))):
+            retain_failed_verification(self.root, output, f"Sanitized run manifest: {locator}\n")
+            details = json.loads((output / "failed-verification.json").read_text())
+            self.assertEqual(details["state"], "unavailable")
+            self.assertNotIn("failed_tests", details)
+        path.unlink()
+        path.symlink_to(outside)
+        retain_failed_verification(self.root, output, f"Sanitized run manifest: {path.relative_to(self.root)}\n")
+        self.assertEqual(json.loads((output / "failed-verification.json").read_text())["state"], "unavailable")
+
+    def test_missing_or_malformed_failure_reports_do_not_hide_gate_failure(self):
+        path, _ = self.coverage_fixture()
+        output = self.root / "proof"
+        output.mkdir()
+        for data in (None, "invalid xml"):
+            if data is not None:
+                (path.parent / "pytest.xml").write_text(data)
+            retain_failed_verification(self.root, output, f"Sanitized run manifest: {path.relative_to(self.root)}\n")
+            details = json.loads((output / "failed-verification.json").read_text())
+            self.assertEqual(details["state"], "unavailable")
+            self.assertTrue(details["cleanup_complete"])
 
     def native_lock(self, revision):
         directory = self.root / "runtime/hermes"

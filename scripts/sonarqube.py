@@ -8,12 +8,14 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
 import tomllib
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 KEYCHAIN_SERVICE = "radhouse-sonarqube"
@@ -137,6 +139,52 @@ def native_fixture(checkout, environment, *, remote=HERMES_SOURCE):
             raise ScanError("native qualification source changed during verification")
 
 
+
+def _failed_test_names(path):
+    if path.stat().st_size > 4 * 1024 * 1024:
+        raise ValueError("oversized_test_report")
+    suites = ET.fromstring(path.read_bytes())
+    names = set()
+    for case in suites.iter("testcase"):
+        if case.find("failure") is not None or case.find("error") is not None:
+            # Parametrization and tracebacks can carry values; retain identifiers only.
+            module = case.get("classname", "")
+            name = case.get("name", "").split("[", 1)[0]
+            if re.fullmatch(r"[a-zA-Z0-9_.]{1,256}", module) and re.fullmatch(r"[a-zA-Z0-9_]{1,256}", name):
+                names.add(module + "." + name)
+    return sorted(names)
+
+
+def retain_failed_verification(checkout, output, stdout):
+    """Retain bounded typed diagnostics before the disposable clone is removed."""
+    checkout = checkout.resolve()
+    details = {"state": "unavailable", "parameters_and_output_retained": False}
+    try:
+        locators = re.findall(r"^Sanitized run manifest: (\.vs0/[a-zA-Z0-9_-]+/manifest\.json)$", stdout, re.MULTILINE)
+        if len(locators) != 1:
+            raise ValueError("missing_owned_manifest")
+        expected = checkout / locators[0]
+        manifest_path = expected.resolve()
+        if manifest_path != expected.absolute() or not manifest_path.is_relative_to(checkout.resolve()):
+            raise ValueError("foreign_fixture")
+        if manifest_path.stat().st_size > 1024 * 1024:
+            raise ValueError("oversized_manifest")
+        manifest = json.loads(manifest_path.read_text())
+        tests = manifest.get("tests", {})
+        details["tests"] = {key: value for key in ("tests", "failures", "errors", "skipped")
+                            if type(value := tests.get(key)) is int and value >= 0}
+        details["cleanup_complete"] = manifest.get("cleanup") == "complete"
+        report = manifest_path.parent / "pytest.xml"
+        if report.resolve() != report.absolute():
+            raise ValueError("foreign_test_report")
+        details["failed_tests"] = _failed_test_names(report)
+        details["state"] = "retained"
+    except (OSError, ValueError, TypeError, AttributeError, ET.ParseError):
+        # Diagnostics are best effort; they never replace the failed release gate.
+        pass
+    (output / "failed-verification.json").write_text(json.dumps(details, indent=2) + "\n")
+
+
 def qualify(checkout, revision, output):
     env = os.environ.copy()
     env.pop("SONAR_TOKEN", None)
@@ -156,6 +204,7 @@ def qualify(checkout, revision, output):
             cwd=checkout, env=fixture_env, text=True, capture_output=True, timeout=1200,
         )
         if result.returncode:
+            retain_failed_verification(checkout, output, result.stdout)
             raise ScanError(f"owned test and coverage verification failed (exit {result.returncode}); no analysis submitted")
     locators = [line.removeprefix("Sanitized run manifest: ") for line in result.stdout.splitlines()
                 if line.startswith("Sanitized run manifest: ")]

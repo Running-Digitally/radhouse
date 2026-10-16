@@ -57,6 +57,12 @@ command waits for server processing and the quality gate. A nonzero exit means
 a prerequisite, analysis, server-processing or quality-gate failure; inspect
 the scanner log and project dashboard rather than treating upload as a pass.
 Receipts, redacted logs and the server task locator remain under `.sonarqube/`.
+A failed owned verification also retains `failed-verification.json` before the
+disposable clone is removed: typed test counts, cleanup completion and failed
+function identifiers with parameter values removed. Raw stdout/stderr, XML
+tracebacks and environment values are not copied. Missing, oversized or foreign
+fixture reports leave diagnostics explicitly unavailable; failure still prevents
+analysis and coverage submission.
 There is no automatic scheduler or Git hook; run the command after a merge.
 
 The scan covers first-party Python, TypeScript, JavaScript, CSS, HTML and
