@@ -422,3 +422,22 @@ def test_one_provider_resolution_failure_does_not_hide_another(helpers, monkeypa
     assert value['engines'][0]['available'] is False
     assert value['engines'][1]['available'] is True
     assert 'credential resolution' not in str(value)
+
+
+
+def test_parallel_discovery_keeps_routed_profile_context(helpers):
+    from contextvars import ContextVar
+    scope = ContextVar('synthetic_routed_profile', default='wrong-default-profile')
+    selected = [engine(), native.Engine('secondary', 'alpha', 'Secondary', 'http://secondary.test/v1')]
+    observed = []
+    def fetch(chosen):
+        observed.append((chosen.provider, scope.get()))
+        assert scope.get() == 'admitted-profile'
+        return [{'id': 'alpha'}]
+    token = scope.set('admitted-profile')
+    try:
+        catalog = native.EnrolledInferenceCatalog(load_engines=lambda: selected, fetch=fetch)
+        assert all(row['available'] for row in catalog.options()['models'])
+    finally:
+        scope.reset(token)
+    assert sorted(observed) == [('current-engine', 'admitted-profile'), ('secondary', 'admitted-profile')]

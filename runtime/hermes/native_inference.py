@@ -2,6 +2,7 @@
 import asyncio
 import ast
 from copy import deepcopy
+from contextvars import copy_context
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
@@ -439,7 +440,9 @@ class EnrolledInferenceCatalog:
                     children[engine.provider] = NativeInferenceCatalog(
                         load_engine=lambda e=engine: e, fetch=self.fetch, clock=self.clock)
                 with ThreadPoolExecutor(max_workers=len(children)) as pool:
-                    catalogs = list(pool.map(lambda child: child.options(refresh=True), children.values()))
+                    futures = [pool.submit(copy_context().run, child.options, refresh=True)
+                        for child in children.values()]
+                    catalogs = [future.result() for future in futures]
                 # Real engines check private configuration without resolving
                 # credentials again. Injected engines can recheck their loader.
                 for provider, child in children.items():
