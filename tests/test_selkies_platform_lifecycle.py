@@ -431,3 +431,55 @@ def test_reopen_does_not_resurrect_retired_paths_from_cached_settings(monkeypatc
             if first.socket.parent.exists():
                 first.socket.parent.rmdir()
     asyncio.run(scenario())
+
+
+def test_retained_task_failure_reports_location_without_exception_payload(caplog):
+    async def scenario():
+        async def failed():
+            raise ValueError('synthetic-private-page-and-credential-sentinel')
+        task = asyncio.create_task(failed())
+        await asyncio.gather(task, return_exceptions=True)
+        platform.consume_failure(task)
+        assert task.exception() is not None
+    asyncio.run(scenario())
+    assert 'kind=ValueError' in caplog.text
+    assert 'source=test_selkies_platform_lifecycle.py:' in caplog.text
+    assert 'synthetic-private-page-and-credential-sentinel' not in caplog.text
+
+
+def test_unexpected_watcher_cancellation_is_visible_without_releasing_ownership(monkeypatch, caplog):
+    async def scenario():
+        f = lifecycle(monkeypatch)
+        f.release.set()
+        current = await platform.ensure(f.bridge, f.owned)
+        task = asyncio.create_task(asyncio.sleep(30))
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        current.watch_finished(task)
+        assert platform.runtime is current
+        assert current.shutdown is None
+        await current.stop()
+    asyncio.run(scenario())
+    assert 'watcher cancelled before cleanup' in caplog.text
+
+
+def test_cancelled_cleanup_child_reports_location_and_retains_generation(monkeypatch, caplog):
+    async def scenario():
+        f = lifecycle(monkeypatch)
+        f.release.set()
+        current = await platform.ensure(f.bridge, f.owned)
+        async def cancelled_child():
+            raise asyncio.CancelledError('synthetic-private-cancellation-sentinel')
+        current.server.stop_server = cancelled_child
+        with pytest.raises(asyncio.CancelledError):
+            await current.stop()
+        assert current.shutdown.cancelled()
+        assert platform.runtime is current
+        async def recovered_stop():
+            return None
+        current.server.stop_server = recovered_stop
+        await current.stop()
+    asyncio.run(scenario())
+    assert 'kind=CancelledError' in caplog.text
+    assert 'source=test_selkies_platform_lifecycle.py:' in caplog.text
+    assert 'synthetic-private-cancellation-sentinel' not in caplog.text
