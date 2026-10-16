@@ -1,8 +1,9 @@
-"""Discover only the configured engine; expose no endpoint or credential material."""
+"""Discover enrolled native engines; expose no endpoint or credential material."""
 import asyncio
 import ast
 from copy import deepcopy
-from dataclasses import dataclass, field
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 import inspect
 from pathlib import Path
@@ -126,7 +127,7 @@ def _identity_for_model(identity, model):
     return selected
 
 
-def configured_engine():
+def configured_engine(enrollment=None):
     from hermes_cli.config import load_config_readonly
     from hermes_cli.runtime_provider import resolve_runtime_provider
     from providers import get_provider_profile
@@ -137,6 +138,8 @@ def configured_engine():
         model = {"default": str(model or "")}
     current = str(model.get("default", model.get("name", "")) or "")
     requested = str(model.get("provider") or "")
+    if enrollment is not None:
+        requested, current = enrollment["provider"], enrollment["model"]
     runtime = resolve_runtime_provider(requested=requested or None, target_model=current or None)
     # A named custom selector owns its endpoint; "auto" does not own an engine.
     provider = requested if requested and requested != "auto" else str(runtime.get("provider") or "")
@@ -145,12 +148,79 @@ def configured_engine():
     headers = runtime.get("extra_headers") or {}
     selectors = ((requested, provider) if runtime.get("provider") == "custom" and provider != "custom"
         else (requested, provider, runtime.get("provider")))
-    identity = _config_identity(config, selectors)
+    def read_identity(value):
+        identity = _config_identity(value, selectors)
+        if enrollment is not None:
+            # A named provider owns its route; unrelated default changes do not.
+            identity.update(selector=requested, model={}, enrollment=[
+                {key: row.get(key) for key in ("provider", "model")}
+                for row in _enrollments(value) if row["provider"] == requested])
+        return identity
+    identity = read_identity(config)
+    if enrollment is not None:
+        label = enrollment["label"]
     return Engine(provider, current, label, str(runtime.get("base_url") or ""),
         runtime.get("api_key") or "", str(runtime.get("api_mode") or "chat_completions"),
         dict(headers) if isinstance(headers, dict) else {}, _qualified_wire(profile), identity,
-        lambda: _config_identity(load_config_readonly(), selectors),
+        lambda: read_identity(load_config_readonly()),
         _native_model_mode_reader(provider, str(runtime.get("base_url") or "")))
+
+
+
+def _enrollments(config):
+    value = config.get("radhouse_inference", {})
+    if not isinstance(value, dict):
+        raise ValueError("inference_enrollment_invalid")
+    rows = value.get("providers", [])
+    if not isinstance(rows, list) or len(rows) > 4:
+        raise ValueError("inference_enrollment_invalid")
+    checked, seen = [], set()
+    for row in rows:
+        if (not isinstance(row, dict) or set(row) != {"provider", "model", "label"}
+                or not all(_identifier(row[key]) for key in row)
+                or not row["provider"].startswith("custom:") or row["provider"] in seen):
+            raise ValueError("inference_enrollment_invalid")
+        identity = _config_identity(config, (row["provider"],))
+        if len(identity["providers"]) != 1:
+            raise ValueError("inference_provider_unregistered")
+        seen.add(row["provider"])
+        checked.append(dict(row))
+    return checked
+
+
+
+def _engine_target(config, enrollment=None):
+    try:
+        return configured_engine(enrollment)
+    except Exception:
+        # A credential/transport resolver failure belongs to this provider only.
+        # Empty endpoints cannot be discovered or admitted and expose no errors.
+        model = config.get("model", {})
+        if not isinstance(model, dict):
+            model = {"default": str(model or "")}
+        row = enrollment or {"provider": str(model.get("provider") or "default"),
+            "model": str(model.get("default", model.get("name", "")) or ""),
+            "label": str(model.get("provider") or "Default")}
+        return Engine(row["provider"], row["model"], row["label"], "")
+
+
+def configured_engines():
+    from hermes_cli.config import load_config_readonly
+    # Validate the complete operator allowlist before resolving any added route.
+    config = load_config_readonly()
+    rows = _enrollments(config)
+    default = _engine_target(config)
+    engines = [default]
+    for row in rows:
+        if row["provider"] == default.provider:
+            if row["model"] != default.model:
+                raise ValueError("inference_default_enrollment_mismatch")
+            engines[0] = replace(default, label=row["label"])
+        else:
+            engines.append(_engine_target(config, row))
+    if len(engines) > 4 or len({engine.provider for engine in engines}) != len(engines):
+        raise ValueError("inference_enrollment_invalid")
+    return engines
 
 
 def discover(engine):
@@ -341,6 +411,63 @@ class NativeInferenceCatalog:
         return "inference_thinking_unavailable"
 
 
+
+class EnrolledInferenceCatalog:
+    """Independent discovery, with one atomic provider-pair admission snapshot."""
+    def __init__(self, *, load_engines=configured_engines, fetch=discover, clock=time.time):
+        self.load_engines, self.fetch, self.clock = load_engines, fetch, clock
+        self.lock = Lock()
+        self.cached, self.children, self.until = None, {}, 0
+
+    def _load_provider(self, provider):
+        return next(engine for engine in self.load_engines() if engine.provider == provider)
+
+    def options(self, *, refresh=False):
+        with self.lock:
+            now = self.clock()
+            if not refresh and self.cached is not None and now < self.until:
+                return deepcopy(self.cached)
+            result = {"schema": SCHEMA, "state": "unavailable",
+                "checked_at": datetime.fromtimestamp(now, timezone.utc).isoformat(),
+                "engine": None, "current_model": None, "engines": [], "models": []}
+            children = {}
+            try:
+                engines = self.load_engines()
+                if not 1 <= len(engines) <= 4 or len({e.provider for e in engines}) != len(engines):
+                    raise ValueError("inference_enrollment_invalid")
+                for engine in engines:
+                    children[engine.provider] = NativeInferenceCatalog(
+                        load_engine=lambda e=engine: e, fetch=self.fetch, clock=self.clock)
+                with ThreadPoolExecutor(max_workers=len(children)) as pool:
+                    catalogs = list(pool.map(lambda child: child.options(refresh=True), children.values()))
+                # Real engines check private configuration without resolving
+                # credentials again. Injected engines can recheck their loader.
+                for provider, child in children.items():
+                    child.load_engine = lambda selected=provider: self._load_provider(selected)
+                default = catalogs[0]
+                result.update(engine=default["engine"], current_model=default["current_model"])
+                for engine, catalog in zip(engines, catalogs):
+                    result["engines"].append({"id": engine.provider, "label": engine.label,
+                        "available": catalog["state"] == "available", "current_model": engine.model})
+                    result["models"].extend({**row, "provider": engine.provider} for row in catalog["models"])
+                if any(row["available"] for row in result["models"]):
+                    result["state"] = "available"
+            except Exception:
+                children = {}
+            self.cached, self.children, self.until = result, children, now + CACHE_SECONDS
+            return deepcopy(result)
+
+    def admission_error(self, body):
+        if not any(key in body for key in ("provider", "model", "model_options")):
+            return None
+        self.options()
+        with self.lock:
+            child = self.children.get(body.get("provider"))
+        if child is None:
+            return "inference_selection_changed"
+        return child.admission_error(body)
+
+
 def _catalog(adapter):
     from hermes_constants import get_hermes_home
     # Routed profiles on one adapter must never reuse another profile's engine metadata.
@@ -349,7 +476,7 @@ def _catalog(adapter):
         catalogs = adapter._radhouse_inference_catalogs = {}
     profile = str(get_hermes_home())
     if profile not in catalogs:
-        catalogs[profile] = NativeInferenceCatalog()
+        catalogs[profile] = EnrolledInferenceCatalog()
     return catalogs[profile]
 
 

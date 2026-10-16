@@ -181,3 +181,29 @@ def test_fixed_no_admission_proof_closes_saved_turn_for_another_message(tmp_path
         assert caught.value.code == "inference_model_unavailable"
         assert service.store.find("alice", request)["status"] == "failed"
         assert service.store.pending("alice") is None
+
+
+def test_retry_freezes_provider_pair_and_rejects_provider_change(workspace, monkeypatch):
+    from radhouse.chat.inference import InferenceService
+    from tests.test_chat_inference import Runtime, enrolled_catalog
+    client, _, hermes, inference, _, _ = workspace
+    runtime = Runtime()
+    runtime.payload = enrolled_catalog()
+    monkeypatch.setattr(inference, 'resolve', InferenceService(runtime).resolve)
+    choice = {'provider': 'secondary', 'model': 'alpha', 'thinking': 'high'}
+    body = message(inference=choice)
+    hermes.lose_ack = True
+    assert client.post('/chat/messages', json=body, headers=HEADERS).status_code == 503
+    first = hermes.requests[0][1]
+    assert (first['provider'], first['model'], first['radhouse_inference']) == ('secondary', 'alpha', True)
+    before = len(runtime.calls)
+    runtime.payload = RuntimeError('provider now unavailable')
+    retried = client.post('/chat/messages', json=body, headers=HEADERS)
+    assert retried.status_code == 200
+    assert retried.json()['turns'][0]['inference'] == choice
+    assert len(runtime.calls) == before
+    assert hermes.requests[1] == hermes.requests[0]
+    changed = {**body, 'inference': {**choice, 'provider': 'configured-lan'}}
+    response = client.post('/chat/messages', json=changed, headers=HEADERS)
+    assert response.status_code == 409
+    assert response.json()['error'] == 'message_options_changed'

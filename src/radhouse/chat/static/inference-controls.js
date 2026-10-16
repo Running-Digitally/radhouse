@@ -4,7 +4,7 @@
     constructor({container, request, onAuthRequired = () => {}, onChange = () => {}}) {
       this.container = container; this.request = request;
       this.onAuthRequired = onAuthRequired; this.onChange = onChange;
-      this.catalog = null; this.epoch = 0; this.controller = null; this.disabled = false; this.loading = false;
+      this.catalog = null; this.choices = new Map(); this.epoch = 0; this.controller = null; this.disabled = false; this.loading = false;
       container.classList.add("inference-controls");
       this.model = document.createElement("select"); this.model.setAttribute("aria-label", "Model");
       this.thinking = document.createElement("select"); this.thinking.setAttribute("aria-label", "Thinking");
@@ -36,7 +36,7 @@
     }
 
     clear() {
-      this.epoch++; this.controller?.abort(); this.controller = null; this.catalog = null; this.loading = false;
+      this.epoch++; this.controller?.abort(); this.controller = null; this.catalog = null; this.choices.clear(); this.loading = false;
       this.model.replaceChildren(); this.option(this.model, "", "Default"); this.model.value = "";
       this.thinking.replaceChildren(); this.option(this.thinking, "default", "Default");
       this.thinking.value = "default"; this.thinkingLabel.hidden = true; this.status.textContent = "";
@@ -45,8 +45,15 @@
     }
 
     selection() {
-      const model = this.model.value || null, thinking = this.thinking.value || "default";
+      const value = this.model.value, thinking = this.thinking.value || "default";
+      const choice = this.choices.get(value);
+      if (choice) return {...choice, thinking};
+      const model = value || null;
       return model === null && thinking === "default" ? null : {model, thinking};
+    }
+
+    optionValue(row) {
+      return row.provider ? JSON.stringify([row.provider, row.id || row.model]) : (row.id || row.model);
     }
 
     setDisabled(disabled) {
@@ -58,8 +65,9 @@
     }
 
     renderThinking(preserve = "default") {
-      const selected = this.model.value || this.catalog?.current_model;
-      const row = this.catalog?.models?.find(row => row.id === selected && row.available);
+      const selected = this.model.value;
+      const row = this.catalog?.models?.find(row => row.available && (selected ? this.optionValue(row) === selected :
+        row.id === this.catalog.current_model && (!row.provider || row.provider === this.catalog.engine?.id)));
       const caps = row?.thinking;
       this.hint.textContent = row && caps?.state === "unknown" ? "Thinking settings aren’t available for this model." : "";
       this.thinking.replaceChildren(); this.option(this.thinking, "default", "Default");
@@ -86,15 +94,23 @@
         const value = await this.request("/chat/inference" + (refresh ? "?refresh=true" : ""), undefined, false, controller.signal);
         if (epoch !== this.epoch) return;
         if (value?.schema !== "radhouse.inference.v1" || !Array.isArray(value.models)) throw new Error("invalid_catalog");
-        this.catalog = value; this.model.replaceChildren();
+        this.catalog = value;
+        this.choices = new Map(value.models.map(row => [this.optionValue(row),
+          row.provider ? {provider: row.provider, model: row.id} : {model: row.id}]));
+        this.model.replaceChildren();
         this.option(this.model, "", value.current_model ? "Default · " + value.current_model : "Default");
         for (const row of value.models) {
-          this.option(this.model, row.id, row.label + (row.available ? "" : " (unavailable)"), !row.available);
+          const provider = value.engines?.find(engine => engine.id === row.provider);
+          this.option(this.model, this.optionValue(row), (provider ? provider.label + " · " : "") +
+            row.label + (row.available ? "" : " (unavailable)"), !row.available);
         }
-        if (selected?.model && !value.models.some(row => row.id === selected.model)) {
-          this.option(this.model, selected.model, selected.model + " (unavailable)", true);
+        const selectedValue = selected?.model ? this.optionValue(selected) : "";
+        if (selectedValue && !value.models.some(row => this.optionValue(row) === selectedValue)) {
+          this.choices.set(selectedValue, selected.provider ? {provider: selected.provider, model: selected.model} : {model: selected.model});
+          this.option(this.model, selectedValue, (selected.provider ? selected.provider + " · " : "") +
+            selected.model + " (unavailable)", true);
         }
-        this.model.value = selected?.model || "";
+        this.model.value = selectedValue;
         this.renderThinking(selected?.thinking || "default");
         this.status.textContent = value.state === "available" ? "" : value.models.some(row => row.reason === "transport_unsupported") ?
           "This engine’s connection doesn’t support workspace tools." : "Model choices are unavailable. You can use Default.";

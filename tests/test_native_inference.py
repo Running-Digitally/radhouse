@@ -318,3 +318,107 @@ def test_actual_hermes_http_helper_preserves_engine_metadata(tmp_path, monkeypat
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_enrolled_discovery_isolates_failure_and_duplicate_model_ids(helpers):
+    primary = native.Engine('custom:primary', 'shared', 'Primary', 'http://primary.test/v1')
+    secondary = native.Engine('custom:secondary', 'shared', 'Secondary', 'http://secondary.test/v1')
+    down = [True]
+    def fetch(selected):
+        if selected.provider == primary.provider and down[0]:
+            raise RuntimeError('private endpoint and credential')
+        return [{'id': 'shared'}]
+    group = native.EnrolledInferenceCatalog(load_engines=lambda: [primary, secondary], fetch=fetch)
+    value = group.options()
+    assert value['state'] == 'available'
+    assert [(row['provider'], row['available']) for row in value['models']] == [
+        ('custom:primary', False), ('custom:secondary', True)]
+    assert group.admission_error({'provider': 'custom:secondary', 'model': 'shared'}) is None
+    assert group.admission_error({'provider': 'custom:primary', 'model': 'shared'}) == 'inference_catalog_unavailable'
+    assert 'primary.test' not in str(value)
+    down[0] = False
+    value = group.options(refresh=True)
+    assert all(row['available'] for row in value['models'])
+    down[0] = True
+    assert group.options(refresh=True)['models'][0]['available'] is False
+
+
+def test_enrolled_selected_route_and_removal_are_rechecked(helpers):
+    selected = [engine()]
+    group = native.EnrolledInferenceCatalog(load_engines=lambda: selected, fetch=lambda _: [supported()])
+    group.options()
+    selected[0] = native.Engine('current-engine', 'alpha', 'Current', 'http://changed.test/v1')
+    assert group.admission_error({'provider': 'current-engine', 'model': 'alpha'}) == 'inference_selection_changed'
+    selected.clear()
+    assert group.admission_error({'provider': 'current-engine', 'model': 'alpha'}) == 'inference_catalog_unavailable'
+    assert group.admission_error({'provider': 'never-enrolled', 'model': 'alpha'}) == 'inference_selection_changed'
+
+
+def test_enrolled_discovery_is_concurrent_and_snapshot_is_copied(helpers):
+    from threading import Barrier
+    barrier = Barrier(2)
+    engines = [engine(), native.Engine('secondary', 'alpha', 'Secondary', 'http://secondary.test/v1')]
+    def fetch(_):
+        barrier.wait(timeout=3)
+        return [{'id': 'alpha'}]
+    group = native.EnrolledInferenceCatalog(load_engines=lambda: engines, fetch=fetch)
+    result = group.options()
+    assert all(row['available'] for row in result['models'])
+    result['models'].clear()
+    assert len(group.options()['models']) == 2
+
+
+def test_enrollment_allowlist_and_private_identity(helpers, monkeypatch):
+    from copy import deepcopy
+    aliases = ModuleType('hermes_cli.providers')
+    aliases.custom_provider_aliases = lambda name, key='': {name.lower(), key.lower(), 'custom:' + key.lower()}
+    aliases.determine_api_mode = lambda *args: 'chat_completions'
+    aliases.get_provider = lambda *args, **kwargs: None
+    config_module, runtime, providers = (ModuleType(name) for name in (
+        'hermes_cli.config', 'hermes_cli.runtime_provider', 'providers'))
+    config = {'model': {'provider': 'custom:primary', 'default': 'alpha', 'base_url': 'http://primary.test/v1'},
+        'providers': {'secondary': {'base_url': 'http://secondary.test/v1'}},
+        'radhouse_inference': {'providers': [{'provider': 'custom:secondary', 'model': 'alpha', 'label': 'Secondary'}]}}
+    config_module.load_config_readonly = lambda: deepcopy(config)
+    calls = []
+    runtime.resolve_runtime_provider = lambda **kwargs: (calls.append(kwargs) or {
+        'provider': 'custom', 'base_url': 'http://secondary.test/v1', 'api_mode': 'chat_completions'})
+    providers.get_provider_profile = lambda _: None
+    for module in (aliases, config_module, runtime, providers):
+        monkeypatch.setitem(sys.modules, module.__name__, module)
+    monkeypatch.setattr(native, '_qualified_wire', lambda _: 'custom')
+    secondary = native.configured_engine(native._enrollments(config)[0])
+    assert calls == [{'requested': 'custom:secondary', 'target_model': 'alpha'}]
+    group = native.EnrolledInferenceCatalog(load_engines=lambda: [secondary], fetch=lambda _: [supported()])
+    group.options()
+    config['model']['base_url'] = 'http://changed-default.test/v1'
+    assert group.admission_error({'provider': 'custom:secondary', 'model': 'alpha'}) is None
+    config['radhouse_inference']['providers'] = []
+    assert group.admission_error({'provider': 'custom:secondary', 'model': 'alpha'}) == 'inference_selection_changed'
+    assert len(calls) == 1
+    config['radhouse_inference']['providers'] = [{'provider': 'custom:missing', 'model': 'alpha', 'label': 'Unknown'}]
+    with pytest.raises(ValueError, match='unregistered'):
+        native._enrollments(config)
+
+
+def test_one_provider_resolution_failure_does_not_hide_another(helpers, monkeypatch):
+    config = ModuleType('hermes_cli.config')
+    config.load_config_readonly = lambda: {'model': {'provider': 'primary', 'default': 'alpha'}}
+    monkeypatch.setitem(sys.modules, config.__name__, config)
+    monkeypatch.setattr(native, '_enrollments', lambda _: [
+        {'provider': 'custom:secondary', 'model': 'alpha', 'label': 'Secondary'}])
+    def resolve(enrollment=None):
+        if enrollment is None:
+            raise RuntimeError('private credential resolution failure')
+        return native.Engine('custom:secondary', 'alpha', 'Secondary', 'http://secondary.test/v1')
+    monkeypatch.setattr(native, 'configured_engine', resolve)
+    def fetch(engine):
+        if not engine.base_url:
+            raise ValueError('unresolved engine')
+        return [{'id': 'alpha'}]
+    group = native.EnrolledInferenceCatalog(fetch=fetch)
+    value = group.options()
+    assert value['state'] == 'available'
+    assert value['engines'][0]['available'] is False
+    assert value['engines'][1]['available'] is True
+    assert 'credential resolution' not in str(value)
