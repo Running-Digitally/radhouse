@@ -605,3 +605,29 @@ The record count is 14. No server disposition is implied. Accelerate review on a
 users/co-tenancy, a LAN grant or ingress/authority expansion. Product work should
 resume after S5 with the existing maintenance allocation rather than a repository
 or upstream-engine cleanup sweep.
+
+
+## S5 model-backed acceptance follow-up — 16 October
+
+Fresh synthetic tests against the selected pilot exercised 14 actual browser
+calls through the restored default model route. Private reads and reads after
+revocation were denied; Observe allowed a snapshot while denying navigation;
+handback restored agent reads and public navigation. The installed browser
+blocked a private-network request and a cloud-metadata endpoint, then recovered
+public HTTPS navigation. Native tool records, rather than assistant prose,
+confirm these results; preexisting conversation rows remained unchanged.
+
+The final lifecycle check exposed a bounded adapter defect: automatic native
+inactivity cleanup retired the browser but left its stream listener and directory
+until a later launch performed cleanup. The follow-up makes confirmed automatic
+retirement schedule the existing owned shutdown path, without awaiting the
+watcher from itself. Failed retirement still retains ownership and denies
+replacement. A real Unix-listener regression fails before the fix and verifies
+listener/directory removal and replacement after it. The upstream engine, idle
+policy, browser network boundary and provider configuration remain unchanged.
+
+S5 stays open for qualification and deployment of this small follow-up, actual
+Close/reopen and automatic-retirement verification, and final idle acceptance.
+This is not a reason to expand the stage into upstream hardening or a zero-issue
+sweep. Private operational evidence owns installation details and the observed
+failed reopening attempt; this public checkpoint does not claim rollout success.

@@ -217,6 +217,69 @@ def test_failed_start_closes_real_unix_listener_before_releasing_ownership(monke
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize('retirement_confirmed', [True, False])
+def test_automatic_retirement_closes_listener_before_allowing_replacement(monkeypatch, retirement_confirmed):
+    from aiohttp import web, ClientSession, UnixConnector, ClientError
+
+    async def scenario():
+        f = lifecycle(monkeypatch)
+        f.bridge = SimpleNamespace(_controller=SimpleNamespace(
+            state=lambda identity: SimpleNamespace(lease=None)))
+        f.owned = SimpleNamespace(identity='synthetic')
+        monkeypatch.setattr(platform.tempfile, 'tempdir', '/tmp')
+        f.release.set()
+        current = await platform.ensure(f.bridge, f.owned)
+        app = web.Application()
+        async def status(request):
+            return web.Response(text='synthetic')
+        app.router.add_get('/', status)
+        runner = web.AppRunner(app, access_log=None)
+        await runner.setup()
+        await web.UnixSite(runner, str(current.socket)).start()
+        async def stop_server():
+            f.events.append('server-stop')
+            await runner.cleanup()
+        current.server = SimpleNamespace(stop_server=stop_server)
+        def retire():
+            if not retirement_confirmed:
+                raise ValueError('synthetic_retirement_unconfirmed')
+            f.events.append('retire-complete')
+        monkeypatch.setattr(platform, '_chrome', None)
+        monkeypatch.setattr(platform, 'retire', retire)
+        current.watcher = asyncio.create_task(current.watch())
+        try:
+            if not retirement_confirmed:
+                with pytest.raises(ValueError, match='synthetic_retirement_unconfirmed'):
+                    await asyncio.wait_for(current.watcher, timeout=2)
+                assert platform.runtime is current
+                assert current.stopped and current.boundary._blocked
+                assert current.shutdown is None
+                assert current.socket.parent.exists()
+                with pytest.raises(ValueError, match='stream_browser_busy'):
+                    await platform.ensure(f.bridge, object())
+                return
+            await asyncio.wait_for(current.watcher, timeout=2)
+            assert current.shutdown is not None
+            await asyncio.wait_for(asyncio.shield(current.shutdown), timeout=2)
+            async with ClientSession(connector=UnixConnector(path=str(current.socket))) as client:
+                with pytest.raises(ClientError):
+                    await client.get('http://localhost/')
+            assert platform.runtime is None
+            assert not current.socket.exists()
+            assert not current.socket.parent.exists()
+            assert f.events.index('retire-complete') < f.events.index('server-stop')
+            replacement = await platform.ensure(f.bridge, object())
+            assert replacement is not current
+            await replacement.stop()
+        finally:
+            # Failed synthetic retirement never owned a real browser process.
+            if current.retirement is not None and current.retirement.done():
+                current.retirement = None
+            await current.stop()
+            await runner.cleanup()
+    asyncio.run(scenario())
+
+
 def test_stop_waits_for_inflight_retirement_worker(monkeypatch):
     import threading
     async def scenario():

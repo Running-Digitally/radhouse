@@ -169,11 +169,15 @@ def test_dead_browser_watcher_revokes_without_a_human_lease(monkeypatch):
         p.bridge=SimpleNamespace(_controller=SimpleNamespace(state=lambda identity:SimpleNamespace(lease=None),pause=lambda *args:pytest.fail('no human lease to pause')))
         p.boundary=SimpleNamespace(_blocked=False,input_token='old',provision=publish,_drain=drain)
         p.stopped=False
+        p.shutdown=None
+        async def finish_stop():events.append('cleanup')
+        p.finish_stop=finish_stop
         monkeypatch.setattr(platform,'_chrome',None)
         monkeypatch.setattr(platform,'retire',lambda:events.append('retire'))
         await p.watch()
+        await p.shutdown
         assert p.stopped and p.boundary._blocked and p.boundary.input_token is None
-        assert events==['revoke','drain','retire']
+        assert events==['revoke','drain','retire','cleanup']
     asyncio.run(scenario())
 
 
