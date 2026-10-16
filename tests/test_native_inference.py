@@ -441,3 +441,22 @@ def test_parallel_discovery_keeps_routed_profile_context(helpers):
     finally:
         scope.reset(token)
     assert sorted(observed) == [('current-engine', 'admitted-profile'), ('secondary', 'admitted-profile')]
+
+
+
+def test_default_display_label_does_not_reconfigure_its_native_route(helpers, monkeypatch):
+    config = ModuleType('hermes_cli.config')
+    value = {'radhouse_inference': {'default_label': 'Primary'}}
+    config.load_config_readonly = lambda: value
+    monkeypatch.setitem(sys.modules, config.__name__, config)
+    original = engine()
+    monkeypatch.setattr(native, '_engine_target', lambda *_: original)
+    engines = native.configured_engines()
+    assert len(engines) == 1
+    assert engines[0].label == 'Primary'
+    assert engines[0].provider == original.provider
+    assert engines[0].base_url == original.base_url
+    assert engines[0].api_key == original.api_key
+    value['radhouse_inference']['default_label'] = {'url': 'must never be a label'}
+    with pytest.raises(ValueError):
+        native.configured_engines()

@@ -211,6 +211,11 @@ def configured_engines():
     config = load_config_readonly()
     rows = _enrollments(config)
     default = _engine_target(config)
+    label = config.get("radhouse_inference", {}).get("default_label")
+    if label is not None:
+        if not _identifier(label):
+            raise ValueError("inference_enrollment_invalid")
+        default = replace(default, label=label)
     engines = [default]
     for row in rows:
         if row["provider"] == default.provider:

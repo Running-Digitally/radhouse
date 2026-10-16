@@ -16,13 +16,14 @@ Web normalization accepts only sanitized provider/model/capability fields. Web r
 
 ```yaml
 radhouse_inference:
+  default_label: Primary
   providers:
     - provider: custom:secondary
       model: secondary-chat
       label: Secondary
 ```
 
-The default engine need not be repeated. Native provider registration remains separate and private. Enrollment is validated before discovery; unknown or malformed registration is unavailable rather than routed by guessed URLs.
+The optional default label changes presentation only; its native route and credentials remain unchanged. The default engine need not be repeated. Native provider registration remains separate and private. Enrollment is validated before discovery; unknown or malformed registration is unavailable rather than routed by guessed URLs.
 
 ## Call path and affected files
 
