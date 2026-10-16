@@ -30,6 +30,21 @@ def normalize_catalog(value):
         if type(engine) is not dict:
             raise ValueError("inference_response_invalid")
         engine = {key: _text(engine.get(key)) for key in ("id", "label")}
+    engines = value.get("engines")
+    engine_rows = []
+    if engines is not None:
+        if type(engines) is not list or not 1 <= len(engines) <= 4:
+            raise ValueError("inference_response_invalid")
+        for row in engines:
+            if type(row) is not dict or type(row.get("available")) is not bool:
+                raise ValueError("inference_response_invalid")
+            item = {key: _text(row.get(key)) for key in ("id", "label", "current_model")}
+            item["available"] = row["available"]
+            if any(known["id"] == item["id"] for known in engine_rows):
+                raise ValueError("inference_response_invalid")
+            engine_rows.append(item)
+        if engine is None or engine["id"] not in {row["id"] for row in engine_rows}:
+            raise ValueError("inference_response_invalid")
     models = value.get("models")
     if type(models) is not list:
         raise ValueError("inference_response_invalid")
@@ -38,9 +53,13 @@ def normalize_catalog(value):
         if type(row) is not dict or type(row.get("available")) is not bool or row.get("reason") not in REASONS:
             raise ValueError("inference_response_invalid")
         model = _text(row.get("id"))
-        if model in seen:
+        provider = _text(row.get("provider")) if engines is not None else None
+        identity = (provider, model)
+        if engines is not None and provider not in {item["id"] for item in engine_rows}:
             raise ValueError("inference_response_invalid")
-        seen.add(model)
+        if identity in seen:
+            raise ValueError("inference_response_invalid")
+        seen.add(identity)
         thinking = row.get("thinking")
         if type(thinking) is not dict or thinking.get("state") not in {"supported", "unsupported", "unknown"}:
             raise ValueError("inference_response_invalid")
@@ -55,20 +74,31 @@ def normalize_catalog(value):
         if (row["available"] and (row.get("reason") is not None or engine is None or value["state"] != "available")
                 or not row["available"] and row.get("reason") is None):
             raise ValueError("inference_response_invalid")
-        result.append({"id": model, "label": _text(row.get("label")), "available": row["available"],
+        if row["available"] and engines is not None and not next(item["available"] for item in engine_rows if item["id"] == provider):
+            raise ValueError("inference_response_invalid")
+        result.append({**({"provider": provider} if engines is not None else {}), "id": model, "label": _text(row.get("label")), "available": row["available"],
             "reason": row.get("reason"), "thinking": {"state": thinking["state"],
                 "choices": list(choices), "can_disable": thinking["can_disable"], "can_enable": thinking["can_enable"]}})
     return {"schema": SCHEMA, "state": value["state"], "checked_at": checked, "engine": engine,
-        "current_model": _text(value.get("current_model"), optional=True), "models": result}
+        "current_model": _text(value.get("current_model"), optional=True), "models": result,
+        **({"engines": engine_rows} if engines is not None else {})}
 
 
 def validate_selection(selection, catalog):
     """Return only the immutable native kwargs a new turn may dispatch."""
     if selection is None:
         return {}
-    if type(selection) is not dict or set(selection) != {"model", "thinking"}:
+    if type(selection) is not dict or set(selection) not in ({"model", "thinking"}, {"provider", "model", "thinking"}):
         raise Rejected("inference_selection_invalid", 422)
     model, thinking = selection["model"], selection["thinking"]
+    provider = selection.get("provider")
+    if "provider" in selection:
+        try:
+            _text(provider)
+        except ValueError:
+            raise Rejected("inference_selection_invalid", 422) from None
+        if model is None:
+            raise Rejected("inference_selection_invalid", 422)
     if model is not None:
         try:
             _text(model)
@@ -81,10 +111,12 @@ def validate_selection(selection, catalog):
     if catalog["state"] != "available" or catalog["engine"] is None:
         raise Rejected("inference_catalog_unavailable", 503)
     selected = model or catalog["current_model"]
-    row = next((row for row in catalog["models"] if row["id"] == selected), None)
+    provider = provider or catalog["engine"]["id"]
+    row = next((row for row in catalog["models"] if row["id"] == selected
+        and row.get("provider", catalog["engine"]["id"]) == provider), None)
     if row is None or not row["available"]:
         raise Rejected("inference_model_unavailable", 409)
-    result = {"provider": catalog["engine"]["id"], "model": row["id"]}
+    result = {"provider": provider, "model": row["id"]}
     caps = row["thinking"]
     if thinking == "default":
         return result

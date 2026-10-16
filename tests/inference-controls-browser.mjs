@@ -59,6 +59,21 @@ try{
   await expect(thinking.locator('option[value="low"]')).toHaveCount(0);
   await page.setViewportSize({width:390,height:844});await expect(model).toBeInViewport();await expect(thinking).toBeInViewport();await expect(page.getByRole("button",{name:"Refresh models"})).toBeInViewport();
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  payload={...payload,current_model:"shared",engine:{id:"primary",label:"Primary"},engines:[
+    {id:"primary",label:"Primary",available:false,current_model:"shared"},
+    {id:"secondary",label:"Secondary",available:true,current_model:"shared"}],models:[
+    {...row("shared"),provider:"primary",available:false,reason:"catalog_unavailable"},
+    {...row("shared",known),provider:"secondary"}]};
+  await page.getByRole("button",{name:"Refresh models"}).click();
+  await expect(model.getByRole("option",{name:"Primary · shared (unavailable)",exact:true})).toHaveAttribute("disabled", "");
+  await model.selectOption(JSON.stringify(["secondary","shared"]));await thinking.selectOption("high");
+  assert.deepEqual(await page.evaluate(()=>controls.selection()),{provider:"secondary",model:"shared",thinking:"high"});
+  payload={...payload,models:[{...row("shared"),provider:"primary"}],engines:[{id:"primary",label:"Primary",available:true,current_model:"shared"}]};
+  await page.getByRole("button",{name:"Refresh models"}).click();
+  await expect(model.getByRole("option",{name:"secondary · shared (unavailable)",exact:true})).toHaveAttribute("disabled", "");
+  assert.deepEqual(await page.evaluate(()=>controls.selection()),{provider:"secondary",model:"shared",thinking:"high"});
+  await model.selectOption(JSON.stringify(["primary","shared"]));
+  assert.deepEqual(await page.evaluate(()=>controls.selection()),{provider:"primary",model:"shared",thinking:"default"});
   await page.evaluate(()=>controls.clear());assert.equal(await page.evaluate(()=>controls.selection()),null);await expect(thinking).toBeHidden();
   assert.deepEqual(errors,[]);await context.close();
   console.log("PASS real Chromium inference controls: dynamic rows, unsupported/unknown controls, boolean toggle, explicit refresh, retained unavailable choice, Default recovery, keyboard and mobile.");

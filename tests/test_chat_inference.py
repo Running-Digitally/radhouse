@@ -83,3 +83,46 @@ def test_explicit_refresh_and_catalog_change_do_not_mutate_frozen_dispatch():
     with pytest.raises(Rejected) as error:
         service.resolve({"model": "alpha", "thinking": "high"})
     assert error.value.code == "inference_model_unavailable"
+
+
+def enrolled_catalog():
+    value = catalog()
+    value['engines'] = [
+        {'id': 'configured-lan', 'label': 'Primary', 'available': False, 'current_model': 'alpha'},
+        {'id': 'secondary', 'label': 'Secondary', 'available': True, 'current_model': 'alpha'}]
+    primary = {**value['models'][0], 'provider': 'configured-lan', 'available': False, 'reason': 'catalog_unavailable'}
+    secondary = {**value['models'][0], 'provider': 'secondary'}
+    value['models'] = [primary, secondary]
+    return value
+
+
+def test_provider_pair_selects_healthy_alternate_without_changing_default():
+    value = normalize_catalog(enrolled_catalog())
+    assert validate_selection({'provider': 'secondary', 'model': 'alpha', 'thinking': 'high'}, value) == {
+        'provider': 'secondary', 'model': 'alpha', 'model_options': {'reasoning': {'enabled': True, 'effort': 'high'}}}
+    with pytest.raises(Rejected, match='inference_model_unavailable'):
+        validate_selection({'model': 'alpha', 'thinking': 'default'}, value)
+    assert validate_selection({'model': None, 'thinking': 'default'}, value) == {}
+
+
+@pytest.mark.parametrize('mutation', [
+    lambda value: value['models'][1].update(provider='unregistered'),
+    lambda value: value['models'].append(deepcopy(value['models'][1])),
+    lambda value: value['engines'][1].update(available=False),
+    lambda value: value['engines'].append(deepcopy(value['engines'][1]))])
+def test_malformed_enrolled_catalog_cannot_offer_a_pair(mutation):
+    value = enrolled_catalog()
+    mutation(value)
+    with pytest.raises(ValueError):
+        normalize_catalog(value)
+
+
+def test_enrolled_catalog_sanitizes_all_providers():
+    value = enrolled_catalog()
+    value['engines'][1]['url'] = 'http://private.invalid'
+    value['engines'][1]['api_key'] = 'synthetic-secret'
+    cleaned = normalize_catalog(value)
+    assert 'private.invalid' not in str(cleaned)
+    assert 'synthetic-secret' not in str(cleaned)
+    assert validate_selection({'provider': 'secondary', 'model': 'alpha', 'thinking': 'default'}, cleaned) == {
+        'provider': 'secondary', 'model': 'alpha'}
