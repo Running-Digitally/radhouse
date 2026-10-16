@@ -128,36 +128,41 @@ def _identity_for_model(identity, model):
     return selected
 
 
+def _requested_model(config, enrollment):
+    if enrollment is not None:
+        return enrollment["provider"], enrollment["model"]
+    model = config.get("model", {})
+    if not isinstance(model, dict):
+        model = {"default": str(model or "")}
+    return str(model.get("provider") or ""), str(model.get("default", model.get("name", "")) or "")
+
+
+def _resolved_engine(provider, current, label, profile, runtime, identity, reader):
+    base_url = str(runtime.get("base_url") or "")
+    headers = runtime.get("extra_headers") or {}
+    return Engine(provider, current, label, base_url,
+        runtime.get("api_key") or "", str(runtime.get("api_mode") or "chat_completions"),
+        dict(headers) if isinstance(headers, dict) else {}, _qualified_wire(profile), identity,
+        reader, _native_model_mode_reader(provider, base_url))
+
+
 def configured_engine(enrollment=None):
     from hermes_cli.config import load_config_readonly
     from hermes_cli.runtime_provider import resolve_runtime_provider
     from providers import get_provider_profile
 
     config = load_config_readonly()
-    model = config.get("model", {})
-    if not isinstance(model, dict):
-        model = {"default": str(model or "")}
-    current = str(model.get("default", model.get("name", "")) or "")
-    requested = str(model.get("provider") or "")
-    if enrollment is not None:
-        requested, current = enrollment["provider"], enrollment["model"]
+    requested, current = _requested_model(config, enrollment)
     runtime = resolve_runtime_provider(requested=requested or None, target_model=current or None)
     # A named custom selector owns its endpoint; "auto" does not own an engine.
     provider = requested if requested and requested != "auto" else str(runtime.get("provider") or "")
     profile = get_provider_profile(str(runtime.get("provider") or provider))
-    label = getattr(profile, "display_name", "") or provider
-    headers = runtime.get("extra_headers") or {}
+    label = enrollment["label"] if enrollment is not None else (getattr(profile, "display_name", "") or provider)
     selectors = ((requested, provider) if runtime.get("provider") == "custom" and provider != "custom"
         else (requested, provider, runtime.get("provider")))
     identity = _engine_identity(config, selectors, enrollment)
-    if enrollment is not None:
-        label = enrollment["label"]
-    return Engine(provider, current, label, str(runtime.get("base_url") or ""),
-        runtime.get("api_key") or "", str(runtime.get("api_mode") or "chat_completions"),
-        dict(headers) if isinstance(headers, dict) else {}, _qualified_wire(profile), identity,
-        lambda: _engine_identity(load_config_readonly(), selectors, enrollment),
-        _native_model_mode_reader(provider, str(runtime.get("base_url") or "")))
-
+    return _resolved_engine(provider, current, label, profile, runtime, identity,
+        lambda: _engine_identity(load_config_readonly(), selectors, enrollment))
 
 
 
