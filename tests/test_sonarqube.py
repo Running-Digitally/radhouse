@@ -182,13 +182,15 @@ class LocalSonarTests(unittest.TestCase):
 
     def test_failed_qualification_retains_only_typed_fixture_diagnostics(self):
         path, manifest = self.coverage_fixture()
-        manifest.update(result="failed", tests={"tests": 2, "failures": 1, "errors": 0, "skipped": 0},
+        manifest.update(result="failed", tests={"tests": 2, "failures": 2, "errors": 0, "skipped": 0},
                         private_value="synthetic-private-value")
         path.write_text(json.dumps(manifest))
         (path.parent / "pytest.xml").write_text(
             '<testsuites><testsuite><testcase classname="tests.test_fixture" '
             'name="test_boundary[synthetic-private-value]"><failure message="synthetic-private-value">'
-            'synthetic-private-value</failure></testcase></testsuite></testsuites>')
+            'synthetic-private-value</failure></testcase>'
+            '<testcase classname="tests.test_fixture" name="test_é">'
+            '<failure>synthetic-private-value</failure></testcase></testsuite></testsuites>')
         output = self.root / "proof"
         output.mkdir()
         def run(args, **kwargs):

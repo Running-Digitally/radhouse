@@ -549,7 +549,8 @@ def test_state_transitions_preserve_concrete_types_and_durable_owner_binding(fix
     def persisted(state):
         assert type(state) is control.ControlState
         assert type(state.identity) is control.BrowserIdentity
-        assert state.identity == identity and state.principal_id == owner.principal_id
+        assert state.identity == identity
+        assert state.principal_id == owner.principal_id
         if state.lease is not None:
             assert type(state.lease) is control.HumanLease
             assert type(state.lease.owner) is control.OwnerBinding
@@ -565,7 +566,8 @@ def test_state_transitions_preserve_concrete_types_and_durable_owner_binding(fix
         control.FenceObservation(identity, None, True)))
     refreshed = persisted(c.heartbeat(identity, owner, taken.lease.lease_id,
         taken.revision, auth_expires_at=400))
-    assert taken.lease.auth_expires_at == 300 and refreshed.lease.auth_expires_at == 400
+    assert taken.lease.auth_expires_at == 300
+    assert refreshed.lease.auth_expires_at == 400
     observing = persisted(c.observation_mode(identity, owner, refreshed.lease.lease_id,
         refreshed.revision, "observe"))
     assert refreshed.lease.observation_mode == "private"
@@ -576,7 +578,8 @@ def test_state_transitions_preserve_concrete_types_and_durable_owner_binding(fix
     admitted = persisted(c.admit_run(identity, owner, fresh, lease_id=None, revision=paused.revision,
         previous=control.RunTerminalObservation(old_run.run_id, old_run.session_id, "completed"),
         handover=control.HumanReturnObservation(identity, owner, paused.revision, True)))
-    assert admitted.admitted_run == fresh and taken.admitted_run == old_run
+    assert admitted.admitted_run == fresh
+    assert taken.admitted_run == old_run
     pending = persisted(c.request_takeover(identity, owner, "take-2",
         revision=admitted.revision, auth_expires_at=400))
     persisted(c.confirm_takeover(identity, pending.revision, control.FenceObservation(identity, None, True)))
@@ -584,6 +587,10 @@ def test_state_transitions_preserve_concrete_types_and_durable_owner_binding(fix
     closed = persisted(c.begin_close(identity, owner, paused.revision,
         previous=control.RunTerminalObservation(fresh.run_id, fresh.session_id, "completed")))
     retired = persisted(c.retire_browser(identity, control.RetirementObservation(identity, True, True)))
-    assert retired.retired and retired.admitted_run is None and retired.lease is None
-    assert not closed.retired and admitted.mode == "agent" and taken.mode == "human"
+    assert retired.retired
+    assert retired.admitted_run is None
+    assert retired.lease is None
+    assert not closed.retired
+    assert admitted.mode == "agent"
+    assert taken.mode == "human"
     assert all(type(state) is control.ControlState for state in states)
