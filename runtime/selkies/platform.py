@@ -440,7 +440,13 @@ class Platform:
                 await asyncio.shield(self.startup)
             except Exception:
                 pass  # Cleanup may be retried, but failed ownership is retained.
-        await self.cleanup()
+        try:
+            await self.cleanup()
+        except asyncio.CancelledError as error:
+            # A cancelled upstream child can cancel shutdown even when its
+            # owner was shielded from request cancellation. Preserve that fact.
+            report_failure(error)
+            raise
 
     async def cleanup(self):
         global runtime

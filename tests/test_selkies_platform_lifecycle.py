@@ -461,3 +461,25 @@ def test_unexpected_watcher_cancellation_is_visible_without_releasing_ownership(
         await current.stop()
     asyncio.run(scenario())
     assert 'watcher cancelled before cleanup' in caplog.text
+
+
+def test_cancelled_cleanup_child_reports_location_and_retains_generation(monkeypatch, caplog):
+    async def scenario():
+        f = lifecycle(monkeypatch)
+        f.release.set()
+        current = await platform.ensure(f.bridge, f.owned)
+        async def cancelled_child():
+            raise asyncio.CancelledError('synthetic-private-cancellation-sentinel')
+        current.server.stop_server = cancelled_child
+        with pytest.raises(asyncio.CancelledError):
+            await current.stop()
+        assert current.shutdown.cancelled()
+        assert platform.runtime is current
+        async def recovered_stop():
+            return None
+        current.server.stop_server = recovered_stop
+        await current.stop()
+    asyncio.run(scenario())
+    assert 'kind=CancelledError' in caplog.text
+    assert 'source=test_selkies_platform_lifecycle.py:' in caplog.text
+    assert 'synthetic-private-cancellation-sentinel' not in caplog.text
