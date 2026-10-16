@@ -5,6 +5,17 @@ window.addEventListener("message", event => {
   if (event.origin !== location.origin || event.source !== window) return;
   if (event.data?.type === "pipelineStatusUpdate") window.parent.postMessage(event.data, location.origin);
 });
+// Activity stays inside the owned document; the parent never reads a denied
+// or redirected iframe's document. No key, clipboard or text payload is sent.
+let lastActivity = -Infinity;
+function activity(event) {
+  const now = performance.now();
+  if (!event.isTrusted || now - lastActivity < 1000) return;
+  lastActivity = now;
+  window.parent.postMessage({type: "browserActivity"}, location.origin);
+}
+for (const type of ["pointerdown", "keydown", "wheel", "touchstart", "input", "compositionend"])
+  document.addEventListener(type, activity, {capture: true, passive: true});
 let currentVideo = null, lastNotice = -Infinity, lastPlayback = "";
 function playback(state) {
   if (state === lastPlayback) return;

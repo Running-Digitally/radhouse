@@ -2,9 +2,8 @@
 
 Date: 2026-10-15. Owner: repository maintainer. Implementer: the continuing
 coding session, with review of each bounded change. Status: S0 and S1/B1 complete;
-bounded B2 and patched dependencies qualified and deployed. B3/B4 source review
-and candidate verification are complete; the overall immediate stage remains
-open pending exact-main analysis and closeout.
+bounded B2 and patched dependencies qualified and deployed. B3/B4 review, exact-main analysis and native pilot selection are complete.
+Deployed acceptance and the newly confirmed S5 viewer/network follow-up remain open.
 
 This is the implementation handoff for the current session. It does not claim
 that planned controls, tests or remediation have already been delivered.
@@ -237,6 +236,38 @@ physical-phone conditions. Repeat the existing disposable Linux qualification
 with exact candidate hashes before any paired runtime deployment. Neither this
 code merge nor its main scan deploys the update or closes S3-S5. The immediate
 stage remains open while the operational dependency risks are unresolved.
+
+## S5 operational checkpoint and public-browser policy
+
+B3/B4 source review and the merge/rescan cycle are complete through merged main
+`c02c87888a93ba05685e2a0c789e142bd613a996`. Exact-main verification passed 1,785
+tests without failures/errors/skips. The processed analysis reports 745 overall
+and 646 new-code findings; the gate still fails, with 72.0% overall and 66.9%
+new-code coverage. The confirmed interruption defect and six follow-up warnings
+are removed. Contextual findings remain open without status, rule or gate changes.
+
+The owned bridge update has passed disposable Linux interruption/recovery and
+state regressions, actual X11/video/privacy/handback and two-generation cleanup,
+with independent root-observed renderer namespace/BPF proof. Native pilot
+selection is complete; deployed end-to-end acceptance remains in progress.
+The web source at the existing pilot revision is identical to this main revision.
+
+Deployed acceptance exposed a separate viewer recovery defect: accessing an
+inaccessible iframe's API/document could interrupt workspace recovery. The bounded
+follow-up refuses unreadable APIs and forwards trusted activity from the owned
+viewer through the existing origin/source-checked status boundary. Its real-engine
+regression reproduces the old failure and verifies recovery, consent retention,
+trusted activity and denial of synthetic/foreign activity in Chromium and WebKit.
+It remains a candidate until reviewed, merged, rescanned and operationally qualified.
+
+The owner selected public-web-only browser networking with explicit future LAN
+grants. [ADR-0005](../decisions/0005-public-web-browser-network-boundary.md) records
+that policy. Current integrated-browser containment has not been qualified;
+proof from the separate isolated review browser cannot substitute for it. S5
+therefore remains open. Implement and qualify a browser-specific routing/proxy
+boundary without breaking authorized backend networking, then select exact frozen
+artifacts under the applicable deployment authority. Do not relabel an unverified
+descriptor or treat the B3/B4 deployment as completion of that work.
 
 ## Delivery order and review units
 

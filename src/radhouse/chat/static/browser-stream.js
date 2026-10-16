@@ -23,7 +23,7 @@
       this.playButton=button('Tap to view browser',()=>{
         // Synchronous same-origin call retains the browser's user gesture.
         // This changes local video playback only, never remote input authority.
-        if(!this.frame.contentWindow?.radhousePlayback?.play()){
+        if(!this.viewerApi('radhousePlayback')?.play()){
           this.notice.textContent='The viewer is connecting. Try again in a moment.';this.notice.hidden=false;
         }
       });
@@ -46,17 +46,10 @@
         if(event.data?.type==='browserPlaybackStatus'&&['connecting','playing','tap_required','unavailable'].includes(event.data.state)){
           this.playback=event.data.state;this.render();
         }
+        if(event.data?.type==='browserActivity')view.container.dispatchEvent(new CustomEvent('browser-activity',{bubbles:true}));
         if(event.data?.type==='framePresented'){const first=!this.presented;this.presented=true;this.render();if(first&&!this.preview)this.view.container.closest('#browser-page')?.scrollTo({top:0});}
       };
       window.addEventListener('message',this.message);
-      this.frameLoad=()=>{
-        const activity=event=>{
-          if(!event.isTrusted || Date.now()-(this.lastActivity||0)<1000)return;
-          this.lastActivity=Date.now();view.container.dispatchEvent(new CustomEvent('browser-activity',{bubbles:true}));
-        };
-        for(const type of ['pointerdown','keydown','wheel','touchstart','input','compositionend'])this.frame.contentDocument?.addEventListener(type,activity,{capture:true,passive:true});
-      };
-      this.frame.addEventListener('load',this.frameLoad);
       this.focus=event=>{if(event.target.closest?.('#compose'))this.hideKeyboard();};document.addEventListener('focusin',this.focus);
     }
     get enabled(){return this.info!==null;}
@@ -110,12 +103,21 @@
     }
     invoke(method,arg){
       if(this.preview||!this.view._human()||this.view.actionPending||!this.input.ready)return;
-      if(!this.frame.contentWindow?.radhouseInput?.[method](arg)){
+      if(!this.viewerApi('radhouseInput')?.[method](arg)){
         this.notice.textContent='Browser input is connecting. Try again in a moment.';this.notice.hidden=false;
       }else{this.notice.hidden=true;this.view.container.dispatchEvent(new CustomEvent('browser-activity',{bubbles:true}));}
     }
     toggleKeys(open){this.panel.hidden=!open;this.keys.setAttribute('aria-expanded',String(open));}
-    hideKeyboard(){this.frame.contentWindow?.radhouseInput?.hide();}
+    viewerApi(name){
+      try{return this.frame.contentWindow?.[name];}
+      catch{
+        // WindowProxy access can fail differently across browser engines. An
+        // unreadable viewer has no trusted API; refuse input readiness. Calls
+        // to an obtained API happen outside this guard and still report errors.
+        this.input.ready=false;return null;
+      }
+    }
+    hideKeyboard(){this.viewerApi('radhouseInput')?.hide();}
     presentation({preview,visible}){
       if(preview&&!this.preview)this.hideKeyboard();this.preview=preview;this.visible=visible;
       this.view.body.inert=preview;this.frame.inert=preview;
@@ -127,7 +129,7 @@
       this.presented=false;this.playback='connecting';this.playButton.hidden=true;this.tools.hidden=true;this.privacy.hidden=true;this.notice.hidden=true;this.toggleKeys(false);
       this.view.container.classList.remove('browser-view--streaming');this.view.body.inert=false;
     }
-    destroy(){this.clear();this.frame.removeEventListener('load',this.frameLoad);window.removeEventListener('message',this.message);document.removeEventListener('focusin',this.focus);}
+    destroy(){this.clear();window.removeEventListener('message',this.message);document.removeEventListener('focusin',this.focus);}
   }
   window.RadhouseBrowserStream=BrowserStream;
 })();

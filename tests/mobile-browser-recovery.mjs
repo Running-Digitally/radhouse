@@ -12,7 +12,7 @@ for(const [name,engine] of [['chromium',chromium],['webkit',webkit]]){
  const state=()=>({state:'live',generation:'generation-1',url:'https://example.org/',title:'Example',viewport:{width:1280,height:900},agent_active:false,
   stream:{path:'/chat/browser/stream/index.html',token:(foreign?'v':'h').repeat(43)},control:{mode:'human',revision:rev,can_take:false,...(!foreign?{lease_id:'phone-lease',lease_expires_at:Date.now()/1000+60,next_sequence:1,observation_mode:'private',observation_epoch:0}:{})},page_context:{current:{url:'https://example.org/',title:'Example'},previous:null},can_return:true,vault_enabled:false});
  await c.addInitScript(()=>{
-  if(window===window.top){window.trustedPlaybackTaps=0;document.addEventListener('click',event=>{if(event.isTrusted&&event.target.closest?.('.browser-playback-start'))window.trustedPlaybackTaps++;},true);}
+  if(window===window.top){window.viewerActivityCount=0;document.addEventListener('browser-activity',()=>window.viewerActivityCount++);window.trustedPlaybackTaps=0;document.addEventListener('click',event=>{if(event.isTrusted&&event.target.closest?.('.browser-playback-start'))window.trustedPlaybackTaps++;},true);}
  });
  await c.route(origin+'/**',async route=>{
   const req=route.request(),path=new URL(req.url()).pathname,json=v=>route.fulfill({contentType:'application/json',body:JSON.stringify(v)});
@@ -43,7 +43,8 @@ for(const [name,engine] of [['chromium',chromium],['webkit',webkit]]){
   if(!/^[\w.-]+$/.test(file))return route.fulfill({status:404});
   try{return route.fulfill({contentType:file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html',body:await readFile(new URL(file,root))});}catch{return route.fulfill({status:404});}
  });
- const page=await c.newPage();page.on('pageerror',e=>errors.push(e.message));
+ await c.route('http://127.0.0.1:61485/**',route=>route.fulfill({contentType:'text/html',body:'<p id=foreign-viewer>Inaccessible viewer fixture</p>'}));
+ const page=await c.newPage();page.on('pageerror',e=>errors.push({name:e.name,message:e.message,stack:e.stack}));
  try{
   await page.goto(origin+'/browser');
   await expect(page.getByRole('button',{name:'Move control here',exact:true})).toBeVisible();
@@ -62,7 +63,37 @@ for(const [name,engine] of [['chromium',chromium],['webkit',webkit]]){
   await expect(page.getByRole('button',{name:'Keys',exact:true})).toBeEnabled();
   expect(moves.length).toBe(1);expect(errors).toEqual([]);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
-  results.push({engine:name,policy_rejection_visible:true,trusted_tap_resumes:true,play_does_not_take_control:true,no_remote_input_from_play:true,explicit_move_private:true,new_role_requires_fresh_playback:true});
+  const activityBefore=await page.evaluate(()=>window.viewerActivityCount);
+  await page.frameLocator('.browser-stream-frame').locator('video').evaluate(async node=>{
+   node.dispatchEvent(new Event('input',{bubbles:true}));await new Promise(resolve=>setTimeout(resolve,0));
+  });
+  expect(await page.evaluate(()=>window.viewerActivityCount)).toBe(activityBefore);
+  await page.frameLocator('.browser-stream-frame').locator('video').click();
+  await expect.poll(()=>page.evaluate(()=>window.viewerActivityCount)).toBe(activityBefore+1);
+  const afterWrongSource=await page.evaluate(()=>new Promise(resolve=>{
+   const done=event=>{if(event.source===window&&event.data?.type==='browserActivity'){window.removeEventListener('message',done);resolve(window.viewerActivityCount);}};
+   window.addEventListener('message',done);window.postMessage({type:'browserActivity'},location.origin);
+  }));
+  expect(afterWrongSource).toBe(activityBefore+1);
+  // A denied/redirected frame has an opaque or foreign Window. Recovery must
+  // refuse its APIs without breaking workspace navigation or claiming input.
+  await page.locator('.browser-stream-frame').evaluate(frame=>{frame.src='http://127.0.0.1:61485/denied-viewer';});
+  await expect(page.frameLocator('.browser-stream-frame').locator('#foreign-viewer')).toBeVisible();
+  await page.frameLocator('.browser-stream-frame').locator('#foreign-viewer').evaluate(async()=>{
+   parent.postMessage({type:'browserActivity'},'*');await new Promise(resolve=>setTimeout(resolve,0));
+  });
+  expect(await page.evaluate(()=>window.viewerActivityCount)).toBe(activityBefore+1);
+
+  await page.getByRole('button',{name:'Back to chat',exact:true}).click();
+  await expect(page.getByRole('textbox',{name:'Message your assistant',exact:true})).toBeVisible();
+  await page.locator('#browser-preview-open').click();
+  await expect(page.frameLocator('.browser-stream-frame').locator('video')).toBeVisible();
+  await expect(page.getByRole('button',{name:'Tap to view browser',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Tap to view browser',exact:true}).click();
+  await expect(page.locator('.browser-connection')).toHaveText('Live');
+  expect(await page.frameLocator('.browser-stream-frame').locator('video').evaluate(()=>window.remoteInput)).toBe(0);
+  expect(errors).toEqual([]);
+  results.push({engine:name,policy_rejection_visible:true,trusted_tap_resumes:true,play_does_not_take_control:true,no_remote_input_from_play:true,explicit_move_private:true,new_role_requires_fresh_playback:true,trusted_activity_forwarded:true,synthetic_activity_denied:true,foreign_activity_denied:true,foreign_frame_recovery:true,no_input_to_inaccessible_frame:true});
  }finally{await browser.close();}
 }
 console.log(JSON.stringify({passed:results.length,results}));
