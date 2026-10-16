@@ -1,0 +1,32 @@
+[Unit]
+Description=Public-only egress for the isolated Radhouse browser
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+DynamicUser=yes
+User=radhouse-browser-egress
+Group=radhousebot
+RuntimeDirectory=radhouse-browser-egress
+RuntimeDirectoryMode=0710
+UMask=0077
+Slice=radhouse.slice
+MemoryMax=128M
+CPUQuota=50%
+TasksMax=32
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+Environment=PYTHONDONTWRITEBYTECODE=1
+UnsetEnvironment=API_SERVER_KEY HERMES_HOME SONAR_TOKEN
+ExecStart=/opt/hermes/818c13be1dc4fd28987e1e881a9408224afd4535/venv/bin/python -I -B /opt/radhouse-browser-platform/current/adapter/public_proxy.py --unix /run/radhouse-browser-egress/proxy.sock --client-group radhousebot
+Restart=on-failure
+RestartSec=2
+TimeoutStartSec=30
+TimeoutStopSec=15
+KillMode=control-group

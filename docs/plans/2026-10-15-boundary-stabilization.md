@@ -521,3 +521,27 @@ Contextual findings remain open pending separate server disposition authority.
 This checkpoint supersedes earlier implementation-status prose; the historical
 scan tables remain attributable to their original revisions. S5 and effective
 deployed browser-network policy evidence are not closed by this source review.
+
+### S5 isolated browser implementation checkpoint — 16 October
+
+The owner selected public-web-only browser access, with future LAN access
+requiring explicit grants. The source implements a separate temporary browser
+identity, an independent Linux network namespace, group-restricted lifecycle/CDP
+Unix sockets, and the existing public-only proxy under a second temporary
+identity. The backend retains its separately authorized network access. Lost
+acknowledgements retain ownership, and retirement requires owned-child reaping
+and relay cleanup. All pilot services share one aggregate resource budget.
+
+Share only the dedicated X11 filesystem socket with the worker, read-only there.
+Do not use systemd JoinsNamespaceOf to share temporary storage: qualification
+showed it can also join the backend network namespace. The worker independently
+refuses native/root identity, external interfaces, privileges or capabilities.
+
+Targeted lifecycle and real-socket regressions pass. A full synthetic gate passed
+1804 tests without failures, errors or skips before the final readiness and
+known-exit follow-ups; the final committed candidate requires its own full gate.
+Disposable Linux acceptance has exercised actual video, input, privacy,
+revocation, device move and handback. Complete negative network proof, final
+generation cleanup, persistent selection and signed-in end-to-end acceptance
+remain required. No deployment or verified-enforcement claim follows from this
+source checkpoint alone. ADR-0005 owns the policy and operational tradeoffs.

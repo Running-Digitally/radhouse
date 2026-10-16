@@ -38,8 +38,10 @@ def load(name, path):
 def configure(bridge, path):
     global configuration, _root
     value = json.loads(bridge._root_file(Path(path), 2 * 1024 * 1024))
-    if set(value) != {'schema', 'root', 'files', 'dependencies'} or value['schema'] != 'radhouse.selkies-platform.v1':
+    if set(value) != {'schema', 'root', 'files', 'dependencies', 'network'} or value['schema'] != 'radhouse.selkies-platform.v2':
         raise ValueError('stream_installation_unverified')
+    if value['network'] != {'kind':'isolated-public-web-v1','worker_socket':'/run/radhouse-browser-worker/control.sock'}:
+        raise ValueError('stream_network_unverified')
     root = Path(value['root'])
     if not root.is_absolute() or not str(root).startswith('/opt/radhouse-selkies/'):
         raise ValueError('stream_installation_unverified')
@@ -102,16 +104,16 @@ def launch(bridge, directory, environment):
     environment['XAUTHORITY'] = os.environ['XAUTHORITY']
     sandbox = load('radhouse_platform_sandbox', Path(__file__).with_name('sandbox.py'))
     sandbox.CHROME = bridge._browser_configuration['chromium_path']
-    _chrome, _endpoint = sandbox.launch(directory / 'chrome-profile', environment, start_url='about:blank')
-    for attempt in range(50):
-        try:
-            sandbox.verify(_chrome.pid,require_namespaces=False)
-            break
-        except RuntimeError as error:
-            if str(error)!='renderer_sandbox_missing' or attempt==49:
-                retire()
-                raise
-            time.sleep(.1)
+    client = load('radhouse_isolated_browser_client',Path(__file__).with_name('network_client.py'))
+    _chrome = client.RemoteChrome(configuration['network']['worker_socket'])
+    try:
+        _chrome.start(environment)
+    except client.protocol.Rejected:
+        _chrome = None  # The worker positively confirms this attempt did not launch.
+        raise ValueError('stream_browser_unavailable') from None
+    # An unacknowledged launch deliberately retains _chrome and blocks replacement.
+    _endpoint = _chrome.endpoint
+    _chrome.sandbox_proof()
     return _endpoint
 
 
@@ -364,7 +366,7 @@ class Platform:
                 if time.monotonic()-self.pressure_checked >= 2:
                     self.pressure_checked = time.monotonic()
                     resources = load('radhouse_platform_resources',Path(__file__).with_name('resources.py'))
-                    if resources.pressure():
+                    if resources.pressure() or _chrome.memory_pressure():
                         try: await self.sandbox.notify_memory_pressure(_endpoint)
                         except Exception: pass  # Maintenance failure cannot discard the owner browser.
                 await self.boundary.reconcile()

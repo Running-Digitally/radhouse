@@ -10,20 +10,24 @@ from urllib.parse import urlsplit
 CHROME = '/opt/browser/chrome-linux64/chrome'
 
 
-def chrome_arguments(profile, proxy=None, *, start_url="http://127.0.0.1:18081/"):
+def chrome_arguments(profile, proxy=None, *, start_url=None, public_only=False):
     args = [CHROME, '--disable-extensions', '--no-first-run', '--no-default-browser-check',
         '--disable-background-networking', '--disable-component-update', '--disable-sync',
         '--disable-breakpad', '--password-store=basic', '--use-mock-keychain',
         '--remote-debugging-address=127.0.0.1', '--remote-debugging-port=0',
         '--force-webrtc-ip-handling-policy=disable_non_proxied_udp', '--start-maximized',
         '--user-data-dir='+str(profile)]
+    if public_only and not proxy:
+        raise ValueError('public_browser_proxy_required')
     if proxy:
         p = urlsplit(proxy)
         if p.scheme != 'http' or not p.hostname or not p.port or p.username or p.password or p.path not in ('', '/') or p.query or p.fragment:
             raise ValueError('invalid_review_proxy')
         args += ['--proxy-server='+proxy,
-            '--proxy-bypass-list=<-loopback>;127.0.0.1:18081']
-    args.append(start_url)
+            '--proxy-bypass-list=<-loopback>' if public_only else '--proxy-bypass-list=<-loopback>;127.0.0.1:18081']
+        if public_only:
+            args.append('--disable-quic')
+    args.append(start_url if start_url is not None else ("about:blank" if public_only else "http://127.0.0.1:18081/"))
     return args
 
 
@@ -31,6 +35,16 @@ def launch(profile, env, proxy=None, *, start_url="http://127.0.0.1:18081/"):
     profile.mkdir(mode=0o700)
     child = subprocess.Popen(chrome_arguments(profile, proxy, start_url=start_url), env=env,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        return child, wait_ready(child, profile)
+    except BaseException:
+        if child.poll() is None:
+            child.terminate()
+        child.wait(timeout=5)
+        raise
+
+
+def wait_ready(child, profile):
     port_file = profile / 'DevToolsActivePort'
     for _ in range(200):
         if child.poll() is not None:
@@ -39,10 +53,8 @@ def launch(profile, env, proxy=None, *, start_url="http://127.0.0.1:18081/"):
             port = int(port_file.read_text().splitlines()[0])
             if not 1 <= port <= 65535:
                 raise RuntimeError('debug_port_invalid')
-            return child, f'http://127.0.0.1:{port}'
+            return f'http://127.0.0.1:{port}'
         time.sleep(.05)
-    child.terminate()
-    child.wait(timeout=5)
     raise RuntimeError('sandboxed_chrome_not_ready')
 
 
@@ -124,8 +136,15 @@ async def _isolated_boolean(ws, frame, expression):
     return result
 
 
+def _http_endpoint(endpoint):
+    value = urlsplit(endpoint)
+    if value.scheme not in {'http', 'ws'} or value.hostname != '127.0.0.1' or not value.port:
+        raise RuntimeError('browser_endpoint_unconfirmed')
+    return f'http://127.0.0.1:{value.port}'
+
+
 async def _browser_url(client, endpoint):
-    async with client.get(endpoint+'/json/version') as response:
+    async with client.get(_http_endpoint(endpoint)+'/json/version') as response:
         response.raise_for_status()
         version = await response.json()
     import re
@@ -152,7 +171,7 @@ async def notify_memory_pressure(endpoint):
 
 
 async def _targets(client, endpoint):
-    async with client.get(endpoint+'/json/list') as response:
+    async with client.get(_http_endpoint(endpoint)+'/json/list') as response:
         response.raise_for_status()
         targets = await response.json()
     pages = [p for p in targets if p.get('type') == 'page']

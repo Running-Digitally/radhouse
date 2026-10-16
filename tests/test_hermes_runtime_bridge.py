@@ -426,15 +426,18 @@ def test_maintenance_gate_is_before_native_first_await(monkeypatch):
     assert value._pending_agent_requests == 0
 
 
-def test_firewall_information_is_unverified_by_default_and_not_a_url_permission():
+@pytest.mark.parametrize("enforcement", ["vm_firewall", "browser_namespace_public_proxy"])
+def test_firewall_information_is_unverified_by_default_and_not_a_url_permission(enforcement):
     value = SimpleNamespace(_run_idempotency_store=ReceiptStore())
     assert bridge.features(value)["browser_network_policy"]["verified"] is False
     assert bridge.http_url("http://192.0.2.20:8443/status")
     assert not bridge.http_url('file:///etc/passwd')
     assert not bridge.http_url('https://user:password@example.com')
     policy = {"schema": "radhouse.browser-network-policy.v1", "verified": True, "source": "the deployment target firewall snapshot",
-        "verified_at": "2026-10-07T12:00:00+00:00", "enforcement": "vm_firewall", "allowed": ["Configured LAN destinations"], "denied": []}
+        "verified_at": "2026-10-07T12:00:00+00:00", "enforcement": enforcement, "allowed": ["Configured destinations"], "denied": []}
     bridge.configure_network_policy(policy)
+    with pytest.raises(ValueError):
+        bridge.configure_network_policy({**policy, "enforcement": "proxy_flags_only"})
     prompt = bridge.trusted_browser_instructions("base instructions", bridge.BROWSER_TOOLS)
     assert 'not permission' in prompt
     assert 'the deployment target firewall snapshot' in prompt

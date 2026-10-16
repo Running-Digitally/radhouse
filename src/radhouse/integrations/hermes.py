@@ -455,7 +455,7 @@ def browser_network_policy(value):
             "schema", "verified", "source", "verified_at", "enforcement", "allowed", "denied"}:
         return None
     if (value["schema"] != "radhouse.browser-network-policy.v1" or type(value["verified"]) is not bool
-            or value["enforcement"] != "vm_firewall"):
+            or value["enforcement"] not in {"vm_firewall", "browser_namespace_public_proxy"}):
         return None
     if not _valid_policy_summaries(value):
         return None
