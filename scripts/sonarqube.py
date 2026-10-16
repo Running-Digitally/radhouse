@@ -150,7 +150,7 @@ def _failed_test_names(path):
             # Parametrization and tracebacks can carry values; retain identifiers only.
             module = case.get("classname", "")
             name = case.get("name", "").split("[", 1)[0]
-            if re.fullmatch(r"[a-zA-Z0-9_.]{1,256}", module) and re.fullmatch(r"[a-zA-Z0-9_]{1,256}", name):
+            if re.fullmatch(r"[\w.]{1,256}", module, flags=re.ASCII) and re.fullmatch(r"\w{1,256}", name, flags=re.ASCII):
                 names.add(module + "." + name)
     return sorted(names)
 
