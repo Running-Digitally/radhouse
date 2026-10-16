@@ -207,7 +207,11 @@ replacement is blocked until positive retirement. If the worker restarts and
 loses generation state, the operator must fence admission, verify idle owner
 work, stop the paired services and prove all owned processes/relays absent
 before restarting them. Never erase a reservation or profile to make startup
-appear successful. The three services belong to one aggregate resource slice.
+appear successful. The three services belong to one aggregate resource slice: 3 GiB memory, two
+CPUs of quota and 512 tasks, with a 384-task worker ceiling. A 192-task worker
+qualification reached its task ceiling while using less than 400 MiB; it caused
+CDP stalls without OOM events. The higher finite task budget preserves sandbox
+and site-isolation controls; its deployment still requires qualification.
 
 These templates require private deployment qualification: exact root-managed
 source and unit hashes, distinct worker/native UIDs, no host route, native-home

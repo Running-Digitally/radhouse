@@ -545,3 +545,10 @@ revocation, device move and handback. Complete negative network proof, final
 generation cleanup, persistent selection and signed-in end-to-end acceptance
 remain required. No deployment or verified-enforcement claim follows from this
 source checkpoint alone. ADR-0005 owns the policy and operational tradeoffs.
+
+Linux qualification observed two task denials at the worker’s 192-task ceiling,
+with no memory/OOM events and a peak below400MiB. The proposed finite worker and
+aggregate task ceilings are384/512; memory and CPU ceilings remain unchanged.
+This correction requires a new bounded operational window and qualification.
+Do not disable renderer/site isolation or loosen acknowledgement deadlines to
+make an undersized task envelope appear healthy.
