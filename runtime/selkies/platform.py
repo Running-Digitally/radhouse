@@ -396,8 +396,12 @@ class Platform:
                 self.retirement = asyncio.create_task(asyncio.to_thread(retire))
                 self.retirement.add_done_callback(consume_failure)
                 await asyncio.shield(self.retirement)
+                # The native idle reaper can retire Chrome without an owner
+                # Close request. Finish the same transport cleanup after the
+                # watcher exits; awaiting it here would join this watcher.
+                self._begin_stop()
 
-    async def stop(self):
+    def _begin_stop(self):
         self.stopped = True
         self.ready = False
         if self.boundary is not None:
@@ -407,7 +411,10 @@ class Platform:
                 or self.shutdown.done() and self.shutdown.exception() is not None):
             self.shutdown = asyncio.create_task(self.finish_stop())
             self.shutdown.add_done_callback(consume_failure)
-        await asyncio.shield(self.shutdown)
+        return self.shutdown
+
+    async def stop(self):
+        await asyncio.shield(self._begin_stop())
 
     async def finish_stop(self):
         # A stop requested during startup cannot race later server allocation.
