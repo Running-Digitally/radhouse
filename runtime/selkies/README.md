@@ -189,3 +189,34 @@ browser can prove focus, real stream input and handback, not the OS keyboard.
 
 The [browser guide](../../docs/selkies-browser.md) records the component map,
 current scope and the accepted chat-viewer replacement boundary.
+
+## Integrated native browser network boundary
+
+The integrated pilot uses the v2 platform manifest and the units in `systemd/`.
+The worker owns Chrome in a separate DynamicUser identity and a network namespace
+with only loopback. It mounts only the dedicated X11 socket directory from the native service,
+read-only in the worker. It never joins the native service’s namespaces. The proxy has a different DynamicUser identity and host
+networking; IPv4 public ports 80/443 are the only supported destinations. IPv6
+and non-web protocols fail closed. The existing backend retains its separately
+authorized provider/callback access.
+
+`network_client.py` exposes the fixed CDP relay and narrow lifecycle protocol.
+The worker checks kernel peer UID and cgroup. Client checks use root-managed
+socket ownership and peer identity. A lost acknowledgement retains ownership;
+replacement is blocked until positive retirement. If the worker restarts and
+loses generation state, the operator must fence admission, verify idle owner
+work, stop the paired services and prove all owned processes/relays absent
+before restarting them. Never erase a reservation or profile to make startup
+appear successful. The three services belong to one aggregate resource slice: 3 GiB memory, two
+CPUs of quota and 512 tasks, with a 384-task worker ceiling. A 192-task worker
+qualification reached its task ceiling while using less than 400 MiB; it caused
+CDP stalls without OOM events. The higher finite task budget preserves sandbox
+and site-isolation controls; its deployment still requires qualification.
+
+These templates require private deployment qualification: exact root-managed
+source and unit hashes, distinct worker/native UIDs, no host route, native-home
+and environment denials, renderer namespace/BPF proof, mandatory proxy use,
+HTTP/HTTPS and redirect/private/DNS/proxy-loss probes, plus actual video/input,
+privacy, handback and two-generation cleanup. A v1 manifest or unavailable worker
+cannot silently fall back to direct browser networking. See
+[ADR-0005](../../docs/decisions/0005-public-web-browser-network-boundary.md).

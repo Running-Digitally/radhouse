@@ -41,9 +41,22 @@ acceptance evidence by itself.
 
 ## Implementation and consequences
 
-Prefer one isolated browser execution boundary with a narrow private control
-transport and the existing public-proxy policy. Qualify the smallest viable
-adapter before choosing its deployment mechanics. Preserve browser generation,
+Use an owned Linux worker with a separate temporary OS identity and network
+namespace containing only loopback. A second temporary identity runs the existing
+public-only proxy on the host network. Group-restricted Unix sockets carry a
+narrow start/status/stop protocol and fixed CDP transport. The worker checks the
+caller’s kernel UID and exact service cgroup; the client checks root-created
+socket ownership and kernel peer identity. Only the generated X11 cookie crosses
+the control boundary, never the backend environment or owner profile.
+
+The native adapter reserves ownership before a launch request. A missing launch
+or stop acknowledgement retains that reservation and blocks replacement. Only
+a positive retirement acknowledgement after child reaping and relay cleanup
+releases it. Worker restart without retained state requires an operator-managed
+paired restart; it cannot infer that an unknown generation is safely retired.
+All three services share an aggregate memory/CPU/task budget, with narrower
+worker and proxy ceilings. The root-managed deployment binds the exact adapter,
+units, browser, policy and runtime receipt before selection. Preserve browser generation,
 privacy, native acknowledgement, interruption and retirement contracts. Fail
 closed on unavailable or incompatible isolation rather than silently launching
 an unrestricted browser.

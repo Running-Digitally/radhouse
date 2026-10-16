@@ -1,0 +1,7 @@
+[Unit]
+Description=Aggregate Radhouse pilot resource budget
+
+[Slice]
+MemoryMax=3G
+CPUQuota=200%
+TasksMax=512

@@ -456,7 +456,7 @@ def configure_network_policy(value):
     required = {"schema", "verified", "source", "verified_at", "enforcement", "allowed", "denied"}
     if (type(value) is not dict or set(value) != required
             or value["schema"] != "radhouse.browser-network-policy.v1" or type(value["verified"]) is not bool
-            or value["enforcement"] != "vm_firewall"):
+            or value["enforcement"] not in {"vm_firewall", "browser_namespace_public_proxy"}):
         raise ValueError("browser_network_policy_invalid")
     for key in ("allowed", "denied"):
         if (type(value[key]) is not list or len(value[key]) > 16

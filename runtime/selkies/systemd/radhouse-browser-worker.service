@@ -1,0 +1,35 @@
+[Unit]
+Description=Isolated public-web browser for Radhouse
+Requires=radhouse-browser-egress.service
+BindsTo=radhouse-hermes.service
+PartOf=radhouse-hermes.service
+After=radhouse-hermes.service radhouse-browser-egress.service
+
+[Service]
+Type=notify
+DynamicUser=yes
+User=radhouse-browser-worker
+Group=radhousebot
+RuntimeDirectory=radhouse-browser-worker
+RuntimeDirectoryMode=0710
+UMask=0077
+Slice=radhouse.slice
+MemoryMax=2300M
+TasksMax=384
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+BindReadOnlyPaths=/run/radhouse-x11:/tmp/.X11-unix
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+Environment=PYTHONDONTWRITEBYTECODE=1
+UnsetEnvironment=API_SERVER_KEY HERMES_HOME SONAR_TOKEN
+ExecStart=/opt/hermes/818c13be1dc4fd28987e1e881a9408224afd4535/venv/bin/python -I -B /opt/radhouse-browser-platform/current/adapter/network_worker.py --client-cgroup /radhouse.slice/radhouse-hermes.service --client-user radhousebot
+Restart=on-failure
+RestartSec=2
+TimeoutStartSec=30
+TimeoutStopSec=20
+KillMode=control-group

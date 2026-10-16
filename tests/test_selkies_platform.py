@@ -185,17 +185,22 @@ def test_retired_stream_teardown_precedes_replacement_chromium(monkeypatch,tmp_p
             events.append('old-server-stopped')
             platform.runtime=None
         old.stop=stop
-        def spawn(*args,**kwargs):
-            assert platform.runtime is None
-            events.append('new-chrome')
-            return SimpleNamespace(pid=22),'http://synthetic'
+        class Remote:
+            endpoint='ws://127.0.0.1:123/devtools/browser/synthetic'
+            def __init__(self, path):
+                assert path == 'synthetic-worker'
+            def start(self, environment):
+                assert platform.runtime is None
+                events.append('new-chrome')
+            def sandbox_proof(self):
+                return {'enabled':True}
         bridge=SimpleNamespace(_controller=SimpleNamespace(state=lambda identity:SimpleNamespace(retired=True)),
             _pid_gone=lambda pid,started:(pid,started)==(11,12),_browser_configuration={'chromium_path':'synthetic'})
         monkeypatch.setattr(platform,'runtime',old);monkeypatch.setattr(platform,'_chrome',None)
-        monkeypatch.setattr(platform,'_display',object());monkeypatch.setattr(platform,'configuration',{'synthetic':True})
-        monkeypatch.setattr(platform,'load',lambda *args:SimpleNamespace(launch=spawn,verify=lambda *args,**kwargs:None))
+        monkeypatch.setattr(platform,'_display',object());monkeypatch.setattr(platform,'configuration',{'network':{'worker_socket':'synthetic-worker'}})
+        monkeypatch.setattr(platform,'load',lambda *args:SimpleNamespace(RemoteChrome=Remote,protocol=SimpleNamespace(Rejected=ValueError)))
         monkeypatch.setenv('DISPLAY',':123');monkeypatch.setenv('XAUTHORITY','synthetic')
-        assert await asyncio.to_thread(platform.launch,bridge,tmp_path,{})=='http://synthetic'
+        assert await asyncio.to_thread(platform.launch,bridge,tmp_path,{})==Remote.endpoint
         assert events==['old-server-stopped','new-chrome']
     asyncio.run(scenario())
 

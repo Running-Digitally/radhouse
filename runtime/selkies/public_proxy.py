@@ -6,9 +6,15 @@ The browser's internal network has no direct route; this is its only egress.
 import argparse
 import asyncio
 import contextlib
+from concurrent.futures import ThreadPoolExecutor
+import grp
+import importlib.util
+import os
+from pathlib import Path
 import ipaddress
 import re
 import socket
+import struct
 from urllib.parse import urlsplit
 
 MAX_CONNECTIONS = 128
@@ -73,10 +79,28 @@ class Proxy:
         self.connections = 0
 
     async def handle(self, reader, writer):
+        peer = writer.get_extra_info('peername')
+        if not peer or not any(ipaddress.ip_address(peer[0]) in n for n in self.clients):
+            writer.close()
+            return
+        await self.serve(reader, writer)
+
+    async def handle_unix(self, reader, writer, group):
+        try:
+            raw = writer.get_extra_info('socket').getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12)
+            _pid, _uid, peer_group = struct.unpack('3i', raw)
+            if peer_group != group:
+                writer.close()
+                return
+        except OSError:
+            writer.close()
+            return
+        await self.serve(reader, writer)
+
+    async def serve(self, reader, writer):
         upstream = None
         tasks = []
-        peer = writer.get_extra_info('peername')
-        if not peer or not any(ipaddress.ip_address(peer[0]) in n for n in self.clients) or self.connections >= MAX_CONNECTIONS:
+        if self.connections >= MAX_CONNECTIONS:
             writer.close()
             return
         self.connections += 1
@@ -129,8 +153,27 @@ class Proxy:
 
 
 async def main(args):
+    asyncio.get_running_loop().set_default_executor(ThreadPoolExecutor(max_workers=4))
     proxy = Proxy(args.client)
-    async with await asyncio.start_server(proxy.handle,args.listen,args.port,limit=32768) as server:
+    if args.unix:
+        if args.client or not args.client_group:
+            raise ValueError('public_proxy_configuration_invalid')
+        path = Path(args.unix)
+        if (path != Path('/run/radhouse-browser-egress/proxy.sock')
+                or path.parent.stat().st_uid != os.getuid() or path.parent.stat().st_mode & 0o022):
+            raise ValueError('public_proxy_directory_unverified')
+        group = grp.getgrnam(args.client_group).gr_gid
+        server = await asyncio.start_unix_server(lambda r,w: proxy.handle_unix(r,w,group), str(path), limit=32768)
+        path.chmod(0o660)
+        spec = importlib.util.spec_from_file_location('public_proxy_protocol', Path(__file__).with_name('network_protocol.py'))
+        protocol = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(protocol)
+        protocol.notify_ready()
+    else:
+        if not args.client:
+            raise ValueError('public_proxy_client_required')
+        server = await asyncio.start_server(proxy.handle,args.listen,args.port,limit=32768)
+    async with server:
         await server.serve_forever()
 
 
@@ -138,5 +181,7 @@ if __name__ == '__main__':
     p=argparse.ArgumentParser()
     p.add_argument('--listen',default='127.0.0.1')
     p.add_argument('--port',type=int,default=18082)
-    p.add_argument('--client',action='append',required=True)
+    p.add_argument('--client',action='append',default=[])
+    p.add_argument('--unix')
+    p.add_argument('--client-group')
     asyncio.run(main(p.parse_args()))
