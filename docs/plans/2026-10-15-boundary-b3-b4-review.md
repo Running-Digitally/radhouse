@@ -103,7 +103,9 @@ claim closure.
 
 B3/B4 source review does not close S5 by itself. Effective deployed browser
 network-policy enforcement remains an explicit evidence gap. The prior scanner
-failure's diagnostic-retention follow-up also remains open. Product latency and
-model tool-use observations are separate from these Sonar findings. Wider
+failure's cause remains unproven. A bounded launcher follow-up now retains
+sanitized failed-test identities and cleanup status for future failures; it does
+not retrospectively explain missing evidence. Product latency and model tool-use
+observations are separate from these Sonar findings. Wider
 complexity, style and assertion cleanup retain their owners and review triggers;
 no upstream engine fork or zero-issue campaign is part of this change.
