@@ -631,3 +631,23 @@ Close/reopen and automatic-retirement verification, and final idle acceptance.
 This is not a reason to expand the stage into upstream hardening or a zero-issue
 sweep. Private operational evidence owns installation details and the observed
 failed reopening attempt; this public checkpoint does not claim rollout success.
+
+
+### Installed follow-up result
+
+The cleanup follow-up was selected on the private pilot. Fresh model-backed
+public navigation and snapshots work, and live video was observed after refresh.
+The normal inactivity check still left a stream listener after Chrome retirement;
+the next normal Open removed that listener but failed to launch a replacement.
+S5 remains open. Original conversation rows are preserved; no network boundary
+or provider setting was changed to make the test pass.
+
+A disposable Linux/X11 test using the installed streaming server, both with and
+without an authenticated viewer socket, cleans up successfully. The remaining
+failure is therefore in a live integration path that this proof does not cover.
+The follow-up reports only task failure class/source location and unexpected
+watcher cancellation through the existing journal. Exception text, page data,
+credentials and traceback locals are excluded. It does not change lifecycle
+success criteria, add an observer/service or claim the installed failure fixed.
+The final all-code scan on main4f617ca has737 issues; its sole introduced test
+assertion finding is CLOSED/FIXED. The overall gate remains failed.

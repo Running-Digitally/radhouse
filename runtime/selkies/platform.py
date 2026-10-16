@@ -77,8 +77,9 @@ def launch(bridge, directory, environment):
             raise ValueError('stream_launch_requires_worker')
         stopped = asyncio.run_coroutine_threadsafe(previous.stop(), previous.loop)
         try: stopped.result(timeout=20)
-        except BaseException:
+        except BaseException as error:
             stopped.cancel()
+            report_failure(error)
             raise
         if runtime is not None:
             raise ValueError('stream_retirement_unconfirmed')
@@ -148,11 +149,21 @@ async def ensure(bridge, owned):
     return current
 
 
+def report_failure(error):
+    # Exception messages and traceback locals may contain page data or secrets.
+    # Keep only the exception class and the final source location in the journal.
+    frame = error.__traceback__
+    while frame is not None and frame.tb_next is not None:
+        frame = frame.tb_next
+    location = (Path(frame.tb_frame.f_code.co_filename).name, frame.tb_lineno) if frame else ('unknown', 0)
+    logging.getLogger(__name__).warning('Browser stream task failed: kind=%s source=%s:%s',
+        type(error).__name__, *location)
+
+
 def consume_failure(task):
-    # Startup/shutdown can outlive their HTTP request. Keep their result on the
-    # instance for subsequent callers without an unobserved task exception.
-    if not task.cancelled():
-        task.exception()
+    # Retain the task result for callers and report a safe source location.
+    if not task.cancelled() and (error := task.exception()) is not None:
+        report_failure(error)
 
 
 class Platform:
@@ -287,7 +298,13 @@ class Platform:
         await boundary.provision()
         await self.server.start_server()
         self.watcher = asyncio.create_task(self.watch())
+        self.watcher.add_done_callback(self.watch_finished)
         self.client_permissions = client_permissions
+
+    def watch_finished(self, task):
+        consume_failure(task)
+        if task.cancelled() and self.shutdown is None:
+            logging.getLogger(__name__).warning('Browser stream watcher cancelled before cleanup')
 
     async def viewer(self, owner):
         b = self.boundary
