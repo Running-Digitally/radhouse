@@ -19,6 +19,10 @@ file transfers and browser persistence. Evaluate SPACE on an isolated host in
 parallel; move the owner pilot only after remote behavior and recovery qualify.
 Helpers, schedules and optional browser import follow demonstrated needs.
 
+Initial implementation/testing has started with an unconnected management client
+and local failure tests. The [qualification record](docs/design/space-integration-qualification.md)
+distinguishes that work from live SPACE, browser and native-state qualification.
+
 This is a proposed sequence, not an implementation or deployment status claim.
 SPACE is a candidate, and a standing fleet is not required. See the
 [technical assessment](docs/research/space-and-durable-agent-workspaces.md).

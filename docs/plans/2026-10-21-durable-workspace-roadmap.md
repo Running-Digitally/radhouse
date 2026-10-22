@@ -1,7 +1,12 @@
 # Durable workspace development roadmap
 
-Date: 2026-10-21. Status: proposed engineering sequence; no stage below is marked
-implemented or deployed by this document.
+Date: 2026-10-21. Status: engineering sequence with initial local qualification
+work started; no DW stage is complete or deployed.
+
+The [initial SPACE implementation record](../design/space-integration-qualification.md)
+tracks the experimental management client, synthetic failure tests, read-only
+host screening and existing chat recovery baseline. These are partial DW-0/DW-4
+preparations; they do not establish whole-Hermes replacement or live VM behavior.
 
 Outcome: **I return to the same assistant, files and browser even when its compute
 has been replaced.** The [architecture proposal](../design/durable-assistant-workspaces.md)
@@ -202,5 +207,6 @@ qualification evidence and unresolved limits.
 Failure recovery preserves newer chat, files, profiles and vault state. Quiesce
 admission, reconcile effects and choose compatible code/checkpoints; never erase
 newer data to make an older binary start. Releasing a new adapter does not grant
-permission to delete the existing runtime or its recovery copies. The current
-request authorizes these documents and recommendations, not a live deployment.
+permission to delete the existing runtime or its recovery copies. The owner
+authorized documentation publication and starting implementation/testing on
+2026-10-21. Pilot activation remains a separate qualified change.
