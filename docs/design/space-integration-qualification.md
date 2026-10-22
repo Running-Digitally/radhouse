@@ -1,7 +1,8 @@
 # SPACE integration: initial implementation and qualification
 
-Date: 2026-10-21. Status: experimental client and local contract tests. No SPACE
-service, VM, remote browser or agent tool has been activated.
+Updated: 2026-10-22. Status: experimental client with a successful bounded
+Firecracker lifecycle test, subject to the clock prerequisite below. No remote
+browser or agent tool has been enabled in the working Radhouse pilot.
 
 This starts the [durable-workspace roadmap](../plans/2026-10-21-durable-workspace-roadmap.md)
 with a recoverability baseline and a small management client for later DW-4 lab
@@ -99,10 +100,12 @@ qualification and always reports `qualified: false`.
 The local macOS development host fails the Linux/KVM/btrfs prerequisites, as
 expected. Docker CLI presence alone does not make it a SPACE host. A separate
 dedicated Linux test VM has now been selected and screened through its existing
-unprivileged account. Linux, virtualization CPU flags and btrfs are present;
-that observer intentionally lacks KVM and loop-control access. Privileged
-readiness and resource-fit checks remain open. Host identity and access receipts
-stay in the private operational record.
+unprivileged account. Its subsequent privileged preflight confirmed KVM API 12,
+Docker and the underlying storage. The pinned Rust workspace, guest binaries,
+runtime images, seed and Kind node image built successfully. The six-node
+Kubernetes substrate and SPACE services reached readiness. Host identity,
+allocation, access and detailed resource receipts stay in the private operational
+record. The bounded guest result follows below.
 
 Recorded local result: **92 new client/host-screen tests passed**, plus **64
 existing chat, follow-up, Library and workspace tests passed**. The public-source
@@ -110,26 +113,72 @@ privacy gate passed. Coverage measurement was unavailable in the existing test
 environment; no coverage percentage is claimed and no dependency was installed
 just to obtain one. No live SPACE API or VM was exercised by these tests.
 
+## Real Linux/Firecracker result
+
+The exact management-client source was subsequently exercised against the pinned
+SPACE service with Python 3.14.4, HTTPX 0.28.1 and dependency hashes from this
+repository's lockfile. The synthetic guest used one vCPU, 512 MiB RAM and a
+1,024-MiB disk. Requests and operation receipts were saved before advancing;
+mutations were not automatically replayed.
+
+- Create, operation/process readiness, command output over the public data
+  plane, pause and wake passed.
+- Suspend and snapshot wake passed with the required host clock configuration.
+  A synthetic file remained readable after both wake paths. This verifies that
+  file's persistence; it does not prove Hermes checkpoint compatibility or
+  browser-profile recovery.
+- Delete operations succeeded; the public sandbox inventory, sandbox pods and
+  Firecracker processes were empty at closeout.
+- One HTTPS destination was reachable outside the sandbox but blocked from
+  guest root under the client's deny-all request, including a direct-IP request
+  that bypassed DNS. This lacked an allow-policy positive control inside a guest
+  and does not qualify every protocol, policy change, restore-authority check or
+  escape boundary. The first probe correctly rejected a non-root command; the
+  seed's documented sudo capability was then invoked explicitly.
+
+Snapshot restore has a material prerequisite. On x86_64, pinned SPACE explicitly
+requests `clock_realtime: true`. Firecracker requires a TSC-based clock source on
+the host that creates that snapshot. A nested Linux host using `kvm-clock`
+produced a snapshot that could not satisfy that request. A bounded test with
+`tsc` passed the complete lifecycle, then restored the original host setting.
+Do not disable realtime restoration to conceal this incompatibility; qualify
+clock behavior on the intended worker, including migration and restart.
+See [SPACE's restore request](https://github.com/perplexityai/SPACE/blob/f2184a1e2ea49a4d73102dc0bb96e0bad7a2ca93/crates/libs/node/runtime/core/src/fc_api.rs)
+and [Firecracker's snapshot contract](https://github.com/firecracker-microvm/firecracker/blob/main/docs/snapshotting/snapshot-support.md).
+
+The installation also exposed development-harness requirements: sufficient
+[inotify limits](https://kind.sigs.k8s.io/docs/user/known-issues/#pod-errors-due-to-too-many-open-files),
+disk headroom for image copies, and readable static assets for the non-root UI.
+The Kind device-permission workaround must not alter the host's original KVM
+device inode through a direct bind mount. These are harness findings; privileged
+Kind containers are not the production worker security boundary.
+
+The lab is retained stopped, with temporary kernel settings restored. This is
+evidence for continuing the integration work, not approval to replace the pilot.
+The temporary test journal is not the durable Radhouse computer journal.
+
 ## Next executable steps
 
 1. Complete the native state/release contract in DW-0 and the clean checkpoint/
    replacement fixture in DW-1. Include pending native work and effects, not just
    displayed chat and two memory files.
-2. Complete the selected test VM's bounded privileged preflight, then qualify
-   Docker/devices, btrfs storage, nesting and recovery with a resource-fit and
-   installation plan. The upstream six-node Kind harness and sparse btrfs caches
-   need explicit sizing; an empty VM is not sufficient proof of capacity. Keep
-   real accounts and pilot profiles outside the lab.
-3. Deploy the pinned SPACE candidate, qualify authenticated management and create
-   a digest-pinned synthetic template. Save intent/receipts before each mutation.
-4. Exercise actual create/readiness/pause/suspend/wake/delete and lost-connection
-   recovery. Add command-session attachment with a separately scoped token and
-   durable output handling; a management bearer must never follow an attachment URL.
+2. Complete runtime resource-fit and recovery qualification on the preflighted
+   Linux test environment. The upstream six-node Kind harness and sparse btrfs
+   caches need measured sizing; successful builds and Kubernetes readiness do
+   not establish sandbox capacity. Keep real accounts and pilot profiles outside
+   the lab.
+3. Reproduce the bounded lifecycle on the intended maintained substrate with
+   accepted clock and resource settings. Preserve authenticated management,
+   template digests and durable intent/receipt ordering.
+4. Extend the real lifecycle result to lost-connection recovery and current
+   authority after restore. Add command-session attachment to the application
+   with a separately scoped token and durable output handling; a management
+   bearer must never follow an attachment URL.
 5. Test browser streaming and profile restoration plus separate shell isolation
    before enabling an adapter for the owner pilot. Preserve the existing runtime
    and data-compatible rollback through the evaluation.
 
 No code in this slice changes the working pilot or satisfies production adoption
-gates. In particular, a real SPACE host, native checkpoint implementation,
-durable computer journal, current-authority restore and remote browser transport
-are still outstanding.
+gates. In particular, an accepted worker configuration, native checkpoint
+implementation, durable computer journal, current-authority restore and remote
+browser transport are still outstanding.
