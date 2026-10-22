@@ -8,6 +8,16 @@ public service. See the [security policy](SECURITY.md),
 [immediate stabilization plan](docs/plans/2026-10-15-boundary-stabilization.md)
 for the current development posture and bounded quality work.
 
+Feature design, technical research, security and engineering roadmaps belong in
+this public repository; commercial strategy stays in the private venture record.
+See [ADR-0007](docs/decisions/0007-public-engineering-private-commercial-strategy.md).
+The next proposed architecture separates a durable assistant workspace from
+replaceable workers and computers. Read the
+[SPACE research](docs/research/space-and-durable-agent-workspaces.md),
+[architecture proposal](docs/design/durable-assistant-workspaces.md) and
+[development roadmap](docs/plans/2026-10-21-durable-workspace-roadmap.md).
+These are proposals, not capabilities already deployed in the pilot.
+
 The current first slice is deliberately small: sign in, talk to one Hermes
 assistant, close the browser, and return to the same conversation. Use the
 configured private access connection.

@@ -1,5 +1,24 @@
 # Radhouse agent capabilities
 
+## Public engineering and private commercial strategy
+
+Use [ADR-0007](docs/decisions/0007-public-engineering-private-commercial-strategy.md)
+when placing research, proposals and roadmap work. This public repository owns
+features, user experience, technical research, architecture, security posture,
+reliability and sustainable maintenance. A feature's possible future revenue
+does not make its technical design private. Keep monetization, pricing,
+commercial positioning, business economics and investment hypotheses in the
+private venture repository. Maintain one public engineering backlog; private
+commercial work may reference it but must not duplicate its delivery status.
+
+Separate mixed documents into self-contained technical and commercial parts.
+Do not copy private conversation archives, customer records, credentials,
+operational topology or restricted security evidence into public documentation.
+Use synthetic examples and independently attributable public sources. When the
+boundary is genuinely unclear, give Satish a specific placement recommendation
+and check before publishing the ambiguous material. A proposal is not deployment
+authorization or evidence that a feature exists.
+
 ## Local post-merge SonarQube analysis
 
 When Satish requests a SonarQube scan or rescan for this repository, use the

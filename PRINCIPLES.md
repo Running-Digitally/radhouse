@@ -22,6 +22,11 @@
    product evolves. Keep measurement honest; do not trade away protections for
    a better dashboard count. Public development uses synthetic examples and
    private handling of sensitive evidence.
+9. **Develop capabilities openly.** Keep feature design, architecture, security
+   research and the engineering roadmap public. Keep monetization and commercial
+   strategy private. A feature's possible business value does not make its
+   technical design private; split mixed material and preserve source provenance.
 
 These principles are applied through [ADR-0003](docs/decisions/0003-proportionate-security-and-public-development.md)
-and [ADR-0004](docs/decisions/0004-replaceable-runtime-adapters.md).
+and [ADR-0004](docs/decisions/0004-replaceable-runtime-adapters.md), with documentation
+placement defined by [ADR-0007](docs/decisions/0007-public-engineering-private-commercial-strategy.md).

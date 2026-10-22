@@ -1,5 +1,28 @@
 # Radhouse roadmap
 
+This is the public capability and engineering roadmap. Commercial hypotheses,
+pricing and packaging live in the private venture record and reference this
+backlog. See [ADR-0007](docs/decisions/0007-public-engineering-private-commercial-strategy.md).
+
+## Next proposed direction: durable assistant, replaceable compute
+
+The 2026-10-21 [architecture proposal](docs/design/durable-assistant-workspaces.md)
+retains the assistant's chat, files, native state and browser profile while
+allowing workers and task computers to be replaced. It preserves one Library,
+ordinary browser file transfers and meaningful Private takeover. Arbitrary shell
+execution stays separate from the credentialed browser.
+
+The [development roadmap](docs/plans/2026-10-21-durable-workspace-roadmap.md)
+defines DW-0 through DW-7 and their acceptance evidence. Begin with state/release
+contracts and whole-assistant recovery on the existing runtime, then unified
+file transfers and browser persistence. Evaluate SPACE on an isolated host in
+parallel; move the owner pilot only after remote behavior and recovery qualify.
+Helpers, schedules and optional browser import follow demonstrated needs.
+
+This is a proposed sequence, not an implementation or deployment status claim.
+SPACE is a candidate, and a standing fleet is not required. See the
+[technical assessment](docs/research/space-and-durable-agent-workspaces.md).
+
 ## First release: one private web conversation
 
 Acceptance: **I open Radhouse, talk to my assistant, close the browser, and return
@@ -39,12 +62,12 @@ removed from the product direction.
 
 ## After the first release
 
-Use the assistant and identify one concrete missing capability at a time. Memory
-correction, useful tools, routines, delegation and software delivery are possible
-later slices. None is required to release the basic conversation, and no standing
-fleet or new service is assumed for them.
+Continue using the assistant and release small, qualified improvements. The
+durable-workspace track above now gives the next engineering direction; memory
+correction, additional tools and software delivery remain possible later slices.
+No proposed capability changes the qualification status recorded below.
 
-The current release branch includes deliberate human takeover and the native
+The recorded first-release source includes deliberate human takeover and the native
 login vault, Terminal, About You and saved agent identity/appearance. The
 address/search and follow-ups source slice adds saved search preferences, local
 destination suggestions and durable ordered messages during an active reply.
