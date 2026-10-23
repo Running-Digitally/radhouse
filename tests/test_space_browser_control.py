@@ -133,7 +133,8 @@ def test_uncertain_retirement_cleanup_requires_positive_host_receipt():
                 if self.proved:
                     self.retired = True
                 return self.retired
-        factory = SimpleNamespace(Platform=Base, load=lambda *a:SimpleNamespace(StreamingControl=object))
+        factory = SimpleNamespace(Platform=Base, _chrome=Chrome(),
+            load=lambda *a:SimpleNamespace(StreamingControl=object))
         runtime = remote.create(factory, None, None)
         runtime.chrome = Chrome()
         async def lost():
@@ -147,3 +148,12 @@ def test_uncertain_retirement_cleanup_requires_positive_host_receipt():
         await runtime.cleanup()
         assert events == ['transport_stopped', 'cleaned'] and runtime.retirement is None
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('chrome', [None, type('Retired', (), {'retired': True})()])
+def test_stale_status_cannot_allocate_stream_after_native_retirement(chrome):
+    from types import SimpleNamespace
+    factory = SimpleNamespace(_chrome=chrome,
+        load=lambda *a:pytest.fail('retired generation must not allocate a stream'))
+    with pytest.raises(p.Rejected, match='browser_generation_unavailable'):
+        remote.create(factory, None, None)

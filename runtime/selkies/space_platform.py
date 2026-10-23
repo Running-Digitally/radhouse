@@ -44,6 +44,12 @@ class InputLock:
 
 
 def create(platform, bridge, owned):
+    # A status request can reach ensure after the native idle reaper has
+    # positively retired Chrome. Do not allocate a new stream for that stale
+    # native session, or lose the old handle while asynchronous startup waits.
+    chrome = platform._chrome
+    if chrome is None or chrome.retired:
+        raise protocol.Rejected("browser_generation_unavailable")
     stream = platform.load("radhouse_platform_control", Path(__file__).with_name("control.py"))
 
     class Boundary(stream.StreamingControl):
@@ -57,7 +63,7 @@ def create(platform, bridge, owned):
 
     class RemotePlatform(platform.Platform):
         async def start(self):
-            self.chrome = platform._chrome
+            self.chrome = chrome
             self.remote = self.chrome.client
             self.client_permissions = {}
             self.renewer = None

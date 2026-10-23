@@ -157,6 +157,16 @@ fresh sandboxed launch. Public HTTPS, video, input fencing and private-network
 denials also passed on the recovered guest. Installed owner UI acceptance and
 rollback qualification are still pending.
 
+Installed qualification has exercised the actual native interpreter and
+controller, then selected the candidate while idle. A signed-in Private-mode
+test denied the agent's snapshot as intended. The original local selector was
+restored and its live viewer rendered, preserving existing history and profile
+configuration. Complete SPACE viewer acceptance remains open, so selection is
+kept on the retained local backend while investigation continues. A late status
+request after native retirement also exposed a stream allocation race; the
+factory now rejects absent/retired browser handles before allocating resources
+and captures the generation handle before asynchronous startup.
+
 The full local Python run passed 1,673 tests and 20 subtests; 306 tests requiring
 optional PostgreSQL or qualified native fixtures were skipped. The real Linux
 browser/controller evidence above is separate from those local test results.
