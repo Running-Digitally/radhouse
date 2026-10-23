@@ -1,6 +1,6 @@
 # SPACE browser pilot integration
 
-Date: 2026-10-22. Updated: 2026-10-23. Status: implementation; deployment is not yet verified.
+Date: 2026-10-22. Updated: 2026-10-23. Status: browser-first owner pilot deployed and verified; local rollback retained.
 Design depth: D2. Implements the owner-approved browser-first slice of DW-5.
 
 ## Outcome and scope
@@ -155,17 +155,41 @@ A real host restart with a synthetic browser open passed automatic replacement,
 positive old-launch retirement, stale-start and stale-WebSocket denial, and a
 fresh sandboxed launch. Public HTTPS, video, input fencing and private-network
 denials also passed on the recovered guest. Installed owner UI acceptance and
-rollback qualification are still pending.
+explicit rollback qualification subsequently passed as described below.
 
 Installed qualification has exercised the actual native interpreter and
 controller, then selected the candidate while idle. A signed-in Private-mode
 test denied the agent's snapshot as intended. The original local selector was
 restored and its live viewer rendered, preserving existing history and profile
-configuration. Complete SPACE viewer acceptance remains open, so selection is
-kept on the retained local backend while investigation continues. A late status
-request after native retirement also exposed a stream allocation race; the
-factory now rejects absent/retired browser handles before allocating resources
+configuration. A late status request after native retirement also exposed a
+stream allocation race; the factory now rejects absent/retired browser handles before allocating resources
 and captures the generation handle before asynchronous startup.
+
+The corrected adapter (`644868ba64be2e63964ebd8c789b37447027cb46`) passed
+23 installed native/controller observations, including assets and video through
+the actual relay. The signed-in owner journey then verified live video, human
+mouse/keyboard navigation, Private read denial, Observe read allowance and write
+denial, observation revocation, handback, actual agent navigation, route/reload
+reconnect, explicit takeover and fresh Close/Open. The retained local backend
+rendered during an actual rollback; SPACE was reselected and a final agent
+navigation succeeded. The selector and preserved history/profile were verified
+while idle. Deployment is limited to this frozen browser adapter; it is not a
+claim that the feature branch has been merged or the whole application upgraded.
+
+A viewer startup stall was traced to the test browser's debugger attachment:
+the document request remained stalled, detaching the debugger immediately
+released it, and fresh native-input launches rendered without reload. No
+application workaround or security relaxation was introduced. One automatic
+handback reply failed with `run_tool_not_allowed` after a successful snapshot;
+the existing allowlist rejected an out-of-scope model request. A bounded handback
+repeat and explicit navigation completed. This model-response limitation remains
+visible rather than being counted as a successful reply.
+
+Library remained available, and existing saved-login controls were checked on
+both backends without saving or exposing credentials. Actual credential autofill
+and device/Library-to-website transfers were not qualified by this walkthrough.
+The latter remains DW-2; temporary downloads and profiles are not durable Library
+items or a portable browser profile. The broader DW-5 stage remains incomplete.
 
 The final local Python run passed 1,675 tests and 20 subtests; 306 tests requiring
 optional PostgreSQL or qualified native fixtures were skipped. The real Linux

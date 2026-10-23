@@ -19,12 +19,15 @@ file transfers and browser persistence. Evaluate SPACE on an isolated host in
 parallel; move the owner pilot only after remote behavior and recovery qualify.
 Helpers, schedules and optional browser import follow demonstrated needs.
 
-Initial implementation/testing has started with an unconnected management client
-and local failure tests. The [qualification record](docs/design/space-integration-qualification.md)
-distinguishes that work from live SPACE, browser and native-state qualification.
+The owner-authorized [browser-first SPACE slice](docs/design/space-browser-pilot.md)
+is deployed in the private pilot after real guest/recovery, signed-in viewer and
+explicit rollback checks. It retains the original local browser backend. This is
+a partial DW-4/DW-5 result: Library transfers, durable browser profiles, disposable
+Hermes workers and agent shell computers remain future work. The
+[qualification record](docs/design/space-integration-qualification.md) preserves
+the earlier isolated experiments.
 
-This is a proposed sequence, not an implementation or deployment status claim.
-SPACE is a candidate, and a standing fleet is not required. See the
+The remaining sequence is proposed; a standing fleet is not required. See the
 [technical assessment](docs/research/space-and-durable-agent-workspaces.md).
 
 ## First release: one private web conversation
