@@ -16,7 +16,8 @@ management-only client using the existing HTTPX dependency. No application
 factory, chat route, native tool or browser adapter imports or enables it.
 
 It supports explicit sandbox create, pause, suspend, wake and delete requests,
-operation/sandbox observations, and a three-step readiness check. It deliberately
+operation/sandbox observations, a three-step readiness check, and experimental
+HTTP port-session creation/revocation for the browser lab. It deliberately
 does not yet execute commands, attach streams, transfer files, mount profiles,
 fork sandboxes or expose the management credential to Hermes.
 
@@ -158,6 +159,22 @@ evidence for continuing the integration work, not approval to replace the pilot.
 The temporary test journal is not the durable Radhouse computer journal.
 
 ## Next executable steps
+
+The next browser slice adds a management request for one HTTP port session and
+its explicit revocation. The request carries a saved caller-owned key; there is
+no automatic retry. Response validation binds the sandbox, session, port,
+protocol, scope, token expiry and exact proxy URL to an independently configured
+data-plane origin. The separate scoped token is excluded from object repr and
+must remain in memory. The client performs no attachment or forwarding itself.
+Revocation confirms the exact session's revoked state; it does not remove port
+exposure, and the pinned revoke endpoint does not deduplicate the supplied key.
+
+This follows the pinned [public session contract](https://github.com/perplexityai/SPACE/blob/f2184a1e2ea49a4d73102dc0bb96e0bad7a2ca93/crates/libs/public/api/src/lib.rs)
+and [port-session route](https://github.com/perplexityai/SPACE/blob/f2184a1e2ea49a4d73102dc0bb96e0bad7a2ca93/crates/libs/api/src/routes/public/sessions.rs).
+Targeted synthetic tests cover wrong origins, credentials in URLs, scope/identity
+mismatch, expiry, lost acknowledgement and revocation. Live HTTP/WebSocket,
+Selkies token forwarding, human/agent fencing and post-restore reconnect remain
+unqualified. No application route or model tool enables this interface.
 
 1. Complete the native state/release contract in DW-0 and the clean checkpoint/
    replacement fixture in DW-1. Include pending native work and effects, not just

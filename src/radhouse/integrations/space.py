@@ -6,7 +6,8 @@ persists credentials. It is not a workspace authority or an execution adapter.
 The inspected upstream revision and qualification limits are in
 docs/design/space-integration-qualification.md.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 import ipaddress
 import json
 import math
@@ -46,6 +47,46 @@ def _unique_object(pairs):
             raise ValueError("duplicate field")
         result[key] = value
     return result
+
+
+def _origin(endpoint: str) -> str:
+    """An operator-configured origin, never one learned from a response."""
+    try:
+        parsed = urlsplit(endpoint)
+        port = parsed.port
+        valid = (isinstance(endpoint, str) and parsed.scheme in {"https", "http"} and parsed.hostname
+                 and parsed.username is None and parsed.password is None
+                 and not parsed.query and not parsed.fragment and parsed.path in {"", "/"}
+                 and (port is None or port > 0)
+                 and not any(c.isspace() or ord(c) < 32 or c == "\\" for c in endpoint))
+        if valid and parsed.scheme == "http":
+            valid = ipaddress.ip_address(parsed.hostname).is_loopback
+    except (TypeError, ValueError, AttributeError):
+        valid = False
+    if not valid:
+        raise ValueError("invalid_space_endpoint")
+    return endpoint.rstrip("/")
+
+
+@dataclass(frozen=True)
+class SpacePortSession:
+    """Verified HTTP proxy destination and its separate short-lived credential.
+
+    Keep the token in memory; never serialize this object into a journal or
+    expose it to Hermes. This receipt does not establish browser readiness.
+    """
+
+    sandbox_id: str
+    session_id: str
+    port: int
+    attach_url: str
+    expires_at: datetime
+    token: str = field(repr=False)
+
+    def authorization(self) -> dict[str, str]:
+        if self.expires_at <= datetime.now(timezone.utc):
+            raise SpaceError("space_attach_expired")
+        return {"Authorization": f"Bearer {self.token}"}
 
 
 @dataclass(frozen=True)
@@ -98,20 +139,7 @@ class SpaceClient:
     def __init__(self, endpoint: str, bearer_token: str, *,
                  transport: httpx.BaseTransport | None = None,
                  tls_context: ssl.SSLContext | None = None, timeout: float = 10.0):
-        try:
-            parsed = urlsplit(endpoint)
-            port = parsed.port
-            valid = (parsed.scheme in {"https", "http"} and parsed.hostname
-                     and parsed.username is None and parsed.password is None
-                     and not parsed.query and not parsed.fragment and parsed.path in {"", "/"}
-                     and (port is None or port > 0)
-                     and not any(c.isspace() or ord(c) < 32 for c in endpoint))
-            if valid and parsed.scheme == "http":
-                valid = ipaddress.ip_address(parsed.hostname).is_loopback
-        except (TypeError, ValueError):
-            valid = False
-        if not valid:
-            raise ValueError("invalid_space_endpoint")
+        endpoint = _origin(endpoint)
         if (not isinstance(bearer_token, str) or not 1 <= len(bearer_token) <= 4096
                 or any(not 0x21 <= ord(c) <= 0x7e for c in bearer_token)):
             raise ValueError("invalid_space_bearer")
@@ -138,7 +166,7 @@ class SpaceClient:
     def __exit__(self, *_):
         self.close()
 
-    def _request(self, method: str, path: str, *, body=None, key=None) -> dict:
+    def _request(self, method: str, path: str, *, body=None, key=None, expected_status=None) -> dict:
         mutation = method != "GET"
         headers = {}
         if mutation:
@@ -150,7 +178,7 @@ class SpaceClient:
         started = time.monotonic()
         try:
             with self._client.stream(method, path, json=body, headers=headers) as response:
-                if response.status_code != (202 if mutation else 200):
+                if response.status_code != (expected_status if expected_status is not None else (202 if mutation else 200)):
                     raise SpaceError("space_http_error", outcome_unknown=mutation)
                 if response.headers.get("content-encoding", "identity").lower() != "identity":
                     raise SpaceError("space_unexpected_encoding", outcome_unknown=mutation)
@@ -199,6 +227,59 @@ class SpaceClient:
         _identifier(sandbox_id, "sbx_")
         return self._mutation("DELETE", f"v1/sandboxes/{sandbox_id}", "delete_sandbox",
                               key=key, sandbox_id=sandbox_id)
+
+    def create_port_session(self, sandbox_id: str, port: int, *, data_plane_origin: str,
+                            key: str) -> SpacePortSession:
+        """Open one HTTP port session; perform no attachment or automatic retry.
+
+        Upstream may expose the port before returning a session. An invalid or
+        lost acknowledgement therefore requires reconciliation, not replay.
+        The caller must independently configure the trusted data-plane origin.
+        """
+        _identifier(sandbox_id, "sbx_")
+        if type(port) is not int or not 1 <= port <= 65535:
+            raise ValueError("invalid_space_port")
+        origin = _origin(data_plane_origin)
+        result = self._request("POST", f"v1/sandboxes/{sandbox_id}/port-sessions",
+                               body={"port": port, "protocol": "http"}, key=key, expected_status=201)
+        try:
+            session_id = _identifier(result["id"], "port_")
+            if (result["sandbox_id"] != sandbox_id or result["kind"] != "port"
+                    or result["state"] not in ("pending", "attaching", "open", "reconnecting")
+                    or type(result["target_port"]) is not int or result["target_port"] != port
+                    or result["target_protocol"] != "http" or result["scopes"] != ["port:connect"]):
+                raise ValueError("session identity or scope mismatch")
+            attach = result["attach"]
+            path = f"/v1/sessions/{session_id}/proxy"
+            if (attach["url"] not in (path, origin + path) or attach.get("events_url") is not None
+                    or not isinstance(attach["token_transport"], list)
+                    or "authorization_header" not in attach["token_transport"]):
+                raise ValueError("invalid attachment destination")
+            token = attach["token"]
+            if (not isinstance(token, str) or not 1 <= len(token) <= 4096
+                    or any(not 0x21 <= ord(c) <= 0x7e for c in token)
+                    or f"Bearer {token}" == self._client.headers["Authorization"]):
+                raise ValueError("invalid scoped token")
+            expiry = datetime.fromisoformat(attach["expires_at"].replace("Z", "+00:00"))
+            if expiry.tzinfo is None or expiry <= datetime.now(timezone.utc):
+                raise ValueError("invalid expiry")
+            return SpacePortSession(sandbox_id, session_id, port, origin + path, expiry, token)
+        except (KeyError, TypeError, ValueError, AttributeError):
+            raise SpaceError("space_invalid_port_session", outcome_unknown=True) from None
+
+    def revoke_port_session(self, sandbox_id: str, session_id: str, *, key: str) -> None:
+        """Revoke one session, with a caller-owned intent key and no retry.
+
+        The pinned upstream revoke endpoint does not deduplicate this key.
+        Closing a port session is not removal of the port exposure itself.
+        """
+        _identifier(sandbox_id, "sbx_")
+        _identifier(session_id, "port_")
+        result = self._request("DELETE", f"v1/sandboxes/{sandbox_id}/sessions/{session_id}",
+                               key=key, expected_status=200)
+        if (result.get("id") != session_id or result.get("sandbox_id") != sandbox_id
+                or result.get("kind") != "port" or result.get("state") != "revoked"):
+            raise SpaceError("space_invalid_session_revocation", outcome_unknown=True)
 
     def operation_state(self, receipt: SpaceReceipt) -> str:
         """Bind the result to the exact sandbox, operation and mutation kind."""
