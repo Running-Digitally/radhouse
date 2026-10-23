@@ -1,12 +1,13 @@
 # Durable workspace development roadmap
 
-Date: 2026-10-21. Status: engineering sequence with initial local qualification
-work started; no DW stage is complete or deployed.
+Date: 2026-10-21. Updated: 2026-10-22. Status: engineering sequence with bounded
+live SPACE/browser qualification; no DW stage is complete or deployed to the pilot.
 
 The [initial SPACE implementation record](../design/space-integration-qualification.md)
-tracks the experimental management client, synthetic failure tests, read-only
-host screening and existing chat recovery baseline. These are partial DW-0/DW-4
-preparations; they do not establish whole-Hermes replacement or live VM behavior.
+tracks the experimental management client, synthetic failure tests, real
+Firecracker lifecycle, headed-browser streaming/control and pause continuity.
+These are partial DW-0/DW-4 results; they do not establish whole-Hermes replacement
+or application-integrated remote computers.
 
 Outcome: **I return to the same assistant, files and browser even when its compute
 has been replaced.** The [architecture proposal](../design/durable-assistant-workspaces.md)
@@ -127,6 +128,15 @@ the profile; backup/version failure preserves a known recoverable generation.
 Do not claim every website session is portable or immortal.
 
 ## DW-4: separate SPACE laboratory
+
+Partial result (October 22): sandboxed headed Chromium, Selkies video, human/agent
+handoff, pause/wake with synthetic site state, and a separate root-shell guest
+worked in the isolated lab. Both guests were retired. An already-open WebSocket
+survived SPACE session revocation in a bounded test, so the Radhouse relay must
+close streams and fence input itself. Post-reboot clock qualification did not
+admit browser memory-snapshot testing. Maintained packaging, current-authority
+restore, external profile durability and full application parity remain open;
+see the [qualification record](../design/space-integration-qualification.md).
 
 Primary ownership: a new execution adapter and its host qualification record.
 Use an isolated Linux x86_64 host or VM after verifying KVM/nesting, required

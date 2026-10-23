@@ -1,7 +1,7 @@
 # SPACE integration: initial implementation and qualification
 
-Updated: 2026-10-22. Status: experimental client with a successful bounded
-Firecracker lifecycle test, subject to the clock prerequisite below. No remote
+Updated: 2026-10-22. Status: experimental client with bounded live Firecracker
+lifecycle, headed-browser and streamed-control results, subject to the limits below. No remote
 browser or agent tool has been enabled in the working Radhouse pilot.
 
 This starts the [durable-workspace roadmap](../plans/2026-10-21-durable-workspace-roadmap.md)
@@ -154,14 +154,80 @@ The Kind device-permission workaround must not alter the host's original KVM
 device inode through a direct bind mount. These are harness findings; privileged
 Kind containers are not the production worker security boundary.
 
-The lab is retained stopped, with temporary kernel settings restored. This is
-evidence for continuing the integration work, not approval to replace the pilot.
+The first lifecycle phase and subsequent browser phase ended with their guests
+deleted, lab stopped and temporary kernel settings restored.
+These results support continued integration work, not replacement of the pilot.
 The temporary test journal is not the durable Radhouse computer journal.
 
-## Next executable steps
+## Live browser transport experiment
 
-The next browser slice adds a management request for one HTTP port session and
-its explicit revocation. The request carries a saved caller-owned key; there is
+The exact experimental Radhouse client created a scoped port session to a synthetic
+HTTP/WebSocket service inside a deny-all Firecracker guest. HTTP path/query and a
+synthetic browser cookie arrived intact; SPACE stripped its scoped Authorization
+header before forwarding. Missing credentials returned 401; management and invalid
+credentials returned 400. A real WebSocket upgrade and bidirectional echo passed.
+
+Revocation returned the expected revoked session and subsequent HTTP requests
+returned 401. **The already-open WebSocket still carried a test message two seconds
+after revocation.** This is a bounded observation, not a claim about an indefinite
+connection lifetime. Radhouse must actively close streams and fence browser input
+when current authority is withdrawn; revoking a SPACE session alone is insufficient.
+Preserve the existing application session checks and browser control lease in any
+new relay, and test their actual disconnect/input latency through SPACE.
+
+A separate guest probe passed non-root creation of nested user, PID and network
+namespaces on the pinned guest kernel. Both probe guests were deleted. The echo
+service qualified the transport boundary; the following experiment exercised the
+actual browser package.
+
+## Headed browser and separate shell result
+
+The existing Selkies/browser qualification package ran inside a deny-all
+Firecracker guest with two vCPUs, 3,072 MiB RAM and an 8,192-MiB disk. The pinned
+native page-only driver was reused by exact SHA-256; it was not replaced by an
+unrestricted browser driver. All page content and stored state were synthetic.
+
+| Check | Observed result | Limit |
+| --- | --- | --- |
+| Chromium sandbox | UID 1000 renderers in nested user, PID and network namespaces, with seccomp filters; no sandbox-disabling launch flags | Runtime checks, not an escape assessment |
+| Native browser access | Snapshot through the existing seven-tool boundary passed | Does not qualify an entire Hermes conversation or every tool |
+| Selkies transport | Separate SPACE bearer and Selkies subprotocol credential; 90 encoded video frames in a three-second capture; a decoded frame visually inspected | No end-user frontend, latency or quality parity benchmark |
+| Shared control | Viewer input blocked; human input changed the fixture; agent access blocked during human control; old human input blocked after handback; agent snapshot resumed | Existing controller exercised inside the guest; application session revocation still needs an integrated relay test |
+| Pause/wake | Synthetic cookie, local storage and a file survived; Chromium sandbox checks still passed; video reconnected | Same guest and profile; no cold replacement, durable external profile store or memory-snapshot restore |
+| Separate task computer | Concurrent root-shell guest had a distinct identity and filesystem; each guest lacked the other's private test file | Bounded filesystem checks, not cross-guest exploit testing |
+| Teardown | Guests deleted; sandbox inventory, pods and Firecracker processes empty; lab stopped and temporary settings restored | Retained lab images remain experimental |
+
+The browser was packaged as an offline filesystem inside the pinned seed guest,
+with a private mount namespace and `pivot_root` before dropping to UID 1000.
+This avoided plain `chroot`'s restriction on unprivileged user namespaces and
+kept Chromium sandboxing enabled. It is a lab packaging method, not a maintained
+SPACE browser template. The experiment also exposed Python's script-directory
+shadowing of the standard-library `platform` module. The qualification Docker
+entrypoint now uses `python -P`; that exact invocation worked inside the guest.
+The retained image predates this entrypoint fix and used an explicit launch
+override, so a rebuilt image still needs its normal release qualification.
+
+After the lab host reboot, two temporary TSC trials did not expose the KVM
+realtime-clock flag required by the snapshot preflight. The second sampled it
+11 times over five seconds. Both restored the original clock. **Browser suspend
+and memory-snapshot wake were therefore not attempted.** The earlier successful
+lifecycle remains evidence for that earlier configuration; this boot has not
+requalified it. Pause/wake must not be presented as replacement or snapshot
+recovery. Diagnose and qualify the intended worker clock contract before relying
+on suspend for an always-on assistant.
+
+Runtime tests retained substantial host headroom and did not disturb baseline
+services. Two preparation attempts hit their own container memory limits: a
+native rebuild and a JSON payload uploader. The exact retained native binary
+removed the rebuild need; upload resumed only after verifying the entire remote
+prefix against the frozen source, using smaller chunks. These findings do not
+establish a multi-user capacity budget. Payload transfer through SPACE's operator
+API also does not implement the Radhouse Library or browser upload/download UX.
+
+## Experimental port-session contract
+
+The client implements one HTTP port-session request and its explicit revocation.
+The request carries a saved caller-owned key; there is
 no automatic retry. Response validation binds the sandbox, session, port,
 protocol, scope, token expiry and exact proxy URL to an independently configured
 data-plane origin. The separate scoped token is excluded from object repr and
@@ -172,18 +238,20 @@ exposure, and the pinned revoke endpoint does not deduplicate the supplied key.
 This follows the pinned [public session contract](https://github.com/perplexityai/SPACE/blob/f2184a1e2ea49a4d73102dc0bb96e0bad7a2ca93/crates/libs/public/api/src/lib.rs)
 and [port-session route](https://github.com/perplexityai/SPACE/blob/f2184a1e2ea49a4d73102dc0bb96e0bad7a2ca93/crates/libs/api/src/routes/public/sessions.rs).
 Targeted synthetic tests cover wrong origins, credentials in URLs, scope/identity
-mismatch, expiry, lost acknowledgement and revocation. Live HTTP/WebSocket,
-Selkies token forwarding, human/agent fencing and post-restore reconnect remain
-unqualified. No application route or model tool enables this interface.
+mismatch, expiry, lost acknowledgement and revocation. Basic live HTTP/WebSocket
+forwarding, Selkies credentials, human/agent fencing and reconnect after pause/wake
+passed as described above. Reconnect after memory-snapshot restore and application
+integration remain unqualified. No application route or model tool enables this interface.
+
+## Next executable steps
 
 1. Complete the native state/release contract in DW-0 and the clean checkpoint/
    replacement fixture in DW-1. Include pending native work and effects, not just
    displayed chat and two memory files.
-2. Complete runtime resource-fit and recovery qualification on the preflighted
-   Linux test environment. The upstream six-node Kind harness and sparse btrfs
-   caches need measured sizing; successful builds and Kubernetes readiness do
-   not establish sandbox capacity. Keep real accounts and pilot profiles outside
-   the lab.
+2. Turn the working browser package into a pinned, reproducible SPACE template.
+   Preserve Chromium sandboxing and the existing narrow native tool boundary.
+   Keep real accounts and pilot profiles outside the lab; measure readiness,
+   stream/input latency and concurrent capacity against explicit budgets.
 3. Reproduce the bounded lifecycle on the intended maintained substrate with
    accepted clock and resource settings. Preserve authenticated management,
    template digests and durable intent/receipt ordering.
@@ -191,11 +259,12 @@ unqualified. No application route or model tool enables this interface.
    authority after restore. Add command-session attachment to the application
    with a separately scoped token and durable output handling; a management
    bearer must never follow an attachment URL.
-5. Test browser streaming and profile restoration plus separate shell isolation
-   before enabling an adapter for the owner pilot. Preserve the existing runtime
-   and data-compatible rollback through the evaluation.
+5. Add the disabled application browser adapter with active stream closure and
+   current-authority checks. Test durable profile export/restore, Library transfers,
+   full frontend behavior and shell separation before owner-pilot enablement.
+   Preserve the existing runtime and data-compatible rollback through evaluation.
 
 No code in this slice changes the working pilot or satisfies production adoption
 gates. In particular, an accepted worker configuration, native checkpoint
-implementation, durable computer journal, current-authority restore and remote
-browser transport are still outstanding.
+implementation, durable computer journal, current-authority restore and an
+application-integrated remote browser remain outstanding.

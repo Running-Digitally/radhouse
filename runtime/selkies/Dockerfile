@@ -20,4 +20,4 @@ USER radhouse
 ENV RADHOUSE_BROWSER_MODE=fixture HOME=/home/radhouse LANG=C.UTF-8
 WORKDIR /opt/candidate
 EXPOSE 8080
-ENTRYPOINT ["python", "runtime/selkies/qualification.py"]
+ENTRYPOINT ["python", "-P", "runtime/selkies/qualification.py"]
