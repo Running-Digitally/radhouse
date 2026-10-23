@@ -133,8 +133,9 @@ Partial result (October 22): sandboxed headed Chromium, Selkies video, human/age
 handoff, pause/wake with synthetic site state, and a separate root-shell guest
 worked in the isolated lab. Both guests were retired. An already-open WebSocket
 survived SPACE session revocation in a bounded test, so the Radhouse relay must
-close streams and fence input itself. Post-reboot clock qualification did not
-admit browser memory-snapshot testing. Maintained packaging, current-authority
+close streams and fence input itself. An invalid empty-VM clock preflight skipped
+browser memory-snapshot testing; correct that harness and run the actual test.
+Maintained packaging, current-authority
 restore, external profile durability and full application parity remain open;
 see the [qualification record](../design/space-integration-qualification.md).
 

@@ -207,14 +207,18 @@ entrypoint now uses `python -P`; that exact invocation worked inside the guest.
 The retained image predates this entrypoint fix and used an explicit launch
 override, so a rebuilt image still needs its normal release qualification.
 
-After the lab host reboot, two temporary TSC trials did not expose the KVM
-realtime-clock flag required by the snapshot preflight. The second sampled it
-11 times over five seconds. Both restored the original clock. **Browser suspend
-and memory-snapshot wake were therefore not attempted.** The earlier successful
-lifecycle remains evidence for that earlier configuration; this boot has not
-requalified it. Pause/wake must not be presented as replacement or snapshot
-recovery. Diagnose and qualify the intended worker clock contract before relying
-on suspend for an always-on assistant.
+After the lab host reboot, an overly restrictive preflight stopped the browser
+snapshot test: it queried `KVM_GET_CLOCK` on newly created empty VMs without
+vCPUs. Two temporary TSC trials returned flags 0, including 11 samples over five
+seconds; both restored the original clock. **Browser suspend and memory-snapshot
+wake were not attempted. This is a test-harness gap, not evidence that the host
+lost snapshot support.** The [KVM API](https://docs.kernel.org/virt/kvm/api.html#kvm-get-clock)
+describes a per-VM clock observation; the [Linux 6.8 implementation](https://github.com/torvalds/linux/blob/v6.8/arch/x86/kvm/x86.c)
+conditions realtime reporting on master-clock state tied to the VM's vCPUs.
+The empty-VM check is therefore not a valid admission test for a running
+Firecracker guest. Replace it with representative guest/snapshot verification.
+The earlier successful lifecycle remains dated evidence; this browser phase did
+not repeat it. Pause/wake must not be presented as replacement or snapshot recovery.
 
 Runtime tests retained substantial host headroom and did not disturb baseline
 services. Two preparation attempts hit their own container memory limits: a
