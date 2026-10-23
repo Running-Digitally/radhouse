@@ -167,6 +167,6 @@ request after native retirement also exposed a stream allocation race; the
 factory now rejects absent/retired browser handles before allocating resources
 and captures the generation handle before asynchronous startup.
 
-The full local Python run passed 1,673 tests and 20 subtests; 306 tests requiring
+The final local Python run passed 1,675 tests and 20 subtests; 306 tests requiring
 optional PostgreSQL or qualified native fixtures were skipped. The real Linux
 browser/controller evidence above is separate from those local test results.
