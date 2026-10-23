@@ -40,7 +40,9 @@ def configure(bridge, path):
     value = json.loads(bridge._root_file(Path(path), 2 * 1024 * 1024))
     if set(value) != {'schema', 'root', 'files', 'dependencies', 'network'} or value['schema'] != 'radhouse.selkies-platform.v2':
         raise ValueError('stream_installation_unverified')
-    if value['network'] != {'kind':'isolated-public-web-v1','worker_socket':'/run/radhouse-browser-worker/control.sock'}:
+    network = value['network']
+    remote = isinstance(network, dict) and network.get('kind') == 'space-browser-v1'
+    if not remote and network != {'kind':'isolated-public-web-v1','worker_socket':'/run/radhouse-browser-worker/control.sock'}:
         raise ValueError('stream_network_unverified')
     root = Path(value['root'])
     if not root.is_absolute() or not str(root).startswith('/opt/radhouse-selkies/'):
@@ -56,6 +58,16 @@ def configure(bridge, path):
     from importlib.metadata import version
     if any(version(name) != expected for name, expected in value['dependencies'].items()):
         raise ValueError('stream_dependencies_unverified')
+    if remote:
+        # Production packages place this module in their pinned adapter directory.
+        adapter = Path(__file__).parent.relative_to(root)
+        required = {str(adapter / name) for name in ('platform.py', 'space_protocol.py',
+            'space_client.py', 'space_platform.py', 'control.py', 'sandbox.py')}
+        if not required.issubset(value['files']):
+            raise ValueError('stream_installation_unverified')
+        load('radhouse_space_protocol', Path(__file__).with_name('space_protocol.py'))
+        client = load('radhouse_space_client', Path(__file__).with_name('space_client.py'))
+        client.Client(network, bridge._root_file)  # Validate TLS and credentials before selection.
     configuration, _root = value, root
 
 
@@ -83,6 +95,14 @@ def launch(bridge, directory, environment):
             raise
         if runtime is not None:
             raise ValueError('stream_retirement_unconfirmed')
+    if configuration['network'].get('kind') == 'space-browser-v1':
+        load('radhouse_space_protocol', Path(__file__).with_name('space_protocol.py'))
+        client = load('radhouse_space_client', Path(__file__).with_name('space_client.py'))
+        _chrome = client.RemoteChrome(client.Client(configuration['network'], bridge._root_file))
+        # Retain uncertain launches. Only a confirmed stop releases ownership.
+        _chrome.start(environment)
+        _endpoint = _chrome.endpoint
+        return _endpoint
     if _display is None:
         display_number = secrets.randbelow(50000) + 100
         auth = Path(tempfile.mkdtemp(prefix='radhouse-display-')) / 'Xauthority'
@@ -133,7 +153,11 @@ def retire():
 async def ensure(bridge, owned):
     global runtime
     if runtime is None:
-        runtime = Platform(bridge, owned)
+        if configuration and configuration.get('network', {}).get('kind') == 'space-browser-v1':
+            remote = load('radhouse_space_platform', Path(__file__).with_name('space_platform.py'))
+            runtime = remote.create(sys.modules[__name__], bridge, owned)
+        else:
+            runtime = Platform(bridge, owned)
         runtime.startup = asyncio.create_task(runtime.activate())
         runtime.startup.add_done_callback(consume_failure)
     current = runtime
@@ -377,7 +401,7 @@ class Platform:
         try:
             while True:
                 await asyncio.sleep(.25)
-                if (not _chrome or _chrome.poll() is not None
+                if (not _chrome or _chrome.poll() is not None or getattr(_chrome, 'unavailable', False)
                         or hasattr(self.bridge,'_pid_gone') and self.bridge._pid_gone(self.owned.pid,self.owned.started)):
                     raise ValueError('stream_browser_unavailable')
                 if time.monotonic()-self.pressure_checked >= 2:
@@ -486,8 +510,8 @@ class Platform:
 
 
 async def relay(bridge, adapter, request):
-    """Service-authenticated fixed UDS relay. Never resolves caller-provided hosts."""
-    from aiohttp import web, ClientSession, ClientTimeout, UnixConnector, WSMsgType
+    """Owner-authenticated fixed relay. Never resolves caller-provided hosts."""
+    from aiohttp import web, ClientSession, ClientTimeout, UnixConnector, TCPConnector, WSMsgType
     error = adapter._check_auth(request)
     if error is not None:
         return error
@@ -513,12 +537,15 @@ async def relay(bridge, adapter, request):
         return web.Response(status=403)
     if '/api/' in path and tail not in {'api/status','api/health','api/websockets'}:
         return web.Response(status=403)
-    async with ClientSession(connector=UnixConnector(path=str(current.socket)),timeout=ClientTimeout(total=None,connect=5)) as client:
-        url = 'http://localhost'+path
+    remote = getattr(current, 'remote', None)
+    connector = TCPConnector(ssl=remote.ssl) if remote else UnixConnector(path=str(current.socket))
+    headers = remote.transport_headers() if remote else {}
+    async with ClientSession(connector=connector,timeout=ClientTimeout(total=None,connect=5),trust_env=False) as client:
+        url = (remote.origin if remote else 'http://localhost')+path
         if request.headers.get('Upgrade','').lower() == 'websocket':
             if tail != 'api/websockets':
                 return web.Response(status=403)
-            async with client.ws_connect(url,protocols=tuple(p.strip() for p in request.headers.get('Sec-WebSocket-Protocol','').split(',')),max_msg_size=8*1024*1024) as upstream:
+            async with client.ws_connect(url,headers=headers,protocols=tuple(p.strip() for p in request.headers.get('Sec-WebSocket-Protocol','').split(',')),max_msg_size=8*1024*1024) as upstream:
                 downstream = web.WebSocketResponse(max_msg_size=128*1024,protocols=('selkies',))
                 await downstream.prepare(request)
                 async def copy(source,destination):
@@ -533,7 +560,9 @@ async def relay(bridge, adapter, request):
                     await asyncio.gather(*tasks,return_exceptions=True)
                     await downstream.close()
                 return downstream
-        async with client.get(url,headers={'Authorization':'Bearer '+token} if token else {},timeout=ClientTimeout(total=15)) as response:
+        if token:
+            headers.update({'X-Radhouse-Stream-Token':token} if remote else {'Authorization':'Bearer '+token})
+        async with client.get(url,headers=headers,allow_redirects=False,timeout=ClientTimeout(total=15)) as response:
             chunks=[];size=0
             async for chunk in response.content.iter_chunked(64*1024):
                 size+=len(chunk)

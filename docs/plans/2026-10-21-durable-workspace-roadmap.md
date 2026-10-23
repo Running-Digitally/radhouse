@@ -1,7 +1,16 @@
 # Durable workspace development roadmap
 
-Date: 2026-10-21. Status: proposed engineering sequence; no stage below is marked
-implemented or deployed by this document.
+Date: 2026-10-21. Updated: 2026-10-23. Status: engineering sequence with a deployed
+browser-first DW-4/DW-5 slice; no whole DW stage is complete.
+
+The [initial SPACE implementation record](../design/space-integration-qualification.md)
+tracks the experimental management client, synthetic failure tests, real
+Firecracker lifecycle, headed-browser streaming/control and pause continuity.
+These are partial DW-0/DW-4 results. The subsequent owner-authorized
+[browser-first slice](../design/space-browser-pilot.md) qualified and deployed
+an application-integrated remote browser with explicit local rollback. It retains
+temporary profiles and a running microVM; it does not establish whole-Hermes
+replacement, durable profiles, Library transfers or an agent shell capability.
 
 Outcome: **I return to the same assistant, files and browser even when its compute
 has been replaced.** The [architecture proposal](../design/durable-assistant-workspaces.md)
@@ -123,6 +132,16 @@ Do not claim every website session is portable or immortal.
 
 ## DW-4: separate SPACE laboratory
 
+Partial result (October 22): sandboxed headed Chromium, Selkies video, human/agent
+handoff, pause/wake with synthetic site state, and a separate root-shell guest
+worked in the isolated lab. Both guests were retired. An already-open WebSocket
+survived SPACE session revocation in a bounded test, so the Radhouse relay must
+close streams and fence input itself. An invalid empty-VM clock preflight skipped
+browser memory-snapshot testing; correct that harness and run the actual test.
+Maintained packaging, current-authority
+restore, external profile durability and full application parity remain open;
+see the [qualification record](../design/space-integration-qualification.md).
+
 Primary ownership: a new execution adapter and its host qualification record.
 Use an isolated Linux x86_64 host or VM after verifying KVM/nesting, required
 devices, btrfs, supported CPU/kernel behavior and available memory/storage. Keep
@@ -145,6 +164,12 @@ evidence and removal procedure. Decide whether SPACE is suitable and which
 substrate is justified. A failed evaluation can leave DW-1 through DW-3 useful.
 
 ## DW-5: on-demand computers for one assistant
+
+Partial delivery (October 23): the owner explicitly prioritized a browser-first
+slice before durable profiles. Actual video, human/agent handoff, Private/Observe
+boundaries, reconnect, fresh launch, host cold recovery and explicit local rollback
+passed. The frozen adapter is selected in the owner pilot. Full file/profile
+parity and separately authorized shell execution below remain open.
 
 Primary ownership: Radhouse execution adapter, browser transport and Hermes tool
 integration. First prove a remote browser with existing display/input/privacy
@@ -182,14 +207,14 @@ weakening the laptop's security or require import to begin using Radhouse.
 
 ## Recommended deployment sequence and release gates
 
-1. **Now:** publish the engineering record after source/privacy review. No runtime
-   behavior changes are ready merely because these documents exist.
-2. **First runtime candidates:** DW-0/DW-1 continuity on the existing single-owner
+1. **Delivered bounded slice:** retain the qualified SPACE browser pilot and its
+   explicit local rollback. This does not complete the durable-workspace target.
+2. **Next runtime candidates:** DW-0/DW-1 continuity on the existing single-owner
    setup, then DW-2 file transfers and DW-3 retained profiles as separately
    reversible, qualified changes. This provides useful behavior before a fleet.
-3. **In parallel:** deploy only DW-4's isolated synthetic SPACE laboratory once its
-   host and change plan are qualified. This is an evaluation environment.
-4. **After evidence:** opt the owner pilot into DW-5. Expand to DW-6 only after
+3. **In parallel:** continue the remaining DW-4 experiments with synthetic data,
+   including memory snapshots and capacity; qualify each change separately.
+4. **After evidence:** expand the bounded pilot toward full DW-5. Expand to DW-6 only after
    ordinary use and recovery evidence justify it. DW-7 is optional.
 
 Before each runtime activation, freeze exact source/images and current host
@@ -202,5 +227,7 @@ qualification evidence and unresolved limits.
 Failure recovery preserves newer chat, files, profiles and vault state. Quiesce
 admission, reconcile effects and choose compatible code/checkpoints; never erase
 newer data to make an older binary start. Releasing a new adapter does not grant
-permission to delete the existing runtime or its recovery copies. The current
-request authorizes these documents and recommendations, not a live deployment.
+permission to delete the existing runtime or its recovery copies. The owner
+authorized documentation publication and starting implementation/testing on
+2026-10-21, and subsequently authorized the qualified browser-first activation
+recorded above. Broader runtime activation remains a separate qualified change.

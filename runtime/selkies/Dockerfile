@@ -1,6 +1,6 @@
 FROM python@sha256:9bed8554e926c07c6f908841d5ee88c33e8df9236b191526bbce81a9062ab43a
 RUN apt-get update && apt-get install --no-install-recommends -y \
-    xvfb xclip xdotool libgbm1 libegl1 libxkbcommon0 libxkbcommon-x11-0 \
+    xvfb xauth xclip xdotool libgbm1 libegl1 libxkbcommon0 libxkbcommon-x11-0 \
     libnss3 libatk1.0-0 libatk-bridge2.0-0 libatspi2.0-0 libxcomposite1 \
     libxdamage1 libxrandr2 libasound2 libcups2 libdrm2 libpulse0 \
     libwayland-server0 libwayland-client0 libva2 libva-drm2 libva-x11-2 \
@@ -20,4 +20,4 @@ USER radhouse
 ENV RADHOUSE_BROWSER_MODE=fixture HOME=/home/radhouse LANG=C.UTF-8
 WORKDIR /opt/candidate
 EXPOSE 8080
-ENTRYPOINT ["python", "runtime/selkies/qualification.py"]
+ENTRYPOINT ["python", "-P", "runtime/selkies/qualification.py"]
