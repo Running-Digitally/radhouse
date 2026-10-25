@@ -108,8 +108,10 @@ Updated package extraction requires independently retained manifest/source pins.
 The final full regression gate passed 1,691 tests and 20 subtests with 306 optional
 fixture skips; the focused recovery/hold suite passed 16 tests. Actual
 post-recovery browser navigation and snapshot tools succeeded on SPACE, with the
-previous browser backend retained. Native viewer input/video rechecking is a
-separate desktop acceptance item; it is not inferred from tool success.
+previous browser backend retained. A separate native desktop check verified
+rendered video and keyboard navigation into the microVM browser. The viewer
+connected after detaching the automation debugger and reloading; browser-tool
+success alone was not used as evidence of viewer input/video.
 
 This is an operator-controlled same-host process replacement, not distributed
 leasing, a new VM provisioner, a scheduled off-host backup system or an executed
