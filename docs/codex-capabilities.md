@@ -26,14 +26,14 @@ suppression require separate authority. Merge and server deployment remain
 separate actions with their existing review and recovery requirements.
 
 For an explicitly authorized merge/rescan effort, follow the Community Build
-sequence in [AGENTS.md](../AGENTS.md): merge a reviewed bounded change, analyze
+sequence recorded in the local `AGENTS.md`: merge a reviewed bounded change, analyze
 exact remote main, and use a new follow-up branch/PR for relevant findings.
 The owner authorized this sequence for the 15 October runtime-scope and bounded
 stabilization effort. A scan-only request does not authorize unrelated merges.
 
 ## Codex configuration and limits
 
-[AGENTS.md](../AGENTS.md) exposes the capability to agents. The project-local
+The owner-local, gitignored `AGENTS.md` exposes the capability to agents. The project-local
 `.codex/config.toml` adds the same exact scope through `auto_review.extra_policy`
 for the automatic approval reviewer. It changes no approval mode, sandbox,
 network permission or global settings. Codex loads project-local configuration
