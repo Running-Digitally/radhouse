@@ -10,6 +10,7 @@ const explanations = {
   work_home_unavailable:"This account’s conversation access needs to be checked.",
   owner_access_required:"This account doesn’t have access to this conversation.",
   assistant_unavailable:"The assistant is unavailable. Your message is kept; retry to check whether it was received.",
+  assistant_maintenance:"The assistant is restarting. Your draft is kept. Try again shortly.",
   conversation_unavailable:"Your conversation couldn’t be loaded. Your draft is kept.",
   reply_pending:"A reply is already in progress. You can keep writing your next message.",
   followup_cancelled:"Follow-up cancelled before it was sent.",
