@@ -1,7 +1,9 @@
 # Durable assistant workspaces and replaceable computers
 
-Date: 2026-10-21. Status: proposed architecture; implementation and deployment
-qualification remain open. The accepted documentation boundary is
+Date: 2026-10-21. Updated: 2026-10-25. Status: target architecture with a deployed
+browser-first and controlled worker-replacement slices; remaining changes require
+implementation and qualification.
+The accepted documentation boundary is
 [ADR-0007](../decisions/0007-public-engineering-private-commercial-strategy.md).
 
 Radhouse should keep the same assistant, conversation and Library while replacing
@@ -12,8 +14,13 @@ Users should not have to choose a VM, classify a download or manage checkpoints.
 The [technical research](../research/space-and-durable-agent-workspaces.md)
 records the inspected source baseline and public evidence. The
 [development roadmap](../plans/2026-10-21-durable-workspace-roadmap.md) owns the
-implementation sequence. This proposal does not select SPACE for production,
-enable agent shell access or claim that the current browser profile is durable.
+implementation sequence. The [Hermes implementation gap check](../research/hermes-continuity-gap-check.md)
+maps existing code and pinned upstream capabilities to the remaining work.
+The [SPACE browser slice](space-browser-pilot.md) is already qualified in the owner
+pilot with local rollback. [Controlled worker replacement](controlled-worker-replacement.md)
+now retains the current host's Hermes home, holds admission and packages recovery
+using native export/import. On-demand worker placement, agent shell access and
+durable browser profiles remain future capabilities.
 
 ## Target responsibilities
 
@@ -21,8 +28,9 @@ enable agent shell access or claim that the current browser profile is durable.
 flowchart TD
     User[User: chat, Library, shared browser] --> Control[Radhouse control service]
     Control --> DB[Durable metadata and work receipts]
-    Control --> Files[Private file and checkpoint storage]
+    Control --> Files[Private Library and recovery storage]
     Control --> Worker[Hermes worker leased to an assistant]
+    Worker --> Home[Retained native Hermes home: sessions and memory]
     Worker --> Broker[Authorized tool and file access]
     Broker --> Browser[Browser computer with retained profile]
     Broker --> Shell[Disposable shell computer]
@@ -40,9 +48,17 @@ shell computer. A browser may remain open while its agent worker is idle.
 
 The preferred target runs Hermes separately from its tool computers, through
 qualified adapters. Running an entire Hermes instance in a per-workspace VM is a
-valid transitional arrangement if native state export is not ready. It must still
+valid transitional arrangement while storage attachment is implemented. It must still
 externalize durable state and enforce task grants outside arbitrary guest code.
 A VM snapshot of that instance is not sufficient application recovery on its own.
+
+Reuse Hermes's existing persistent home, session loading and backup/import
+facilities. Ordinary worker replacement attaches retained state; it does not
+export/import an archive on every turn. Keep one gateway owner for an assistant's
+home. A replacement must positively retire the previous owner before attaching
+the home writable. Independent helpers use separate profiles and scoped inputs.
+This is an integration task, not an experiment to discover whether Hermes can
+remember or resume conversations.
 
 ## State ownership and storage
 
@@ -52,21 +68,36 @@ snapshots into relational rows or recreating Hermes' memory system.
 
 | State | Durable owner and location | Working copy and recovery |
 | --- | --- | --- |
-| Displayed chat, identities, file ownership, permissions, task status and effect receipts | Radhouse database outside worker VMs; keep SQLite for the single-process pilot | Workers receive scoped views. Database-backed admission and fencing are prerequisites for concurrent workers. |
+| Displayed chat, identities, file ownership, permissions and work receipts | Radhouse database outside worker VMs; keep SQLite for the single-process pilot | ChatStore already persists conversation/session mapping, turn/request/dispatch IDs, run status, grants and frozen inputs. Keep these identities; generic external-effect receipts and worker ownership are additional contracts, not existing guarantees. |
 | Original uploads, completed downloads and accepted/generated files | Radhouse private file store; database holds owner, version, digest, provenance and visibility | Task copies are disposable. Publish immutable versions; acknowledge a save only after durable file and metadata commit. |
-| Native agent session, memory, configuration and relevant local files | Versioned Hermes state under Radhouse custody, with a manifest and an adapter-supported consistent checkpoint | Hermes remains the interpreter of its state. Inventory the actual native database, memory, pending state and dependencies; `USER.md` and `MEMORY.md` alone are insufficient. |
+| Native agent session, memory, configuration and relevant local files | Retained Hermes home under Radhouse custody, separate from runtime releases | Hermes owns its state format and session loading. Preserve the session database, run-idempotency store, memories, configuration, skills and required local files. Reattach for ordinary replacement; use native backup/import for migration or disaster recovery. |
 | Browser cookies, site storage, history and preferences | Separate private profile volume per workspace/browser identity | Attach to one browser generation at a time. Checkpoint consistently after stopping/quiescing Chromium; verify compatible restore. |
 | Browser cache, temporary uploads and incomplete downloads | Temporary browser/task storage | Rebuild or reconcile after restart; these do not establish a durable Library save. |
 | Saved credentials and encryption keys | Existing vault and separately controlled key custody | Exact-origin use through the qualified credential boundary; no bulk export to the model or shell guest. |
 | Optional VM memory/disk snapshots | Protected infrastructure snapshot storage with version, owner and policy metadata | An acceleration/recovery aid. Recheck current authority before resuming; retained application files and receipts remain authoritative. |
 
-For the first pilot implementation, place retained profiles and native checkpoints
+For the first pilot implementation, place retained browser profiles and Hermes homes
 in separate service-owned directories under the installation's private data root,
 outside release trees and generation-temporary directories. Only the browser
 service gets the browser profile. Only the owning runtime adapter gets writable
 native state. The browser and shell do not mount the control database, the whole
 Library or each other's data. Bind a lease to the workspace and generation before
 attaching storage.
+
+The recovery manifest records source/overlay pins, store locations, compatible
+schemas, backup artifacts and exclusions. It does not invent another serialization
+of Hermes memory or a per-turn copy of its databases. Native backup uses SQLite's
+backup API; that supplies consistent individual databases, not an atomic snapshot
+of Radhouse chat, files, native state and browser activity. For the first recovery
+package, hold new dispatch and relevant writers while collecting a compatible set.
+Keep the existing storage engines; no shared network SQLite or new database engine
+is required for the single-owner implementation.
+
+Full native archives contain credentials and exclude browser profiles and runtime
+dependencies. Protect them as credentials, inspect skipped files, and keep the
+qualified runtime image/source separately. Account for the existing native vault,
+Radhouse browser-control store, Library originals and any configured external
+memory-provider state explicitly. Never give a full home/archive to a shell helper.
 
 Back up these retained stores to a separately protected destination; a directory
 on the same host only proves process/VM replacement, not host-loss recovery.
@@ -168,27 +199,41 @@ must work without importing anything.
 
 ## Durable work and replaceable Hermes workers
 
-Preserve native Hermes semantics while making ownership and admission durable:
+The current chat lane already commits a request/dispatch identity and frozen input
+before calling Hermes, attaches the returned run ID, polls its result, and preserves
+ordered follow-ups. It calls the native Runs API with a stable session ID and
+idempotency key. Hermes loads its transcript; Radhouse need not reconstruct it from
+displayed chat. Retain the retry deadline and uncertainty behavior already present.
 
-1. Commit a run ID, user intent, frozen inputs, adapter/version and scoped grants
-   before dispatch. Acquire a workspace/session lease with a fencing generation.
-2. Restore or attach a compatible native state generation. Admission and tool
-   services reject writes and requests from an expired generation.
-3. Run Hermes with only the authorized context and tool capabilities. Allocate a
-   browser or shell computer lazily when a supported tool needs one.
-4. Save artifacts and native progress through consistent checkpoints. Commit
-   their manifest and run outcome before reporting durable completion. Use a
-   staged manifest/commit protocol rather than assuming atomic transactions
-   across the database, files and engine state.
-5. Release compute when idle. On recovery, reconcile durable intent, native
-   progress and effect receipts before choosing resume, completion or uncertainty.
+Build a small operator-controlled replacement path first:
 
-At first support clean checkpoint-and-replacement; then prove abrupt worker loss
-at specific admission, file publication, native checkpoint and reply boundaries.
-Use SQLite's supported consistent backup mechanisms for SQLite state and account
-for journals, open files and concurrent writers. A live directory copy is not a
-checkpoint contract. Define a rollback-compatible checkpoint version and refuse
-an incompatible engine instead of silently discarding state.
+1. Hold new dispatch, including the background observer's queued follow-ups. Drain
+   active work through the native lifecycle; retain any interrupted/uncertain run
+   and its original identity. The existing weekly-maintenance hold is specific to
+   that workflow and is not a general replacement API.
+2. Verify the old owner and its writers have stopped. Record the retained home's
+   identity and compatible source/schema pins. Refuse a second writer or an
+   incompatible successor; never restore over a live home.
+3. Start the same qualified runtime/overlays against that home, retaining the
+   stable authenticated service endpoint, session mappings and document callback
+   configuration. Validate identity and required capabilities before releasing work.
+4. Reconcile saved run status through the existing poll/retry path, then release
+   the dispatch hold. Browser control must retire or rebind old generations rather
+   than revive an obsolete viewer/input grant.
+
+The initial acceptance check covers this new storage/lifecycle boundary with
+synthetic state. Reuse existing chat restart, lost-acknowledgement, frozen-input and
+queue tests. Add interrupted replacement, stale-owner and incompatible-state cases
+where the new code introduces those paths. A general Hermes persistence benchmark
+or new checkpoint engine is unnecessary.
+
+Conversation resume and unfinished execution are different contracts. The pinned
+Runs API can end a shutdown-interrupted run as `interrupted`; ChatService already
+treats this as terminal. Do not automatically regenerate that run with a new key.
+If later product work introduces automatic continuation, it needs explicit action
+reconciliation. The first replacement slice can honestly retain an interrupted
+result and allow a subsequent conversation turn. Current queued follow-up behavior
+must be considered before releasing the hold, not silently changed by restoration.
 
 For external effects, use provider idempotency keys and receipts where available.
 If a process dies after an external action but before saving its receipt, do not
@@ -236,13 +281,14 @@ stop path without making the person administer infrastructure.
 
 ## Decisions to settle through implementation evidence
 
-- Exact native Hermes checkpoint inventory and compatible restore API.
+- Installation-specific store/key mapping and compatible recovery packaging using
+  the supported native backup/import API; controlled exclusive home attachment.
 - Profile encryption/key custody and backup-retention implementation for the
   pilot; measured acceptable recovery time and data-loss bound before activation.
-- Whether a dedicated Linux host or a qualified nested VM satisfies SPACE's
-  devices, storage, isolation and recovery requirements.
-- Direct versus orchestrated SPACE substrate based on needed lifecycle features.
-- Remote display responsiveness and idle-resource savings on the actual host.
+- Further SPACE lifecycle/capacity qualification only for a capability being added;
+  the accepted browser-first scope remains recorded separately. Memory snapshots
+  are optional and do not block native-state recovery or retained browser profiles.
+- Worker idle policy and resource savings after the replacement path exists.
 - Any browser-import formats beyond bookmarks/preferences, based on supported
   migration rather than extraction of protected local sessions.
 

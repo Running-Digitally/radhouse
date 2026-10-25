@@ -90,7 +90,7 @@ def create_app(auth, service, *, admin=None, documents=None, browser=None, about
     lifespan = _reply_lifespan(service)
     app = FastAPI(title="Radhouse", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
-    _install_response_handlers(app)
+    _install_response_handlers(app, service)
     def session_payload(session):
         service.authorize(session)
         payload = {"username": session.username, "csrf_token": session.csrf_token,
@@ -295,10 +295,15 @@ def _reply_lifespan(service):
     return lifespan
 
 
-def _install_response_handlers(app):
+def _install_response_handlers(app, service):
     @app.middleware("http")
     async def private_responses(request, call_next):
-        response = await call_next(request)
+        if (request.method not in {"GET", "HEAD", "OPTIONS"}
+                and request.url.path.startswith("/chat/") and service.dispatch_gate.held()):
+            response = JSONResponse({"error": "assistant_maintenance"}, status_code=503,
+                                    headers={"Retry-After": "10"})
+        else:
+            response = await call_next(request)
         if request.url.path.startswith("/chat/browser/stream/"):
             response.headers.update({"Cache-Control":"no-store","X-Content-Type-Options":"nosniff",
                 "Referrer-Policy":"no-referrer","X-Frame-Options":"SAMEORIGIN",

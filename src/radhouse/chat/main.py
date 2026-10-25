@@ -17,6 +17,7 @@ from .browser import BrowserSessionService, HermesBrowserClient
 from .about_you import AboutYouService
 from .inference import InferenceService
 from .owner_terminal import HermesTerminalClient, OwnerTerminalService
+from .worker_control import DispatchGate
 
 
 def app_factory():
@@ -54,7 +55,8 @@ def app_factory():
         network_policy_probe=(lambda: status_client.capabilities().browser_network_policy) if browser_enabled else None,
         release_commit=os.environ.get("RADHOUSE_RELEASE_COMMIT"))
     service = ChatService(store, hermes, owner_id=config["owner_id"], transcriber=transcriber,
-        document_access=document_access, browser_enabled=browser_enabled, browser_control=browser_control)
+        document_access=document_access, browser_enabled=browser_enabled, browser_control=browser_control,
+        dispatch_gate=DispatchGate(os.environ.get("RADHOUSE_WORKER_CONTROL")))
     browser_service = None
     if browser_enabled:
         browser_service = BrowserSessionService(store, browser_client, owner_id=config["owner_id"],

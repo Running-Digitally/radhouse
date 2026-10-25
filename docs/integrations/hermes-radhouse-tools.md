@@ -7,9 +7,10 @@ not become host paths, generic filesystem permissions, or executable instruction
 
 ## Source composition
 
-`runtime/hermes/source-lock.json` pins Hermes commit
-`2237be355906fbe6065ce1815711eee52b2d646e` and the exact composed API inputs after
-the eight existing Runs overlays. `overlay.py` refuses different bytes; it preserves
+Reviewed 2026-10-25: [`runtime/hermes/source-lock.json`](../../runtime/hermes/source-lock.json)
+pins Hermes v0.21.6 commit `818c13be1dc4fd28987e1e881a9408224afd4535` and the exact
+composed API inputs. `base_overlay.py` rebases the eight existing Runs contracts
+onto that source before the native overlay. `overlay.py` refuses different bytes; it preserves
 exact allowed tools, provider budgets, durable idempotency and runtime-contract
 controls. It also pins the original browser module, session adapter and installer.
 Original bounded native functions in `fixtures/` make admission, worker cleanup and
@@ -41,9 +42,10 @@ profile before the first frontend capability request. Verify the actual gateway'
 private `UMask=0077`; the same-session native profile must be owned by the bot and
 inaccessible to other users, as checked by the qualification helper.
 
-The public product Python package requires Python3.14. The standalone runtime source
-uses Python3.12-compatible standard libraries and the existing Hermes `aiohttp`.
-It does not import the web application's package.
+The public product package and paired v0.21.6 runtime use separately qualified
+Python 3.14 environments. The bridge uses the native runtime's dependencies and
+does not import the web application's package. Older standalone-source syntax
+compatibility is not qualification of the current Hermes dependency environment.
 
 ## Document handoff
 

@@ -1,7 +1,8 @@
 # Durable workspace development roadmap
 
-Date: 2026-10-21. Updated: 2026-10-23. Status: engineering sequence with a deployed
-browser-first DW-4/DW-5 slice; no whole DW stage is complete.
+Date: 2026-10-21. Updated: 2026-10-25. Status: engineering sequence with a deployed
+browser-first DW-4/DW-5 slice and an installed DW-0/DW-1 operator slice.
+Broader on-demand placement and host-loss recovery are not yet qualified.
 
 The [initial SPACE implementation record](../design/space-integration-qualification.md)
 tracks the experimental management client, synthetic failure tests, real
@@ -11,6 +12,10 @@ These are partial DW-0/DW-4 results. The subsequent owner-authorized
 an application-integrated remote browser with explicit local rollback. It retains
 temporary profiles and a running microVM; it does not establish whole-Hermes
 replacement, durable profiles, Library transfers or an agent shell capability.
+The [controlled replacement slice](../design/controlled-worker-replacement.md)
+subsequently added retained-home worker replacement on the existing host and
+isolated recovery-package restoration. It does not relocate the worker to a
+new host or add a provisioning fleet.
 
 Outcome: **I return to the same assistant, files and browser even when its compute
 has been replaced.** The [architecture proposal](../design/durable-assistant-workspaces.md)
@@ -20,24 +25,31 @@ keeps this the public engineering backlog; commercial plans reference these IDs.
 
 ## Baseline and sequencing
 
-The source baseline is `f44df3e8172e834a913b8418c6b21db00d92e1c9`, not a live host
-inspection. Existing pilot qualification does not establish new profile storage,
-remote-browser or microVM behavior. Preserve the current qualified owner pilot
-while implementing behind explicitly disabled capabilities.
+The October 25 [implementation gap check](../research/hermes-continuity-gap-check.md)
+reviews `2ed8aa89cb03e922e687a99ace1d946a36029698` and its pinned Hermes v0.21.6
+source/overlays. It supersedes the initial `f44df3e` source assessment for this
+sequence. This is a code review, not a new inspection of installed state.
+Preserve the qualified owner pilot while implementing capability-gated changes.
 
-Start DW-0 and DW-1. DW-2 and DW-3 can then proceed independently against the
-agreed state contracts. DW-4 is an isolated infrastructure experiment and can run
-in parallel after DW-0; it is not a prerequisite for useful file/browser work.
-DW-5 depends on successful continuity and SPACE qualification. DW-6 follows real
-single-assistant recovery. DW-7 is optional convenience work, outside the first
-deployment's critical path.
+Hermes already supplies native session persistence, memory, keyed Runs admission
+and backup/import. Radhouse already stores chat/run identities, frozen inputs and
+ordered follow-ups. Reuse them. DW-0 closes storage/release mapping; DW-1 adds a
+controlled replacement and recovery path. It no longer starts with a broad
+experiment to prove Hermes persistence or a new native checkpoint implementation.
+
+DW-2 and DW-3 can proceed independently once their storage/authority contracts
+are agreed; neither requires disposable Hermes workers. DW-4 work is limited to
+unqualified capabilities actually needed by the next slice. Browser memory
+snapshots, a runtime comparison and a standing fleet are not prerequisites.
+DW-5 adds on-demand lifecycle and separate shell execution after the relevant
+integration checks. DW-6 and DW-7 remain later increments.
 
 | ID | Deliverable | Completion evidence | Deployment boundary |
 | --- | --- | --- | --- |
-| DW-0 | Native state, authority and paired-release contract | Complete source inventory; compatible recovery manifest; specified migration/rollback; current lifecycle follow-ups assigned | No user behavior change |
-| DW-1 | Whole assistant survives worker replacement | Clean replacement and abrupt-loss matrix retain chat, originals, native memory and pending work without blind effects replay | Existing single-owner runtime first |
+| DW-0 | Retained-store mapping and paired-release contract | Pilot mapping, protected seven-component recovery set and isolated restores qualified; off-host custody/schedule and blank-host recovery remain | Operator-owned source and state receipts |
+| DW-1 | Controlled Hermes worker replacement using retained native state | Installed: durable admission hold, same-host replacement, native exclusive-owner refusal, retained conversation/memory/originals, cancelled/interrupted outcomes without replay, trusted restore identity checks | Single owner/current host; native backup/import reused; on-demand placement remains DW-5 |
 | DW-2 | One Library for browser transfers | Device/Library upload and human/agent download journeys; durable publication; Private exclusion | Existing browser/runtime, capability gated |
-| DW-3 | Retained browser profile and explicit reset | Login/site-state restart, host-backup restore, privacy/revocation and compatible rollback | One owner/profile before any remote move |
+| DW-3 | Retained browser profile and explicit reset | Login/site-state restart, host-backup restore, privacy/revocation and compatible rollback | One owner/profile on the qualified backend |
 | DW-4 | SPACE host and adapter qualification | Real Linux/KVM measurements, security and lifecycle failures, teardown evidence | Separate lab with synthetic accounts/data |
 | DW-5 | On-demand remote computers | Full browser parity and separate shell isolation; integrated recovery and current-authority checks | Single-owner opt-in after lab acceptance |
 | DW-6 | Helpers and scheduled work | Durable triggers, single-writer native state, quotas and reconciled effects | Incremental opt-in; no automatic co-tenancy approval |
@@ -49,12 +61,18 @@ Primary ownership: `src/radhouse/chat/` state/admission, `runtime/hermes/` nativ
 adapter, `runtime/selkies/` lifecycle, and release tooling. Keep changes in their
 owning modules rather than introducing a second controller from the retired fleet.
 
-- Inventory every state store used by the pinned native runtime, including
-  databases/journals, memory, configuration, tool state and relevant workspace
-  files. Identify intentional temporary state and unresolved external effects.
-- Define compatible manifests across chat, native state, artifacts and browser
-  profiles. Establish authenticated owner/run/generation identifiers and the
-  durable admission/fencing boundary before adding concurrent web/agent workers.
+- Use the gap check's source inventory, then map actual retained stores privately:
+  ChatStore and originals, Hermes home/session and run-idempotency databases,
+  memories/skills/configuration, native vault and browser-control database, plus
+  relevant workspace files or configured external memory. Do not copy live paths,
+  credentials or contents into this public plan.
+- Define a small recovery manifest across those stores and source/schema pins.
+  Reuse native backup/import; inspect exclusions and skipped files. Hold relevant
+  writers for a coherent package rather than treating individual SQLite backups
+  as an atomic cross-service snapshot. Browser profile backup is separate.
+- Keep existing owner/session/request/dispatch/run identities. Add exclusive
+  runtime ownership and stale-worker rejection where replacement requires them;
+  do not rebuild the current Runs protocol or earlier retired fleet controller.
 - Preserve the existing single web-worker constraint until its process-local
   locks and observers have a proven durable replacement.
 - Specify a qualified application/native/schema release lane. The current
@@ -66,26 +84,43 @@ owning modules rather than introducing a second controller from the retired flee
   required reconciliation. Reopen on recurrence and before broader users,
   co-tenancy or ingress expansion; retain the recorded 2026-11-14 review trigger.
 
-Exit: reviewed contracts, a synthetic recovery fixture and a concrete release/
-rollback procedure. No claim that inventory alone proves continuity.
+Exit: reviewed installation mapping and a concrete release/replacement/rollback
+procedure based on native capabilities. Source inventory alone does not qualify
+a new storage attachment or recovery package.
 
 ## DW-1: continuity before disposable compute
 
-Primary ownership: ChatStore/ChatService and the native Hermes adapter. Introduce
-stable run IDs, consistent state checkpoints, effect receipts and explicit
-uncertainty without replacing Hermes' memory semantics.
+Primary ownership: a bounded operator replacement/recovery helper, the existing
+native runtime composition, and ChatService admission/observer integration.
+Hermes continues to own state persistence and transcript loading. ChatStore's
+stable session and dispatch keys, saved receipts and frozen requests remain intact.
 
-The first end-to-end demonstration uses an ordinary multi-turn task with attached
-files, a memory update and a queued follow-up. Stop/recreate the worker, reattach
-retained state, and continue the same assistant. Then inject loss before/after
-admission acknowledgement, file commit, native checkpoint and reply publication.
-Repeat with an external-effect stub that records whether a mutation occurred.
+Build the first usable slice in this order:
 
-Acceptance: no acknowledged file/message loss; no duplicate accepted result or
-blindly repeated uncertain mutation; stale workers cannot write; incompatible
-state versions fail clearly; conversation/native progress reconcile. State the
-maximum recoverable uncheckpointed work and measured restore time. Prove rollback
-preserves newer data instead of restoring an older application database.
+1. Produce and validate the retained-store/release manifest. Package a protected
+   recovery set using native full backup/import plus the Radhouse stores outside
+   its scope. Preserve the vault/key and source compatibility requirements.
+2. Add a replacement hold covering new sends and observer-dispatched follow-ups.
+   Use native drain/stop behavior, confirm the old owner is gone, and attach the
+   same persistent home to a compatible successor at the stable service endpoint.
+   Ordinary replacement does not restore an older backup or copy state per turn.
+3. Check required capabilities and callback access, reconcile existing run IDs,
+   retire obsolete browser grants, then release the hold. An unresolved admission
+   remains held; expired idempotency records do not authorize redispatch.
+
+Reuse the [existing regression coverage](../research/hermes-continuity-gap-check.md#existing-tests-to-reuse).
+Add only coverage of the new hold/attachment/recovery boundary: clean replacement,
+interrupted replacement, second-writer denial, missing required store, incompatible
+source/schema and rollback retaining newer data. One synthetic integration journey
+checks conversation, native memory, Library access and queued follow-ups against
+the replacement. Restore the recovery package separately to check backup coverage.
+
+Acceptance: no acknowledged file/message loss on retained-storage replacement;
+no duplicate accepted reply or blind retry of interrupted effects; no writable
+old owner; missing/incompatible state fails clearly. Report recovery time and
+the backup's recovery point separately from process replacement. The pinned API's
+`interrupted` result is a valid recorded outcome, not a promise to finish that run
+automatically. General automatic action continuation remains future work.
 
 ## DW-2: ordinary file handling
 
@@ -115,7 +150,9 @@ Diagnostics retain provenance without treating a human click as a safety label.
 Primary ownership: browser worker/profile lifecycle, native vault boundary and
 browser UI. Introduce one retained profile per workspace, exclusive attachment,
 consistent checkpoint/backup, compatible restore and explicit Reset browser data.
-Continue using the current runtime placement for this stage.
+Qualify the selected browser backend and preserve its existing local rollback.
+Hermes backup deliberately excludes browser profiles; implement this storage
+contract explicitly. A local-only proof must not be called SPACE profile support.
 
 Exercise login/session storage, site preferences and owner history across clean
 Close/Open, service restart, interrupted checkpoint and restore onto replacement
@@ -137,7 +174,8 @@ handoff, pause/wake with synthetic site state, and a separate root-shell guest
 worked in the isolated lab. Both guests were retired. An already-open WebSocket
 survived SPACE session revocation in a bounded test, so the Radhouse relay must
 close streams and fence input itself. An invalid empty-VM clock preflight skipped
-browser memory-snapshot testing; correct that harness and run the actual test.
+browser memory-snapshot testing. It remains unqualified; correct the harness if
+snapshot support is selected later, rather than making it a continuity prerequisite.
 Maintained packaging, current-authority
 restore, external profile durability and full application parity remain open;
 see the [qualification record](../design/space-integration-qualification.md).
@@ -209,11 +247,12 @@ weakening the laptop's security or require import to begin using Radhouse.
 
 1. **Delivered bounded slice:** retain the qualified SPACE browser pilot and its
    explicit local rollback. This does not complete the durable-workspace target.
-2. **Next runtime candidates:** DW-0/DW-1 continuity on the existing single-owner
-   setup, then DW-2 file transfers and DW-3 retained profiles as separately
-   reversible, qualified changes. This provides useful behavior before a fleet.
-3. **In parallel:** continue the remaining DW-4 experiments with synthetic data,
-   including memory snapshots and capacity; qualify each change separately.
+2. **Next build:** DW-0/DW-1 retained-store mapping, native recovery packaging and
+   controlled worker replacement on the existing single-owner setup. Use upstream
+   support and current tests; qualify only the integration changes.
+3. **Next user-facing increments:** DW-2 browser/Library transfers and DW-3 retained
+   profiles, independently reversible once their contracts are settled. Run DW-4
+   checks only for the infrastructure behavior these or later shell work require.
 4. **After evidence:** expand the bounded pilot toward full DW-5. Expand to DW-6 only after
    ordinary use and recovery evidence justify it. DW-7 is optional.
 

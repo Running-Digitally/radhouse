@@ -9,11 +9,12 @@ from radhouse.integrations.hermes import HermesGatewayError, HermesBrowserAdmiss
 from .store import TERMINAL
 from .attachments import MAX_TEXT, MAX_IMAGE, MAX_IMAGES
 from .documents import extract_document
+from .worker_control import DispatchGate
 
 
 class ChatService:
     def __init__(self, store, hermes, *, owner_id: str, clock=time.time, transcriber=None,
-                 document_access=False, browser_enabled=False, browser_control=False):
+                 document_access=False, browser_enabled=False, browser_control=False, dispatch_gate=None):
         if not owner_id or len(owner_id) > 200:
             raise ValueError("invalid_chat_owner")
         self.store, self.hermes, self.owner_id, self.clock = store, hermes, owner_id, clock
@@ -22,6 +23,7 @@ class ChatService:
         self.document_access, self.browser_enabled = document_access, browser_enabled
         self.browser_control = browser_control
         self._dispatching = {}
+        self.dispatch_gate = dispatch_gate or DispatchGate()
 
     def authorize(self, session):
         if session.principal_id != self.owner_id:
@@ -65,6 +67,10 @@ class ChatService:
                          browser_data=data, request_options=options)
 
     def _send(self, owner, request_id, text, attachments, browser_data, request_options):
+        with self.dispatch_gate.admission():
+            return self._admit(owner, request_id, text, attachments, browser_data, request_options)
+
+    def _admit(self, owner, request_id, text, attachments, browser_data, request_options):
         with self.send_lock:
             prepared = self._prepare_dispatch(owner, request_id, text, attachments, browser_data, request_options)
         if isinstance(prepared, dict):
@@ -324,7 +330,7 @@ class ChatService:
         # Only a positively never-attempted queued follow-up may auto-dispatch.
         # A lost runtime acknowledgement holds the queue for explicit recovery.
         next_turn = self.store.pending(owner)
-        if next_turn and next_turn["queued_followup"] and next_turn["run_id"] is None and (
+        if not self.dispatch_gate.held() and next_turn and next_turn["queued_followup"] and next_turn["run_id"] is None and (
                 next_turn["status"] == "waiting" or next_turn["status"] == "awaiting_dispatch"
                 and next_turn["first_dispatch_at"] is None and next_turn["retry_until"] == 0):
             try:

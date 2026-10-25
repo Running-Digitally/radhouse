@@ -5,10 +5,17 @@ current grants, budgets, dispatch and operation identities, and released outcome
 agent execution inside one persistent bot VM. The adapter between them must not
 turn runtime messages into authoritative permission or publication decisions.
 
-**Qualification candidate:** Hermes Agent `v2026.9.7` / `0.21.1`, source commit
-`2237be355906fbe6065ce1815711eee52b2d646e`. This pin makes the first integration
-repeatable; it is not a general compatibility promise. Review its upstream
-license and release notes when the pin changes.
+**Current source pin (reviewed 2026-10-25):** Hermes Agent `v0.21.6`, commit
+`818c13be1dc4fd28987e1e881a9408224afd4535`, with the exact composition in
+[`source-lock.json`](../../runtime/hermes/source-lock.json), the base overlay
+and native integration overlay. The earlier `0.21.1` / `2237be3` candidate is
+historical. Source pins are not a new installed-runtime attestation or a general
+compatibility promise. Review upstream license/release notes when changing them.
+
+The current chat application uses `HermesRunsClient` directly. Controller/task
+routing discussed below describes the retained earlier integration, not a fleet
+enabled by `radhouse.chat`. See the [continuity gap check](../research/hermes-continuity-gap-check.md)
+for active code and native capabilities to reuse.
 
 The first transport candidate is Hermes's HTTP Runs API. One gateway owns one
 Hermes home. Separate sessions may overlap when their resource claims do not
@@ -40,9 +47,10 @@ browser profile. Inject only the selected provider credential and a scoped
 controller credential at launch; neither credential expands the bot's service
 or network grants.
 
-Hermes and the Radhouse controller keep separate Python environments and locks.
-The candidate runtime accepts Python `>=3.11,<3.14`; Python 3.12 is the initial
-guest target. The controller's Python version does not change that requirement.
+Hermes and Radhouse keep separate Python environments and locks. The paired
+v0.21.6 integration uses its separately qualified Python 3.14 environment, as
+recorded in the [current application baseline](../../README.md). The historical
+candidate's Python 3.12 target must not be used to infer current compatibility.
 
 ## Provider following
 
@@ -63,7 +71,7 @@ installation-specific endpoints stay outside the public configuration.
 
 Live guidance requires the optional version-1 durable receipt capability at
 `features.runs_steering_receipts`: ordinary post-tool checkpoints and zero extra
-model calls. The [operator design](../operator-buzz-completion.md#durable-steering-during-genuine-multi-step-work)
+model calls. The [operator design](../operator-buzz-completion.md#durable-guidance-contract-retained)
 owns the exact wire contract and acceptance. An accepted update is queued until
 a later natural model response confirms it was included. Short tools-disabled
 work finishes normally; a later message becomes contextual follow-up work.
