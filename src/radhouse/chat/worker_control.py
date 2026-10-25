@@ -120,7 +120,9 @@ def main():
     args = parser.parse_args()
     if args.action == "init":
         args.directory.mkdir(mode=0o755, parents=False, exist_ok=False)
+        os.chmod(args.directory, 0o755)
         fd = os.open(args.directory / "admission.lock", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+        os.fchmod(fd, 0o644)
         os.close(fd)
     gate = DispatchGate(args.directory)
     if args.action in {"hold", "release"}:

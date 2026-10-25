@@ -2,6 +2,8 @@
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
 from uuid import uuid4
+import os
+import sys
 
 import pytest
 from fastapi.testclient import TestClient
@@ -109,3 +111,17 @@ def test_hold_keeps_read_only_chat_available_and_refuses_mutations(chat, gate):
         assert response.status_code == 503
         assert response.json() == {"error": "assistant_maintenance"}
         assert response.headers["cache-control"] == "no-store"
+
+
+def test_operator_init_keeps_control_readable_under_private_umask(tmp_path, monkeypatch, capsys):
+    from radhouse.chat.worker_control import main
+    directory = tmp_path / "private-umask-control"
+    monkeypatch.setattr(sys, "argv", ["worker_control", str(directory), "init"])
+    previous = os.umask(0o077)
+    try:
+        main()
+    finally:
+        os.umask(previous)
+    assert directory.stat().st_mode & 0o777 == 0o755
+    assert (directory / "admission.lock").stat().st_mode & 0o777 == 0o644
+    assert '"held": false' in capsys.readouterr().out
