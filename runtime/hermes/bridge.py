@@ -1195,6 +1195,57 @@ def _current_owned(conversation_id, session_id, principal_id):
     raise control.ControlRejected("browser_retirement_unproven")
 
 
+def retire_browser_transport(owned):
+    """Finish native teardown only after the stream proves browser retirement.
+
+    The transport calls this after its retirement future succeeds. Losing a
+    connection alone is never permission to discard a generation or its driver.
+    Hermes's existing reaper verifies daemon ownership and start-time identity;
+    our retained PID must independently be gone before bookkeeping is released.
+    """
+    control, _ = _control_modules()
+    from tools import browser_tool as browser
+    from tools import browser_tool_lifecycle as lifecycle
+
+    # Launch may be awaiting this stream's shutdown while holding this lock.
+    # Never wait on it here: retain the generation for the next status retry.
+    if not _browser_lock.acquire(blocking=False):
+        raise control.ControlRejected("browser_retirement_busy")
+    try:
+        if not owned.operation_lock.acquire(blocking=False):
+            raise control.ControlRejected("browser_retirement_busy")
+        try:
+            _retire_browser_transport_locked(owned, control, browser, lifecycle)
+        finally:
+            owned.operation_lock.release()
+    finally:
+        _browser_lock.release()
+
+
+def _retire_browser_transport_locked(owned, control, browser, lifecycle):
+    state = _controller.state(owned.identity)
+    current = _owned_browsers.get(owned.identity.session_id)
+    if current is None and state.retired:
+        return  # Another status request completed this same teardown.
+    if current is not owned:
+        raise control.ControlRejected("stale_browser")
+    if not _pid_gone(owned.pid, owned.started):
+        name = state.native_name
+        if not re.fullmatch(r"h_[a-f0-9]{10}", name):
+            raise control.ControlRejected("browser_retirement_unproven")
+        directory = Path(browser._socket_safe_tmpdir()) / ("agent-browser-" + name)
+        try:
+            recorded_pid = int((directory / (name + ".pid")).read_text(encoding="utf-8-sig").strip())
+        except (OSError, ValueError):
+            raise control.ControlRejected("browser_retirement_unproven") from None
+        if recorded_pid != owned.pid:
+            raise control.ControlRejected("browser_retirement_unproven")
+        lifecycle._kill_verified_daemon(str(directory), name)
+        if not _pid_gone(owned.pid, owned.started):
+            raise control.ControlRejected("browser_retirement_unproven")
+    _current_owned(owned.identity.conversation_id, owned.identity.session_id, state.principal_id)
+
+
 def _launch_owned(conversation_id, session_id, principal_id, *, run=None):
     control, native = _control_modules()
     import psutil

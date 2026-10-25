@@ -141,6 +141,15 @@ or clear passwords and one-time codes before return. Logout, expiry and a lost
 controlling stream revoke input; reconnect does not replay keyboard events.
 The original saved login vault remains separate from the browser profile.
 
+If the browser itself has retired after a transport failure, reconnect completes
+cleanup and returns to **Open browser**. The next explicit Open creates a fresh
+browser. The adapter uses Hermes's verified daemon reaper and confirms that the
+retained native driver has exited; it does not wait for the separate idle timer.
+A lost stop reply is reconciled with the host before cleanup can finish. Missing
+retirement or process-identity evidence keeps that generation blocked. Neither
+reconnect nor cleanup replays a navigation, input event or agent task. See the
+[reconnect repair plan](plans/2026-10-25-browser-reconnect.md).
+
 The standalone pilot and integrated platform are distinct deployments; installation
 and logged-in acceptance are recorded in the Homelab change record. Physical
 iPhone/Android layout acceptance and non-ASCII text remain separate limitations
