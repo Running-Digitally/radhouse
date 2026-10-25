@@ -13,11 +13,18 @@ ordinary browser file transfers and meaningful Private takeover. Arbitrary shell
 execution stays separate from the credentialed browser.
 
 The [development roadmap](docs/plans/2026-10-21-durable-workspace-roadmap.md)
-defines DW-0 through DW-7 and their acceptance evidence. Begin with state/release
-contracts and whole-assistant recovery on the existing runtime, then unified
-file transfers and browser persistence. Evaluate SPACE on an isolated host in
-parallel; move the owner pilot only after remote behavior and recovery qualify.
-Helpers, schedules and optional browser import follow demonstrated needs.
+defines DW-0 through DW-7 and their acceptance evidence. The October 25
+[Hermes gap check](docs/research/hermes-continuity-gap-check.md) confirms native
+session loading, memory and backup/import are available, and the chat app already
+persists session/run identities, frozen inputs and ordered follow-ups.
+
+Next build the missing integration: map retained stores, wrap native recovery
+with the Radhouse stores, and control replacement of the single Hermes owner.
+Reuse existing persistence and retry behavior; qualify the new storage/lifecycle
+boundary rather than starting a general recovery experiment. Browser/Library
+transfers and retained browser profiles are separate increments and can proceed
+once their contracts are settled. Helpers, schedules and optional browser import
+follow later. Memory snapshots and a runtime comparison do not block this work.
 
 The owner-authorized [browser-first SPACE slice](docs/design/space-browser-pilot.md)
 is deployed in the private pilot after real guest/recovery, signed-in viewer and
