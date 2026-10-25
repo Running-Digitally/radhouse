@@ -74,7 +74,9 @@ def seal(plan, output):
                         raise ValueError("source_link_or_special_file")
                     member.uid = member.gid = 0
                     member.uname = member.gname = ""
-                    member.mode = 0o700 if member.isdir() else 0o600
+                    # Keep runnable workspace tools runnable, without restoring
+                    # group/other access or privileged setuid/setgid bits.
+                    member.mode = 0o700 if member.isdir() else 0o600 | (member.mode & 0o100)
                     return member
                 archive.add(source, arcname=role, filter=accept)
             kind = "tree"

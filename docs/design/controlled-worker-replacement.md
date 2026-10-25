@@ -3,7 +3,8 @@
 Status: implemented and deployed in the owner pilot on 2026-10-25. Web admission
 source: `47bdc9ec1eb70978c29692097c73b6dada2ffc69` (initial qualification at
 `fe1c068634da30488729a021334736f6329ab582`); recovery tooling subsequently
-qualified at `d160b1d`. Native Hermes remains at the pinned v0.21.6 composition.
+qualified at `d160b1d`, with the reviewed recovery corrections described below.
+Native Hermes remains at the pinned v0.21.6 composition.
 Installation paths, credentials, operation scripts and receipts are private.
 
 This is the first single-owner implementation of DW-0/DW-1. It keeps the stable
@@ -58,6 +59,8 @@ digest and compatible Hermes/web revisions from the operator's separate receipt.
 Do not derive those expected values from an untrusted candidate archive. A
 successful ZIP write does not prove that native export included all required stores. Installed orchestration
 and secret-bearing location manifests belong in the private deployment record.
+Tree packaging preserves owner execute permission for runnable workspace files;
+group/other permissions and special mode bits are removed.
 
 ## Recovery and acceptance
 
@@ -69,7 +72,17 @@ automatically install/start a gateway when it finds no installation at the
 platform-default home. A custom `HERMES_HOME` does not disable that behavior.
 The wrapper runs the unmodified import as the service user in a transient cgroup,
 with network and service-control sockets unavailable, a read-only filesystem and
-only the fresh target writable. Children are stopped with the importing process.
+only two fresh targets writable: `HERMES_HOME` for native state and `HOME` for
+external provider settings such as `_external/` archive entries. Verify both
+locations; neither points at the live account home. Children are stopped with
+the importing process. Launcher timeout, interruption or failed exit also stops
+the exact transient unit, cancels its queued start, and verifies no main process,
+queued job or accounted child remains. A collected unit is absent; an unknown
+task count on a still-loaded unit fails cleanup verification. No success receipt
+is written for failed import or unverified cleanup. Runtime and activation limits
+are enforced by systemd; queued starts are bounded by the launcher's timeout and
+explicit cancellation. An uncatchable operator-process or host failure still
+requires supervisor inspection before retry.
 Native CLI logs may append during import; compare their archived prefix and
 verify all remaining portable files and logical database contents exactly.
 Check database integrity, session/run mappings, memory bytes and original file
@@ -112,6 +125,17 @@ previous browser backend retained. A separate native desktop check verified
 rendered video and keyboard navigation into the microVM browser. The viewer
 connected after detaching the automation debugger and reloading; browser-tool
 success alone was not used as evidence of viewer input/video.
+
+An independent review subsequently found and corrected lost executable modes,
+external provider settings targeting the real account home, and incomplete
+launcher-failure cleanup. The final re-review found no remaining actionable
+defects; 59 focused tests pass. Linux qualification with synthetic inputs verified
+native Hermes/provider restoration, executable invocation after extraction,
+cleanup of a running parent and child, and cancellation of a delayed start. The
+installed systemd version accepts `JobRunningTimeoutSec` for transient units;
+`JobTimeoutSec` was rejected during qualification and is not used. Existing
+sealed archives keep their historical contents; these fixes apply to newly
+created packages and the corrected restore helper.
 
 This is an operator-controlled same-host process replacement, not distributed
 leasing, a new VM provisioner, a scheduled off-host backup system or an executed

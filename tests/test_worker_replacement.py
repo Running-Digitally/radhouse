@@ -125,3 +125,59 @@ def test_operator_init_keeps_control_readable_under_private_umask(tmp_path, monk
     assert directory.stat().st_mode & 0o777 == 0o755
     assert (directory / "admission.lock").stat().st_mode & 0o777 == 0o644
     assert '"held": false' in capsys.readouterr().out
+
+
+def test_hold_timeout_preserves_inflight_admission_and_can_be_retried(gate):
+    cycle = str(uuid4())
+    with gate.admission():
+        with pytest.raises(ValueError, match="admission_still_inflight"):
+            gate.change(cycle, timeout=0)
+        assert not gate.held()
+    gate.change(cycle, timeout=0)
+    with pytest.raises(Rejected):
+        with gate.admission(): pytest.fail("held request admitted")
+    gate.change(cycle, release=True)
+    with gate.admission(): pass
+
+
+@pytest.mark.parametrize("unsafe", ["relative", "directory_mode", "directory_link", "lock_mode", "lock_fifo"])
+def test_unsafe_control_custody_rejects_admission(gate, unsafe, tmp_path):
+    if unsafe == "relative": gate = DispatchGate("relative")
+    if unsafe == "directory_mode": gate.directory.chmod(0o777)
+    if unsafe == "directory_link":
+        link = tmp_path / "linked-control"; link.symlink_to(gate.directory)
+        gate = DispatchGate(link)
+    if unsafe == "lock_mode": (gate.directory / "admission.lock").chmod(0o666)
+    if unsafe == "lock_fifo":
+        lock = gate.directory / "admission.lock"; lock.unlink(); os.mkfifo(lock)
+    assert gate.held()
+    with pytest.raises(Rejected):
+        with gate.admission(): pytest.fail("unsafe control admitted")
+
+
+def test_release_refuses_absent_or_writable_marker_and_noncanonical_cycle(gate):
+    cycle = str(uuid4())
+    with pytest.raises(ValueError, match="invalid_cycle"): gate.change(cycle.upper())
+    with pytest.raises(ValueError, match="hold_missing"): gate.change(cycle, release=True)
+    gate.change(cycle)
+    (gate.directory / "hold.json").chmod(0o666)
+    with pytest.raises(ValueError, match="invalid_hold"): gate.change(cycle, release=True)
+    assert gate.held()
+
+
+def test_operator_cli_hold_release_status_and_missing_cycle(gate, monkeypatch, capsys):
+    import json
+    from radhouse.chat.worker_control import main
+    cycle = str(uuid4())
+    for action, held in [("hold", True), ("status", True), ("release", False)]:
+        monkeypatch.setattr(sys, "argv", ["worker_control", str(gate.directory), action, "--cycle", cycle])
+        main()
+        assert json.loads(capsys.readouterr().out) == {"held": held}
+    monkeypatch.setattr(sys, "argv", ["worker_control", str(gate.directory), "hold"])
+    with pytest.raises(SystemExit): main()
+
+
+def test_legacy_configuration_has_no_implicit_hold():
+    gate = DispatchGate()
+    assert not gate.held()
+    with gate.admission(): pass
