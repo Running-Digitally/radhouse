@@ -1,7 +1,8 @@
 # Durable workspace development roadmap
 
 Date: 2026-10-21. Updated: 2026-10-25. Status: engineering sequence with a deployed
-browser-first DW-4/DW-5 slice; no whole DW stage is complete.
+browser-first DW-4/DW-5 slice and an installed DW-0/DW-1 operator slice.
+Broader on-demand placement and host-loss recovery are not yet qualified.
 
 The [initial SPACE implementation record](../design/space-integration-qualification.md)
 tracks the experimental management client, synthetic failure tests, real
@@ -11,6 +12,10 @@ These are partial DW-0/DW-4 results. The subsequent owner-authorized
 an application-integrated remote browser with explicit local rollback. It retains
 temporary profiles and a running microVM; it does not establish whole-Hermes
 replacement, durable profiles, Library transfers or an agent shell capability.
+The [controlled replacement slice](../design/controlled-worker-replacement.md)
+subsequently added retained-home worker replacement on the existing host and
+isolated recovery-package restoration. It does not relocate the worker to a
+new host or add a provisioning fleet.
 
 Outcome: **I return to the same assistant, files and browser even when its compute
 has been replaced.** The [architecture proposal](../design/durable-assistant-workspaces.md)
@@ -41,8 +46,8 @@ integration checks. DW-6 and DW-7 remain later increments.
 
 | ID | Deliverable | Completion evidence | Deployment boundary |
 | --- | --- | --- | --- |
-| DW-0 | Retained-store mapping and paired-release contract | Source gap check complete; installation mapping, backup exclusions/key custody and compatible release/rollback still required | No user behavior change |
-| DW-1 | Controlled Hermes worker replacement using retained native state | Replacement preserves session mapping, memory, originals and saved run outcomes; interrupted work remains explicit; stale writers and incompatible restores denied | Existing single-owner runtime first; native backup/import reused |
+| DW-0 | Retained-store mapping and paired-release contract | Pilot mapping, protected seven-component recovery set and isolated restores qualified; off-host custody/schedule and blank-host recovery remain | Operator-owned source and state receipts |
+| DW-1 | Controlled Hermes worker replacement using retained native state | Installed: durable admission hold, same-host replacement, native exclusive-owner refusal, retained conversation/memory/originals, cancelled/interrupted outcomes without replay, trusted restore identity checks | Single owner/current host; native backup/import reused; on-demand placement remains DW-5 |
 | DW-2 | One Library for browser transfers | Device/Library upload and human/agent download journeys; durable publication; Private exclusion | Existing browser/runtime, capability gated |
 | DW-3 | Retained browser profile and explicit reset | Login/site-state restart, host-backup restore, privacy/revocation and compatible rollback | One owner/profile on the qualified backend |
 | DW-4 | SPACE host and adapter qualification | Real Linux/KVM measurements, security and lifecycle failures, teardown evidence | Separate lab with synthetic accounts/data |

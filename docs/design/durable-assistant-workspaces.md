@@ -1,7 +1,8 @@
 # Durable assistant workspaces and replaceable computers
 
 Date: 2026-10-21. Updated: 2026-10-25. Status: target architecture with a deployed
-browser-first slice; remaining changes require implementation and qualification.
+browser-first and controlled worker-replacement slices; remaining changes require
+implementation and qualification.
 The accepted documentation boundary is
 [ADR-0007](../decisions/0007-public-engineering-private-commercial-strategy.md).
 
@@ -16,7 +17,9 @@ records the inspected source baseline and public evidence. The
 implementation sequence. The [Hermes implementation gap check](../research/hermes-continuity-gap-check.md)
 maps existing code and pinned upstream capabilities to the remaining work.
 The [SPACE browser slice](space-browser-pilot.md) is already qualified in the owner
-pilot with local rollback. Agent shell access, replaceable Hermes workers and
+pilot with local rollback. [Controlled worker replacement](controlled-worker-replacement.md)
+now retains the current host's Hermes home, holds admission and packages recovery
+using native export/import. On-demand worker placement, agent shell access and
 durable browser profiles remain future capabilities.
 
 ## Target responsibilities

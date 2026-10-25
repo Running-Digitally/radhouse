@@ -18,13 +18,19 @@ defines DW-0 through DW-7 and their acceptance evidence. The October 25
 session loading, memory and backup/import are available, and the chat app already
 persists session/run identities, frozen inputs and ordered follow-ups.
 
-Next build the missing integration: map retained stores, wrap native recovery
-with the Radhouse stores, and control replacement of the single Hermes owner.
-Reuse existing persistence and retry behavior; qualify the new storage/lifecycle
-boundary rather than starting a general recovery experiment. Browser/Library
-transfers and retained browser profiles are separate increments and can proceed
-once their contracts are settled. Helpers, schedules and optional browser import
-follow later. Memory snapshots and a runtime comparison do not block this work.
+The [controlled replacement slice](docs/design/controlled-worker-replacement.md)
+now provides a persistent admission hold, replacement on the current host,
+native-state reattachment and verified recovery packaging. The owner pilot
+preserved conversation context, memory and originals, reconciled cancellation
+and worker loss without replay, and restored the packaged native/Radhouse stores
+into isolated targets. Native import runs inside an offline supervisor boundary
+because the pinned command can otherwise start a gateway.
+
+Next: browser/Library transfers (DW-2) and retained browser profiles (DW-3), each
+with its own contract. Off-host recovery custody, replacement-host boot and
+on-demand placement remain separate from this same-host operator slice. Helpers,
+schedules and optional browser import follow later. Memory snapshots and a
+runtime comparison do not block this work.
 
 The owner-authorized [browser-first SPACE slice](docs/design/space-browser-pilot.md)
 is deployed in the private pilot after real guest/recovery, signed-in viewer and

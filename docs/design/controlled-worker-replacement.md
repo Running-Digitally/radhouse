@@ -1,5 +1,11 @@
 # Controlled Hermes worker replacement
 
+Status: implemented and deployed in the owner pilot on 2026-10-25. Web admission
+source: `47bdc9ec1eb70978c29692097c73b6dada2ffc69` (initial qualification at
+`fe1c068634da30488729a021334736f6329ab582`); recovery tooling subsequently
+qualified at `d160b1d`. Native Hermes remains at the pinned v0.21.6 composition.
+Installation paths, credentials, operation scripts and receipts are private.
+
 This is the first single-owner implementation of DW-0/DW-1. It keeps the stable
 Hermes endpoint and retained home. Hermes remains responsible for session loading,
 memory, keyed run admission, gateway ownership and native backup/import.
@@ -17,6 +23,10 @@ memory, keyed run admission, gateway ownership and native backup/import.
    its existing supervisor. Confirm its process and cgroup are empty. Do not
    attach the home elsewhere when this cannot be established. The current slice
    replaces a process on the existing host; it is not a cross-host storage lease.
+   This first operator procedure requires native browsers and human terminals to
+   be idle before stopping the gateway. It does not migrate an active browser
+   session or preserve its temporary profile. Active chat can drain or be stopped
+   through the native API; its actual terminal outcome remains authoritative.
 3. With writers stopped, create the recovery set. Invoke the pinned full
    `hermes backup`, retain its completion report and review exclusions. Package
    chat SQLite and originals, auth database export, private settings/key custody,
@@ -73,3 +83,36 @@ reconciliation without redispatch, retained chat/memory/Library, native archive
 import, payload tampering and current browser reconnection. Browser profile
 durability remains DW-3: current SPACE profiles are temporary and excluded from
 native backup. Keep the qualified SPACE backend and its previous backend available.
+
+## Installed qualification and limits
+
+The pilot checked a retained-home successor, the native lock's rejection of a
+second owner, a hold across web/runtime restarts, and saved conversation recall.
+A queued message stayed held and completed once after release. Native Stop
+settled asynchronously as `cancelled`; forced worker loss settled as `interrupted`.
+Both kept their original request/dispatch/run identities and were not replayed.
+Graceful shutdown can instead drain a reply to `completed`; preserve that result.
+Memory and original file contents matched the captured state.
+
+Native export/import and Radhouse component restores passed with private synthetic
+test evidence. Authentication was restored into a fresh temporary database and
+the test database was then removed. Native restore verified portable files and
+logical SQLite contents, including the run ledger. An uninitialized vault was
+recorded explicitly; no key or credential data was fabricated. Old operator-only
+historical files that blocked unprivileged native backup were retained separately
+in protected configuration custody.
+
+The first import exposed automatic gateway activation. The corrected offline
+wrapper was executed successfully and left no extra service or child cgroup.
+Updated package extraction requires independently retained manifest/source pins.
+The final full regression gate passed 1,691 tests and 20 subtests with 306 optional
+fixture skips; the focused recovery/hold suite passed 16 tests. Actual
+post-recovery browser navigation and snapshot tools succeeded on SPACE, with the
+previous browser backend retained. Native viewer input/video rechecking is a
+separate desktop acceptance item; it is not inferred from tool success.
+
+This is an operator-controlled same-host process replacement, not distributed
+leasing, a new VM provisioner, a scheduled off-host backup system or an executed
+replacement-host boot. Browser cookies remain temporary until DW-3. A recovery
+archive contains credentials when they exist: keep it private and establish
+separate protected custody before claiming host-loss recovery.

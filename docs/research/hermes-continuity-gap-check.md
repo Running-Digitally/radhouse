@@ -8,6 +8,11 @@ inventory, an executed restore or a new deployment qualification.
 
 ## Finding
 
+Subsequent implementation and installed qualification are recorded in
+[controlled worker replacement](../design/controlled-worker-replacement.md).
+This assessment retains its pre-implementation source baseline; the roadmap owns
+current delivery status.
+
 Hermes already implements persistent sessions, native memory and backup/import.
 Radhouse already uses native session loading and durable keyed Runs admission.
 The next work is controlled replacement of the runtime using retained state,
