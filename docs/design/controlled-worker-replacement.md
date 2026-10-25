@@ -52,6 +52,14 @@ and secret-bearing location manifests belong in the private deployment record.
 Ordinary replacement reattaches current state without importing any archive.
 Recovery imports the native ZIP into a fresh isolated home using the pinned
 Hermes command and restores the other components into isolated targets first.
+Use `scripts/hermes_offline_restore.py` on Linux: the pinned native import may
+automatically install/start a gateway when it finds no installation at the
+platform-default home. A custom `HERMES_HOME` does not disable that behavior.
+The wrapper runs the unmodified import as the service user in a transient cgroup,
+with network and service-control sockets unavailable, a read-only filesystem and
+only the fresh target writable. Children are stopped with the importing process.
+Native CLI logs may append during import; compare their archived prefix and
+verify all remaining portable files and logical database contents exactly.
 Check database integrity, session/run mappings, memory bytes and original file
 digests. Verify the auth export can restore and private keys/settings are covered.
 Only an operator may promote a restored set; never overlay an old set on a live
