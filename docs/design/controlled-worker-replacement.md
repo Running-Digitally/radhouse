@@ -118,7 +118,7 @@ in protected configuration custody.
 The first import exposed automatic gateway activation. The corrected offline
 wrapper was executed successfully and left no extra service or child cgroup.
 Updated package extraction requires independently retained manifest/source pins.
-The final full regression gate passed 1,691 tests and 20 subtests with 306 optional
+The initial installed regression gate passed 1,691 tests and 20 subtests with 306 optional
 fixture skips; the focused recovery/hold suite passed 16 tests. Actual
 post-recovery browser navigation and snapshot tools succeeded on SPACE, with the
 previous browser backend retained. A separate native desktop check verified
@@ -129,7 +129,13 @@ success alone was not used as evidence of viewer input/video.
 An independent review subsequently found and corrected lost executable modes,
 external provider settings targeting the real account home, and incomplete
 launcher-failure cleanup. The final re-review found no remaining actionable
-defects; 59 focused tests pass. Linux qualification with synthetic inputs verified
+defects; 59 focused tests pass. The final full fixture at `96e240e` passed 2,069
+tests with zero failures, errors or skips, plus 14 Node tests and three browser
+coverage journeys. Python XML and JavaScript LCOV passed the Sonar launcher's
+report verifier with fixture cleanup complete. Changed Python source has 98.24%
+combined line-and-branch coverage. This is local candidate verification; the
+Community Build quality gate runs against merged main separately.
+Linux qualification with synthetic inputs verified
 native Hermes/provider restoration, executable invocation after extraction,
 cleanup of a running parent and child, and cancellation of a delayed start. The
 installed systemd version accepts `JobRunningTimeoutSec` for transient units;
