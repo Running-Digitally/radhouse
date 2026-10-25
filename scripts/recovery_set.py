@@ -96,15 +96,20 @@ def seal(plan, output):
     return verify(output)
 
 
-def verify(directory):
+def verify(directory, *, expected_manifest=None, expected_hermes=None, expected_web=None):
     private(directory, directory=True)
     private(directory / "manifest.json")
+    if expected_manifest is not None and digest(directory / "manifest.json") != expected_manifest:
+        raise ValueError("recovery_manifest_identity_mismatch")
     manifest = json.loads((directory / "manifest.json").read_text())
     if (manifest.get("schema") != SCHEMA or set(manifest.get("components", {})) != ROLES
             or manifest.get("writers_stopped") is not True or manifest.get("native_export_complete") is not True
             or not manifest.get("exclusions")
             or any(not re.fullmatch(r"[a-f0-9]{40}", manifest.get(k, "")) for k in ("hermes_commit", "web_commit"))):
         raise ValueError("invalid_recovery_manifest")
+    if ((expected_hermes is not None and manifest["hermes_commit"] != expected_hermes)
+            or (expected_web is not None and manifest["web_commit"] != expected_web)):
+        raise ValueError("recovery_source_incompatible")
     expected = {"manifest.json"}
     for role, item in manifest["components"].items():
         if item.get("kind") not in {"file", "tree"}:
@@ -130,8 +135,11 @@ def verify(directory):
     return manifest
 
 
-def extract(directory, output):
-    manifest = verify(directory)
+def extract(directory, output, *, expected_manifest, expected_hermes, expected_web):
+    if any(not value for value in (expected_manifest, expected_hermes, expected_web)):
+        raise ValueError("trusted_restore_identity_required")
+    manifest = verify(directory, expected_manifest=expected_manifest,
+                      expected_hermes=expected_hermes, expected_web=expected_web)
     # Deliberately no --force or live destination support.
     output.mkdir(mode=0o700, parents=False, exist_ok=False)
     for role, item in manifest["components"].items():
@@ -150,6 +158,9 @@ def main():
     parser.add_argument("action", choices=("seal", "verify", "extract"))
     parser.add_argument("source", type=Path)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--expected-manifest")
+    parser.add_argument("--expected-hermes")
+    parser.add_argument("--expected-web")
     args = parser.parse_args()
     if args.action != "verify" and args.output is None:
         parser.error("--output required")
@@ -158,9 +169,11 @@ def main():
         private(args.source)
         result = seal(json.loads(args.source.read_text()), args.output)
     elif args.action == "extract":
-        result = extract(args.source, args.output)
+        result = extract(args.source, args.output, expected_manifest=args.expected_manifest,
+                         expected_hermes=args.expected_hermes, expected_web=args.expected_web)
     else:
-        result = verify(args.source)
+        result = verify(args.source, expected_manifest=args.expected_manifest,
+                        expected_hermes=args.expected_hermes, expected_web=args.expected_web)
     print(json.dumps({"state": "verified", "components": sorted(result["components"]),
                       "manifest_sha256": digest((args.output if args.action == "seal" else args.source) / "manifest.json")}))
 

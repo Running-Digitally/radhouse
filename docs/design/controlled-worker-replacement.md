@@ -43,8 +43,10 @@ the supervisor stop closes already-open channels before packaging.
 `scripts/recovery_set.py` assembles and verifies immutable, private recovery sets
 from quiesced component exports. Its manifest identifies component roles, source
 pins, excluded material and payload digests. Verification refuses incomplete,
-tampered, linked or unexpected payloads. It does not treat a successful ZIP write
-as proof that native export included all required stores. Installed orchestration
+tampered, linked or unexpected payloads. Extraction requires the expected manifest
+digest and compatible Hermes/web revisions from the operator's separate receipt.
+Do not derive those expected values from an untrusted candidate archive. A
+successful ZIP write does not prove that native export included all required stores. Installed orchestration
 and secret-bearing location manifests belong in the private deployment record.
 
 ## Recovery and acceptance

@@ -22,15 +22,20 @@ def plan(tmp_path):
             "exclusions": ["temporary browser profiles", "runtime caches"]}
 
 
+def extract(directory, target, **kwargs):
+    return recovery.extract(directory, target, expected_manifest=recovery.digest(directory / "manifest.json"),
+        expected_hermes=kwargs.get("hermes", "a" * 40), expected_web="b" * 40)
+
+
 def test_complete_recovery_set_round_trip_and_refuses_existing_destination(tmp_path):
     output, restored = tmp_path / "sealed", tmp_path / "restored"
     manifest = recovery.seal(plan(tmp_path), output)
     assert set(manifest["components"]) == recovery.ROLES
-    recovery.extract(output, restored)
+    extract(output, restored)
     for role in recovery.ROLES:
         assert (restored / role / "synthetic.txt").read_text() == role
     with pytest.raises(FileExistsError):
-        recovery.extract(output, restored)
+        extract(output, restored)
 
 
 @pytest.mark.parametrize("change", ["missing", "tampered", "link", "unexpected", "public"])
@@ -46,7 +51,7 @@ def test_invalid_payload_never_extracts(tmp_path, change):
     if change == "unexpected": (output / "extra").write_text("unexpected")
     if change == "public": target.chmod(0o644)
     with pytest.raises((ValueError, FileNotFoundError)):
-        recovery.extract(output, tmp_path / "restored")
+        extract(output, tmp_path / "restored")
     assert not (tmp_path / "restored").exists()
 
 
@@ -60,3 +65,16 @@ def test_incomplete_native_export_and_links_are_not_sealed(tmp_path):
     with pytest.raises(ValueError, match="source_link_or_special_file"):
         recovery.seal(proposal, tmp_path / "sealed")
     assert not (tmp_path / "sealed/manifest.json").exists()
+
+
+def test_restore_requires_trusted_manifest_and_compatible_source(tmp_path):
+    directory = tmp_path / "sealed"
+    recovery.seal(plan(tmp_path), directory)
+    with pytest.raises(ValueError, match="recovery_source_incompatible"):
+        extract(directory, tmp_path / "restored", hermes="c" * 40)
+    with pytest.raises(ValueError, match="recovery_manifest_identity_mismatch"):
+        recovery.verify(directory, expected_manifest="0" * 64)
+    with pytest.raises(ValueError, match="trusted_restore_identity_required"):
+        recovery.extract(directory, tmp_path / "restored", expected_manifest=None,
+                         expected_hermes="a" * 40, expected_web="b" * 40)
+    assert not (tmp_path / "restored").exists()
