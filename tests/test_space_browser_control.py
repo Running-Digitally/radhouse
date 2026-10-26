@@ -149,7 +149,8 @@ def test_uncertain_retirement_cleanup_requires_positive_host_receipt():
         runtime.chrome.proved = True
         await runtime.cleanup()
         assert events == ['retirement_completed', 'transport_stopped', 'cleaned']
-        assert runtime.retirement.done() and runtime.retirement.exception() is None
+        assert runtime.retirement.done()
+        assert runtime.retirement.exception() is None
     asyncio.run(scenario())
 
 
