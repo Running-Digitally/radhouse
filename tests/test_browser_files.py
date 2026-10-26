@@ -19,6 +19,44 @@ guest = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(guest)
 
 
+@pytest.mark.parametrize("detached", [False, True])
+def test_attachment_failure_requires_a_positive_detach_to_keep_browser_live(tmp_path, detached):
+    async def scenario():
+        files = guest.Files(tmp_path / "files", "a" * 32)
+        entered, release = asyncio.Event(), asyncio.Event()
+        async def call(method, params=None, session=None):
+            entered.set()
+            await release.wait()
+            raise ValueError("synthetic_command_failure")
+        files.call = call
+        await files.event({"method": "Target.attachedToTarget", "params": {
+            "sessionId": "transient", "targetInfo": {"type": "page", "targetId": "target"}}})
+        await entered.wait()
+        if detached:
+            await files.event({"method": "Target.detachedFromTarget", "params": {"sessionId": "transient"}})
+        release.set()
+        await asyncio.gather(*list(files.tasks))
+        assert files.faulted is (not detached)
+        assert ("transient" in files.sessions) is (not detached)
+        await files.close()
+    asyncio.run(scenario())
+
+
+def test_detach_before_attachment_task_runs_does_not_restore_a_stale_session(tmp_path):
+    async def scenario():
+        files = guest.Files(tmp_path / "files", "a" * 32)
+        async def forbidden(*args, **kwargs):
+            raise AssertionError("A detached session must not receive a command")
+        files.call = forbidden
+        await files.event({"method": "Target.attachedToTarget", "params": {
+            "sessionId": "transient", "targetInfo": {"type": "page", "targetId": "target"}}})
+        await files.event({"method": "Target.detachedFromTarget", "params": {"sessionId": "transient"}})
+        await asyncio.gather(*list(files.tasks))
+        assert not files.sessions and not files.faulted
+        await files.close()
+    asyncio.run(scenario())
+
+
 def original(store, *, owner="alice", private=True, data=b"synthetic file", name="private.txt"):
     identity = str(uuid4())
     stream, path = store.begin_upload(owner, identity, name)

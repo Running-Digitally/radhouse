@@ -115,6 +115,14 @@ def test_real_chooser_original_upload_download_and_private_outbox(tmp_path):
                 with pytest.raises(ValueError, match="file_chooser_changed"):
                     await files.execute({"action": "begin", "id": uuid4().hex, "chooser": chooser["id"],
                         "destination": url, "name": "example.txt", "size": 0, "sha256": hashlib.sha256(b"").hexdigest()})
+                # Closing a transient target while the observer is attaching is
+                # an ordinary browser lifecycle event, not loss of the browser.
+                for _ in range(8):
+                    target = await files.call("Target.createTarget", {"url": "about:blank", "background": True})
+                    await files.call("Target.closeTarget", {"targetId": target["targetId"]})
+                await asyncio.gather(*list(files.tasks))
+                assert not files.faulted
+                assert (await eval_js("document.title"))["result"]["value"] == "File bridge fixture"
             finally:
                 await files.close()
                 process.terminate()

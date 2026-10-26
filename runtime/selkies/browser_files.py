@@ -102,6 +102,7 @@ class Files:
         self.chooser = None
         self.staged = {}
         self.sessions = {}
+        self.attached = set()
         self.pending = {}
         self.sequence = 0
         self.tasks = set()
@@ -135,6 +136,8 @@ class Files:
             self.pending.pop(identity, None)
 
     async def attach(self, session, target):
+        if session not in self.attached:
+            return
         try:
             if target.get("type") in {"page", "iframe"}:
                 self.sessions[session] = target.get("targetId")
@@ -143,6 +146,11 @@ class Files:
                 await self.call("Target.setAutoAttach", {"autoAttach": True, "waitForDebuggerOnStart": True, "flatten": True}, session)
             await self.call("Runtime.runIfWaitingForDebugger", session=session)
         except Exception as error:
+            # Chrome can detach a transient tab/frame while these commands are
+            # in flight. Its positive detach event retires only that session;
+            # it does not invalidate the other observed pages or the browser.
+            if session not in self.attached:
+                return
             logging.getLogger(__name__).warning("Browser file observer failed: phase=attach kind=%s", type(error).__name__)
             self.faulted = True
 
@@ -174,10 +182,12 @@ class Files:
     async def event(self, value):
         method, data, session = value.get("method"), value.get("params", {}), value.get("sessionId")
         if method == "Target.attachedToTarget":
+            self.attached.add(data["sessionId"])
             task = asyncio.create_task(self.attach(data["sessionId"], data["targetInfo"]))
             self.tasks.add(task)
             task.add_done_callback(self.tasks.discard)
         elif method == "Target.detachedFromTarget":
+            self.attached.discard(data.get("sessionId"))
             self.sessions.pop(data.get("sessionId"), None)
             if self.chooser and self.chooser["session"] == data.get("sessionId"):
                 self.chooser = None
