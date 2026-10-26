@@ -290,7 +290,7 @@ def _reply_lifespan(service, browser=None):
         observer = asyncio.create_task(observe_reply())
         async def collect_files():
             while not stop.is_set():
-                if browser is not None and getattr(browser, "files_enabled", False):
+                if browser is not None and getattr(browser, "files", None) is not None:
                     try:
                         await asyncio.to_thread(browser.files.collect)
                     except Exception:

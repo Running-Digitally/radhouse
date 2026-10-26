@@ -55,7 +55,7 @@ class BrowserFiles:
 
     def collect(self):
         session = self.store.browser_session(self.owner)
-        if session is None or not self.collect_lock.acquire(blocking=False):
+        if session is None or not getattr(self.browser, "files_enabled", True) or not self.collect_lock.acquire(blocking=False):
             return
         try:
             launches = self.remote(session, None, {"action": "list"})
