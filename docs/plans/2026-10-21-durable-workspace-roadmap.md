@@ -124,6 +124,10 @@ automatically. General automatic action continuation remains future work.
 
 ## DW-2: ordinary file handling
 
+The [implemented candidate and qualification findings](../design/browser-library-transfers.md)
+are recorded separately. Installed acceptance remains in progress while an
+unexpected browser retirement during input is diagnosed; this item is not complete.
+
 Primary ownership: Library/ChatStore and the browser/native file bridge. Add an
 opaque-file-ID upload contract and an idempotent completed-download intake.
 Keep the seven existing browser tools narrow; introduce an explicit capability

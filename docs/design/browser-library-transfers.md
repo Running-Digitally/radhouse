@@ -1,7 +1,8 @@
 # Browser–Library transfers (DW-2)
 
-Status: implementation in progress. This document specifies the candidate; it is
-not evidence that it has been deployed.
+Status: implemented candidate; installed acceptance in progress. Automated
+qualification is recorded below. The observed browser lifecycle failure remains
+open, so DW-2 is not yet accepted as a delivered capability.
 
 ## User contract
 
@@ -76,3 +77,36 @@ bytes; additive metadata must not be discarded by restoring an older database.
 Chrome protocol references: [file chooser interception](https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-setInterceptFileChooserDialog),
 [file input assignment](https://chromedevtools.github.io/devtools-protocol/tot/DOM/#method-setFileInputFiles),
 and [download events and behavior](https://chromedevtools.github.io/devtools-protocol/tot/Browser/#method-setDownloadBehavior).
+
+## Qualification and integration findings
+
+The latest complete candidate (`71d5462`) passed 2,115 tests, with no failures,
+errors or skips, and three JavaScript browser checks against an owned PostgreSQL fixture and pinned Hermes source. Coverage
+includes original-byte integrity, ownership and Private grant exclusion,
+explicit sharing, stale chooser and revoked lease refusal, outbox reconciliation
+after a lost acknowledgement, and UI rendering with hostile filenames. Combined
+line/branch coverage for the new web, native and guest transfer modules is
+86.36%, 82.53% and 83.30%, respectively. This is local fixture coverage, not a
+SonarQube feature-branch gate result.
+
+Installed integration exposed three gaps beyond those initial fixtures:
+
+- The bootstrap runtime map needed capacity for the additional verified module.
+  Its bounded maximum is now 64, with exact path and digest validation retained.
+- Non-secret qualification receipts must be readable by the unprivileged
+  runtime even when an operator promotes under a private umask. Publication now
+  explicitly sets their mode; configuration and recovery data remain private.
+- The guest file observer needs the owned browser WebSocket endpoint, not the
+  HTTP debugging origin. The real-Chrome transfer test now calls the production
+  guest startup method, exercising that wiring before uploads and downloads.
+
+The installed browser subsequently Opened but retired during streamed input.
+Content-free diagnostics distinguish process loss, grant expiry and observer
+failure. The visible transfer walkthrough remains outstanding. Successful unit
+tests or service health checks do not close that acceptance gap. Installation
+identities and operational evidence are retained in the private deployment record.
+
+This slice does not retain cookies or a browser profile across replacement;
+that remains DW-3. Uploads currently select one original per chooser. A device
+original saved through this picker starts Private, including when the browser is
+in Observe mode, and can be shared explicitly from Library.
