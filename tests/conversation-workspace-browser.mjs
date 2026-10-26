@@ -5,13 +5,14 @@ const root=new URL('../src/radhouse/chat/static/',import.meta.url),origin='http:
 const engine=process.env.RADHOUSE_BROWSER_ENGINE || 'chromium';
 const browser=await ({chromium,webkit})[engine].launch({headless:true,...(engine==='chromium'?{channel:'chrome'}:{})});
 let mode='agent',visibility='private',rev=3,agentActive=true,requestCount=0,turns=[];
+let active=false,generation=0,viewerLoads=0,viewerDelay=0,openRequests=0;
 const submitted=[];
 const c=await browser.newContext({viewport:{width:1360,height:900},hasTouch:true}),errors=[];
 await c.route(origin+'/**',async route=>{
  const req=route.request(),path=new URL(req.url()).pathname;
  const json=v=>route.fulfill({contentType:'application/json',body:JSON.stringify(v)});
- const state=()=>({state:'live',generation:'generation-1',url:'https://example.org/',title:'Example',viewport:{width:1280,height:900},agent_active:agentActive,
-  stream:{path:'/chat/browser/stream/index.html',token:(mode==='human'?'h':'v').repeat(43)},control:{mode,revision:rev,can_take:mode==='agent',...(mode==='human'?{lease_id:'lease-1',lease_expires_at:Date.now()/1000+60,next_sequence:1,observation_mode:visibility,observation_epoch:rev}:{})},page_context:{current:{url:'https://example.org/',title:'Example'},previous:null},can_return:true,vault_enabled:false});
+ const state=()=>active?({state:'live',generation:'generation-'+generation,url:'https://example.org/',title:'Example',viewport:{width:1280,height:900},agent_active:agentActive,
+  stream:{path:'/chat/browser/stream/index.html',token:(mode==='human'?'h':'v').repeat(43)},control:{mode,revision:rev,can_take:mode==='agent',...(mode==='human'?{lease_id:'lease-1',lease_expires_at:Date.now()/1000+60,next_sequence:1,observation_mode:visibility,observation_epoch:rev}:{})},page_context:{current:{url:'https://example.org/',title:'Example'},previous:null},can_return:true,vault_enabled:false}):({state:'idle',generation:null,control:null});
  if(path==='/auth/session')return json({username:'alice',csrf_token:'synthetic',features:{browser:true,browser_control:true,browser_streaming:true,documents:true}});
  if(path==='/chat/history'||path==='/chat/reply')return json({turns,older_before:null});
  if(path==='/chat/messages'){
@@ -22,10 +23,17 @@ await c.route(origin+'/**',async route=>{
  if(path==='/chat/browser/preferences')return json({revision:0,search_engine:'google',history:[]});
  if(path==='/chat/library')return json({files:[],next_cursor:null});
  if(path==='/chat/browser'){requestCount++;return json(state());}
+ if(path==='/chat/browser/open'){openRequests++;active=true;generation++;mode='human';visibility='private';rev++;return json(state());}
+ if(path==='/chat/browser/control/close'){active=false;rev++;return json(state());}
  if(path==='/chat/browser/control/take'){mode='human';visibility='private';rev++;return json(state());}
  if(path==='/chat/browser/control/visibility'){visibility=req.postDataJSON().mode;rev++;return json(state());}
  if(path==='/chat/browser/control/heartbeat')return json(state());
- if(path==='/chat/browser/stream/index.html')return route.fulfill({contentType:'text/html',body:`<body style="background:#eef;color:#223">Synthetic live browser<script>window.radhouseInput={hide(){},show(){return true},press(){return true}};parent.postMessage({type:'mobileInputStatus',ready:true,touch:true,hardware:false,focused:false},location.origin);parent.postMessage({type:'framePresented'},location.origin);</script>`});
+ if(path==='/chat/browser/stream/index.html'){
+  viewerLoads++;
+  if(viewerDelay)await new Promise(resolve=>setTimeout(resolve,viewerDelay));
+  return route.fulfill({contentType:'text/html',headers:{'Content-Security-Policy':"default-src 'self'; script-src 'self'; frame-ancestors 'self'",'X-Frame-Options':'SAMEORIGIN','Cache-Control':'no-store'},body:'<!doctype html><html><head><script defer src="./synthetic-viewer.js"></script></head><body>Synthetic live browser</body></html>'});
+ }
+ if(path==='/chat/browser/stream/synthetic-viewer.js')return route.fulfill({contentType:'text/javascript',body:`window.radhouseInput={hide(){},show(){return true},press(){return true}};parent.postMessage({type:'mobileInputStatus',ready:true,touch:true,hardware:false,focused:false},location.origin);parent.postMessage({type:'framePresented'},location.origin);`});
  let file=path.startsWith('/workspace-assets/')?path.slice(18):path.slice(1);
  if(path==='/'||path==='/browser')file='index.html';
  if(!/^[\w.-]+$/.test(file))return route.fulfill({status:404});
@@ -34,6 +42,33 @@ await c.route(origin+'/**',async route=>{
 const page=await c.newPage();page.on('pageerror',e=>errors.push(e.message));
 const results=[];
 try{
+ // Start idle and open through the real action/update/mount path. This covers
+ // document and script initialization, not a real Selkies stream or debugger.
+ await page.goto(origin+'/browser');
+ const connections=new Set();let parentNavigations=0;
+ const parentNavigation=frame=>{if(frame===page.mainFrame())parentNavigations++;};
+ page.on('framenavigated',parentNavigation);
+ for(const delay of [0,750,0]){
+  viewerDelay=delay;
+  await expect(page.getByRole('button',{name:'Open browser',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Open browser',exact:true}).click();
+  await expect(page.locator('.browser-connection')).toHaveText('Live');
+  await expect(page.frameLocator('iframe[title="Live assistant browser"]').locator('body')).toHaveText('Synthetic live browser');
+  await expect(page.getByRole('button',{name:'Private',exact:true})).toHaveAttribute('aria-pressed','true');
+  const src=await page.locator('.browser-stream-frame').getAttribute('src');
+  connections.add(new URL(src,origin).searchParams.get('connection'));
+  // A subsequent status poll must retain this document, not navigate it again.
+  const statusBefore=requestCount;
+  await expect.poll(()=>requestCount).toBeGreaterThan(statusBefore);
+  expect(await page.locator('.browser-stream-frame').getAttribute('src')).toBe(src);
+  expect(viewerLoads).toBe(openRequests);
+  await page.getByRole('button',{name:'Close browser',exact:true}).click();
+  await expect(page.locator('.browser-stream-frame')).toHaveCount(0);
+ }
+ expect(openRequests).toBe(3);expect(viewerLoads).toBe(3);expect(connections.size).toBe(3);expect(parentNavigations).toBe(0);
+ page.off('framenavigated',parentNavigation);
+ results.push('three idle-to-Open/Close cycles, delayed external viewer, unique connections, no duplicate allocation or parent reload');
+ active=true;generation++;mode='agent';viewerDelay=0;rev++;
  await page.goto(origin);await expect(page.locator('main')).toHaveClass(/has-browser-preview/);
  await page.locator('#message').fill('Keep this draft while switching views. The composer must stay editable and Send must remain reachable when the browser drawer is open.');
  const frame=await page.locator('.browser-stream-frame').elementHandle();
