@@ -1,6 +1,6 @@
 # Browser reconnect after transport retirement
 
-Date: 25 October 2026. Design depth: D1. Status: implemented; live fault recovery passed; final human input acceptance pending.
+Date: 25 October 2026. Design depth: D1. Status: implemented; live fault recovery and human input acceptance passed.
 
 After a stream fails, its browser can be positively retired while the Hermes
 native driver remains alive. Status then repeatedly rejects the dead generation
@@ -24,8 +24,8 @@ Both adapters must be deployed together from a frozen tested revision.
 Regression tests cover an orphaned driver, mismatched identity, failed exit
 proof, interrupted guest retirement, repeated reconnect and successful fresh
 Open after cleanup. Installed acceptance reproduced a bounded transport loss using a synthetic
-browser and verified video, Private/Observe controls, handback, chat continuity
-and final process cleanup. A foreground streamed-keyboard check remains pending. Private
+browser and verified video, Private/Observe controls, handback, chat continuity,
+foreground streamed keyboard input and final process cleanup. Private
 topology and execution receipts belong in Homelab.
 
 The dated Sonar index reports 25 open bridge findings and 15 platform findings.
@@ -55,5 +55,13 @@ success, a separate actual navigation denial while the owner held control,
 handback, agent navigation, browser video and explicit Close returning idle.
 The tool records were checked independently of the model's wording. The selected
 runtime passed final integrity/readiness checks with no active run, browser or
-terminal. Human keyboard input still awaits an available foreground browser;
-that specific UI check is not claimed as passed by this deployment.
+terminal. Foreground human keyboard input navigated the streamed browser to
+`https://example.com/`; the live video confirmed its URL and Example Domain title.
+Explicit Close again returned the UI and native runtime to idle, with the worker
+process unchanged and saved memory preserved.
+
+The fresh viewer initially displayed Connecting; one ordinary page reload
+preceded successful video and keyboard input. This proves the usable input path
+after reload, not uninterrupted first-open connection reliability. Investigate
+viewer initialization if this observation recurs; the cause of the original
+transport interruption remains unproven.
