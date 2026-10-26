@@ -3,6 +3,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -141,7 +142,8 @@ class Files:
                 await self.call("Page.setInterceptFileChooserDialog", {"enabled": True}, session)
                 await self.call("Target.setAutoAttach", {"autoAttach": True, "waitForDebuggerOnStart": True, "flatten": True}, session)
             await self.call("Runtime.runIfWaitingForDebugger", session=session)
-        except Exception:
+        except Exception as error:
+            logging.getLogger(__name__).warning("Browser file observer failed: phase=attach kind=%s", type(error).__name__)
             self.faulted = True
 
     async def listen(self):
@@ -160,7 +162,8 @@ class Files:
                     await self.event(value)
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as error:
+            logging.getLogger(__name__).warning("Browser file observer failed: phase=listen kind=%s", type(error).__name__)
             self.faulted = True
         finally:
             self.faulted = True

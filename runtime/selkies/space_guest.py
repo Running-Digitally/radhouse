@@ -269,6 +269,8 @@ class Guest:
                 expired = (not self.grants.live() if self.grants.initialized
                     else time.monotonic() - self.started_at >= 60)
                 if not self.running() or expired or self.files is not None and self.files.faulted:
+                    reason = "process_gone" if not self.running() else "grant_expired" if expired else "file_observer"
+                    logging.getLogger(__name__).warning("Browser execution revoked: reason=%s", reason)
                     self.faulted = True
                     await self.revoke()
                     return
