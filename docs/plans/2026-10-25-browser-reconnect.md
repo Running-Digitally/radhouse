@@ -65,3 +65,9 @@ preceded successful video and keyboard input. This proves the usable input path
 after reload, not uninterrupted first-open connection reliability. Investigate
 viewer initialization if this observation recurs; the cause of the original
 transport interruption remains unproven.
+
+The [first-open follow-up](2026-10-25-browser-first-open.md) reproduced a stalled
+document while a browser automation debugger was attached. Detaching it released
+the viewer immediately; three native-only fresh opens then passed without a
+parent reload or runtime change. This qualifies the earlier acceptance
+observation without assigning a cause to the original transport interruption.
