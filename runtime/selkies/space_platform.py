@@ -163,7 +163,10 @@ def create(platform, bridge, owned):
                 # A prior lost stop reply must not make cleanup permanently
                 # fail after the host has positively retired that execution.
                 if await asyncio.to_thread(self.chrome.reconcile_retirement):
-                    self.retirement = None
+                    # Finish the shared retirement path, including the native
+                    # driver. Clearing the future would skip that completion.
+                    self.retirement = asyncio.create_task(asyncio.to_thread(platform.retire))
+                    self.retirement.add_done_callback(platform.consume_failure)
             await super().stop_transport()
 
     return RemotePlatform(bridge, owned)

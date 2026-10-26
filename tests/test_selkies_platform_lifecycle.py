@@ -36,7 +36,8 @@ def lifecycle(monkeypatch, *, fail_start=False, fail_stop=False):
     monkeypatch.setattr(platform, 'runtime', None)
     monkeypatch.setattr(platform.Platform, 'start', start)
     return SimpleNamespace(events=events, entered=entered, release=release,
-        instances=instances, bridge=object(), owned=object())
+        instances=instances, bridge=SimpleNamespace(
+            retire_browser_transport=lambda owned: events.append('native-retired')), owned=object())
 
 
 def test_concurrent_requests_share_startup_and_never_receive_partial_stream(monkeypatch):
@@ -224,7 +225,8 @@ def test_automatic_retirement_closes_listener_before_allowing_replacement(monkey
     async def scenario():
         f = lifecycle(monkeypatch)
         f.bridge = SimpleNamespace(_controller=SimpleNamespace(
-            state=lambda identity: SimpleNamespace(lease=None)))
+            state=lambda identity: SimpleNamespace(lease=None)),
+            retire_browser_transport=lambda owned: f.events.append('native-retired'))
         f.owned = SimpleNamespace(identity='synthetic')
         monkeypatch.setattr(platform.tempfile, 'tempdir', '/tmp')
         f.release.set()
@@ -254,7 +256,7 @@ def test_automatic_retirement_closes_listener_before_allowing_replacement(monkey
                 assert platform.runtime is current
                 assert current.stopped
                 assert current.boundary._blocked
-                assert current.shutdown is None
+                assert current.shutdown is not None
                 assert current.socket.parent.exists()
                 with pytest.raises(ValueError, match='stream_browser_busy'):
                     await platform.ensure(f.bridge, object())
@@ -269,10 +271,14 @@ def test_automatic_retirement_closes_listener_before_allowing_replacement(monkey
             assert not current.socket.exists()
             assert not current.socket.parent.exists()
             assert f.events.index('retire-complete') < f.events.index('server-stop')
+            assert f.events.index('retire-complete') < f.events.index('native-retired')
             replacement = await platform.ensure(f.bridge, object())
             assert replacement is not current
             await replacement.stop()
         finally:
+            # Observe the retained failure before discharging the synthetic fence.
+            if current.shutdown is not None:
+                await asyncio.gather(current.shutdown, return_exceptions=True)
             # Failed synthetic retirement never owned a real browser process.
             if current.retirement is not None and current.retirement.done():
                 current.retirement = None
@@ -286,7 +292,8 @@ def test_stop_waits_for_inflight_retirement_worker(monkeypatch):
     async def scenario():
         f = lifecycle(monkeypatch)
         f.bridge = SimpleNamespace(_controller=SimpleNamespace(
-            state=lambda identity: SimpleNamespace(lease=None)))
+            state=lambda identity: SimpleNamespace(lease=None)),
+            retire_browser_transport=lambda owned: f.events.append('native-retired'))
         f.owned = SimpleNamespace(identity='synthetic')
         f.release.set()
         current = await platform.ensure(f.bridge, f.owned)

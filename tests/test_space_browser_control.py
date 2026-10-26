@@ -134,7 +134,9 @@ def test_uncertain_retirement_cleanup_requires_positive_host_receipt():
                     self.retired = True
                 return self.retired
         factory = SimpleNamespace(Platform=Base, _chrome=Chrome(),
-            load=lambda *a:SimpleNamespace(StreamingControl=object))
+            load=lambda *a:SimpleNamespace(StreamingControl=object),
+            retire=lambda:events.append('retirement_completed'),
+            consume_failure=lambda task:task.exception())
         runtime = remote.create(factory, None, None)
         runtime.chrome = Chrome()
         async def lost():
@@ -146,7 +148,9 @@ def test_uncertain_retirement_cleanup_requires_positive_host_receipt():
         assert not events and not runtime.chrome.retired
         runtime.chrome.proved = True
         await runtime.cleanup()
-        assert events == ['transport_stopped', 'cleaned'] and runtime.retirement is None
+        assert events == ['retirement_completed', 'transport_stopped', 'cleaned']
+        assert runtime.retirement.done()
+        assert runtime.retirement.exception() is None
     asyncio.run(scenario())
 
 

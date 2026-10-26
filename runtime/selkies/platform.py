@@ -164,6 +164,15 @@ async def ensure(bridge, owned):
     if current.owned is not owned:
         raise ValueError('stream_browser_busy')
     if current.stopped:
+        # Reconnect may finish an interrupted teardown, never restart a stream
+        # for the old identity. The next status observes the retired binding.
+        startup_done = current.startup is None or current.startup.done()
+        shutdown_done = current.shutdown is None or current.shutdown.done()
+        if startup_done and shutdown_done:
+            try:
+                await current.stop()
+            except Exception:
+                raise ValueError('stream_retirement_unconfirmed') from None
         raise ValueError('stream_retirement_unconfirmed')
     # A disconnected request cannot cancel a startup shared with other callers.
     # Nobody receives the instance until its server and boundary are ready.
@@ -436,11 +445,12 @@ class Platform:
                 self.stopped = True
                 self.retirement = asyncio.create_task(asyncio.to_thread(retire))
                 self.retirement.add_done_callback(consume_failure)
-                await asyncio.shield(self.retirement)
-                # The native idle reaper can retire Chrome without an owner
-                # Close request. Finish the same transport cleanup after the
-                # watcher exits; awaiting it here would join this watcher.
-                self._begin_stop()
+                try:
+                    await asyncio.shield(self.retirement)
+                finally:
+                    # Retain a retryable shutdown even when the stop reply is
+                    # lost. Cleanup must prove retirement before releasing it.
+                    self._begin_stop()
 
     def _begin_stop(self):
         self.stopped = True
@@ -504,6 +514,9 @@ class Platform:
             # Its result must be known before another generation can launch.
             if self.retirement is not None:
                 await asyncio.shield(self.retirement)
+                # A dead guest can leave its native driver alive. Complete the
+                # same generation now instead of waiting for Hermes's idle TTL.
+                await asyncio.to_thread(self.bridge.retire_browser_transport, self.owned)
         finally:
             if self.server is not None:
                 await self.server.stop_server()
