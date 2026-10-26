@@ -953,7 +953,7 @@ def bootstrap_runtime_policy(tmp_path, monkeypatch):
     runtime = tmp_path / "runtime"
     runtime.mkdir()
     files = {}
-    for index in range(35):
+    for index in range(64):
         name = f"runtime_{index}.py"
         source = runtime / name
         source.write_text(f"# qualified runtime file {index}\n")
@@ -974,7 +974,7 @@ def bootstrap_runtime_policy(tmp_path, monkeypatch):
     return bootstrap, value, runtime
 
 
-@pytest.mark.parametrize("count", [32, 35])
+@pytest.mark.parametrize("count", [1, 32, 35, 36, 64])
 def test_bootstrap_policy_accepts_reviewed_runtime_map_capacity(bootstrap_runtime_policy, count):
     bootstrap, value, _ = bootstrap_runtime_policy
     files = dict(list(value["runtime_files_sha256"].items())[:count])
@@ -999,7 +999,7 @@ def test_bootstrap_policy_rejects_unverified_runtime_maps(bootstrap_runtime_poli
     if invalid == "empty":
         files.clear()
     elif invalid == "over_capacity":
-        files["runtime_35.py"] = "a" * 64
+        files["runtime_64.py"] = "a" * 64
     elif invalid == "wrong_type":
         files = list(files.items())
     elif invalid in {"absolute_path", "parent_path"}:
