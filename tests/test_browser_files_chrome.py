@@ -13,6 +13,7 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from tests.test_browser_files import guest
+from tests.test_space_browser_guest import guest as execution_guest
 
 
 async def eventually(probe):
@@ -60,7 +61,16 @@ def test_real_chooser_original_upload_download_and_private_outbox(tmp_path):
                     return (profile / "DevToolsActivePort").exists()
                 await eventually(port_file)
                 port, path = (profile / "DevToolsActivePort").read_text().splitlines()[:2]
-                await files.start("ws://127.0.0.1:" + port + path)
+                # Exercise the production guest's HTTP-origin → CDP-WebSocket
+                # wiring, rather than giving the file observer a prebuilt URL.
+                execution = execution_guest.Guest.__new__(execution_guest.Guest)
+                execution.state = tmp_path / "execution"
+                execution.launch_id = "a" * 32
+                execution.endpoint = "http://127.0.0.1:" + port
+                execution.browser_path = path
+                await files.close()
+                await execution.start_files()
+                files = execution.files
                 async def session_ready(): return next(iter(files.sessions), None)
                 session = await eventually(session_ready)
                 url = str(server.make_url("/"))

@@ -110,8 +110,7 @@ class Guest:
         self.started_at = time.monotonic()
         try:
             await asyncio.to_thread(self.launch_display_and_chrome)
-            self.files = file_bridge.Files(self.state / "outbox" / identity, identity)
-            await self.files.start(self.endpoint)
+            await self.start_files()
             await self.start_stream()
             self.record(identity, "running")
             self.watcher = asyncio.create_task(self.watch())
@@ -120,6 +119,12 @@ class Guest:
         except BaseException:
             await self.stop()
             raise
+
+    async def start_files(self):
+        self.files = file_bridge.Files(self.state / "outbox" / self.launch_id, self.launch_id)
+        # wait_ready returns the HTTP origin. CDP's browser observer connects
+        # to the separate path published by this owned Chrome process.
+        await self.files.start(f"ws://127.0.0.1:{urlsplit(self.endpoint).port}{self.browser_path}")
 
     def launch_display_and_chrome(self):
         display = ":" + str(secrets.randbelow(50000) + 100)
