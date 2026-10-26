@@ -110,6 +110,12 @@ The regression fails before the correction and passes afterward. All 32 targeted
 guest, file and real-Chrome tests pass, including live-target failure and detach
 before the attachment task starts.
 
+The complete synthetic qualification of `2b04659` also passed: 2,118 tests,
+zero failures/errors/skips, three JavaScript browser checks and complete fixture
+cleanup. Combined guest file-module line/branch coverage is now 85.54%; the web
+and native file modules retain 86.36% and 82.53%. No feature-branch SonarQube
+analysis or gate result is implied.
+
 This correction awaits deployment and the visible transfer walkthrough remains
 outstanding. Successful synthetic tests do not close that acceptance gap.
 Installation identities, the administration-access blocker and operational
