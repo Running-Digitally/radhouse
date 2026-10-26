@@ -601,6 +601,11 @@ def promote(record, value):
         existing.write_bytes(raw)
         manifest["sandbox_proof_sha256"] = hashlib.sha256(raw).hexdigest()
         (directory / "manifest.json").write_bytes(canonical(manifest))
+    # These contain only installation identities and synthetic qualification
+    # evidence. The unprivileged gateway must read them even when the operator
+    # uses a private umask for its separate recovery/configuration artifacts.
+    existing.chmod(0o644)
+    (directory / "manifest.json").chmod(0o644)
     switch(directory)
     return {"state": "promoted", "runtime_sha256": value["runtime_sha256"], "previous": previous, "current": receipt(directory)}
 
