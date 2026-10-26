@@ -76,6 +76,24 @@ def test_collector_keeps_private_provenance_outside_guest_and_checks_owner(tmp_p
     asyncio.run(scenario())
 
 
+def test_uncertain_human_commit_pauses_control_without_replaying(tmp_path, monkeypatch):
+    async def scenario():
+        f = fixture(tmp_path); state = await take(f); calls = []
+        monkeypatch.setattr(native, "file_module", lambda _: guest)
+        async def uncertain(operation, **value):
+            calls.append(value["action"])
+            raise TimeoutError("response lost after website effect")
+        runtime = SimpleNamespace(boundary=f.boundary, remote=SimpleNamespace(call=uncertain))
+        with pytest.raises(TimeoutError):
+            await native.human(SimpleNamespace(_controller=f.c), runtime,
+                SimpleNamespace(identity=f.identity), f.desktop.owner, 2000,
+                {"generation": f.identity.generation, "revision": state.revision,
+                 "lease_id": state.lease.lease_id, "file": {"action": "commit", "id": "a" * 32}})
+        assert calls == ["commit"]
+        assert f.c.state(f.identity).mode == "paused"
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("revoke,denied", [(False, False), (True, False), (False, True)])
 def test_agent_upload_uses_granted_chunks_and_stops_on_control_loss(tmp_path, monkeypatch, revoke, denied):
     async def scenario():
