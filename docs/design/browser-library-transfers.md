@@ -100,11 +100,20 @@ Installed integration exposed three gaps beyond those initial fixtures:
   HTTP debugging origin. The real-Chrome transfer test now calls the production
   guest startup method, exercising that wiring before uploads and downloads.
 
-The installed browser subsequently Opened but retired during streamed input.
-Content-free diagnostics distinguish process loss, grant expiry and observer
-failure. The visible transfer walkthrough remains outstanding. Successful unit
-tests or service health checks do not close that acceptance gap. Installation
-identities and operational evidence are retained in the private deployment record.
+The installed browser subsequently opened but retired during streamed input.
+Content-free diagnostics identified a file-observer attachment failure. A real
+Chrome regression reproduces the same failure by closing transient targets while
+attachment commands are in flight. The correction tracks attached sessions and
+ignores that command failure only after Chrome positively reports the session's
+detach; errors for still-attached targets and transport loss remain fail-closed.
+The regression fails before the correction and passes afterward. All 32 targeted
+guest, file and real-Chrome tests pass, including live-target failure and detach
+before the attachment task starts.
+
+This correction awaits deployment and the visible transfer walkthrough remains
+outstanding. Successful synthetic tests do not close that acceptance gap.
+Installation identities, the administration-access blocker and operational
+evidence are retained in the private deployment record.
 
 This slice does not retain cookies or a browser profile across replacement;
 that remains DW-3. Uploads currently select one original per chooser. A device

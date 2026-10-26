@@ -125,8 +125,10 @@ automatically. General automatic action continuation remains future work.
 ## DW-2: ordinary file handling
 
 The [implemented candidate and qualification findings](../design/browser-library-transfers.md)
-are recorded separately. Installed acceptance remains in progress while an
-unexpected browser retirement during input is diagnosed; this item is not complete.
+are recorded separately. The unexpected browser retirement is reproduced and
+corrected in the candidate: a confirmed transient target detach no longer faults
+the entire file observer. Deployment of that correction and installed transfer /
+Private-mode acceptance remain outstanding; this item is not complete.
 
 Primary ownership: Library/ChatStore and the browser/native file bridge. Add an
 opaque-file-ID upload contract and an idempotent completed-download intake.
