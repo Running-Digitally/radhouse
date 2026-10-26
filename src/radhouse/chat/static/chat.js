@@ -58,7 +58,7 @@ let draft=emptyDraft(), noticeCode=null, noticeAction=null, draftSignature="";
 const turnNodes=new Map(), previewUrls=new Map();
 const retainedSnapshots=new Map();
 const browserView=typeof window.BrowserView==="function" ? new window.BrowserView($("assistant-browser"),
-  {persistent:true,request:browserRequest,onReturn:returnBrowser,tab:browserTab}) : null;
+  {persistent:true,request:browserRequest,onReturn:returnBrowser,tab:browserTab,upload:uploadBrowserOriginal}) : null;
 const workspacePages=["/agent","/library","/browser","/terminal","/about-you"];
 let currentPage=typeof location!=="undefined" && workspacePages.includes(location.pathname) ? location.pathname : "/";
 const library=typeof window.RadhouseLibrary==="function" ? new window.RadhouseLibrary({request:api,card:fileCard,openMessage}) : null;
@@ -825,14 +825,18 @@ function progress(file,loaded,total,sendingSession) {
   const target=document.querySelector("[data-upload-progress]");
   if (target) { target.textContent=file.name+" · "+(total ? Math.round(loaded/total*100)+"% transferred" : sizeLabel(loaded)+" transferred"); }
 }
-async function uploadOriginal(file, sendingSession) {
+async function uploadBrowserOriginal(blob, privateFile) {
+  const file={file_id:crypto.randomUUID(),name:blob.name,size:blob.size,blob};
+  await uploadOriginal(file,session,privateFile); return file.file_id;
+}
+async function uploadOriginal(file, sendingSession, privateFile=false) {
   let receipt;
   try { receipt=await api("/chat/files/"+file.file_id); }
   catch (error) { if (error.status!==404) { throw error; } }
   if (session!==sendingSession) { throw new Error("authentication_required"); }
   if (!receipt && !(file.blob instanceof Blob)) { throw new Error("original_unavailable"); }
   if (!receipt) { receipt=await new Promise((resolve,reject) => {
-    const request=new XMLHttpRequest(); request.open("PUT","/chat/files/"+file.file_id+"?name="+encodeURIComponent(file.name));
+    const request=new XMLHttpRequest(); request.open("PUT","/chat/files/"+file.file_id+"?name="+encodeURIComponent(file.name)+(privateFile ? "&private=true" : ""));
     request.setRequestHeader("Content-Type","application/octet-stream"); request.setRequestHeader("X-Radhouse-CSRF",sendingSession.csrf_token);
     request.upload.onprogress=event => progress(file,event.loaded,event.lengthComputable ? event.total : 0,sendingSession);
     request.onerror=request.onabort=() => reject(new Error("network_error"));

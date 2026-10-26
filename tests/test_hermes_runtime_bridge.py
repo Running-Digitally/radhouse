@@ -890,7 +890,7 @@ def test_declared_unchanged_thread_source_is_verified_and_passed_through(
     # write() must include the passthrough in its install map, too.
     (package / "bridge.py").write_text("# bridge source\n")
     for name in ("browser_control.py", "native_control.py", "vault_bridge.py",
-                 "about_you.py", "native_inference.py", "owner_terminal.py"):
+                 "about_you.py", "native_inference.py", "owner_terminal.py", "browser_files.py"):
         (package / name).write_text("# source\n")
     (package / "plugin").mkdir()
     for name in ("__init__.py", "plugin.yaml"):

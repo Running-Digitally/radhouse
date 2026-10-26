@@ -34,6 +34,15 @@ class DocumentCall(BaseModel):
     cursor: Annotated[str, Field(max_length=4096)] | None = None
 
 
+class FileContentCall(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    run_id: Annotated[str, Field(pattern=IDENTIFIER)]
+    session_id: Annotated[str, Field(pattern=IDENTIFIER)]
+    dispatch_key: Annotated[str, Field(pattern=IDENTIFIER)]
+    file_id: Annotated[str, Field(pattern=FILE_ID.pattern)]
+    offset: Annotated[int, Field(ge=0, lt=2**53)]
+
+
 class FileShareCall(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     run_id: Annotated[str, Field(pattern=IDENTIFIER)]
@@ -133,6 +142,20 @@ class DocumentBridge:
         self._authorize(token, call)
         return result
 
+    def content(self, token, call):
+        grant = self._authorize(token, call)
+        if "browser_upload" not in grant["allowed_tools"] or call.file_id not in grant["files"]:
+            raise Rejected("document_access_denied", 403)
+        original = self.store.assistant_upload(self.owner_id, call.file_id)
+        if original.sha256 != grant["files"][call.file_id] or call.offset > original.size:
+            raise Rejected("document_access_denied", 403)
+        with original.open() as stream:
+            stream.seek(call.offset)
+            data = stream.read(32768)
+        self._authorize(token, call)
+        return {"file_id": call.file_id, "name": original.name, "size": original.size,
+                "sha256": original.sha256, "offset": call.offset, "data": base64.b64encode(data).decode()}
+
     def share(self, token, call):
         grant = self._authorize(token, call)
         if "file_share" not in grant["allowed_tools"]:
@@ -174,12 +197,14 @@ def create_document_router(bridge):
                 raise Rejected("invalid_request", 422)
             body.extend(chunk)
         try:
-            call = (FileShareCall if operation == "share" else DocumentCall).model_validate_json(body)
+            call = {"share": FileShareCall, "content": FileContentCall}.get(operation, DocumentCall).model_validate_json(body)
         except ValidationError:
             raise Rejected("invalid_request", 422) from None
         # The app's async loop remains available for callback/cancel observations.
         if operation == "share":
             return await asyncio.to_thread(bridge.share, token, call)
+        if operation == "content":
+            return await asyncio.to_thread(bridge.content, token, call)
         return await asyncio.to_thread(bridge.execute, token, call, operation)
 
     @router.post("/internal/documents/search")
@@ -193,5 +218,9 @@ def create_document_router(bridge):
     @router.post("/internal/documents/share")
     async def share(request: Request):
         return await execute(request, "share")
+
+    @router.post("/internal/documents/content")
+    async def content(request: Request):
+        return await execute(request, "content")
 
     return router

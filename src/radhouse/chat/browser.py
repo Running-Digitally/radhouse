@@ -20,7 +20,7 @@ BROWSER_TOOLS = (
 LOGIN_TOOLS = ("browser_login_list", "browser_login_fill")
 MAX_FRAME_BYTES = 512 * 1024
 _IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}")
-_PERMITTED = frozenset((*BROWSER_TOOLS, "document_search", "document_read", "file_share"))
+_PERMITTED = frozenset((*BROWSER_TOOLS, "document_search", "document_read", "file_share", "browser_upload"))
 _ACTIVE = frozenset(("awaiting_dispatch", "queued", "running", "waiting_for_approval", "stopping"))
 _VIEWABLE = _ACTIVE | frozenset(("completed", "failed", "cancelled", "interrupted"))
 
@@ -90,7 +90,7 @@ class HermesBrowserClient:
 
     def browser_session(self, session_id, operation, body):
         _identifier(session_id)
-        paths = {"open", "status", "frame", "control/take", "control/heartbeat",
+        paths = {"open", "status", "frame", "files", "control/take", "control/heartbeat",
             "control/input", "control/pause", "control/close", "control/visibility", "logins/list", "logins/save", "logins/remove"}
         if operation not in paths:
             raise ValueError("invalid_browser_operation")
@@ -230,11 +230,21 @@ class BrowserSessionService:
     """
     control_enabled = True
 
-    def __init__(self, store, hermes, *, owner_id, chat_service, credential_vault=False, streaming=False, clock=time.time):
+    def __init__(self, store, hermes, *, owner_id, chat_service, credential_vault=False, streaming=False, files=False, clock=time.time):
         self.store, self.hermes, self.owner_id = store, hermes, owner_id
         self.chat_service, self.clock = chat_service, clock
         self._streaming = streaming
         self._credential_vault = credential_vault
+        self._files_enabled = files
+        from .browser_files import BrowserFiles
+        self.files = BrowserFiles(self)
+
+    @property
+    def files_enabled(self):
+        try:
+            return (self._files_enabled() if callable(self._files_enabled) else self._files_enabled) is True
+        except HermesGatewayError:
+            return False
 
     @property
     def streaming_enabled(self):
@@ -353,6 +363,9 @@ class BrowserSessionService:
             "control": control, "viewport": viewport,
             "page_context": {key: self._page(page_context.get(key)) for key in ("current", "previous")},
             "can_return": pending is None, "vault_enabled": self.credential_vault_enabled}
+        if self.files_enabled:
+            result["files_enabled"] = True
+            result["downloads"] = {"saving": self.files.pending_count, "unavailable": self.files.unavailable}
         if payload.get("stream") is not None:
             stream = payload["stream"]
             if (type(stream) is not dict or set(stream) != {"path","token"}

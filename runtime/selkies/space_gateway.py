@@ -63,6 +63,8 @@ class LaunchJournal:
                 raise protocol.Rejected('previous_browser_unresolved')
             with self.database:
                 self.database.execute('INSERT INTO launches(id,sandbox) VALUES (?,?)', (identity,self.sandbox))
+        elif row is not None and row[0] == self.sandbox and operation == 'files':
+            return None  # A retired launch retains only its acknowledgement-driven outbox.
         elif row is not None and row[1] == 1 and operation in {'status', 'stop'}:
             return {**{k:envelope[k] for k in ('schema','launch_id','request_id','sequence')},
                     'data':{'state':'retired','connected':[],'faulted':False}}

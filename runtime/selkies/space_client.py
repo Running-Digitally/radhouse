@@ -47,15 +47,23 @@ class Client:
         self.opener = build_opener(ProxyHandler({}), HTTPSHandler(context=self.ssl), NoRedirect())
         self.lock = threading.Lock()
         self.async_lock = asyncio.Lock()
+        self.file_lock = threading.Lock()
+        self.file_async_lock = asyncio.Lock()
+        self.file_sequence = 0
         self.sequence = 0
         self.launch_id = uuid4().hex
 
     def request(self, operation, *, timeout=15, **body):
         # One ordered controller connection, including renewals. No implicit replay.
-        with self.lock:
-            self.sequence += 1
+        with self.file_lock if operation == "files" else self.lock:
+            if operation == "files":
+                self.file_sequence += 1
+                sequence = self.file_sequence
+            else:
+                self.sequence += 1
+                sequence = self.sequence
             envelope = protocol.request({"schema": protocol.SCHEMA, "launch_id": self.launch_id,
-                "request_id": uuid4().hex, "sequence": self.sequence, "op": operation, "body": body})
+                "request_id": uuid4().hex, "sequence": sequence, "op": operation, "body": body})
             raw = json.dumps(envelope, separators=(",", ":")).encode()
             if len(raw) > protocol.MAX_BODY:
                 raise protocol.Rejected("browser_request_too_large")
@@ -81,9 +89,10 @@ class Client:
             except (OSError, URLError, ValueError, TimeoutError):
                 raise protocol.Uncertain("browser_response_unconfirmed") from None
 
-    async def call(self, operation, **body):
-        async with self.async_lock:
-            return await asyncio.to_thread(self.request, operation, **body)
+    async def call(self, operation, *, timeout=15, **body):
+        # File verification cannot delay the independently expiring input lease.
+        async with self.file_async_lock if operation == "files" else self.async_lock:
+            return await asyncio.to_thread(self.request, operation, timeout=timeout, **body)
 
     def transport_headers(self):
         return {**self.headers, "X-Radhouse-Browser-Launch": self.launch_id}

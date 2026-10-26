@@ -1,5 +1,7 @@
 """Closed controller-to-browser protocol; no SPACE management operations."""
 import math
+import importlib.util
+from pathlib import Path
 import re
 import time
 
@@ -7,7 +9,7 @@ SCHEMA = "radhouse.space-browser.v1"
 MAX_BODY = 64 * 1024
 MAX_FRAME = 8 * 1024 * 1024
 GRANT_SECONDS = 3.0
-OPERATIONS = frozenset({"start", "status", "stop", "publish", "renew", "freeze", "thaw", "drain"})
+OPERATIONS = frozenset({"start", "status", "stop", "publish", "renew", "freeze", "thaw", "drain", "files"})
 
 
 class Rejected(ValueError):
@@ -40,7 +42,19 @@ def request(value):
     if type(value["sequence"]) is not int or not 1 <= value["sequence"] < 2**53:
         raise Rejected("invalid_sequence")
     body = value["body"]
+    if value["op"] == "files":
+        # The file module owns the closed per-action shape; never a path or CDP command.
+        spec = importlib.util.spec_from_file_location("space_file_contract", Path(__file__).with_name("browser_files.py"))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.validate(body)
+        return value
     fields = {"publish": {"table", "ttl", "not_after"}, "renew": {"ttl", "not_after"}, "thaw": {"freeze_id"}}.get(value["op"], set())
+    if value["op"] == "publish" and type(body) is dict and "files" in body:
+        fields = fields | {"files"}
+        if (type(body["files"]) is not dict or set(body["files"]) != {"private", "producer"}
+                or type(body["files"]["private"]) is not bool or body["files"]["producer"] not in {"user", "assistant"}):
+            raise Rejected("invalid_file_visibility")
     if type(body) is not dict or set(body) != fields:
         raise Rejected("invalid_request")
     if "ttl" in fields:

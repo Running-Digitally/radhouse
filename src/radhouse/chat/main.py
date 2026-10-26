@@ -61,7 +61,7 @@ def app_factory():
     if browser_enabled:
         browser_service = BrowserSessionService(store, browser_client, owner_id=config["owner_id"],
             chat_service=service, credential_vault=lambda: _browser_vault_available(status_client),
-            streaming=config.get("browser_streaming_enabled", False))
+            streaming=config.get("browser_streaming_enabled", False), files=lambda: status_client.capabilities().browser_files)
     app = create_app(auth, service, admin=admin,
         documents=DocumentBridge(store, status_client, owner_id=config["owner_id"]) if document_access else None,
         browser=browser_service,

@@ -116,6 +116,12 @@ class ChatStore:
             db.execute("""CREATE TABLE IF NOT EXISTS assistant_files (
                 file_id TEXT PRIMARY KEY REFERENCES uploads(file_id),
                 turn_seq INTEGER NOT NULL REFERENCES turns(seq))""")
+            db.execute("""CREATE TABLE IF NOT EXISTS browser_files (
+                file_id TEXT PRIMARY KEY REFERENCES uploads(file_id),
+                private INTEGER NOT NULL CHECK(private IN (0,1)),
+                producer TEXT NOT NULL CHECK(producer IN ('user','assistant')),
+                origin TEXT NOT NULL CHECK(origin IN ('device','browser')),
+                created_at REAL NOT NULL)""")
             db.execute("""CREATE TABLE IF NOT EXISTS agent_profiles (
                 owner TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK(revision>0),
                 profile TEXT NOT NULL)""")
@@ -142,7 +148,7 @@ class ChatStore:
         fd, path = tempfile.mkstemp(prefix="upload-", dir=self.files_path)
         return os.fdopen(fd, "wb"), Path(path)
 
-    def commit_upload(self, owner, file_id, name, path, media, kind, sha256, size):
+    def commit_upload(self, owner, file_id, name, path, media, kind, sha256, size, *, browser=None):
         # The complete immutable file is durable before the DB publishes it.
         # A crash can leave an unpublished file, never a receipt for partial bytes.
         with self.connection() as db:
@@ -159,6 +165,32 @@ class ChatStore:
                 finally: os.close(directory)
                 db.execute("INSERT INTO uploads VALUES(?,?,?,?,?,?,?,?)",
                            (file_id, owner, name, media, kind, sha256, size, storage_name))
+                if browser is not None:
+                    db.execute("INSERT INTO browser_files VALUES(?,?,?,?,?)", (file_id,
+                        int(browser["private"]), browser["producer"], browser["origin"], browser["created_at"]))
+                    if not browser["private"] and browser.get("run_id"):
+                        turn = db.execute("SELECT seq FROM turns WHERE owner=? AND run_id=?", (owner, browser["run_id"])).fetchone()
+                        if turn is not None:
+                            db.execute("INSERT INTO assistant_files VALUES(?,?)", (file_id, turn["seq"]))
+                            # An admitted run may read its own newly acquired output.
+                            # This never expands its access to pre-existing Library files.
+                            db.execute("""INSERT OR IGNORE INTO document_grant_files
+                                SELECT g.token,?,? FROM document_grants g JOIN turns t ON t.seq=g.turn_seq
+                                WHERE g.turn_seq=? AND t.status NOT IN (?,?,?,?) AND g.expires_at>?
+                                AND (g.bound_run_id IS NULL OR g.bound_run_id=?)""", (file_id, sha256, turn["seq"], *TERMINAL,
+                                    browser["created_at"], browser["run_id"]))
+        return self.upload(owner, file_id)
+
+    def share_browser_file(self, owner, file_id):
+        self.upload(owner, file_id)
+        with self.connection() as db:
+            db.execute("UPDATE browser_files SET private=0 WHERE file_id=?", (file_id,))
+        return {"file_id": file_id, "private": False}
+
+    def assistant_upload(self, owner, file_id):
+        with self.connection() as db:
+            if db.execute("SELECT 1 FROM browser_files WHERE file_id=? AND private=1", (file_id,)).fetchone():
+                raise Rejected("file_private", 403)
         return self.upload(owner, file_id)
 
     def upload(self, owner, file_id):
@@ -253,20 +285,22 @@ class ChatStore:
             rows = db.execute("""WITH files AS (
                 SELECT 0 AS tier,u.rowid AS ordering,0 AS item_position,
                     'file:'||u.file_id AS id,u.file_id,u.name,u.size,u.kind,u.media_type,
-                    CASE WHEN s.file_id IS NULL THEN 'user' ELSE 'assistant' END AS source,
+                    COALESCE(b.producer,CASE WHEN s.file_id IS NULL THEN 'user' ELSE 'assistant' END) AS source,
                     COALESCE(st.request_id,(SELECT t.request_id FROM attachments a JOIN turns t ON t.seq=a.turn_seq
                         WHERE a.file_id=u.file_id AND t.owner=u.owner ORDER BY t.seq LIMIT 1)) AS request_id,
                     CASE WHEN s.file_id IS NULL THEN (SELECT a.position FROM attachments a JOIN turns t ON t.seq=a.turn_seq
                         WHERE a.file_id=u.file_id AND t.owner=u.owner ORDER BY t.seq,a.position LIMIT 1) END AS position,
                     '/chat/files/'||u.file_id||'/content' AS download_url,
-                    COALESCE(st.created_at,(SELECT min(t.created_at) FROM attachments a JOIN turns t ON t.seq=a.turn_seq
-                        WHERE a.file_id=u.file_id AND t.owner=u.owner)) AS created_at
+                    COALESCE(b.created_at,st.created_at,(SELECT min(t.created_at) FROM attachments a JOIN turns t ON t.seq=a.turn_seq
+                        WHERE a.file_id=u.file_id AND t.owner=u.owner)) AS created_at,
+                    COALESCE(b.private,0) AS private,b.origin AS origin
                 FROM uploads u LEFT JOIN assistant_files s USING(file_id) LEFT JOIN turns st ON st.seq=s.turn_seq
+                    LEFT JOIN browser_files b ON b.file_id=u.file_id
                 WHERE u.owner=?
                 UNION ALL
                 SELECT 1,t.seq,a.position,'legacy:'||t.seq||':'||a.position,NULL,a.name,length(a.data),a.kind,
                     a.media_type,'user',t.request_id,a.position,
-                    '/chat/messages/'||t.request_id||'/attachments/'||a.position,t.created_at
+                    '/chat/messages/'||t.request_id||'/attachments/'||a.position,t.created_at,0,NULL
                 FROM attachments a JOIN turns t ON t.seq=a.turn_seq WHERE t.owner=? AND a.file_id IS NULL
             ) SELECT * FROM files WHERE (?='all' OR source=?) AND casefold(name) LIKE ? ESCAPE '\\'
                 AND (? IS NULL OR tier>? OR tier=? AND (ordering<? OR ordering=? AND item_position<?))
@@ -282,6 +316,11 @@ class ChatStore:
             for item in page:
                 for key in ("tier", "ordering", "item_position"):
                     item.pop(key)
+                if item["origin"] is None:
+                    item.pop("origin")
+                    item.pop("private")
+                else:
+                    item["private"] = bool(item["private"])
             return {"files": page, "next_cursor": next_cursor}
 
     @contextmanager
@@ -489,12 +528,16 @@ class ChatStore:
                            (token, saved["seq"], saved["retry_until"]))
                 db.execute("""INSERT INTO document_grant_files SELECT DISTINCT ?,u.file_id,u.sha256
                     FROM uploads u JOIN attachments a ON a.file_id=u.file_id JOIN turns t ON t.seq=a.turn_seq
-                    WHERE t.owner=? AND u.owner=? AND t.seq<=? AND u.kind IN ('text','document')
+                    WHERE t.owner=? AND u.owner=? AND t.seq<=?
+                    AND NOT EXISTS (SELECT 1 FROM browser_files b WHERE b.file_id=u.file_id AND b.private=1)
                     AND a.sha256=u.sha256""", (token, saved["owner"], saved["owner"], saved["seq"]))
                 db.execute("""INSERT OR IGNORE INTO document_grant_files SELECT ?,u.file_id,u.sha256
                     FROM uploads u JOIN assistant_files s USING(file_id) JOIN turns t ON t.seq=s.turn_seq
                     WHERE t.owner=? AND u.owner=? AND t.seq<? AND u.kind='text'""",
                     (token, saved["owner"], saved["owner"], saved["seq"]))
+                db.execute("""INSERT OR IGNORE INTO document_grant_files SELECT ?,u.file_id,u.sha256
+                    FROM uploads u JOIN browser_files b USING(file_id)
+                    WHERE u.owner=? AND b.private=0""", (token, saved["owner"]))
                 row = db.execute("SELECT * FROM document_grants WHERE token=?", (token,)).fetchone()
             return row["token"]
 

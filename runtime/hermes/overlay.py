@@ -201,7 +201,7 @@ def patch_api(source, *, include_lifecycle=True):
     anchor = "        routes.extend(_api_runs._http_routes(self))\n"
     routes = """        routes.append(("GET", "/v1/browser-stream/{tail:.*}", self._handle_radhouse_browser_stream))
         routes.append(("POST", "/v1/browser-sessions/open", self._handle_radhouse_browser_session))
-        for operation in ("status", "frame"):
+        for operation in ("status", "frame", "files"):
             routes.append(("POST", "/v1/browser-sessions/{session_id}/" + operation, self._handle_radhouse_browser_session))
         for operation in ("take", "heartbeat", "input", "pause", "close", "visibility"):
             routes.append(("POST", "/v1/browser-sessions/{session_id}/control/" + operation, self._handle_radhouse_browser_session))
@@ -413,6 +413,7 @@ def write(root, destination):
         ("about_you.py", "radhouse_about_you.py"),
         ("native_inference.py", "radhouse_native_inference.py"),
         ("owner_terminal.py", "radhouse_owner_terminal.py"),
+        ("browser_files.py", "radhouse_browser_file_bridge.py"),
     ):
         target = destination / name
         target.write_bytes((PACKAGE / source).read_bytes())

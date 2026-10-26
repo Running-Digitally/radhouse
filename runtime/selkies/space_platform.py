@@ -64,6 +64,8 @@ def create(platform, bridge, owned):
     class RemotePlatform(platform.Platform):
         async def start(self):
             self.chrome = chrome
+            from radhouse_browser_file_bridge import remember
+            remember(bridge, owned, chrome.client)
             self.remote = self.chrome.client
             self.client_permissions = {}
             self.renewer = None
@@ -84,8 +86,11 @@ def create(platform, bridge, owned):
                 if not boundary.authorized(boundary.input_token):
                     table = {k: v for k, v in table.items() if not v.get("mk_control")}
                 ttl = self.ttl()
+                state = bridge._controller.state(owned.identity)
+                private = state.mode != "agent" and not (state.mode == "human" and state.lease and state.lease.observation_mode == "observe")
                 result = await self.remote.call("publish", table=table, ttl=ttl,
-                    not_after=time.time() + ttl)
+                    not_after=time.time() + ttl, files={"private": private,
+                    "producer": "assistant" if state.mode == "agent" else "user"})
                 self.accept_status(result)
 
             async def resume(owner, revision, observation):
