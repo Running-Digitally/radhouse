@@ -127,8 +127,10 @@ automatically. General automatic action continuation remains future work.
 The [implemented candidate and qualification findings](../design/browser-library-transfers.md)
 are recorded separately. The unexpected browser retirement is reproduced and
 corrected in the candidate: a confirmed transient target detach no longer faults
-the entire file observer. Deployment of that correction and installed transfer /
-Private-mode acceptance remain outstanding; this item is not complete.
+the entire file observer. That correction is deployed. Installed device and
+Library uploads, Private download byte integrity and a 94-second native picker
+have passed. Explicit-sharing and agent-transfer acceptance remain outstanding;
+this item is not complete.
 
 Primary ownership: Library/ChatStore and the browser/native file bridge. Add an
 opaque-file-ID upload contract and an idempotent completed-download intake.

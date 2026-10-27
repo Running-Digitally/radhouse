@@ -1,8 +1,9 @@
 # Browser–Library transfers (DW-2)
 
 Status: implemented candidate; installed acceptance in progress. Automated
-qualification is recorded below. The browser lifecycle correction is deployed;
-visible transfer and Private-mode acceptance remain open, so DW-2 is not yet
+qualification is recorded below. The browser lifecycle correction is deployed.
+Installed device upload, Library upload and Private download have passed;
+explicit-sharing and agent-transfer acceptance remain open, so DW-2 is not yet
 accepted as a delivered capability.
 
 ## User contract
@@ -118,11 +119,34 @@ and native file modules retain 86.36% and 82.53%. No feature-branch SonarQube
 analysis or gate result is implied.
 
 The correction is deployed and its cold-recovery source selects the same verified
-module. Application health passed after admission was released. The visible
-transfer and Private-mode walkthrough remains outstanding; successful synthetic
-tests and deployment do not close that acceptance gap. Installation identities,
+module. Application health passed after admission was released. Native browser
+testing confirmed both device and existing Library selections reached the test
+website, which displayed its upload-success page. A subsequent Private browser
+download saved exactly one 103,704-byte original with the same SHA-256 as the
+source, Private metadata and no assistant document grants. Explicit-sharing and
+agent-transfer acceptance remain outstanding. Installation identities,
 the resolved administration-access issue and operational evidence are retained
 in the private deployment record.
+
+A timed native device picker remained open for 94 seconds and then completed
+its transfer with the same browser still live in Private mode. Earlier
+retirements reported execution-grant expiry after interrupted or delayed test
+interaction; they do not establish a file-transfer or 60-second picker defect.
+No lease duration or revocation policy was relaxed to obtain the passing result.
+
+The installed assistant check then found a dispatch error when document access,
+browser control and file transfers were enabled together: upload-tool selection
+referenced local variables from the wrong method. The correction places it in
+the existing capability selection step before the tool policy is frozen. New
+regressions exercise the combined feature configuration, each missing condition,
+lost-response retries, capability removal and Private-file grants across sharing.
+Deployment and installed assistant acceptance of this correction are pending.
+
+Touched-file SonarQube follow-up: the latest merged-main index lists three
+existing findings in `src/radhouse/chat/service.py`, but does not contain their
+individual keys or locations. The task's issue-detail read was denied (HTTP 403),
+so those findings require an authorized detail read and review; no closure or
+suppression is claimed. The new admission regression file has no baseline entry.
 
 This slice does not retain cookies or a browser profile across replacement;
 that remains DW-3. Uploads currently select one original per chooser. A device

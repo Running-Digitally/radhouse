@@ -77,8 +77,6 @@ class ChatService:
             return prepared
         turn, images, session_id, tools, token = prepared
         browser = json.loads(turn["browser_context"]) if turn.get("browser_context") else {}
-        if self.document_access and self.browser_enabled and self.browser_control and capabilities.browser_files and browser.get("browser_owner"):
-            chosen += ("browser_upload",)
         options = json.loads(turn["request_options"]) if turn.get("request_options") else {}
         try:
             dispatch = self.hermes.start_or_attach(input_text=turn["input_text"],
@@ -119,6 +117,8 @@ class ChatService:
             BROWSER_TOOLS if self.browser_enabled else ()) + (
             ("file_share",) if self.document_access and capabilities.file_share else ())
         browser = json.loads(turn["browser_context"]) if turn.get("browser_context") else {}
+        if self.document_access and self.browser_enabled and self.browser_control and capabilities.browser_files and browser.get("browser_owner"):
+            chosen += ("browser_upload",)
         if self.browser_enabled and self.browser_control and capabilities.browser_credential_vault and browser.get("browser_owner"):
             chosen += LOGIN_TOOLS
         turn = self.store.select_tools(turn, chosen)
