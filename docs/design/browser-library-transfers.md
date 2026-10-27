@@ -1,10 +1,8 @@
 # Browser–Library transfers (DW-2)
 
-Status: implemented candidate; installed acceptance in progress. Automated
-qualification is recorded below. The browser lifecycle correction is deployed.
-Installed device upload, Library upload and Private download have passed;
-explicit-sharing and agent-transfer acceptance remain open, so DW-2 is not yet
-accepted as a delivered capability.
+Status: deployed and accepted in the private pilot. Device and Library uploads,
+human and agent downloads, explicit sharing and Private-mode denial passed
+installed acceptance. The review PR remains separate from deployment status.
 
 ## User contract
 
@@ -123,8 +121,8 @@ module. Application health passed after admission was released. Native browser
 testing confirmed both device and existing Library selections reached the test
 website, which displayed its upload-success page. A subsequent Private browser
 download saved exactly one 103,704-byte original with the same SHA-256 as the
-source, Private metadata and no assistant document grants. Explicit-sharing and
-agent-transfer acceptance remain outstanding. Installation identities,
+source, Private metadata and no assistant document grants. Subsequent explicit
+sharing and agent-transfer checks also passed, as recorded below. Installation identities,
 the resolved administration-access issue and operational evidence are retained
 in the private deployment record.
 
@@ -148,9 +146,22 @@ than the `kind` field used by catalog/read responses. The parser now validates
 that chunk shape, requested file ID and offset, safe metadata and bounded data.
 A regression connects real web grant enforcement to the real callback parser
 and native upload flow, covering a multi-chunk original and Private-file denial.
-Installed agent upload/download acceptance of this second correction remains
-pending. Codex's signed-in in-app browser has also passed live viewer and
-streamed-keyboard checks, removing the need to occupy the owner's Chrome window.
+The correction is deployed. Installed agent upload returned `applied=true`,
+the website confirmed the selected filename, and the agent's subsequent download
+saved one byte-identical original in Library and its producing turn's grant.
+A fresh catalog saw only the explicitly shared source and the new download;
+four Private device originals remained excluded. Under human Private control,
+actual browser snapshot and upload-chooser calls were denied. The test browser
+was explicitly closed afterward.
+
+Candidate `8a60d45` passed 2,146 tests with no failures/errors/skips, three
+JavaScript browser checks, generated Python/JavaScript coverage and complete
+fixture cleanup. The new chunk validator has 95% line and 93.75% branch coverage.
+One earlier full attempt failed the existing browser login/reload test; that test
+passed three isolated runs and the full retry unchanged. Its cause was not
+established, and the failed attempt remains recorded rather than suppressed.
+Codex's signed-in in-app browser passed live viewer and streamed-keyboard checks
+and ran the final acceptance journeys without occupying the owner's Chrome window.
 
 Touched-file SonarQube follow-up: the latest merged-main index lists three
 existing findings in `src/radhouse/chat/service.py`, but does not contain their
