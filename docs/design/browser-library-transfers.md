@@ -1,8 +1,9 @@
 # Browser–Library transfers (DW-2)
 
 Status: implemented candidate; installed acceptance in progress. Automated
-qualification is recorded below. The observed browser lifecycle failure remains
-open, so DW-2 is not yet accepted as a delivered capability.
+qualification is recorded below. The browser lifecycle correction is deployed;
+visible transfer and Private-mode acceptance remain open, so DW-2 is not yet
+accepted as a delivered capability.
 
 ## User contract
 
@@ -80,7 +81,7 @@ and [download events and behavior](https://chromedevtools.github.io/devtools-pro
 
 ## Qualification and integration findings
 
-The latest complete candidate (`71d5462`) passed 2,115 tests, with no failures,
+The initial complete candidate (`71d5462`) passed 2,115 tests, with no failures,
 errors or skips, and three JavaScript browser checks against an owned PostgreSQL fixture and pinned Hermes source. Coverage
 includes original-byte integrity, ownership and Private grant exclusion,
 explicit sharing, stale chooser and revoked lease refusal, outbox reconciliation
@@ -116,10 +117,12 @@ cleanup. Combined guest file-module line/branch coverage is now 85.54%; the web
 and native file modules retain 86.36% and 82.53%. No feature-branch SonarQube
 analysis or gate result is implied.
 
-This correction awaits deployment and the visible transfer walkthrough remains
-outstanding. Successful synthetic tests do not close that acceptance gap.
-Installation identities, the administration-access blocker and operational
-evidence are retained in the private deployment record.
+The correction is deployed and its cold-recovery source selects the same verified
+module. Application health passed after admission was released. The visible
+transfer and Private-mode walkthrough remains outstanding; successful synthetic
+tests and deployment do not close that acceptance gap. Installation identities,
+the resolved administration-access issue and operational evidence are retained
+in the private deployment record.
 
 This slice does not retain cookies or a browser profile across replacement;
 that remains DW-3. Uploads currently select one original per chooser. A device
