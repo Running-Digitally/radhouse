@@ -121,10 +121,38 @@ class Callback:
         if len(data) > MAX_RESPONSE:
             raise ValueError("document_response_unavailable")
         value = json.loads(data)
+        if operation == "content":
+            return _file_content_response(value, arguments)
         kinds = {"file"} if operation == "share" else {"catalog", "passages"}
         if type(value) is not dict or value.get("kind") not in kinds:
             raise ValueError("document_response_unavailable")
         return value
+
+
+def _file_content_response(value, arguments):
+    """Accept only the requested original's bounded chunk, never an arbitrary dict."""
+    fields = {"file_id", "name", "size", "sha256", "offset", "data"}
+    if type(value) is not dict or set(value) != fields:
+        raise ValueError("document_response_unavailable")
+    if (value["file_id"] != arguments.get("file_id")
+            or value["offset"] != arguments.get("offset")):
+        raise ValueError("document_response_unavailable")
+    for key in ("offset", "size"):
+        if type(value[key]) is not int or not 0 <= value[key] < 2**53:
+            raise ValueError("document_response_unavailable")
+    name, digest, data = value["name"], value["sha256"], value["data"]
+    if (type(name) is not str or not 1 <= len(name) <= 200
+            or name in {".", ".."} or re.search(r'[/\\\x00-\x1f\x7f]', name)):
+        raise ValueError("document_response_unavailable")
+    if type(digest) is not str or re.fullmatch(r"[a-f0-9]{64}", digest) is None:
+        raise ValueError("document_response_unavailable")
+    if type(data) is not str or len(data) > 4 * ((32768 + 2) // 3):
+        raise ValueError("document_response_unavailable")
+    raw = base64.b64decode(data, validate=True)
+    remaining = value["size"] - value["offset"]
+    if remaining < 0 or len(raw) != min(32768, remaining):
+        raise ValueError("document_response_unavailable")
+    return value
 
 
 def _tls_identity(value):

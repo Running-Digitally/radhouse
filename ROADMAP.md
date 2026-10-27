@@ -27,8 +27,9 @@ into isolated targets. Native import runs inside an offline supervisor boundary
 because the pinned command can otherwise start a gateway.
 
 In progress: [browser/Library transfers (DW-2)](docs/design/browser-library-transfers.md).
-The candidate is implemented and undergoing installed acceptance; an unexpected
-browser retirement during streamed input must be resolved before delivery.
+The candidate is implemented and undergoing installed acceptance. The browser
+retirement fix, human uploads/downloads, Private defaults and explicit sharing
+have passed; a native callback parser correction must pass agent transfers before delivery.
 Retained browser profiles (DW-3) follow with their own contract.
 Off-host recovery custody, replacement-host boot and
 on-demand placement remain separate from this same-host operator slice. Helpers,

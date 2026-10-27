@@ -140,13 +140,26 @@ referenced local variables from the wrong method. The correction places it in
 the existing capability selection step before the tool policy is frozen. New
 regressions exercise the combined feature configuration, each missing condition,
 lost-response retries, capability removal and Private-file grants across sharing.
-Deployment and installed assistant acceptance of this correction are pending.
+That correction is deployed. The installed catalog test preserved its original
+Private-file grant even after an explicit Library share; a new turn saw only
+the explicitly shared original. The new turn then exposed a separate native
+callback parser mismatch: file-content chunks have a fixed response shape rather
+than the `kind` field used by catalog/read responses. The parser now validates
+that chunk shape, requested file ID and offset, safe metadata and bounded data.
+A regression connects real web grant enforcement to the real callback parser
+and native upload flow, covering a multi-chunk original and Private-file denial.
+Installed agent upload/download acceptance of this second correction remains
+pending. Codex's signed-in in-app browser has also passed live viewer and
+streamed-keyboard checks, removing the need to occupy the owner's Chrome window.
 
 Touched-file SonarQube follow-up: the latest merged-main index lists three
 existing findings in `src/radhouse/chat/service.py`, but does not contain their
 individual keys or locations. The task's issue-detail read was denied (HTTP 403),
 so those findings require an authorized detail read and review; no closure or
 suppression is claimed. The new admission regression file has no baseline entry.
+The same detail-read limitation applies to the 25 indexed baseline findings in
+`runtime/hermes/bridge.py`; this callback correction does not claim their closure.
+The new callback regression file has no baseline entry.
 
 This slice does not retain cookies or a browser profile across replacement;
 that remains DW-3. Uploads currently select one original per chooser. A device
