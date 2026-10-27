@@ -65,8 +65,17 @@
       const card = this.card(file, file.download_url, false);
       card.classList.add("library-file");
       const detail = document.createElement("div"); detail.className = "library-file-meta";
-      const source = document.createElement("span"); source.textContent = file.source === "assistant" ? "Shared by Radhouse" : "Uploaded by you";
+      const source = document.createElement("span"); source.textContent = file.origin === "browser" ? "Downloaded from browser" : file.source === "assistant" ? "Shared by Radhouse" : "Uploaded by you";
       detail.append(source);
+      if(file.private) {
+        const label=document.createElement("span");label.textContent="Private";detail.append(label);
+        const share=document.createElement("button");share.type="button";share.textContent="Share with assistant";
+        share.addEventListener("click",async()=>{
+          share.disabled=true;
+          try {await this.request("/chat/files/"+encodeURIComponent(file.file_id)+"/share",{});label.textContent="Shared with assistant";share.remove();}
+          catch {share.disabled=false;this.status.textContent="Sharing couldn’t be confirmed. Refresh to check.";}
+        });detail.append(share);
+      }
       if (file.request_id) {
         const link = document.createElement("a"); link.href = "/?message=" + encodeURIComponent(file.request_id);
         link.textContent = "Open in Chat";

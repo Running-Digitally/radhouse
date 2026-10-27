@@ -91,3 +91,8 @@
   .browser-view{border-radius:12px;margin-top:0}
   .browser-view-viewport{aspect-ratio:16/9}
 }
+/* One file picker for device and Library originals. */
+.browser-file-picker { width:min(36rem,90vw); max-height:80vh; overflow:auto; border:1px solid #bbb; border-radius:1rem; padding:1.5rem; }
+.browser-file-picker::backdrop { background:rgb(0 0 0 / 40%); }
+.browser-file-list { display:grid; gap:.5rem; margin:1rem 0; }
+.browser-file-list button { text-align:left; overflow-wrap:anywhere; }

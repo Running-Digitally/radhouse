@@ -25,7 +25,7 @@ from urllib.request import (
 )
 
 DOCUMENT_TOOLS = ("document_search", "document_read")
-FILE_TOOLS = ("file_share",)
+FILE_TOOLS = ("file_share", "browser_upload")
 BROWSER_TOOLS = ("browser_navigate", "browser_snapshot", "browser_click", "browser_type",
                  "browser_scroll", "browser_back", "browser_press")
 LOGIN_TOOLS = ("browser_login_list", "browser_login_fill")
@@ -121,10 +121,38 @@ class Callback:
         if len(data) > MAX_RESPONSE:
             raise ValueError("document_response_unavailable")
         value = json.loads(data)
+        if operation == "content":
+            return _file_content_response(value, arguments)
         kinds = {"file"} if operation == "share" else {"catalog", "passages"}
         if type(value) is not dict or value.get("kind") not in kinds:
             raise ValueError("document_response_unavailable")
         return value
+
+
+def _file_content_response(value, arguments):
+    """Accept only the requested original's bounded chunk, never an arbitrary dict."""
+    fields = {"file_id", "name", "size", "sha256", "offset", "data"}
+    if type(value) is not dict or set(value) != fields:
+        raise ValueError("document_response_unavailable")
+    if (value["file_id"] != arguments.get("file_id")
+            or value["offset"] != arguments.get("offset")):
+        raise ValueError("document_response_unavailable")
+    for key in ("offset", "size"):
+        if type(value[key]) is not int or not 0 <= value[key] < 2**53:
+            raise ValueError("document_response_unavailable")
+    name, digest, data = value["name"], value["sha256"], value["data"]
+    if (type(name) is not str or not 1 <= len(name) <= 200
+            or name in {".", ".."} or re.search(r'[/\\\x00-\x1f\x7f]', name)):
+        raise ValueError("document_response_unavailable")
+    if type(digest) is not str or re.fullmatch(r"[a-f0-9]{64}", digest) is None:
+        raise ValueError("document_response_unavailable")
+    if type(data) is not str or len(data) > 4 * ((32768 + 2) // 3):
+        raise ValueError("document_response_unavailable")
+    raw = base64.b64decode(data, validate=True)
+    remaining = value["size"] - value["offset"]
+    if remaining < 0 or len(raw) != min(32768, remaining):
+        raise ValueError("document_response_unavailable")
+    return value
 
 
 def _tls_identity(value):
@@ -158,7 +186,7 @@ def features(adapter):
         sharing_registered = all(
             (entry := registry.get_entry(name)) is not None
             and entry.handler.__module__ == __name__
-            for name in FILE_TOOLS
+            for name in ("file_share",)
         )
     except Exception:
         documents_registered = sharing_registered = False
@@ -173,6 +201,11 @@ def features(adapter):
             "supported": _callback is not None
             and documents_registered
             and sharing_registered,
+            "version": 1,
+        },
+        "runs_browser_files": {
+            "supported": _streaming is not None and _controller is not None
+                and documents_registered and getattr(_streaming, "configuration", {}).get("network", {}).get("kind") == "space-browser-v1",
             "version": 1,
         },
         "runs_browser_view": {
@@ -199,7 +232,7 @@ def validate_admission(body, dispatch_key, durable):
     token = body.get("document_scope_token")
     names = set(body.get("allowed_tools") or ())
     uses_documents = bool(names.intersection(DOCUMENT_TOOLS))
-    uses_browser = bool(names.intersection(BROWSER_TOOLS + LOGIN_TOOLS))
+    uses_browser = bool(names.intersection(BROWSER_TOOLS + LOGIN_TOOLS + ("browser_upload",)))
     uses_sharing = bool(names.intersection(FILE_TOOLS))
     scoped_session = (
         type(body.get("session_id")) is str and 1 <= len(body["session_id"]) <= 512
@@ -430,6 +463,9 @@ def _register(ctx):
         configure_control(
             control_store, profile_home=ctx.get_config("browser_vault_home")
         )
+        if _streaming is not None:
+            from radhouse_browser_file_bridge import register as register_files
+            register_files(ctx, __import__("sys").modules[__name__])
         if _vault is not None:
             from radhouse_vault_bridge import LOGIN_TOOL_DEFINITIONS
 
@@ -1427,6 +1463,12 @@ def agent_browser_operation(context):
         raise
     token = _browser_operation.set(owned)
     try:
+        if _streaming is not None and _streaming.runtime is None:
+            loop = getattr(_streaming, "control_loop", None)
+            if loop is None or not loop.is_running():
+                raise ValueError("browser_control_loop_unavailable")
+            future = asyncio.run_coroutine_threadsafe(_streaming.ensure(__import__("sys").modules[__name__], owned), loop)
+            future.result(30)
         if _streaming is not None and _streaming.runtime is not None:
             future = asyncio.run_coroutine_threadsafe(_streaming.runtime.visible(), _streaming.runtime.loop)
             future.result(12)
@@ -1679,6 +1721,8 @@ def validate_browser_context(
 
 
 async def validate_browser_context_async(adapter, body, run_id, dispatch_key, request=None, *, admit=False):
+    if _streaming is not None:
+        _streaming.control_loop = asyncio.get_running_loop()
     if _streaming is None or body.get("browser_context") is None:
         return validate_browser_context(adapter, body, run_id, dispatch_key, request, admit=admit)
     try:
@@ -1749,6 +1793,10 @@ async def handle_browser_session(adapter, request, *, operation, api_server):
         if _controller is None or _browser_configuration is None:
             raise control.ControlRejected("browser_control_unavailable")
         body = await request.json()
+        if operation == "files" and "collector" in body:
+            from radhouse_browser_file_bridge import collect
+            result = await collect(__import__("sys").modules[__name__], request.match_info["session_id"], body)
+            return web.json_response(result, headers={"Cache-Control": "no-store"})
         owner, conversation, expiry = _private_owner(body)
         session_id = (
             body.get("session_id")
@@ -1803,6 +1851,10 @@ async def handle_browser_session(adapter, request, *, operation, api_server):
             ):
                 raise control.ControlRejected("stale_browser")
             runtime = await _streaming.ensure(__import__("sys").modules[__name__], owned) if _streaming is not None else None
+            if runtime is not None and operation == "files":
+                from radhouse_browser_file_bridge import human
+                result = await human(__import__("sys").modules[__name__], runtime, owned, owner, expiry, body)
+                return web.json_response(result, headers={"Cache-Control": "no-store"})
             if runtime is not None and operation == "visibility":
                 state = await runtime.visibility(owner,body)
             elif runtime is not None and operation == "take":
@@ -1853,6 +1905,10 @@ async def handle_browser_session(adapter, request, *, operation, api_server):
                     await runtime.boundary.reconcile()
                 state = await asyncio.to_thread(_pause_owned, owned, owner)
             elif operation == "close":
+                if runtime is not None and hasattr(runtime, "remote"):
+                    transfers = await runtime.remote.call("files", action="list")
+                    if any(item.get("state") == "pending" for item in transfers.get("downloads", [])):
+                        raise control.ControlRejected("browser_download_in_progress")
                 # Revoke durable authority before awaiting transport shutdown;
                 # another chat admission cannot enter the shutdown interval.
                 result = await asyncio.to_thread(

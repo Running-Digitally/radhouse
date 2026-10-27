@@ -36,6 +36,7 @@ def load(name, path):
     return module
 
 
+file_bridge = load("radhouse_browser_files", HERE / "browser_files.py")
 protocol = load("radhouse_space_protocol", HERE / "space_protocol.py")
 stream = load("radhouse_guest_input", HERE / "control.py")
 sandbox = load("radhouse_guest_sandbox", HERE / "sandbox.py")
@@ -79,6 +80,7 @@ class Guest:
         self.pipes = set()
         self.faulted = False
         self.started_at = None
+        self.files = None
 
     def record(self, identity, state):
         self.database.execute("INSERT INTO launches VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET state=excluded.state", (identity, state))
@@ -108,6 +110,7 @@ class Guest:
         self.started_at = time.monotonic()
         try:
             await asyncio.to_thread(self.launch_display_and_chrome)
+            await self.start_files()
             await self.start_stream()
             self.record(identity, "running")
             self.watcher = asyncio.create_task(self.watch())
@@ -116,6 +119,12 @@ class Guest:
         except BaseException:
             await self.stop()
             raise
+
+    async def start_files(self):
+        self.files = file_bridge.Files(self.state / "outbox" / self.launch_id, self.launch_id)
+        # wait_ready returns the HTTP origin. CDP's browser observer connects
+        # to the separate path published by this owned Chrome process.
+        await self.files.start(f"ws://127.0.0.1:{urlsplit(self.endpoint).port}{self.browser_path}")
 
     def launch_display_and_chrome(self):
         display = ":" + str(secrets.randbelow(50000) + 100)
@@ -259,7 +268,9 @@ class Guest:
                 await asyncio.sleep(.1)
                 expired = (not self.grants.live() if self.grants.initialized
                     else time.monotonic() - self.started_at >= 60)
-                if not self.running() or expired:
+                if not self.running() or expired or self.files is not None and self.files.faulted:
+                    reason = "process_gone" if not self.running() else "grant_expired" if expired else "file_observer"
+                    logging.getLogger(__name__).warning("Browser execution revoked: reason=%s", reason)
                     self.faulted = True
                     await self.revoke()
                     return
@@ -305,6 +316,11 @@ class Guest:
         if failure is not None or any(p.poll() is None for p in (self.child, self.display) if p is not None):
             self.faulted = True
             raise protocol.Uncertain("browser_retirement_unconfirmed") from None
+        if self.files is not None:
+            async with self.files.operation_lock:
+                await self.files.recover_downloads()
+                await self.files.close()
+                self.files = None
         if self.launch_id is not None:
             # Match the current local worker's ephemeral-profile contract.
             # Retirement must not silently turn browsing history and cookies
@@ -323,6 +339,21 @@ class Guest:
 
     async def execute(self, value):
         operation, body, identity = value["op"], value["body"], value["launch_id"]
+        if operation == "files":
+            if not self.database.execute("SELECT 1 FROM launches WHERE id=?", (identity,)).fetchone():
+                raise protocol.Rejected("stale_browser_request")
+            if identity == self.launch_id and self.files is not None:
+                if body["action"] not in {"list", "read", "ack"} and (not self.grants.live() or self.faulted):
+                    raise protocol.Rejected("browser_unavailable")
+                return await self.files.execute(body)
+            if body["action"] not in {"list", "read", "ack"}:
+                raise protocol.Rejected("stale_browser_request")
+            retired = file_bridge.Files(self.state / "outbox" / identity, identity)
+            try:
+                await retired.recover_downloads()
+                return await retired.execute(body)
+            finally:
+                await retired.close()
         async with self.command_lock:
             if operation == "start":
                 if self.launch_id is not None:
@@ -354,6 +385,8 @@ class Guest:
                         self.boundary._blocked = True
                         await self.drain()
                     self.grants.publish(body["table"], ttl)
+                    if self.files is not None:
+                        self.files.visibility(**body.get("files", {"private": True, "producer": "user"}))
                     self.boundary._blocked = False
                     await self.update_sessions()
                 else:

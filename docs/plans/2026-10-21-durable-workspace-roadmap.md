@@ -124,6 +124,16 @@ automatically. General automatic action continuation remains future work.
 
 ## DW-2: ordinary file handling
 
+The [implemented candidate and qualification findings](../design/browser-library-transfers.md)
+are recorded separately. The unexpected browser retirement is reproduced and
+corrected in the candidate: a confirmed transient target detach no longer faults
+the entire file observer. That correction is deployed. Installed device and
+Library uploads, Private download byte integrity and a 94-second native picker
+have passed. Explicit sharing, agent upload/download and Private observation/
+chooser denial also passed after the admission and callback parser corrections.
+DW-2 is deployed and accepted in the private pilot; review/merge status remains
+separate. Profile persistence is the next DW-3 slice.
+
 Primary ownership: Library/ChatStore and the browser/native file bridge. Add an
 opaque-file-ID upload contract and an idempotent completed-download intake.
 Keep the seven existing browser tools narrow; introduce an explicit capability

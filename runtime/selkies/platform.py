@@ -62,7 +62,7 @@ def configure(bridge, path):
         # Production packages place this module in their pinned adapter directory.
         adapter = Path(__file__).parent.relative_to(root)
         required = {str(adapter / name) for name in ('platform.py', 'space_protocol.py',
-            'space_client.py', 'space_platform.py', 'control.py', 'sandbox.py')}
+            'space_client.py', 'space_platform.py', 'control.py', 'sandbox.py', 'browser_files.py')}
         if not required.issubset(value['files']):
             raise ValueError('stream_installation_unverified')
         load('radhouse_space_protocol', Path(__file__).with_name('space_protocol.py'))

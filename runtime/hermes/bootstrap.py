@@ -75,7 +75,7 @@ def policy(path):
             or value.get("agent_browser_channel") != "reviewed"):
         raise ValueError("maintenance_policy_unverified")
     files = value.get("runtime_files_sha256")
-    if (type(files) is not dict or not 1 <= len(files) <= 35
+    if (type(files) is not dict or not 1 <= len(files) <= 64
             or any(type(name) is not str or Path(name).is_absolute() or ".." in Path(name).parts
                    or type(digest) is not str or re.fullmatch(r"[a-f0-9]{64}", digest) is None for name, digest in files.items())
             or hashlib.sha256(canonical(files)).hexdigest() != value.get("runtime_sha256")):
@@ -601,6 +601,11 @@ def promote(record, value):
         existing.write_bytes(raw)
         manifest["sandbox_proof_sha256"] = hashlib.sha256(raw).hexdigest()
         (directory / "manifest.json").write_bytes(canonical(manifest))
+    # These contain only installation identities and synthetic qualification
+    # evidence. The unprivileged gateway must read them even when the operator
+    # uses a private umask for its separate recovery/configuration artifacts.
+    existing.chmod(0o644)
+    (directory / "manifest.json").chmod(0o644)
     switch(directory)
     return {"state": "promoted", "runtime_sha256": value["runtime_sha256"], "previous": previous, "current": receipt(directory)}
 

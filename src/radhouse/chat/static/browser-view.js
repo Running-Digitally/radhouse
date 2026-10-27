@@ -25,7 +25,7 @@
   window.RadhouseAddress={resolve:resolveAddress};
 
   class BrowserView {
-    constructor(container, {persistent = false, request = null, onReturn = null, tab = null} = {}) {
+    constructor(container, {persistent = false, request = null, onReturn = null, tab = null, upload = null} = {}) {
       this.container = container;
       this.persistent = persistent;
       this.container.classList.add("browser-view");
@@ -56,6 +56,7 @@
       this.viewport.append(this.image); this.body.append(this.status, this.site, this.viewport);
       this.container.replaceChildren(header, this.body);
       if (this.request) this._createControls();
+      this.files = this.request && upload && window.RadhouseBrowserFiles ? new window.RadhouseBrowserFiles(this,upload) : null;
       this.streamPresenter = this.request && window.RadhouseBrowserStream ? new window.RadhouseBrowserStream(this) : null;
       this.toggle.addEventListener("click", () => {
         this.open = !this.open; this.body.hidden = !this.open;
@@ -99,6 +100,7 @@
       this.site.textContent = typeof value?.url === "string" ? value.url : "";
       this.site.hidden = !this.site.textContent;
       if (this.request) this._updateControls(value, state);
+      this.files?.update(value);
       this.streamPresenter?.update(value);
       if(this.streamPresenter?.enabled)this._renderControlState();
       if (!this.active) { this._cancel(); this._clearImage(); }

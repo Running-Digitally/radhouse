@@ -890,7 +890,7 @@ def test_declared_unchanged_thread_source_is_verified_and_passed_through(
     # write() must include the passthrough in its install map, too.
     (package / "bridge.py").write_text("# bridge source\n")
     for name in ("browser_control.py", "native_control.py", "vault_bridge.py",
-                 "about_you.py", "native_inference.py", "owner_terminal.py"):
+                 "about_you.py", "native_inference.py", "owner_terminal.py", "browser_files.py"):
         (package / name).write_text("# source\n")
     (package / "plugin").mkdir()
     for name in ("__init__.py", "plugin.yaml"):
@@ -953,7 +953,7 @@ def bootstrap_runtime_policy(tmp_path, monkeypatch):
     runtime = tmp_path / "runtime"
     runtime.mkdir()
     files = {}
-    for index in range(35):
+    for index in range(64):
         name = f"runtime_{index}.py"
         source = runtime / name
         source.write_text(f"# qualified runtime file {index}\n")
@@ -974,7 +974,7 @@ def bootstrap_runtime_policy(tmp_path, monkeypatch):
     return bootstrap, value, runtime
 
 
-@pytest.mark.parametrize("count", [32, 35])
+@pytest.mark.parametrize("count", [1, 32, 35, 36, 64])
 def test_bootstrap_policy_accepts_reviewed_runtime_map_capacity(bootstrap_runtime_policy, count):
     bootstrap, value, _ = bootstrap_runtime_policy
     files = dict(list(value["runtime_files_sha256"].items())[:count])
@@ -999,7 +999,7 @@ def test_bootstrap_policy_rejects_unverified_runtime_maps(bootstrap_runtime_poli
     if invalid == "empty":
         files.clear()
     elif invalid == "over_capacity":
-        files["runtime_35.py"] = "a" * 64
+        files["runtime_64.py"] = "a" * 64
     elif invalid == "wrong_type":
         files = list(files.items())
     elif invalid in {"absolute_path", "parent_path"}:
@@ -1666,3 +1666,36 @@ def test_existing_headed_skip_and_nonradhouse_vm_cleanup_are_preserved(monkeypat
     f.finish('session')
     assert directory.is_dir()
     assert f.calls == {'close': [], 'vm': ['session']}
+
+
+def test_browser_promotion_is_readable_under_private_operator_umask(tmp_path, monkeypatch):
+    import os
+    bootstrap = load("radhouse_browser_bootstrap_permissions_test", RUNTIME / "bootstrap.py")
+    selected = {"release_id": "a" * 32}
+    manifest = {"agent_browser_version": "0.38.2", "agent_browser_sha256": "b" * 64,
+        "chromium_sha256": "c" * 64, "runtime_sha256": "d" * 64}
+    proof = {**manifest, "state": "qualified", "candidate": selected,
+        **{key: True for key in ("same_session_frame_progression", "sandbox_enabled", "origin_guard_verified",
+            "view_only_input_ignored", "chrome_control_guard_verified")}}
+    monkeypatch.setattr(bootstrap.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(bootstrap, "staged_candidate", lambda _: selected)
+    monkeypatch.setattr(bootstrap, "candidate", lambda *_: (tmp_path, manifest))
+    monkeypatch.setattr(bootstrap, "current_receipt", lambda: None)
+    monkeypatch.setattr(bootstrap, "receipt", lambda _: selected)
+    monkeypatch.setattr(bootstrap, "root_bytes", lambda path: path.read_bytes())
+    selections = []
+    monkeypatch.setattr(bootstrap, "switch", lambda path: selections.append(path))
+    old = os.umask(0o077)
+    try:
+        bootstrap.promote({"qualification": proof}, manifest)
+        for name in ("manifest.json", "qualification.json"):
+            assert (tmp_path / name).stat().st_mode & 0o777 == 0o644
+        qualification = (tmp_path / "qualification.json").read_bytes()
+        assert hashlib.sha256(qualification).hexdigest() == manifest["sandbox_proof_sha256"]
+        (tmp_path / "qualification.json").chmod(0o600)
+        bootstrap.promote({"qualification": proof}, manifest)
+        assert (tmp_path / "qualification.json").stat().st_mode & 0o777 == 0o644
+        assert (tmp_path / "qualification.json").read_bytes() == qualification
+        assert selections == [tmp_path, tmp_path]
+    finally:
+        os.umask(old)

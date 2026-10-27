@@ -1,10 +1,11 @@
 name: radhouse-documents
-version: 1.0.0
-description: Read the original files bound to the current Radhouse turn and share UTF-8 text outputs.
+version: 1.1.0
+description: Read granted originals, share UTF-8 outputs and transfer selected Library files to the controlled browser.
 provides_tools:
   - document_search
   - document_read
   - file_share
+  - browser_upload
   - browser_login_list
   - browser_login_fill
 kind: standalone

@@ -7,6 +7,7 @@ import sqlite3
 import re
 import os
 import hashlib
+import time
 from urllib.parse import quote
 from typing import Annotated
 from typing import Literal
@@ -87,7 +88,7 @@ def _recheck_browser_binding(auth, service, browser, request, before, tab):
 
 def create_app(auth, service, *, admin=None, documents=None, browser=None, about_you=None,
                owner_terminal=None, inference=None):
-    lifespan = _reply_lifespan(service)
+    lifespan = _reply_lifespan(service, browser)
     app = FastAPI(title="Radhouse", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
     _install_response_handlers(app, service)
@@ -227,7 +228,7 @@ def create_app(auth, service, *, admin=None, documents=None, browser=None, about
             _recheck_browser_binding(auth, service, browser, request, session,
                 request.headers.get("x-radhouse-browser-tab"))
         result = service.send(principal, body.request_id, body.text,
-            tuple(service.store.upload(principal, file_id) for file_id in body.attachments), browser_data=browser_data,
+            tuple(service.store.assistant_upload(principal, file_id) for file_id in body.attachments), browser_data=browser_data,
             request_options=request_options)
         if getattr(browser, "control_enabled", False):
             _recheck_browser_binding(auth, service, browser, request, session,
@@ -268,7 +269,7 @@ def create_app(auth, service, *, admin=None, documents=None, browser=None, about
 
     return app
 
-def _reply_lifespan(service):
+def _reply_lifespan(service, browser=None):
     @asynccontextmanager
     async def lifespan(_app):
         stop = asyncio.Event()
@@ -287,11 +288,25 @@ def _reply_lifespan(service):
                     pass
 
         observer = asyncio.create_task(observe_reply())
+        async def collect_files():
+            while not stop.is_set():
+                if browser is not None and getattr(browser, "files", None) is not None:
+                    try:
+                        await asyncio.to_thread(browser.files.collect)
+                    except Exception:
+                        # File names, URLs, credentials and contents stay out of logs.
+                        logging.getLogger(__name__).warning("Browser download collection unavailable")
+                try:
+                    await asyncio.wait_for(stop.wait(), timeout=2)
+                except TimeoutError:
+                    pass
+        collector = asyncio.create_task(collect_files())
         try:
             yield
         finally:
             stop.set()
             await observer
+            await collector
     return lifespan
 
 
@@ -373,7 +388,7 @@ def _install_assets(app):
     @app.get("/workspace-assets/{name}")
     def workspace_asset(name: str):
         if name not in {"about-you.js", "about-you.css", "owner-terminal.js", "owner-terminal.css",
-                        "inference-controls.js", "inference-controls.css", "agent-profile.js", "agent-profile.css", "agent-portrait.js", "browser-stream.js", "conversation-workspace.css"}:
+                        "inference-controls.js", "inference-controls.css", "agent-profile.js", "agent-profile.css", "agent-portrait.js", "browser-stream.js", "browser-files.js", "conversation-workspace.css"}:
             raise Rejected("asset_not_found", 404)
         return FileResponse(STATIC / name,
             media_type=JAVASCRIPT_MEDIA_TYPE if name.endswith(".js") else "text/css")
@@ -469,7 +484,7 @@ def _install_file_routes(app, service, owner):
                 "sha256":attachment.sha256, "media_type":attachment.media_type, "kind":attachment.kind}
 
     @app.put("/chat/files/{file_id}")
-    async def upload_file(file_id: str, request: Request, name: str):
+    async def upload_file(file_id: str, request: Request, name: str, private: bool = False):
         principal = await asyncio.to_thread(owner, request)  # Authorize before body consumption.
         digest, size, prefix = hashlib.sha256(), 0, bytearray()
         path = None
@@ -484,7 +499,10 @@ def _install_file_routes(app, service, owner):
                 await asyncio.to_thread(stream.flush)
                 await asyncio.to_thread(os.fsync, stream.fileno())
             media, kind = classify(name, bytes(prefix))
-            attachment = await asyncio.to_thread(service.store.commit_upload, principal, file_id, name, path, media, kind, digest.hexdigest(), size)
+            if await asyncio.to_thread(owner, request) != principal:
+                raise Rejected("identity_binding_denied", 403)
+            metadata = {"private": True, "producer": "user", "origin": "device", "created_at": time.time()} if private else None
+            attachment = await asyncio.to_thread(service.store.commit_upload, principal, file_id, name, path, media, kind, digest.hexdigest(), size, browser=metadata)
             return file_receipt(attachment)
         except OSError:
             raise Rejected("file_storage_unavailable", 507) from None
@@ -494,6 +512,10 @@ def _install_file_routes(app, service, owner):
     @app.get("/chat/files/{file_id}")
     def upload_receipt(file_id: str, request: Request):
         return file_receipt(service.store.upload(owner(request), file_id))
+
+    @app.post("/chat/files/{file_id}/share")
+    def share_original(file_id: str, request: Request):
+        return service.store.share_browser_file(owner(request), file_id)
 
     @app.get("/chat/files/{file_id}/content")
     def original(file_id: str, request: Request, download: bool = False):
@@ -538,6 +560,12 @@ class BrowserControlBody(BrowserContextBody):
 
 class BrowserVisibilityBody(BrowserControlBody):
     mode: Literal["private", "observe"]
+
+
+class BrowserUploadBody(BrowserControlBody):
+    file_id: Annotated[str, Field(pattern=FILE_ID.pattern)]
+    chooser: Annotated[str, Field(pattern=r"^[a-f0-9]{32}$")]
+    destination: Annotated[str, Field(min_length=1, max_length=4096)]
 
 
 class BrowserTakeBody(BrowserControlBody):
@@ -597,6 +625,19 @@ def _install_controlled_browser_routes(app, browser, auth, service):
     @app.post("/chat/browser/open")
     async def browser_open(request: Request):
         return await call(request, browser.open)
+
+    @app.post("/chat/browser/files")
+    async def browser_files(body: BrowserControlBody, request: Request):
+        return await call(request, browser.files.chooser, body.model_dump())
+
+    @app.post("/chat/browser/files/upload")
+    async def browser_upload(body: BrowserUploadBody, request: Request):
+        session, tab = await asyncio.to_thread(access, request)
+        binding = body.model_dump(exclude={"file_id", "chooser", "destination"})
+        result = await asyncio.to_thread(browser.files.upload, session, tab, binding,
+            body.file_id, body.chooser, body.destination, lambda: recheck(request, session, tab))
+        await asyncio.to_thread(recheck, request, session, tab)
+        return result
 
     @app.get("/chat/browser/frame")
     async def browser_frame(request: Request,

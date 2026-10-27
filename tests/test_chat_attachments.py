@@ -424,7 +424,7 @@ def test_interrupted_and_failed_storage_leave_no_partial_upload(chat, monkeypatc
     asyncio.run(interrupted())
     assert list(service.store.files_path.iterdir()) == []
     with service.store.connection() as db: assert db.execute("SELECT count(*) FROM uploads").fetchone()[0] == 0
-    def unavailable(*_): raise OSError("synthetic storage failure")
+    def unavailable(*_, **_options): raise OSError("synthetic storage failure")
     monkeypatch.setattr(service.store,"commit_upload",unavailable)
     with TestClient(app,base_url="http://127.0.0.1") as client:
         client.cookies.set(auth.cookie_name,"synthetic-cookie")

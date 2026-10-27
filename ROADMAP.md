@@ -26,8 +26,11 @@ and worker loss without replay, and restored the packaged native/Radhouse stores
 into isolated targets. Native import runs inside an offline supervisor boundary
 because the pinned command can otherwise start a gateway.
 
-Next: browser/Library transfers (DW-2) and retained browser profiles (DW-3), each
-with its own contract. Off-host recovery custody, replacement-host boot and
+[Browser/Library transfers (DW-2)](docs/design/browser-library-transfers.md) are
+deployed and accepted in the private pilot. Device and Library uploads, human
+and agent downloads, explicit sharing and Private-mode denial passed end to end.
+Next: retained browser profiles (DW-3), with their own persistence and recovery contract.
+Off-host recovery custody, replacement-host boot and
 on-demand placement remain separate from this same-host operator slice. Helpers,
 schedules and optional browser import follow later. Memory snapshots and a
 runtime comparison do not block this work.
@@ -35,7 +38,7 @@ runtime comparison do not block this work.
 The owner-authorized [browser-first SPACE slice](docs/design/space-browser-pilot.md)
 is deployed in the private pilot after real guest/recovery, signed-in viewer and
 explicit rollback checks. It retains the original local browser backend. This is
-a partial DW-4/DW-5 result: Library transfers, durable browser profiles, disposable
+a partial DW-4/DW-5 result: Durable browser profiles, disposable
 Hermes workers and agent shell computers remain future work. The
 [qualification record](docs/design/space-integration-qualification.md) preserves
 the earlier isolated experiments.
