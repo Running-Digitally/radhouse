@@ -26,7 +26,7 @@ def app_factory():
     browser_enabled = config.get("browser_enabled", False)
     auth = LocalAuthService(config["auth_dsn"], expected_database=config["auth_database"],
         deployment_id=config["deployment_id"], encryption_key=config["auth_encryption_key"],
-        expected_origin=config["origin"])
+        expected_origin=config["origin"], additional_origins=config.get("additional_origins", ()))
     auth.health()  # Exact existing database/deployment/schema digest; no migration.
     hermes = HermesRunsClient(config["hermes_endpoint"], config["hermes_bearer"])
     status_client = HermesRunsClient(config["hermes_endpoint"], config["hermes_bearer"],
@@ -92,7 +92,7 @@ def _load_chat_config():
     config = json.loads(path.read_text())
     required = {"auth_dsn", "auth_database", "deployment_id", "auth_encryption_key",
                 "origin", "owner_id", "hermes_endpoint", "hermes_bearer", "transcript_path"}
-    optional = {"transcription_endpoint", "transcription_bearer", "document_access_enabled", "browser_enabled", "browser_streaming_enabled"}
+    optional = {"transcription_endpoint", "transcription_bearer", "document_access_enabled", "browser_enabled", "browser_streaming_enabled", "additional_origins"}
     if not required <= set(config) or set(config) - required - optional or ("transcription_bearer" in config and "transcription_endpoint" not in config):
         raise ValueError("invalid_chat_config")
     if any(type(config.get(key, False)) is not bool for key in ("document_access_enabled", "browser_enabled", "browser_streaming_enabled")):

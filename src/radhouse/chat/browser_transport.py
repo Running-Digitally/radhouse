@@ -15,6 +15,17 @@ PREFIX = '/chat/browser/stream/'
 MAX_ASSET = 16 * 1024 * 1024
 
 
+def _verify_stream_origin(auth, ws, request):
+    if getattr(auth, '_expected_origin', None) is not None:
+        auth.verify_origin(request)
+        return
+    # Synthetic adapters without configured origins retain same-origin checking.
+    parsed = urlsplit(str(ws.url))
+    origin = ('https' if parsed.scheme == 'wss' else 'http') + '://' + parsed.netloc
+    if ws.headers.get('origin') != origin:
+        raise Rejected('request_origin_denied', 403)
+
+
 def install_stream_routes(app, auth, service, browser):
     def authenticate(request):
         session = auth.session(request)
@@ -69,11 +80,7 @@ def install_stream_routes(app, auth, service, browser):
         # method; treat the initial cookie lookup as GET and check Origin here.
         request = SimpleNamespace(method='GET',cookies=ws.cookies,headers=ws.headers)
         try:
-            expected = getattr(auth,'_expected_origin',None)
-            parsed = urlsplit(str(ws.url))
-            origin = expected or ('https' if parsed.scheme=='wss' else 'http')+'://'+parsed.netloc
-            if ws.headers.get('origin') != origin:
-                raise Rejected('request_origin_denied',403)
+            _verify_stream_origin(auth, ws, request)
             before = await asyncio.to_thread(authenticate,request)
             url, authorization = target('api/websockets')
             protocols = list(ws.scope.get('subprotocols',()))
@@ -87,7 +94,7 @@ def install_stream_routes(app, auth, service, browser):
             if not re.fullmatch(r'[A-Za-z0-9_-]{32,128}',token):
                 raise Rejected('browser_stream_unavailable',403)
             headers = {'Authorization':authorization,**owner_headers(before)}
-        except (Rejected,ValueError,UnicodeError):
+        except (Rejected,ValueError):
             await ws.close(code=1008)
             return
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=None,connect=5),trust_env=False) as client:
