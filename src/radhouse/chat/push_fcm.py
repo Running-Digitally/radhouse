@@ -10,6 +10,7 @@ from uuid import UUID
 import httpx
 
 from .push import PushResult
+from .push_proxy import push_proxy
 
 
 APP_ID = "com.runningdigitally.radhouse"
@@ -66,12 +67,14 @@ def _result(status, data, retry):
 
 
 class FCMSender:
-    def __init__(self, project_id: str, access_token: Callable[[], str], *, transport=None):
+    def __init__(self, project_id: str, access_token: Callable[[], str], *, transport=None,
+                 proxy_url: str | None = None):
         if not re.fullmatch(r"[a-z][a-z0-9-]{4,61}[a-z0-9]", project_id):
             raise ValueError("invalid_firebase_project")
         self.url = f"https://fcm.googleapis.com/v1/projects/{project_id}/messages:send"
         self.access_token = access_token
-        self.client = httpx.Client(timeout=5, follow_redirects=False, trust_env=False, transport=transport)
+        self.client = httpx.Client(timeout=5, follow_redirects=False, trust_env=False,
+                                   transport=transport, proxy=push_proxy(proxy_url))
 
     def close(self):
         self.client.close()

@@ -98,16 +98,19 @@ def _configure_push(config, app, auth, service):
     from .push_fcm import FCMSender
     from .push_routes import install_push
     values = config["push"]
-    if (type(values) is not dict or set(values) != {
-            "project_id", "credentials_path", "database_path", "encryption_key"}
+    required = {"project_id", "credentials_path", "database_path", "encryption_key"}
+    if (type(values) is not dict or not required <= set(values)
+            or set(values) - required - {"proxy_url"}
             or any(not isinstance(value, str) or not value for value in values.values())):
         raise ValueError("invalid_push_config")
+    from .push_proxy import push_proxy
+    proxy = push_proxy(values.get("proxy_url"))
     if Path(values["database_path"]).resolve() == service.store.path.resolve():
         raise ValueError("push_database_must_be_separate")
     outbox = PushOutbox(Path(values["database_path"]), values["encryption_key"])
-    credentials = GooglePushToken(Path(values["credentials_path"]), values["project_id"])
+    credentials = GooglePushToken(Path(values["credentials_path"]), values["project_id"], proxy_url=proxy)
     try:
-        sender = FCMSender(values["project_id"], credentials)
+        sender = FCMSender(values["project_id"], credentials, proxy_url=proxy)
         install_push(app, auth, service, outbox, sender)
     except Exception:
         credentials.close()

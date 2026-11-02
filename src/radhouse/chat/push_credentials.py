@@ -10,14 +10,17 @@ from google.auth.transport.requests import Request
 from google.oauth2 import service_account
 import requests
 
+from .push_proxy import push_proxy
+
 
 TOKEN_URI = "https://oauth2.googleapis.com/token"
 SCOPE = "https://www.googleapis.com/auth/firebase.messaging"
 
 
 class GooglePushToken:
-    def __init__(self, path: Path, project_id: str):
+    def __init__(self, path: Path, project_id: str, *, proxy_url: str | None = None):
         self.lock = Lock()
+        proxy = push_proxy(proxy_url)
         try:
             fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
             with os.fdopen(fd, "r") as source:
@@ -34,6 +37,8 @@ class GooglePushToken:
             raise ValueError("invalid_push_credentials") from None
         self.session = requests.Session()
         self.session.trust_env = False
+        if proxy is not None:
+            self.session.proxies = {"https": proxy}
         self.request = Request(session=self.session)
 
     def close(self):

@@ -41,8 +41,14 @@ expiry, even if later app activity extends that session.
 
 ## Configuration and rollout
 
-The optional `push` object requires exactly `project_id`, `credentials_path`,
-`database_path` and `encryption_key`. Use a separate Fernet key and a private
+The optional `push` object requires `project_id`, `credentials_path`,
+`database_path` and `encryption_key`. It also accepts an explicit `proxy_url`
+limited to an HTTP CONNECT proxy on a numeric loopback address and unprivileged
+port. Both OAuth refresh and FCM use that proxy while retaining verified end-to-end
+TLS, fixed destinations, redirect refusal and ignored ambient proxy variables.
+There is no direct-network fallback if the proxy fails. The operator must restrict
+the proxy to the two provider hostnames; the application does not manage it.
+Use a separate Fernet key and a private
 service-owned database. The service-account file must be private, service-owned,
 regular, and match the configured Firebase project and fixed Google OAuth token
 endpoint. Use least-privilege FCM send authorization. Credential values never
@@ -73,6 +79,13 @@ Ten owned-fixture PostgreSQL tests cover current session authority, revocation,
 expiry, actor inactivity and binding changes without extending session lifetime;
 the disposable fixture was cleaned up. No live database was used for these tests.
 Provider/device delivery has not been demonstrated.
+
+Proxy qualification additionally covers real localhost CONNECT requests from
+both HTTP clients, ignored ambient proxy settings, no plaintext token/assertion
+in CONNECT headers, and rejection of remote or credential-bearing proxy URLs
+before creating the outbox. The existing merged-main findings index contains
+no entries for the touched push files or `chat/main.py`; the new proxy source
+and tests still require a processed merged-main scan.
 
 The latest dated main index has no findings for `chat/main.py`. For the touched
 `auth/local.py`, S5886 findings `37ae676b-b505-4210-8e37-86209bd844bc`
