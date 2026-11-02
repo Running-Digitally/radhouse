@@ -376,6 +376,34 @@ class LocalAuthService:
                 "maximum_session_seconds": int(self._absolute_ttl.total_seconds()),
                 "remembered_session_seconds": int(self._remembered_ttl.total_seconds())}
 
+    def notification_session_active(self, token_hash: str, principal_id: str,
+                                    conversation_id: str, binding_revision: int) -> bool:
+        """Read current authority for push without retaining a token or refreshing expiry."""
+        if not re.fullmatch(r"[a-f0-9]{64}", token_hash):
+            return False
+        now = self._clock()
+        try:
+            with self._connection() as connection:
+                _verified_connection(connection, self._deployment_id, self._database)
+                row = connection.execute(
+                    "SELECT c.username FROM public.local_sessions s "
+                    "JOIN public.local_credentials c USING(principal_id) "
+                    "JOIN public.actors a USING(principal_id) "
+                    "WHERE s.token_hash=%s AND s.principal_id=%s AND a.active "
+                    "AND s.revoked_at IS NULL AND s.idle_expires_at>%s AND s.absolute_expires_at>%s",
+                    (token_hash, principal_id, now, now),
+                ).fetchone()
+                if row is None:
+                    return False
+                try:
+                    binding = self._binding(connection, principal_id, row["username"])
+                except Rejected:
+                    return False
+                return (binding["conversation_id"] == conversation_id
+                        and binding["binding_revision"] == binding_revision)
+        except (psycopg.Error, ApplicationStorageError, LocalAuthError):
+            raise Rejected("authentication_unavailable", 503) from None
+
     def management_role(self, session: LocalSession) -> str:
         """Read the current actor role; never trust a role saved in the browser."""
         now = self._clock()
