@@ -69,6 +69,8 @@ def app_factory():
         inference=InferenceService(hermes),
         owner_terminal=OwnerTerminalService(terminal_client, owner_id=config["owner_id"]))
 
+    push_resources = _configure_push(config, app, auth, service)
+
     observe_lifespan = app.router.lifespan_context
 
     @asynccontextmanager
@@ -77,6 +79,8 @@ def app_factory():
             async with observe_lifespan(_app):
                 yield
         finally:
+            for resource in push_resources:
+                resource.close()
             hermes.close()
             status_client.close()
             terminal_client.close()
@@ -85,6 +89,31 @@ def app_factory():
     app.router.lifespan_context = lifespan
     return app
 
+
+def _configure_push(config, app, auth, service):
+    if "push" not in config:
+        return ()
+    from .push import PushOutbox
+    from .push_credentials import GooglePushToken
+    from .push_fcm import FCMSender
+    from .push_routes import install_push
+    values = config["push"]
+    if (type(values) is not dict or set(values) != {
+            "project_id", "credentials_path", "database_path", "encryption_key"}
+            or any(not isinstance(value, str) or not value for value in values.values())):
+        raise ValueError("invalid_push_config")
+    if Path(values["database_path"]).resolve() == service.store.path.resolve():
+        raise ValueError("push_database_must_be_separate")
+    outbox = PushOutbox(Path(values["database_path"]), values["encryption_key"])
+    credentials = GooglePushToken(Path(values["credentials_path"]), values["project_id"])
+    try:
+        sender = FCMSender(values["project_id"], credentials)
+        install_push(app, auth, service, outbox, sender)
+    except Exception:
+        credentials.close()
+        raise
+    return (sender, credentials)
+
 def _load_chat_config():
     path = Path(os.environ["RADHOUSE_CHAT_CONFIG"])
     if not path.is_file() or path.stat().st_mode & 0o077:
@@ -92,7 +121,7 @@ def _load_chat_config():
     config = json.loads(path.read_text())
     required = {"auth_dsn", "auth_database", "deployment_id", "auth_encryption_key",
                 "origin", "owner_id", "hermes_endpoint", "hermes_bearer", "transcript_path"}
-    optional = {"transcription_endpoint", "transcription_bearer", "document_access_enabled", "browser_enabled", "browser_streaming_enabled", "additional_origins"}
+    optional = {"transcription_endpoint", "transcription_bearer", "document_access_enabled", "browser_enabled", "browser_streaming_enabled", "additional_origins", "push"}
     if not required <= set(config) or set(config) - required - optional or ("transcription_bearer" in config and "transcription_endpoint" not in config):
         raise ValueError("invalid_chat_config")
     if any(type(config.get(key, False)) is not bool for key in ("document_access_enabled", "browser_enabled", "browser_streaming_enabled")):
