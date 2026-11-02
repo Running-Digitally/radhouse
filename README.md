@@ -124,6 +124,12 @@ placeholders, not working credentials:
 }
 ```
 
+Optional `additional_origins` lists exact extra HTTPS browser origins, for
+example `["https://assistant.example.com"]`, while retaining the required
+`origin`. Login and unsafe requests still require an admitted Origin, and session
+writes retain CSRF checks. Do not use wildcards, paths or embedded credentials.
+This setting does not publish a route or replace application authentication.
+
 `document_access_enabled` and `browser_enabled` are optional booleans, both
 defaulting to `false`. After qualifying the matching Hermes private API, set the
 document flag to `true` for owner/session-scoped saved-file reads, and the browser

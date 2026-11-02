@@ -8,6 +8,7 @@ import hmac
 import re
 import secrets
 from typing import Callable, TypedDict, Unpack
+from urllib.parse import urlsplit
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
@@ -38,6 +39,23 @@ _AUTH_SCHEMA_VERSIONS = frozenset({7, 10})
 
 class LocalAuthError(ValueError):
     """A bounded local-authentication configuration or operation failure."""
+
+
+def _additional_origin(value: str) -> str:
+    if not isinstance(value, str) or any(ord(character) <= 32 or ord(character) >= 127 for character in value):
+        raise LocalAuthError("invalid_additional_origin")
+    try:
+        parsed = urlsplit(value)
+        valid = (parsed.scheme == "https" and parsed.hostname
+                 and re.fullmatch(r"[A-Za-z0-9.\-:\[\]]+", parsed.netloc)
+                 and not parsed.netloc.endswith(":")
+                 and parsed.path in {"", "/"} and not parsed.query and not parsed.fragment
+                 and (parsed.port is None or 1 <= parsed.port <= 65535))
+    except ValueError:
+        valid = False
+    if not valid or "?" in value or "#" in value:
+        raise LocalAuthError("invalid_additional_origin")
+    return value.rstrip("/")
 
 
 @dataclass(frozen=True)
@@ -296,6 +314,7 @@ class LocalAuthService:
         deployment_id: str,
         encryption_key: str,
         expected_origin: str,
+        additional_origins: tuple[str, ...] | list[str] = (),
         cookie_name: str = "radhouse_session",
         secure_cookie: bool = True,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
@@ -308,6 +327,9 @@ class LocalAuthService:
             "http://127.0.0.1", "http://localhost"
         }:
             raise LocalAuthError("invalid_expected_origin")
+        if not isinstance(additional_origins, (list, tuple)):
+            raise LocalAuthError("invalid_additional_origins")
+        self._additional_origins = frozenset(map(_additional_origin, additional_origins))
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", cookie_name):
             raise LocalAuthError("invalid_cookie_name")
         self._params = _application_connection_parameters(dsn, expected_database)
@@ -334,7 +356,8 @@ class LocalAuthService:
         return request.client.host if request.client is not None else "unknown"
 
     def verify_origin(self, request: Request) -> None:
-        if request.headers.get("origin", "").rstrip("/") != self._expected_origin:
+        origin = request.headers.get("origin", "").rstrip("/")
+        if origin != self._expected_origin and origin not in self._additional_origins:
             raise Rejected("request_origin_denied", 403)
 
     def _connection(self):
@@ -561,8 +584,7 @@ class LocalAuthService:
                 ):
                     raise Rejected("authentication_required", 401)
                 if request.method in _UNSAFE_METHODS:
-                    if request.headers.get("origin", "").rstrip("/") != self._expected_origin:
-                        raise Rejected("request_origin_denied", 403)
+                    self.verify_origin(request)
                     supplied = request.headers.get("x-radhouse-csrf", "")
                     if not supplied or not hmac.compare_digest(_digest(supplied), row["csrf_hash"]):
                         raise Rejected("csrf_denied", 403)
