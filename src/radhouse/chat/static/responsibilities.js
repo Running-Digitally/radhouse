@@ -42,12 +42,14 @@ function actionButton(label, item, body, secondary = false, disabled = false) {
 function researchCard(card, item, live) {
   const research=item.followup.research;
   if(!research) return;
-  card.append(text('h4','Public-web research'),text('p',research.enabled?'Enabled for this commitment.':'Off for this commitment.','badge'));
+  let status=research.enabled?'Enabled for this commitment.':'Off for this commitment.';
+  if(research.enabled&&!live) status='Research is inactive because this follow-up has ended.';
+  card.append(text('h4','Public-web research'),text('p',status,'badge'));
   const coverage=research.coverage;
   if(coverage) card.append(text('p',
     (coverage.coverage==='unavailable'?'Sources could not be checked.':'Limited research: '+coverage.source_count+' source(s) checked.')+
     ' '+new Date(coverage.checked_at*1000).toLocaleString()+'. Search does not cover the whole web.','muted'));
-  else if(research.enabled) card.append(text('p','Awaiting its first public-web check.','muted'));
+  else if(research.enabled&&live) card.append(text('p','Awaiting its first public-web check.','muted'));
   if(!live) return;
   const label=text('label','Public research question');label.htmlFor='research-'+item.id;
   const question=document.createElement('textarea');question.id=label.htmlFor;question.rows=2;question.maxLength=300;

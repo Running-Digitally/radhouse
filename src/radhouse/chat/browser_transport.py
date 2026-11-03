@@ -7,7 +7,7 @@ import re
 from types import SimpleNamespace
 from urllib.parse import urlsplit
 
-from fastapi import Request, WebSocket
+from fastapi import Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
 from radhouse.domain.tasks import Rejected
 
@@ -131,4 +131,4 @@ def install_stream_routes(app, auth, service, browser):
                 pass
             finally:
                 try: await ws.close(code=1008)
-                except RuntimeError: pass
+                except (RuntimeError, WebSocketDisconnect): pass

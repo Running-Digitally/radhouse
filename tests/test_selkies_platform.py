@@ -83,7 +83,8 @@ def test_real_uvicorn_websocket_upgrade_and_binary_transfer():
     asyncio.run(scenario())
 
 
-def test_actual_authenticated_relay_through_uvicorn_wsproto():
+@pytest.mark.parametrize("disconnected_on_close", [False, True])
+def test_actual_authenticated_relay_through_uvicorn_wsproto(disconnected_on_close, monkeypatch, caplog):
     """ASGI owns subprotocols; wsproto removes their original HTTP header."""
     import base64,hashlib,socket
     import aiohttp
@@ -92,6 +93,13 @@ def test_actual_authenticated_relay_through_uvicorn_wsproto():
     import uvicorn
     from radhouse.chat.browser_transport import install_stream_routes
     from tests.test_minimal_chat import SyntheticAuth
+    if disconnected_on_close:
+        from starlette.websockets import WebSocket, WebSocketDisconnect
+        original_close = WebSocket.close
+        async def closed_peer(self, code=1000, reason=None):
+            await original_close(self, code=code, reason=reason)
+            raise WebSocketDisconnect(1006)
+        monkeypatch.setattr(WebSocket, 'close', closed_peer)
     async def scenario():
         token='x'*43;payload=b'qualified-frame'*20000;calls=[]
         async def native(request):
@@ -130,6 +138,7 @@ def test_actual_authenticated_relay_through_uvicorn_wsproto():
         finally:
             server.should_exit=True;await task;listener.close();await runner.cleanup()
     asyncio.run(scenario())
+    assert 'Exception in ASGI application' not in caplog.text
 
 
 @pytest.mark.parametrize('flag',['observation_only','return_to_agent'])

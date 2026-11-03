@@ -86,8 +86,13 @@ try {
   await expect(page.getByRole('button',{name:'Enable public research'})).toBeVisible();
   expect(mutations.at(-1)).toEqual({action:'research',revision:5,question:''});
   if(evidence)await page.screenshot({path:path.join(evidence,'active-followup.png'),fullPage:true});
+  await page.getByLabel('Public research question').fill('What makes a clear technical draft?');
+  await page.getByRole('button',{name:'Enable public research'}).click();
+  await expect(page.getByText('Awaiting its first public-web check.')).toBeVisible();
   await page.getByRole('button',{name:'Mark complete'}).click();
   await expect(page.getByText('completed',{exact:true})).toBeVisible();
+  await expect(page.getByText('Research is inactive because this follow-up has ended.')).toBeVisible();
+  await expect(page.getByText('Awaiting its first public-web check.')).toHaveCount(0);
   await expect(page.getByRole('button',{name:'Save progress'})).toHaveCount(0);
   await page.getByRole('button',{name:'Pause',exact:true}).click();
   await expect(page.getByRole('button',{name:'Resume reviews'})).toBeVisible();
