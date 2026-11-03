@@ -73,7 +73,9 @@ def native_review(prompt, config):
     agent = AIAgent(**{key: runtime[key] for key in allowed if key in runtime},
         model=config["model"], enabled_toolsets=[], disabled_toolsets=["memory", "cronjob", "messaging"],
         skip_context_files=True, load_soul_identity=False, skip_memory=True, skip_background_review=True,
-        max_iterations=2, max_tokens=2500, run_budget_seconds=120, quiet_mode=True,
+        # Leave room for a second bounded call on the local model. The parent
+        # process still enforces the independent 240-second wall-clock limit.
+        max_iterations=2, max_tokens=2500, run_budget_seconds=180, quiet_mode=True,
         save_trajectories=False, fallback_model=None, session_id="radhouse-review-" + os.urandom(16).hex())
     try:
         agent._allowed_tool_names = frozenset()
