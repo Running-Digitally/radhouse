@@ -73,6 +73,11 @@ def validate_suggestions(raw, snapshot):
     try:
         if not isinstance(raw, str) or len(raw.encode()) > 12000:
             raise ValueError
+        # Some providers wrap otherwise valid structured output in one Markdown
+        # fence. Remove only that envelope; all JSON and citation checks remain.
+        lines = raw.strip().splitlines()
+        if len(lines) >= 3 and lines[0] in {"```json", "```"} and lines[-1] == "```":
+            raw = "\n".join(lines[1:-1])
         value = json.loads(raw)
         if type(value) is not dict or set(value) != {"suggestions"}:
             raise ValueError
@@ -294,6 +299,29 @@ class CommitmentReview:
         if row is None:
             raise Rejected("commitment_not_found", 404)
         return dict(row)
+
+    def chat_context(self):
+        """Application capability facts, without copying suggestions into chat."""
+        try:
+            value = self.status()
+            permission = "enabled" if value["active"] else "paused"
+            last = value["last_review"]
+            outcome = last["state"] if last else "not yet reviewed"
+        except (Rejected, sqlite3.Error):
+            permission, outcome = "unavailable", "unavailable"
+        return (
+            "Current Radhouse application capabilities: this installation has a separate "
+            "background commitment-suggestion responsibility, run by native Hermes scheduling. "
+            "It reviews authorized recent conversation, prepares possible next steps, and can "
+            "send private push notifications to opted-in signed-in phones. "
+            f"Source permission is {permission}; latest review outcome is {outcome}. "
+            "Permission being enabled does not prove recent scheduler coverage or phone delivery. "
+            "The owner can inspect coverage, enable or pause it at /responsibilities, and "
+            "control agent suggestion notifications separately in mobile Settings. "
+            "Your chat tools cannot create timed reminders, change this permission, or schedule "
+            "follow-ups. Confirming a suggestion only saves it. Do not promise a timed alert or "
+            "claim that you scheduled one. Do not say the whole platform lacks scheduling or push."
+        )
 
     def notification_items(self):
         with self.connection() as db:

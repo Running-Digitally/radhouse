@@ -150,4 +150,5 @@ def configure_commitment_review(app, auth, service):
     review = CommitmentReview(config["store_path"], service.store, service.owner_id,
                               standing_authorizer(auth), timezone=config["timezone"])
     install_commitment_review(app, auth, service, review, config["worker_bearer"])
+    service.responsibility_context = review.chat_context
     return review
