@@ -1,6 +1,7 @@
 # Ongoing follow-up for confirmed commitments
 
-Status: implementation and local qualification complete; rollout pending. Extends the
+Status: backend deployed and confirmed follow-up active; mobile release and first
+scheduled private review acceptance are tracked below. Extends the
 [accepted pilot](2026-11-02-native-proactive-assistance.md) under the owner's
 3 November instruction to keep following confirmed commitments within the same
 security boundaries.
@@ -76,11 +77,35 @@ its resources. Two subsequent callback/barrier regressions passed in the focused
 67-test lifecycle/review run. The browser journey exercises explicit activation,
 progress, snooze/resume, completion, global pause and text-safe rendering at both
 viewport sizes; its screenshots were inspected. Mobile typecheck, lint, 137 Jest
-and 15 tooling tests passed. Existing touched-file Sonar findings read from merged
-main were zero; the new merged source requires its own normal scan.
+and 15 tooling tests passed. The final merged backend verification passed all
+2,415 tests without failures, errors or skips. The processed merged-main scan
+closed all five new findings after the bounded cleanup. The backend's broader
+quality gate still fails its existing backlog; the mobile merged-main gate passes.
 
 Owner controls join the worker admission barrier so a held migration cannot admit
 new progress or completion decisions. Oversized evidence fails visibly and erases
 its snapshot; it is never truncated into a false claim of complete coverage.
-These results do not yet establish live migration, ongoing owner-item review,
-publication of new phone builds or new physical notification acceptance.
+
+## Deployment and remaining acceptance — 3 November
+
+Backend PRs 125 and 126 merged the feature and scan cleanup; deployed source is
+`4ea2344ba22c49a6382fbcb59e8a669e6a058306`. The held migration verified its
+separate-store backup, preserved owner decisions, migrated to review schema 2,
+and passed source and health verification before admission resumed. The existing
+native worker and hourly job remain enabled without a source or schedule change.
+The owner-requested activation was completed through the live authenticated UI
+for the already-confirmed commitment; the unconfirmed suggestion remains undecided.
+
+The first private follow-up is pending the unchanged shared review budget. Earlier
+qualification consumed its four slots; the normal hourly job can claim new work
+after the rolling window renews. No budget reset, extra inference or quiet-hours
+override was applied. Synthetic model qualification is distinct from that pending
+real review, and the earlier two-phone suggestion acceptance is distinct from a
+future follow-up notification receipt.
+
+Mobile PR 11 merged as `c77e38e511364cf88806e26ba5ad95faf98ceeee`.
+Android 1.0 (7) is available in the existing internal track. Apple accepted the
+signed iOS 1.0 (9) upload; assignment to the existing Owner TestFlight group awaits
+restoration of the owner's App Store Connect browser session. Both builds retain
+the established notification consent and payload contracts. New build installation
+and physical follow-up receipt are not yet asserted.
