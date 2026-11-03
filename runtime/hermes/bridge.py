@@ -34,6 +34,9 @@ BROWSER_VIEW_STATUSES = frozenset(("queued", "running", "waiting_for_approval", 
                                    "completed", "failed", "cancelled", "interrupted"))
 MAX_RESPONSE = 1024 * 1024
 MAX_JPEG = 512 * 1024
+SHA256_PATTERN = r"[a-f0-9]{64}"
+NATIVE_BROWSER_NAME_PATTERN = r"h_[a-f0-9]{10}"
+BLANK_BROWSER_PAGE = "about:blank"
 
 
 @dataclass(frozen=True)
@@ -144,7 +147,7 @@ def _file_content_response(value, arguments):
     if (type(name) is not str or not 1 <= len(name) <= 200
             or name in {".", ".."} or re.search(r'[/\\\x00-\x1f\x7f]', name)):
         raise ValueError("document_response_unavailable")
-    if type(digest) is not str or re.fullmatch(r"[a-f0-9]{64}", digest) is None:
+    if type(digest) is not str or re.fullmatch(SHA256_PATTERN, digest) is None:
         raise ValueError("document_response_unavailable")
     if type(data) is not str or len(data) > 4 * ((32768 + 2) // 3):
         raise ValueError("document_response_unavailable")
@@ -524,7 +527,7 @@ def trusted_browser_instructions(instructions, names):
 
 def configure_maintenance(policy_sha256, runtime_sha256):
     global _maintenance_configuration
-    if any(type(value) is not str or re.fullmatch(r"[a-f0-9]{64}", value) is None for value in (policy_sha256, runtime_sha256)):
+    if any(type(value) is not str or re.fullmatch(SHA256_PATTERN, value) is None for value in (policy_sha256, runtime_sha256)):
         raise ValueError("maintenance_configuration_unverified")
     _maintenance_configuration = (policy_sha256, runtime_sha256)
 
@@ -610,7 +613,7 @@ def maintenance_status(adapter):
         if _controller is not None:
             observed = []
             for state in _controller.live_states():
-                owned, current = _current_owned(
+                owned, _ = _current_owned(
                     state.identity.conversation_id,
                     state.identity.session_id,
                     state.principal_id,
@@ -685,7 +688,7 @@ def configure_browser(configuration):
                 "chromium_path", "chromium_sha256", "sandbox_proof_sha256", "empty_config_path", "qualification_path", "runtime_sha256"}
     if (type(configuration) is not dict or set(configuration) != required
             or re.fullmatch(r"\d+\.\d+\.\d+", configuration["agent_browser_version"]) is None
-            or any(re.fullmatch(r"[a-f0-9]{64}", configuration[key]) is None
+            or any(re.fullmatch(SHA256_PATTERN, configuration[key]) is None
                    for key in ("agent_browser_sha256", "chromium_sha256", "sandbox_proof_sha256", "runtime_sha256"))):
         raise ValueError("browser_installation_unverified")
     for prefix in ("agent_browser", "chromium"):
@@ -742,7 +745,7 @@ def retain_browser_after_turn(task_id):
                     and features.get("local") is True and features.get("radhouse_owned") is True
                     and not features.get("real_profile") and not features.get("lightpanda")
                     and not record.get("cdp_url") and not record.get("bb_session_id")
-                    and re.fullmatch(r"h_[a-f0-9]{10}", record.get("session_name", "")) is not None)
+                    and re.fullmatch(NATIVE_BROWSER_NAME_PATTERN, record.get("session_name", "")) is not None)
     except (AttributeError, TypeError):
         return False
 
@@ -831,7 +834,7 @@ def checked_browser_call(name, arguments, trusted, fallback):
                 future = asyncio.run_coroutine_threadsafe(runtime.observation(context), runtime.loop)
                 return json.dumps(_redacted(future.result(20)), ensure_ascii=False)
         if _controller is not None:
-            with agent_browser_operation(current_run_context()) as owned:
+            with agent_browser_operation(current_run_context()):
                 result = fallback()
                 return json.dumps(_redacted(json.loads(result)), ensure_ascii=False)
         return fallback()
@@ -850,7 +853,7 @@ def _session_stream(session_id):
     features = record.get("features", {})
     name = record.get("session_name", "")
     if (not features.get("local") or not features.get("radhouse_owned") or features.get("real_profile") or record.get("cdp_url")
-            or not re.fullmatch(r"h_[a-f0-9]{10}", name)):
+            or not re.fullmatch(NATIVE_BROWSER_NAME_PATTERN, name)):
         raise ValueError("browser_session_unavailable")
     directory = Path(browser._socket_safe_tmpdir()) / ("agent-browser-" + name)
     try:
@@ -904,7 +907,7 @@ class NativeRelay:
                 self.frame = (
                     None  # Never relabel a prior document frame as the new page.
                 )
-                if url != "about:blank" and not http_url(url):
+                if url != BLANK_BROWSER_PAGE and not http_url(url):
                     self.url, self.frame = None, None
                 else:
                     parts = urlsplit(url)
@@ -920,7 +923,7 @@ class NativeRelay:
                 raise ValueError("browser_stream_unavailable")
             active = next((tab for tab in tabs if tab.get("active")), tabs[0])
             url = active.get("url")
-            if url != "about:blank" and not http_url(url):
+            if url != BLANK_BROWSER_PAGE and not http_url(url):
                 self.url, self.frame = None, None
                 self.recent_frames.clear()
             else:
@@ -1150,7 +1153,7 @@ class OwnedBrowser:
             "height",
         }:
             raise ValueError("browser_metadata_unavailable")
-        if value["url"] != "about:blank" and not http_url(value["url"]):
+        if value["url"] != BLANK_BROWSER_PAGE and not http_url(value["url"]):
             raise ValueError("browser_metadata_unavailable")
         if any(
             type(value[k]) is not int or not 1 <= value[k] <= 16384
@@ -1243,6 +1246,15 @@ def retire_browser_transport(owned):
     from tools import browser_tool as browser
     from tools import browser_tool_lifecycle as lifecycle
 
+    # Launch finishes the previous stream while holding _browser_lock. A
+    # status request may already have completed its exact generation's teardown.
+    # That read-only completion needs no lock; an absent handle alone is not
+    # retirement proof. Unknown/live drivers still take the guarded path below.
+    if (_controller.state(owned.identity).retired
+            and _owned_browsers.get(owned.identity.session_id) is None
+            and _pid_gone(owned.pid, owned.started)):
+        return
+
     # Launch may be awaiting this stream's shutdown while holding this lock.
     # Never wait on it here: retain the generation for the next status retry.
     if not _browser_lock.acquire(blocking=False):
@@ -1267,7 +1279,7 @@ def _retire_browser_transport_locked(owned, control, browser, lifecycle):
         raise control.ControlRejected("stale_browser")
     if not _pid_gone(owned.pid, owned.started):
         name = state.native_name
-        if not re.fullmatch(r"h_[a-f0-9]{10}", name):
+        if not re.fullmatch(NATIVE_BROWSER_NAME_PATTERN, name):
             raise control.ControlRejected("browser_retirement_unproven")
         directory = Path(browser._socket_safe_tmpdir()) / ("agent-browser-" + name)
         try:
@@ -1290,7 +1302,7 @@ def _launch_owned(conversation_id, session_id, principal_id, *, run=None):
     from tools import browser_tool_session as session
 
     with _browser_lock:
-        owned, state = _current_owned(conversation_id, session_id, principal_id)
+        owned, _ = _current_owned(conversation_id, session_id, principal_id)
         if owned:
             return owned
         if _browser_configuration is None or maintenance_held():
@@ -1298,6 +1310,7 @@ def _launch_owned(conversation_id, session_id, principal_id, *, run=None):
         if _streaming is not None:
             # The embedded display owns one browser. Reject a second identity
             # before creating a launch record or entering failed-launch cleanup.
+            # _current_owned can remove retired entries; iterate a stable snapshot.
             for previous in list(_owned_browsers.values()):
                 old = _controller.state(previous.identity)
                 _current_owned(previous.identity.conversation_id, previous.identity.session_id, old.principal_id)
@@ -1335,7 +1348,7 @@ def _launch_owned(conversation_id, session_id, principal_id, *, run=None):
             "--json",
             "open",
             "--",
-            "about:blank",
+            BLANK_BROWSER_PAGE,
         ]
         # Only this fixed initial launch is a CLI operation; no credential/page payload in argv.
         with browser._cleanup_lock:
@@ -1354,7 +1367,7 @@ def _launch_owned(conversation_id, session_id, principal_id, *, run=None):
                 stream_started = True
                 argv = [_browser_configuration["agent_browser_path"], "--config",
                     _browser_configuration["empty_config_path"], "--cdp", endpoint,
-                    "--session", name, "--pin-tab", "--json", "open", "--", "about:blank"]
+                    "--session", name, "--pin-tab", "--json", "open", "--", BLANK_BROWSER_PAGE]
             native_attempted = True
             result = subprocess.run(
                 argv,
@@ -1784,7 +1797,7 @@ async def handle_browser_stream(adapter, request):
 async def handle_browser_session(adapter, request, *, operation, api_server):
     from aiohttp import web
 
-    control, native = _control_modules()
+    control, _ = _control_modules()
     error = adapter._check_auth(request)
     if error is not None:
         return error
@@ -1965,7 +1978,7 @@ async def handle_browser_session(adapter, request, *, operation, api_server):
         stream = _session_stream(session_id)
         if stream is None or stream[1] != owned.identity.generation:
             raise control.ControlRejected("stale_browser")
-        result = {"url": "about:blank"} if _streaming is not None else await _native_frame(
+        result = {"url": BLANK_BROWSER_PAGE} if _streaming is not None else await _native_frame(
             stream[0],
             want_frame=operation == "frame",
             session_id=session_id,
@@ -2125,7 +2138,7 @@ def login_tool_handler(name, args, **trusted):
 
 
 def _human_login(owned, owner, body, operation):
-    control, native = _control_modules()
+    _, native = _control_modules()
     ack = _controller.reserve_input(
         owned.identity,
         owner,
