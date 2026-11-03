@@ -1,7 +1,7 @@
 # Ongoing follow-up for confirmed commitments
 
-Status: backend deployed and confirmed follow-up active; mobile release and first
-scheduled private review acceptance are tracked below. Extends the
+Status: backend deployed, confirmed follow-up active and both owner phone builds
+published; first scheduled private review and device acceptance are tracked below. Extends the
 [accepted pilot](2026-11-02-native-proactive-assistance.md) under the owner's
 3 November instruction to keep following confirmed commitments within the same
 security boundaries.
@@ -104,8 +104,8 @@ real review, and the earlier two-phone suggestion acceptance is distinct from a
 future follow-up notification receipt.
 
 Mobile PR 11 merged as `c77e38e511364cf88806e26ba5ad95faf98ceeee`.
-Android 1.0 (7) is available in the existing internal track. Apple accepted the
-signed iOS 1.0 (9) upload; assignment to the existing Owner TestFlight group awaits
-restoration of the owner's App Store Connect browser session. Both builds retain
-the established notification consent and payload contracts. New build installation
-and physical follow-up receipt are not yet asserted.
+Android 1.0 (7) is available in the existing internal track. iOS 1.0 (9) is
+published to the existing Owner TestFlight group; App Store Connect reports
+Testing with Owner assigned after the unchanged encryption declaration was saved.
+Both builds retain the established notification consent and payload contracts.
+New build installation and physical follow-up receipt are not yet asserted.
