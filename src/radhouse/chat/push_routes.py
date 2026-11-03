@@ -28,7 +28,9 @@ async def _registration_body(request):
         value = json.loads(data)
     except ValueError:
         raise Rejected("invalid_push_registration", 422) from None
-    if type(value) is not dict or set(value) != {"platform", "token"}:
+    if (type(value) is not dict or not {"platform", "token"} <= set(value)
+            or set(value) - {"platform", "token", "commitments"}
+            or type(value.get("commitments", False)) is not bool):
         raise Rejected("invalid_push_registration", 422)
     return value
 
@@ -44,18 +46,21 @@ def install_push(app, auth, service, outbox, sender):
                                                 binding.conversation_id, binding.binding_revision)
 
     def register(identifier, current, body):
+        if body.get("commitments") and getattr(app.state, "commitment_review", None) is None:
+            raise Rejected("commitment_notifications_unavailable", 409)
         binding = _binding(current)
         if not authorize(binding):
             raise Rejected("authentication_required", 401)
         with service.store.connection() as db:
             latest = db.execute("SELECT coalesce(max(seq),0) FROM turns WHERE owner=?",
                                 (current.principal_id,)).fetchone()[0]
-        outbox.register(identifier, binding, body["platform"], body["token"], latest_seq=latest)
+        outbox.register(identifier, binding, body["platform"], body["token"], latest_seq=latest,
+                        commitments=body.get("commitments", False))
 
     @app.get("/chat/push/status")
     def push_status(request: Request):
         session(request)
-        return {"available": True}
+        return {"available": True, **({"commitments": True} if getattr(app.state, "commitment_review", None) is not None else {})}
 
     @app.put("/chat/push/devices/{identifier}")
     async def push_register(identifier: str, request: Request):
@@ -79,8 +84,12 @@ def install_push(app, auth, service, outbox, sender):
 
         def dispatch():
             outbox.reconcile(service.store, service.owner_id)
+            review = getattr(app.state, "commitment_review", None)
+            if review is not None:
+                outbox.enqueue_commitments(service.owner_id, review.notification_items())
             for _ in range(10):
-                if stop.is_set() or not outbox.dispatch_one(authorize, sender):
+                if stop.is_set() or not outbox.dispatch_one(authorize, sender,
+                        commitment_decision=review.notification_decision if review else None):
                     break
 
         async def observe():

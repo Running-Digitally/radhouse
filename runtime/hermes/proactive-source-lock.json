@@ -1,0 +1,17 @@
+{
+  "upstream_commit": "818c13be1dc4fd28987e1e881a9408224afd4535",
+  "files": {
+    "hermes_cli/heartbeat.py": "09160d3d07d6a77f4237571a2bfae1a76c9f112b3e5493059a89819fb1e48a79",
+    "gateway/run_heartbeat_restore.py": "4e0bcf397433c8679791269a19b555196006ae56ceab510de4e12bac19806b18",
+    "gateway/response_filters.py": "d0bf3ee88a8d21db7b793553173c491d66dd0c099606717f87e34f95d0ff309e",
+    "cron/scheduler.py": "9fc6f48862ba58ff50fa9af3ab767c8f7beb1692bf7065cba274a87e446708aa",
+    "cron/jobs.py": "68caf3f639bcae54eb3d88cf6fcbe7c58e88aba2410197f57e3c3e20ac5f0a01",
+    "gateway/platforms/api_server.py": "359c8be9d02e3bfb24272f829321dd5da3cefd31923cf7785d1bf36ea1f87420",
+    "tools/send_message_tool.py": "2e3ea0f4c314e1d5ec91ad3c4bcb97b8955b7a1aa3df388e695e9e203afb96f2",
+    "tools/cronjob_tools.py": "62608d53d24fed7a52d25ab29b0f207df48a29fb95b69fcb3e7bb9fef062eefc",
+    "hermes_state.py": "968cd869f077d490a59b5f624958375fe455d6024e67cbc96b4ecf49981f3828",
+    "cron/scheduler_script.py": "0dc3ef4e5c4b56491a9a21a07ac28d10a498a242a88fdd92a7d49ad7efce5286",
+    "tools/environments/local.py": "d96c53a2755e0afc6566e790ae9489a825c4d790c51bfcc258c78aafc2a47a26",
+    "agent/agent_init.py": "6e10efdbedc52a9204538a66eeacd320efb6add23a784a45f28fb70e5a5aa8f3"
+  }
+}

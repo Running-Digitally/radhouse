@@ -47,8 +47,13 @@ def installation_id(value: str) -> str:
     return value
 
 
-def notification(owner: str, request_id: str) -> dict[str, str]:
+def notification(owner: str, request_id: str, kind="reply_ready") -> dict[str, str]:
     """Stable event identity makes retries deduplicable on the handset."""
+    if kind == "commitment_ready":
+        return {"version": "2", "kind": kind, "item_id": request_id,
+                "event_id": str(uuid5(NAMESPACE_URL, f"radhouse:commitment:{owner}:{request_id}"))}
+    if kind != "reply_ready":
+        raise ValueError("unsupported_notification_kind")
     return {"version": "1", "kind": "reply_ready", "request_id": request_id,
             "event_id": str(uuid5(NAMESPACE_URL, f"radhouse:reply:{owner}:{request_id}"))}
 
@@ -97,8 +102,16 @@ class PushOutbox:
                     PRAGMA user_version=1;
                     COMMIT;
                 """)
-            elif version != 1:
+            elif version not in (1, 2):
                 raise ValueError("push_schema_mismatch")
+            db.execute(BEGIN_WRITE)
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(devices)")}
+            if "commitments_since" not in columns:
+                db.execute("ALTER TABLE devices ADD COLUMN commitments_since REAL")
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(deliveries)")}
+            if "kind" not in columns:
+                db.execute("ALTER TABLE deliveries ADD COLUMN kind TEXT NOT NULL DEFAULT 'reply_ready'")
+            db.execute("PRAGMA user_version=2")
 
     @contextmanager
     def connection(self):
@@ -112,9 +125,9 @@ class PushOutbox:
             db.close()
 
     def register(self, installation: str, binding: PushBinding, platform: str, token: str,
-                 *, latest_seq: int):
+                 *, latest_seq: int, commitments=False):
         installation_id(installation)
-        if (platform not in {"ios", "android"} or not isinstance(token, str)
+        if (type(commitments) is not bool or platform not in {"ios", "android"} or not isinstance(token, str)
                 or not re.fullmatch(r"[A-Za-z0-9_:.-]{20,4096}", token)
                 or not re.fullmatch(r"[a-f0-9]{64}", binding.session_hash)
                 or not math.isfinite(binding.expires_at) or binding.expires_at <= self.clock()
@@ -131,18 +144,21 @@ class PushOutbox:
                 ("owner", "conversation", "revision", "session_hash")) == scope
             generation = old["generation"] + 1 if old else 1
             start = old["start_seq"] if same else latest_seq
-            db.execute("""INSERT INTO devices VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+            since = (old["commitments_since"] if same and old["commitments_since"] is not None else self.clock()) if commitments else None
+            db.execute("""INSERT INTO devices VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(installation) DO UPDATE SET
                 conversation=excluded.conversation, revision=excluded.revision,
                 session_hash=excluded.session_hash, expires_at=excluded.expires_at,
                 platform=excluded.platform, token=excluded.token, token_hash=excluded.token_hash,
                 generation=excluded.generation, start_seq=excluded.start_seq,
-                active=1, updated_at=excluded.updated_at""",
+                active=1, updated_at=excluded.updated_at, commitments_since=excluded.commitments_since""",
                 (installation, *scope, binding.expires_at, platform, self.cipher.encrypt(token.encode()),
-                 token_hash, generation, start, 1, self.clock()))
+                 token_hash, generation, start, 1, self.clock(), since))
             # Rotation retargets only unsent work. A new session cannot inherit it.
             db.execute("UPDATE deliveries SET generation=?,state=? WHERE installation=? AND state='pending'",
                 (generation, "pending" if same else "discarded", installation))
+            if not commitments:
+                db.execute("UPDATE deliveries SET state='discarded' WHERE installation=? AND kind='commitment_ready' AND state='pending'", (installation,))
 
     @staticmethod
     def _admit_registration(db, old, installation, owner, token_hash, now):
@@ -201,11 +217,31 @@ class PushOutbox:
                     if turn["seq"] <= device["start_seq"]:
                         continue
                     payload = notification(owner, turn["request_id"])
-                    db.execute("INSERT OR IGNORE INTO deliveries VALUES(?,?,?,?,?,?,?,?,?)",
+                    db.execute("INSERT OR IGNORE INTO deliveries(installation,request_id,event_id,generation,state,attempts,due_at,expires_at,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
                         (device["installation"], turn["request_id"], payload["event_id"], device["generation"],
                          "pending", 0, now, min(now + 3600, device["expires_at"]), now))
 
-    def dispatch_one(self, authorize: Callable[[PushBinding], bool], send: Callable) -> bool:
+    def enqueue_commitments(self, owner, items):
+        """Only explicitly capable/opted-in devices; never replay pre-consent items."""
+        now = self.clock()
+        with self.connection() as db:
+            db.execute(BEGIN_WRITE)
+            devices = db.execute("SELECT * FROM devices WHERE owner=? AND active=1 AND expires_at>? AND commitments_since IS NOT NULL",
+                                 (owner, now)).fetchall()
+            admitted = {row[0] for row in db.execute("SELECT DISTINCT q.event_id FROM deliveries q JOIN devices d USING(installation) WHERE q.kind='commitment_ready' AND q.created_at>? AND d.owner=?", (now - DAY, owner))}
+            for item in items:
+                payload = notification(owner, item["id"], "commitment_ready")
+                if payload["event_id"] not in admitted and len(admitted) >= 2:
+                    continue
+                for device in devices:
+                    if item["created_at"] < device["commitments_since"] or item["created_at"] + DAY <= now:
+                        continue
+                    db.execute("INSERT OR IGNORE INTO deliveries VALUES(?,?,?,?,?,?,?,?,?,?)",
+                        (device["installation"], item["id"], payload["event_id"], device["generation"],
+                         "pending", 0, now, min(item["created_at"] + DAY, device["expires_at"]), now, "commitment_ready"))
+                    admitted.add(payload["event_id"])
+
+    def dispatch_one(self, authorize: Callable[[PushBinding], bool], send: Callable, *, commitment_decision=None) -> bool:
         """The authorizer reads current session/actor/binding without extending expiry.
 
         Provider/auth failures retain a sanitized bounded retry. An uncertain send
@@ -215,7 +251,7 @@ class PushOutbox:
         with self.connection() as db:
             db.execute(BEGIN_WRITE)
             item = db.execute("""SELECT q.*, d.owner,d.conversation,d.revision,d.session_hash,
-                d.expires_at AS session_expiry,d.token,d.platform,d.active,d.generation AS current_generation
+                d.expires_at AS session_expiry,d.token,d.platform,d.active,d.generation AS current_generation,d.commitments_since
                 FROM deliveries q JOIN devices d USING(installation)
                 WHERE q.state='pending' AND q.due_at<=? ORDER BY q.due_at,q.created_at LIMIT 1""", (now,)).fetchone()
             if item is None:
@@ -230,8 +266,16 @@ class PushOutbox:
                 if not authorize(binding):
                     self._deactivate(db, item)
                     return True
+                if item["kind"] == "commitment_ready":
+                    decision = commitment_decision(item["request_id"]) if commitment_decision and item["commitments_since"] is not None else "discard"
+                    if decision == "hold":
+                        db.execute("UPDATE deliveries SET due_at=? WHERE installation=? AND event_id=?", (now + 60, item["installation"], item["event_id"]))
+                        return True
+                    if decision != "allow":
+                        self._finish(db, item, "discarded")
+                        return True
                 result = send(self.cipher.decrypt(item["token"]).decode(), item["platform"],
-                              notification(item["owner"], item["request_id"]))
+                              notification(item["owner"], item["request_id"], item["kind"]))
             except Exception:
                 # Provider exceptions may contain registration tokens. Never log them.
                 result = PushResult("retry")

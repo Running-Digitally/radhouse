@@ -17,20 +17,24 @@ APP_ID = "com.runningdigitally.radhouse"
 
 
 def _payload(token, platform, data):
+    if not isinstance(data, dict):
+        raise ValueError("invalid_push_message")
+    commitment = data.get("version") == "2" and data.get("kind") == "commitment_ready"
+    target = "item_id" if commitment else "request_id"
     if (platform not in {"ios", "android"} or not isinstance(token, str)
             or not re.fullmatch(r"[A-Za-z0-9_:.-]{20,4096}", token)
-            or set(data) != {"version", "kind", "event_id", "request_id"}
-            or data["version"] != "1" or data["kind"] != "reply_ready"):
+            or set(data) != {"version", "kind", "event_id", target}
+            or not commitment and (data["version"] != "1" or data["kind"] != "reply_ready")):
         raise ValueError("invalid_push_message")
-    for field in ("event_id", "request_id"):
+    for field in ("event_id", target):
         value = UUID(data[field])
         if value.version not in range(1, 9) or str(value) != data[field]:
             raise ValueError("invalid_push_message")
     message = {"token": token, "data": data,
-               "notification": {"title": "Radhouse", "body": "Your Radhouse reply is ready"}}
+               "notification": {"title": "Radhouse", "body": "Radhouse has a suggestion for you" if commitment else "Your Radhouse reply is ready"}}
     if platform == "android":
         message["android"] = {"restricted_package_name": APP_ID, "ttl": "3600s",
-                              "collapse_key": "reply_ready", "priority": "normal",
+                              "collapse_key": data["kind"], "priority": "normal",
                               "notification": {"tag": data["event_id"]}}
     else:
         message["apns"] = {"headers": {"apns-topic": APP_ID, "apns-push-type": "alert",
