@@ -20,6 +20,8 @@ from radhouse.domain.tasks import Rejected
 
 
 DAY = 86400
+BEGIN_WRITE = "BEGIN IMMEDIATE"
+SELECT_MANDATE = "SELECT * FROM mandate WHERE id=1"
 SCOPE = {
     "purpose": "Suggest possible commitments for confirmation",
     "sources": "Recent text in this Radhouse conversation; up to 30 exchanges from the last 7 days",
@@ -55,6 +57,17 @@ def review_prompt(snapshot):
     )
 
 
+def _validate_suggestion(item, sources):
+    fields = {"source_request_id": 100, "quote": 500, "title": 160, "reason": 1000, "preparation": 3000}
+    if type(item) is not dict or set(item) != set(fields):
+        raise ValueError
+    for key, limit in fields.items():
+        if not isinstance(item[key], str) or not item[key].strip() or len(item[key]) > limit:
+            raise ValueError
+    if item["quote"] not in sources.get(item["source_request_id"], ""):
+        raise ValueError
+
+
 def validate_suggestions(raw, snapshot):
     """Model output may propose text; it cannot choose an owner, tool or recipient."""
     try:
@@ -67,15 +80,8 @@ def validate_suggestions(raw, snapshot):
         if type(suggestions) is not list or len(suggestions) > 3:
             raise ValueError
         sources = {row["request_id"]: row["text"] for row in snapshot["exchanges"]}
-        fields = {"source_request_id": 100, "quote": 500, "title": 160, "reason": 1000, "preparation": 3000}
         for item in suggestions:
-            if type(item) is not dict or set(item) != set(fields):
-                raise ValueError
-            for key, limit in fields.items():
-                if not isinstance(item[key], str) or not item[key].strip() or len(item[key]) > limit:
-                    raise ValueError
-            if item["quote"] not in sources.get(item["source_request_id"], ""):
-                raise ValueError
+            _validate_suggestion(item, sources)
         return suggestions
     except (ValueError, TypeError):
         raise Rejected("invalid_commitment_evidence", 422) from None
@@ -143,8 +149,8 @@ class CommitmentReview:
         if not self.authorize(self.owner, conversation, binding_revision):
             raise Rejected("responsibility_authority_revoked", 403)
         with self.connection() as db:
-            db.execute("BEGIN IMMEDIATE")
-            old = db.execute("SELECT * FROM mandate WHERE id=1").fetchone()
+            db.execute(BEGIN_WRITE)
+            old = db.execute(SELECT_MANDATE).fetchone()
             if old and old["owner"] != self.owner:
                 raise Rejected("responsibility_owner_changed", 409)
             db.execute("""INSERT INTO mandate VALUES(1,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
@@ -155,7 +161,7 @@ class CommitmentReview:
         return self.status()
 
     def _mandate(self, db):
-        row = db.execute("SELECT * FROM mandate WHERE id=1").fetchone()
+        row = db.execute(SELECT_MANDATE).fetchone()
         if row is None or row["owner"] != self.owner or not row["active"]:
             raise Rejected("responsibility_paused", 409)
         if not self.authorize(row["owner"], row["conversation"], row["binding_revision"]):
@@ -194,7 +200,7 @@ class CommitmentReview:
     def claim(self):
         now = self.clock()
         with self.connection() as db:
-            db.execute("BEGIN IMMEDIATE")
+            db.execute(BEGIN_WRITE)
             mandate = self._mandate(db)
             db.execute("UPDATE reviews SET state='interrupted',error='review_expired',snapshot='{}' WHERE state='running' AND expires_at<=?", (now,))
             if db.execute("SELECT 1 FROM reviews WHERE state='running'").fetchone():
@@ -217,7 +223,7 @@ class CommitmentReview:
     def complete(self, identifier, raw, *, failed=False):
         now = self.clock()
         with self.connection() as db:
-            db.execute("BEGIN IMMEDIATE")
+            db.execute(BEGIN_WRITE)
             mandate = self._mandate(db)
             review = db.execute("SELECT * FROM reviews WHERE id=?", (identifier,)).fetchone()
             if review is None or review["epoch"] != mandate["epoch"]:
@@ -258,7 +264,7 @@ class CommitmentReview:
         if decision not in {"confirmed", "dismissed"}:
             raise Rejected("invalid_commitment_decision", 422)
         with self.connection() as db:
-            db.execute("BEGIN IMMEDIATE")
+            db.execute(BEGIN_WRITE)
             row = db.execute("SELECT state FROM suggestions WHERE id=?", (identifier,)).fetchone()
             if row is None:
                 raise Rejected("commitment_not_found", 404)
@@ -269,7 +275,7 @@ class CommitmentReview:
 
     def status(self):
         with self.connection() as db:
-            mandate = db.execute("SELECT * FROM mandate WHERE id=1").fetchone()
+            mandate = db.execute(SELECT_MANDATE).fetchone()
             last = db.execute("SELECT state,created_at,expires_at,error FROM reviews ORDER BY created_at DESC,rowid DESC LIMIT 1").fetchone()
             coverage = db.execute("SELECT checked_at,outcome FROM coverage WHERE id=1").fetchone()
             suggestions = [dict(row) for row in db.execute("SELECT * FROM suggestions ORDER BY created_at DESC LIMIT 100")]

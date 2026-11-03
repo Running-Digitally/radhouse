@@ -144,7 +144,9 @@ class PushOutbox:
                 ("owner", "conversation", "revision", "session_hash")) == scope
             generation = old["generation"] + 1 if old else 1
             start = old["start_seq"] if same else latest_seq
-            since = (old["commitments_since"] if same and old["commitments_since"] is not None else self.clock()) if commitments else None
+            since = None
+            if commitments:
+                since = old["commitments_since"] if same and old["commitments_since"] is not None else self.clock()
             db.execute("""INSERT INTO devices VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(installation) DO UPDATE SET
                 conversation=excluded.conversation, revision=excluded.revision,
@@ -266,14 +268,8 @@ class PushOutbox:
                 if not authorize(binding):
                     self._deactivate(db, item)
                     return True
-                if item["kind"] == "commitment_ready":
-                    decision = commitment_decision(item["request_id"]) if commitment_decision and item["commitments_since"] is not None else "discard"
-                    if decision == "hold":
-                        db.execute("UPDATE deliveries SET due_at=? WHERE installation=? AND event_id=?", (now + 60, item["installation"], item["event_id"]))
-                        return True
-                    if decision != "allow":
-                        self._finish(db, item, "discarded")
-                        return True
+                if self._defer_commitment(db, item, commitment_decision, now):
+                    return True
                 result = send(self.cipher.decrypt(item["token"]).decode(), item["platform"],
                               notification(item["owner"], item["request_id"], item["kind"]))
             except Exception:
@@ -290,6 +286,19 @@ class PushOutbox:
                 db.execute("UPDATE deliveries SET attempts=?,due_at=?,state=? WHERE installation=? AND event_id=?",
                     (attempts, now + delay, state, item["installation"], item["event_id"]))
             return True
+
+    def _defer_commitment(self, db, item, decide, now):
+        if item["kind"] != "commitment_ready":
+            return False
+        decision = decide(item["request_id"]) if decide and item["commitments_since"] is not None else "discard"
+        if decision == "allow":
+            return False
+        if decision == "hold":
+            db.execute("UPDATE deliveries SET due_at=? WHERE installation=? AND event_id=?",
+                       (now + 60, item["installation"], item["event_id"]))
+        else:
+            self._finish(db, item, "discarded")
+        return True
 
     @staticmethod
     def _finish(db, item, state):

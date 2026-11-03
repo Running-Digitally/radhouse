@@ -155,6 +155,16 @@ def _install_script(home):
     return directory / source.name
 
 
+def _schedule_matches(saved, expected):
+    for key, value in expected.items():
+        if key == "schedule":
+            if saved["schedule"].get("kind") != "interval" or saved["schedule"].get("minutes") != 60:
+                return False
+        elif saved.get(key) != value:
+            return False
+    return not any(saved.get(key) for key in ("workdir", "origin", "skills", "context_from", "monitor_script", "monitor_url"))
+
+
 def provision(*, activate=False):
     """Owner-only provisioning through native storage, not the lossy Jobs API.
 
@@ -181,16 +191,7 @@ def provision(*, activate=False):
             raise ValueError("review_schedule_needs_reconciliation")
         job = matches[0] if matches else jobs.create_job(**expected, paused=True)
         saved = jobs.get_job(job["id"])
-        for key, value in expected.items():
-            actual = saved.get("schedule_display") if key == "schedule" else saved.get(key)
-            if key == "schedule":
-                if saved["schedule"].get("kind") != "interval" or saved["schedule"].get("minutes") != 60:
-                    jobs.pause_job(job["id"])
-                    raise ValueError("review_schedule_scope_mismatch")
-            elif actual != value:
-                jobs.pause_job(job["id"])
-                raise ValueError("review_schedule_scope_mismatch")
-        if any(saved.get(key) for key in ("workdir", "origin", "skills", "context_from", "monitor_script", "monitor_url")):
+        if not _schedule_matches(saved, expected):
             jobs.pause_job(job["id"])
             raise ValueError("review_schedule_scope_mismatch")
         if activate and not saved["enabled"]:
