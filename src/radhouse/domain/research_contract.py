@@ -102,4 +102,19 @@ def citations(result, evidence):
         seen.add(identifier)
     if result['action'] == 'quiet' and values:
         raise ValueError('quiet_result_has_citations')
+    if evidence:
+        _check_reference_identifiers(result, [sources[item['source_id']] for item in values])
     return resolved
+
+
+def _check_reference_identifiers(result, sources):
+    # An exact quotation does not validate unrelated details the model adds.
+    # Reject invented dotted standard/version identifiers and URL references.
+    # This is a bounded check, not a claim of general semantic verification.
+    text = result.get('reason', '') + '\n' + result.get('preparation', '')
+    supported = '\n'.join(source['text'] + '\n' + source['url'] for source in sources)
+    pattern = r'\b[0-9]+(?:\.[0-9]+)+\b|https?://[^\s<>")]+'
+    references = {value.rstrip('.,;:') for value in re.findall(pattern, text)}
+    supported_references = {value.rstrip('.,;:') for value in re.findall(pattern, supported)}
+    if not references.issubset(supported_references):
+        raise ValueError('unsupported_research_reference')

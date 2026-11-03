@@ -112,14 +112,14 @@
       }
     } finally { busy = false; publish(); }
   }
-  function input(method, value) {
+  async function input(method, value) {
     if (presentation !== 'full' || document.hidden || !human() || busy || uncertain || zoomed() || !inputReady) return;
-    lastActivity = Date.now();
+    lastActivity = Date.now(); busy = true; notice = ''; publish();
     try {
       const helper = frame?.contentWindow?.radhouseInput;
-      if (typeof helper?.[method] !== 'function' || helper[method](value) === false) throw new Error('input_unavailable');
+      if (typeof helper?.[method] !== 'function' || await helper[method](value) === false) throw new Error('input_unavailable');
     } catch { notice = 'Input could not be confirmed. Check the page before trying again.'; }
-    publish();
+    finally { busy = false; publish(); }
   }
   function address(value) {
     if (typeof value !== 'string' || value.length > 2048) return null;
@@ -154,7 +154,7 @@
   }
   function navigate(message) {
     const url = address(message.value);
-    if (url) input('navigate',url);
+    if (url) return input('navigate',url);
     else { notice = 'Enter a web address without login details, or a search.'; publish(); }
   }
   function humanCommand(message) {
