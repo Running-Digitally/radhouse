@@ -14,13 +14,7 @@ function text(tag, content, className) {
   return node;
 }
 function showError(error) { $('#error').textContent=error.message; $('#error').hidden=false; }
-async function refresh() {
-  const value = await request('/chat/responsibilities/commitments');
-  active = value.active;
-  $('#toggle').textContent=active?'Pause':'Enable suggestions'; $('#toggle').disabled=false;
-  $('#sources').textContent=value.scope.sources;
-  $('#preparation').textContent=value.scope.preparation+'. '+value.scope.confirmation+'.';
-  $('#excluded').textContent='Outside this scope: '+value.scope.excluded+'. Up to four reviews per day.';
+function showCoverage(value) {
   const last=value.last_review;
   const states={quiet:'Checked; nothing new to suggest.', ready:'Suggestions prepared.', running:'Review in progress.',
     failed:'The last review failed.', interrupted:'The last review was interrupted.', stale:'New conversation arrived; a fresh review is needed.',
@@ -31,6 +25,15 @@ async function refresh() {
     (stale?'Recent coverage has not been established. ':'')+
     (coverage?.outcome==='budget_wait'?'Waiting for the review budget to renew. ':'')+
     (last?(states[last.state]||'Review status unavailable.')+' '+new Date(last.created_at*1000).toLocaleString():'No completed review yet.');
+}
+async function refresh() {
+  const value = await request('/chat/responsibilities/commitments');
+  active = value.active;
+  $('#toggle').textContent=active?'Pause':'Enable suggestions'; $('#toggle').disabled=false;
+  $('#sources').textContent=value.scope.sources;
+  $('#preparation').textContent=value.scope.preparation+'. '+value.scope.confirmation+'.';
+  $('#excluded').textContent='Outside this scope: '+value.scope.excluded+'. Up to four reviews per day.';
+  showCoverage(value);
   $('#suggestions').replaceChildren(); $('#empty').hidden=value.suggestions.length>0;
   for(const item of value.suggestions) {
     const card=document.createElement('article'); card.id='commitment-'+item.id;

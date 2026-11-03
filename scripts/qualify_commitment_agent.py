@@ -57,6 +57,7 @@ socket.socket.connect = bounded_connect
         requests = []
         class Provider(BaseHTTPRequestHandler):
             def log_message(self, *_):
+                # Keep the qualification provider's synthetic HTTP access log quiet.
                 pass
             def do_POST(self):
                 size = int(self.headers.get("Content-Length", "0"))

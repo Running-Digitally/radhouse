@@ -76,8 +76,9 @@ def test_publication_rechecks_authority_and_new_evidence(pilot, change):
     if change == "correction":
         assert review.complete(claim["review_id"], suggestion(source)) == {"status": "stale"}
     else:
+        output = suggestion(source)
         with pytest.raises(Rejected):
-            review.complete(claim["review_id"], suggestion(source))
+            review.complete(claim["review_id"], output)
     assert review.status()["suggestions"] == []
 
 
@@ -117,8 +118,9 @@ def test_model_cannot_expand_authority_or_fabricate_a_citation(pilot, extra):
     review, chat, clock, _ = pilot
     source = message(chat, clock)
     snapshot = {"exchanges": [{"request_id": source, "text": "send the draft"}]}
+    output = suggestion(source, **extra)
     with pytest.raises(Rejected, match="invalid_commitment_evidence"):
-        validate_suggestions(suggestion(source, **extra), snapshot)
+        validate_suggestions(output, snapshot)
 
 
 def test_dismissal_is_durable_and_same_source_cannot_realert(pilot):
@@ -189,8 +191,9 @@ def test_worker_records_failure_without_leaking_exception(worker):
     def fail(*_):
         raise RuntimeError("private provider diagnostic")
     config = {"endpoint": "https://fixture.test", "worker_bearer": "synthetic"}
+    transport = httpx.MockTransport(handler)
     with pytest.raises(ValueError, match="review_failed"):
-        worker.run_once(config, infer=fail, transport=httpx.MockTransport(handler))
+        worker.run_once(config, infer=fail, transport=transport)
     assert bodies == [{"review_id": "synthetic", "output": "", "failed": True}]
 
 
