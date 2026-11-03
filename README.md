@@ -82,8 +82,10 @@ or whether it was included in the current reply.
 
 The next-message **Model** and **Thinking** controls read the configured engine's
 actual catalog. Model choices and supported thinking settings vary by engine;
-unknown capabilities remain unoffered. Thinking currently requires published
-settings that the qualified Custom or LM Studio adapter can carry; other
+unknown capabilities remain unoffered. Qualified Custom and LM Studio adapters
+use published capabilities. An explicitly enrolled OpenAI provider also supports
+GPT-6 Astra, GPT-6.1 Terra and GPT-6.1 Sol through the Responses API, with documented
+per-model thinking choices. See [OpenAI setup](docs/openai-models.md). Other
 adapters retain their defaults until qualified. Catalog reads are cached for
 60 seconds. **Refresh models** checks again without
 changing profile settings. Explicit choices and terminal context are frozen for
@@ -158,6 +160,12 @@ Chat keeps occasional browser/terminal context and model/thinking controls in
 Message options. Included context appears as short removable chips. The current
 configured engine still determines which models and thinking choices are
 available; opening the options does not start a browser, terminal or reply.
+
+Web and connected native chat provide loaded-history search, quoting, readable
+answers and explicit navigation back to the latest message. The native composer
+stays above the keyboard and preserves drafts while moving around the workspace.
+The selected model is visible beside the composer in both clients. See the
+[connected-chat usability audit](docs/research/2026-11-02-connected-chat-audit.md).
 
 Optional `transcription_endpoint` selects an existing OpenAI-compatible
 `/v1/audio/transcriptions` service; optional `transcription_bearer` belongs only to

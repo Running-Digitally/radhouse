@@ -1,0 +1,637 @@
+{
+  "scope": "Read-only current processed findings reviewed during chat/model implementation; local dispositions, not server closure.",
+  "issues": [
+    {
+      "key": "9c62afc9-bc71-4a57-b73e-d177e0d6e32a",
+      "rule": "python:S3776",
+      "file": "src/radhouse/chat/app.py",
+      "line": 88,
+      "message": "Refactor this function to reduce its Cognitive Complexity from 85 to the 15 allowed.",
+      "disposition": "Deferred: broader authenticated route, streaming, browser lifecycle or dispatch refactor needs a separate regression scope."
+    },
+    {
+      "key": "664953cd-aa68-4cc1-ab63-1d88917dba81",
+      "rule": "python:S3358",
+      "file": "src/radhouse/chat/app.py",
+      "line": 218,
+      "message": "Extract this nested conditional expression into an independent statement.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "adc55aa1-35a7-49fb-91c6-38d6b68d45d2",
+      "rule": "python:S3358",
+      "file": "src/radhouse/chat/app.py",
+      "line": 223,
+      "message": "Extract this nested conditional expression into an independent statement.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "08677f3f-e4fe-4708-a9dc-a529d52b2109",
+      "rule": "python:S1192",
+      "file": "src/radhouse/chat/app.py",
+      "line": 351,
+      "message": "Define a constant instead of duplicating this literal \"text/css\" 5 times.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "bdd0393f-d039-4b8f-a36b-57b77f2a45bb",
+      "rule": "python:S1192",
+      "file": "src/radhouse/chat/app.py",
+      "line": 393,
+      "message": "Define a constant instead of duplicating this literal \"video/mp4\" 3 times.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "f6953f63-a3ca-49cc-8058-5f51bda10c54",
+      "rule": "python:S3776",
+      "file": "src/radhouse/chat/app.py",
+      "line": 571,
+      "message": "Refactor this function to reduce its Cognitive Complexity from 20 to the 15 allowed.",
+      "disposition": "Deferred: broader authenticated route, streaming, browser lifecycle or dispatch refactor needs a separate regression scope."
+    },
+    {
+      "key": "0eaffb52-6345-48dc-8b1d-205e55bc6409",
+      "rule": "javascript:S7776",
+      "file": "src/radhouse/chat/static/chat.js",
+      "line": 62,
+      "message": "`workspacePages` should be a `Set`, and use `workspacePages.has()` to check existence or non-existence.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "73da3d9e-4484-4ced-abf9-10bffab0c416",
+      "rule": "javascript:S1788",
+      "file": "src/radhouse/chat/static/chat.js",
+      "line": 75,
+      "message": "Default parameters should be last.",
+      "disposition": "No longer applicable in current main: api(path,body,initial=false,signal=undefined,method=undefined) already has valid parameter ordering."
+    },
+    {
+      "key": "c3eae6de-47f8-468e-a701-3deb548f55cf",
+      "rule": "javascript:S3776",
+      "file": "src/radhouse/chat/static/chat.js",
+      "line": 110,
+      "message": "Refactor this function to reduce its Cognitive Complexity from 16 to the 15 allowed.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "88ddf133-43d4-4a42-bd85-d32b1cb6a391",
+      "rule": "javascript:S2757",
+      "file": "src/radhouse/chat/static/chat.js",
+      "line": 120,
+      "message": "Was \"!=\" meant instead?",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "bae6ee2b-c223-4c85-b1f3-c07c48754a6f",
+      "rule": "javascript:S2681",
+      "file": "src/radhouse/chat/static/chat.js",
+      "line": 141,
+      "message": "This statement will not be executed conditionally; only the first statement will be. The rest will execute unconditionally.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "ac2593e3-7739-4ac9-9781-b195ac4b63a9",
+      "rule": "javascript:S3776",
+      "file": "src/radhouse/chat/static/chat.js",
+      "line": 217,
+      "message": "Refactor this function to reduce its Cognitive Complexity from 23 to the 15 allowed.",
+      "disposition": "Deferred: broader authenticated route, streaming, browser lifecycle or dispatch refactor needs a separate regression scope."
+    },
+    {
+      "key": "c9f62468-187c-4211-81e1-e1a2a859985e",
+      "rule": "javascript:S2681",
+      "file": "src/radhouse/chat/static/chat.js",
+      "line": 277,
+      "message": "This statement will not be executed conditionally; only the first statement will be. The rest will execute unconditionally.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "56c916b0-7282-4d10-bdfa-611b2cac0939",
+      "rule": "javascript:S3776",
+      "file": "src/radhouse/chat/static/chat.js",
+      "line": 307,
+      "message": "Refactor this function to reduce its Cognitive Complexity from 26 to the 15 allowed.",
+      "disposition": "Deferred: broader authenticated route, streaming, browser lifecycle or dispatch refactor needs a separate regression scope."
+    },
+    {
+      "key": "1d9c0a91-5605-415f-b1c3-6a7ca92ed4d0",
+      "rule": "javascript:S2681",
+      "file": "src/radhouse/chat/static/chat.js",
+      "line": 561,
+      "message": "This statement will not be executed conditionally; only the first statement will be. The rest will execute unconditionally.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "0c28f6c3-358f-406b-8817-818d7ed458f5",
+      "rule": "javascript:S3358",
+      "file": "src/radhouse/chat/static/chat.js",
+      "line": 705,
+      "message": "Extract this nested ternary operation into an independent statement.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "69bb0770-72ce-4c79-81d0-49ea23b9a6d2",
+      "rule": "javascript:S3776",
+      "file": "src/radhouse/chat/static/chat.js",
+      "line": 707,
+      "message": "Refactor this function to reduce its Cognitive Complexity from 27 to the 15 allowed.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "d16be3b0-dbec-4c54-aa87-c3e487866c98",
+      "rule": "javascript:S3358",
+      "file": "src/radhouse/chat/static/chat.js",
+      "line": 716,
+      "message": "Extract this nested ternary operation into an independent statement.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "72cc2dad-752f-4ff8-9244-4af14997b421",
+      "rule": "javascript:S3358",
+      "file": "src/radhouse/chat/static/chat.js",
+      "line": 717,
+      "message": "Extract this nested ternary operation into an independent statement.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "f8164a38-858a-4d11-aed1-a22fe619d3d7",
+      "rule": "javascript:S3776",
+      "file": "src/radhouse/chat/static/chat.js",
+      "line": 862,
+      "message": "Refactor this function to reduce its Cognitive Complexity from 27 to the 15 allowed.",
+      "disposition": "Deferred: broader authenticated route, streaming, browser lifecycle or dispatch refactor needs a separate regression scope."
+    },
+    {
+      "key": "ac545e96-e756-4d5c-918f-c9d4001f940e",
+      "rule": "javascript:S3776",
+      "file": "src/radhouse/chat/static/chat.js",
+      "line": 962,
+      "message": "Refactor this function to reduce its Cognitive Complexity from 16 to the 15 allowed.",
+      "disposition": "Deferred: broader authenticated route, streaming, browser lifecycle or dispatch refactor needs a separate regression scope."
+    },
+    {
+      "key": "f9e0b68a-2416-4c47-a3c7-e25d56cec708",
+      "rule": "javascript:S2681",
+      "file": "src/radhouse/chat/static/chat.js",
+      "line": 1044,
+      "message": "This statement will not be executed conditionally; only the first statement will be. The rest will execute unconditionally.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "809da724-6c28-428d-8ecb-0e157bd9c2d1",
+      "rule": "python:S3776",
+      "file": "runtime/hermes/native_inference.py",
+      "line": 273,
+      "message": "Refactor this function to reduce its Cognitive Complexity from 24 to the 15 allowed.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "fe497b52-f027-4e7a-92cb-280db2ed7f93",
+      "rule": "python:S3776",
+      "file": "runtime/hermes/native_inference.py",
+      "line": 330,
+      "message": "Refactor this function to reduce its Cognitive Complexity from 34 to the 15 allowed.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "7b055784-686f-4dc3-8089-3b0aec238416",
+      "rule": "python:S3776",
+      "file": "runtime/hermes/native_inference.py",
+      "line": 378,
+      "message": "Refactor this function to reduce its Cognitive Complexity from 21 to the 15 allowed.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "9cd41f25-8f5e-4844-86fe-8c00f1fb9dc3",
+      "rule": "javascript:S3776",
+      "file": "src/radhouse/chat/static/inference-controls.js",
+      "line": 86,
+      "message": "Refactor this function to reduce its Cognitive Complexity from 34 to the 15 allowed.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "25fc79ad-7769-4ec9-ae7a-9ae00213ec61",
+      "rule": "javascript:S3358",
+      "file": "src/radhouse/chat/static/inference-controls.js",
+      "line": 115,
+      "message": "Extract this nested ternary operation into an independent statement.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "d4f47b60-734e-434c-a06d-13a8c579a367",
+      "rule": "javascript:S7785",
+      "file": "src/radhouse/chat/static/chat.js",
+      "line": 1051,
+      "message": "Prefer top-level await over an async IIFE.",
+      "disposition": "Reviewed: classic deferred browser script cannot use top-level await. Retain wrapper; no suppression."
+    },
+    {
+      "key": "aed15df4-f811-4b25-970e-89b5a2a56810",
+      "rule": "python:S3776",
+      "file": "scripts/release.py",
+      "line": 479,
+      "message": "Refactor this function to reduce its Cognitive Complexity from 37 to the 15 allowed.",
+      "disposition": "Deferred: release custody/lifecycle refactor materially exceeds adding chat assets and a validation gate."
+    },
+    {
+      "key": "e8cfb83b-1928-40e6-9ce7-8d1027fa16bb",
+      "rule": "python:S3776",
+      "file": "scripts/release.py",
+      "line": 556,
+      "message": "Refactor this function to reduce its Cognitive Complexity from 18 to the 15 allowed.",
+      "disposition": "Deferred: release custody/lifecycle refactor materially exceeds adding chat assets and a validation gate."
+    },
+    {
+      "key": "8cbb5336-b7c9-4acf-ad53-d38034ffb0c9",
+      "rule": "python:S3776",
+      "file": "scripts/release.py",
+      "line": 595,
+      "message": "Refactor this function to reduce its Cognitive Complexity from 21 to the 15 allowed.",
+      "disposition": "Deferred: release custody/lifecycle refactor materially exceeds adding chat assets and a validation gate."
+    },
+    {
+      "key": "cfcf6769-e937-48e8-aa8e-60bda092fcd4",
+      "rule": "python:S3776",
+      "file": "scripts/release.py",
+      "line": 717,
+      "message": "Refactor this function to reduce its Cognitive Complexity from 48 to the 15 allowed.",
+      "disposition": "Deferred: release custody/lifecycle refactor materially exceeds adding chat assets and a validation gate."
+    },
+    {
+      "key": "2ccc03c3-8aac-42d2-93d6-95c1f23ae2d5",
+      "rule": "python:S3776",
+      "file": "scripts/release_candidate.py",
+      "line": 229,
+      "message": "Refactor this function to reduce its Cognitive Complexity from 39 to the 15 allowed.",
+      "disposition": "Deferred: release custody/lifecycle refactor materially exceeds adding chat assets and a validation gate."
+    },
+    {
+      "key": "bad2ca7a-a5a5-457a-917f-dd8a98cd518f",
+      "rule": "python:S1481",
+      "file": "scripts/release_candidate.py",
+      "line": 305,
+      "message": "Replace the unused local variable \"manifest\" with \"_\".",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "1a97b4c5-fa8c-498c-b7e2-d8e9fcefb73f",
+      "rule": "python:S1313",
+      "file": "scripts/release.py",
+      "line": 182,
+      "message": "Make sure using this hardcoded IP address \"10.0.0.0\" is safe here.",
+      "disposition": "Reviewed: RFC1918 classification constants in a public-source privacy checker; no network destination. Retain; no server disposition changed."
+    },
+    {
+      "key": "52a60062-a057-40b7-a3d1-f8fc1934b207",
+      "rule": "python:S1313",
+      "file": "scripts/release.py",
+      "line": 182,
+      "message": "Make sure using this hardcoded IP address \"192.168.0.0\" is safe here.",
+      "disposition": "Reviewed: RFC1918 classification constants in a public-source privacy checker; no network destination. Retain; no server disposition changed."
+    },
+    {
+      "key": "ac2a6bdf-2c17-446c-a556-f2b1c98d8c9e",
+      "rule": "python:S1313",
+      "file": "scripts/release.py",
+      "line": 182,
+      "message": "Make sure using this hardcoded IP address \"172.16.0.0\" is safe here.",
+      "disposition": "Reviewed: RFC1918 classification constants in a public-source privacy checker; no network destination. Retain; no server disposition changed."
+    },
+    {
+      "key": "2b7890fe-f888-4010-9fc6-02707bb405b6",
+      "rule": "python:S1192",
+      "file": "scripts/release.py",
+      "line": 213,
+      "message": "Define a constant instead of duplicating this literal \"vendor/\" 3 times.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "ab2f5c61-b8a1-4678-9039-eee4037b4bb7",
+      "rule": "python:S3776",
+      "file": "scripts/release.py",
+      "line": 265,
+      "message": "Refactor this function to reduce its Cognitive Complexity from 16 to the 15 allowed.",
+      "disposition": "Deferred: release custody/lifecycle refactor materially exceeds adding chat assets and a validation gate."
+    },
+    {
+      "key": "c8a160d6-e03e-4e8b-a55d-e6922cd240f6",
+      "rule": "python:S3776",
+      "file": "scripts/release.py",
+      "line": 292,
+      "message": "Refactor this function to reduce its Cognitive Complexity from 30 to the 15 allowed.",
+      "disposition": "Deferred: release custody/lifecycle refactor materially exceeds adding chat assets and a validation gate."
+    },
+    {
+      "key": "b041f944-e975-4c93-9d76-75ce27434eaa",
+      "rule": "python:S1940",
+      "file": "scripts/release.py",
+      "line": 305,
+      "message": "Use the opposite operator (\">\") instead.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "be247303-2834-4a4c-a40c-63ead861c001",
+      "rule": "python:S3776",
+      "file": "scripts/release.py",
+      "line": 385,
+      "message": "Refactor this function to reduce its Cognitive Complexity from 22 to the 15 allowed.",
+      "disposition": "Deferred: release custody/lifecycle refactor materially exceeds adding chat assets and a validation gate."
+    },
+    {
+      "key": "652d48b7-6cf0-487a-817d-3a97a7744b07",
+      "rule": "python:S7494",
+      "file": "scripts/release.py",
+      "line": 597,
+      "message": "Replace dict constructor call with a dictionary comprehension.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "78a201f9-06d9-49b0-8bb7-6cf8c2d7c412",
+      "rule": "python:S3776",
+      "file": "scripts/release.py",
+      "line": 649,
+      "message": "Refactor this function to reduce its Cognitive Complexity from 16 to the 15 allowed.",
+      "disposition": "Deferred: release custody/lifecycle refactor materially exceeds adding chat assets and a validation gate."
+    },
+    {
+      "key": "cbb33f75-8d66-4239-a83a-8f7a1d4d09db",
+      "rule": "python:S3776",
+      "file": "scripts/release.py",
+      "line": 863,
+      "message": "Refactor this function to reduce its Cognitive Complexity from 33 to the 15 allowed.",
+      "disposition": "Deferred: release custody/lifecycle refactor materially exceeds adding chat assets and a validation gate."
+    },
+    {
+      "key": "bd20b57e-00fd-4c84-9c90-4d849b4cfb67",
+      "rule": "javascript:S8784",
+      "file": "tests/quiet-chat-browser.mjs",
+      "line": 36,
+      "message": "Move this assertion into a test case or a lifecycle hook.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "5f6be19e-8833-4fb0-be0d-db1e73f13101",
+      "rule": "javascript:S8784",
+      "file": "tests/quiet-chat-browser.mjs",
+      "line": 37,
+      "message": "Move this assertion into a test case or a lifecycle hook.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "f1f5e610-7f68-4739-a4ee-b5dcd06bf045",
+      "rule": "javascript:S8784",
+      "file": "tests/quiet-chat-browser.mjs",
+      "line": 38,
+      "message": "Move this assertion into a test case or a lifecycle hook.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "5a11e9b9-0680-478b-addc-1aa4c3351dfd",
+      "rule": "javascript:S8784",
+      "file": "tests/quiet-chat-browser.mjs",
+      "line": 39,
+      "message": "Move this assertion into a test case or a lifecycle hook.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "978e58c0-833d-4806-9d55-aca2207672e9",
+      "rule": "javascript:S8784",
+      "file": "tests/quiet-chat-browser.mjs",
+      "line": 40,
+      "message": "Move this assertion into a test case or a lifecycle hook.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "a4bfc268-daf2-4cdb-b5bf-cb4f3d80c57f",
+      "rule": "javascript:S8784",
+      "file": "tests/quiet-chat-browser.mjs",
+      "line": 41,
+      "message": "Move this assertion into a test case or a lifecycle hook.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "4f5e29c2-677b-4ae4-afbd-6b396c502120",
+      "rule": "javascript:S8784",
+      "file": "tests/quiet-chat-browser.mjs",
+      "line": 42,
+      "message": "Move this assertion into a test case or a lifecycle hook.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "529b7db0-5357-4cc0-abab-097c2d924ada",
+      "rule": "javascript:S8784",
+      "file": "tests/quiet-chat-browser.mjs",
+      "line": 43,
+      "message": "Move this assertion into a test case or a lifecycle hook.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "6a83a99a-f0aa-4ba5-b4b2-cae811723122",
+      "rule": "javascript:S8784",
+      "file": "tests/quiet-chat-browser.mjs",
+      "line": 47,
+      "message": "Move this assertion into a test case or a lifecycle hook.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "1bc3d9f5-dcb1-42b4-a1e3-9ff0186e37e8",
+      "rule": "javascript:S8784",
+      "file": "tests/quiet-chat-browser.mjs",
+      "line": 48,
+      "message": "Move this assertion into a test case or a lifecycle hook.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "c5099802-9f1d-4d8f-8deb-aa9840ea683c",
+      "rule": "javascript:S8784",
+      "file": "tests/quiet-chat-browser.mjs",
+      "line": 50,
+      "message": "Move this assertion into a test case or a lifecycle hook.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "1ef335c7-90ed-4785-89b0-c0b98a84d1d4",
+      "rule": "javascript:S8784",
+      "file": "tests/quiet-chat-browser.mjs",
+      "line": 52,
+      "message": "Move this assertion into a test case or a lifecycle hook.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "277acb0d-31a0-4c2f-9630-e39d972732c8",
+      "rule": "javascript:S8784",
+      "file": "tests/quiet-chat-browser.mjs",
+      "line": 54,
+      "message": "Move this assertion into a test case or a lifecycle hook.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "432fbd9a-e8fb-447c-b930-2110a362ed0e",
+      "rule": "javascript:S8784",
+      "file": "tests/quiet-chat-browser.mjs",
+      "line": 55,
+      "message": "Move this assertion into a test case or a lifecycle hook.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "289bb660-40c2-4dad-8609-cf43ea784b01",
+      "rule": "javascript:S8784",
+      "file": "tests/quiet-chat-browser.mjs",
+      "line": 57,
+      "message": "Move this assertion into a test case or a lifecycle hook.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "31d0a6c0-4d8e-442b-8490-0475e168387b",
+      "rule": "javascript:S8784",
+      "file": "tests/quiet-chat-browser.mjs",
+      "line": 59,
+      "message": "Move this assertion into a test case or a lifecycle hook.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "f37c39eb-1a3a-4307-ae89-b7731e584283",
+      "rule": "javascript:S8784",
+      "file": "tests/quiet-chat-browser.mjs",
+      "line": 64,
+      "message": "Move this assertion into a test case or a lifecycle hook.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "ac37d605-6fc0-41a9-8a82-86959f05a35f",
+      "rule": "javascript:S8784",
+      "file": "tests/quiet-chat-browser.mjs",
+      "line": 66,
+      "message": "Move this assertion into a test case or a lifecycle hook.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "ca7b5420-6ee7-4f73-aed9-11cbeaddb7a3",
+      "rule": "javascript:S8784",
+      "file": "tests/quiet-chat-browser.mjs",
+      "line": 69,
+      "message": "Move this assertion into a test case or a lifecycle hook.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "588d678c-9ff7-4afe-94c5-344e76ac22ba",
+      "rule": "javascript:S8784",
+      "file": "tests/quiet-chat-browser.mjs",
+      "line": 71,
+      "message": "Move this assertion into a test case or a lifecycle hook.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "335570fc-f69e-47e1-a74d-4a2794037049",
+      "rule": "javascript:S8784",
+      "file": "tests/quiet-chat-browser.mjs",
+      "line": 76,
+      "message": "Move this assertion into a test case or a lifecycle hook.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "322b91c3-3d97-48e1-9409-ff2db99b2d2f",
+      "rule": "javascript:S9073",
+      "file": "tests/quiet-chat-browser.mjs",
+      "line": 79,
+      "message": "This composite assertion hides which condition failed; split it to make failures actionable.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "379301d3-9d2a-4556-9701-202a0811d729",
+      "rule": "javascript:S8784",
+      "file": "tests/quiet-chat-browser.mjs",
+      "line": 82,
+      "message": "Move this assertion into a test case or a lifecycle hook.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "f92c2e71-6bf2-4452-87ca-e69a02deca82",
+      "rule": "javascript:S8784",
+      "file": "tests/quiet-chat-browser.mjs",
+      "line": 88,
+      "message": "Move this assertion into a test case or a lifecycle hook.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "824c06de-e53e-45e4-b262-a9e951ce7173",
+      "rule": "javascript:S8784",
+      "file": "tests/quiet-chat-browser.mjs",
+      "line": 90,
+      "message": "Move this assertion into a test case or a lifecycle hook.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "cd42e119-52d2-4bdf-94c5-aebcaee43564",
+      "rule": "python:S9073",
+      "file": "tests/test_release_candidate.py",
+      "line": 77,
+      "message": "Split this composite assertion into separate assertions.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "547e3785-6c68-4fad-9db8-bcdca17b1634",
+      "rule": "python:S9073",
+      "file": "tests/test_release_candidate.py",
+      "line": 88,
+      "message": "Split this composite assertion into separate assertions.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "668d2c03-75f3-4b9a-9cfe-04cf81cdfef2",
+      "rule": "python:S9073",
+      "file": "tests/test_release_candidate.py",
+      "line": 94,
+      "message": "Split this composite assertion into separate assertions.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "d1ae21eb-0365-4bfa-8d21-aa6681a06c60",
+      "rule": "python:S9073",
+      "file": "tests/test_release_candidate.py",
+      "line": 98,
+      "message": "Split this composite assertion into separate assertions.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "d285d3e8-70a4-48b3-ae83-a8d7cde036b2",
+      "rule": "python:S9073",
+      "file": "tests/test_release_candidate.py",
+      "line": 99,
+      "message": "Split this composite assertion into separate assertions.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "6a95bad4-cbc9-4de4-8a6c-cc6142867167",
+      "rule": "python:S9073",
+      "file": "tests/test_release_candidate.py",
+      "line": 143,
+      "message": "Split this composite assertion into separate assertions.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "f982b4d4-5c1e-479c-aff1-a72b09748aca",
+      "rule": "python:S9073",
+      "file": "tests/test_release_candidate.py",
+      "line": 158,
+      "message": "Split this composite assertion into separate assertions.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "1436ae0e-0cf7-4a42-b70d-4549ecd49fbb",
+      "rule": "python:S9073",
+      "file": "tests/test_release_candidate.py",
+      "line": 198,
+      "message": "Split this composite assertion into separate assertions.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    },
+    {
+      "key": "902952c8-7695-424d-9dae-0f9b716d0859",
+      "rule": "python:S9073",
+      "file": "tests/test_release_candidate.py",
+      "line": 293,
+      "message": "Split this composite assertion into separate assertions.",
+      "disposition": "Addressed locally; closure requires a processed merged-main scan."
+    }
+  ]
+}

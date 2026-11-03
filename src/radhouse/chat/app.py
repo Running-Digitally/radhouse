@@ -23,6 +23,8 @@ from .agent_profile import AgentProfileBody, portrait_themes
 
 
 JAVASCRIPT_MEDIA_TYPE = 'text/javascript'
+CSS_MEDIA_TYPE = 'text/css'
+MP4_MEDIA_TYPE = 'video/mp4'
 
 STATIC = Path(__file__).with_name("static")
 
@@ -44,6 +46,10 @@ class BrowserContextBody(BaseModel):
 
 class BrowserObservationContextBody(BrowserContextBody):
     observation_only: bool = False
+
+    def snapshot(self):
+        excluded = set() if self.observation_only else {"observation_only"}
+        return self.model_dump(exclude=excluded)
 
 
 class InferenceSelection(BaseModel):
@@ -216,12 +222,12 @@ def create_app(auth, service, *, admin=None, documents=None, browser=None, about
                 browser_data = json.loads(existing["browser_context"])
                 saved = browser_data.get("browser_context")
                 expected = {key: saved[key] for key in ("generation", "revision", "lease_id")} if saved else None
-                if (body.browser_context.model_dump(exclude={"observation_only"} if not body.browser_context.observation_only else set()) if body.browser_context else None) != expected or bool(browser_data.get("use_previous_browser")) != body.use_previous_browser or browser_data["browser_owner"] != {
+                if (body.browser_context.snapshot() if body.browser_context else None) != expected or bool(browser_data.get("use_previous_browser")) != body.use_previous_browser or browser_data["browser_owner"] != {
                         "principal_id": session.principal_id, "conversation_id": session.conversation_id}:
                     raise Rejected("browser_context_changed", 409)
             else:
                 browser_data = browser.dispatch_data(session, request.headers.get("x-radhouse-browser-tab"),
-                    body.browser_context.model_dump(exclude={"observation_only"} if not body.browser_context.observation_only else set()) if body.browser_context else None, use_previous=body.use_previous_browser)
+                    body.browser_context.snapshot() if body.browser_context else None, use_previous=body.use_previous_browser)
         elif body.browser_context is not None or body.use_previous_browser:
             raise Rejected("browser_context_unavailable", 409)
         if getattr(browser, "control_enabled", False):
@@ -363,7 +369,7 @@ def _install_assets(app):
 
     @app.get("/chat.css")
     def stylesheet():
-        return FileResponse(STATIC / "chat.css", media_type="text/css")
+        return FileResponse(STATIC / "chat.css", media_type=CSS_MEDIA_TYPE)
 
     @app.get("/browser-view.js")
     def browser_javascript():
@@ -371,7 +377,7 @@ def _install_assets(app):
 
     @app.get("/browser-view.css")
     def browser_stylesheet():
-        return FileResponse(STATIC / "browser-view.css", media_type="text/css")
+        return FileResponse(STATIC / "browser-view.css", media_type=CSS_MEDIA_TYPE)
 
     @app.get("/navigation.js")
     def navigation_javascript():
@@ -379,7 +385,7 @@ def _install_assets(app):
 
     @app.get("/navigation.css")
     def navigation_stylesheet():
-        return FileResponse(STATIC / "navigation.css", media_type="text/css")
+        return FileResponse(STATIC / "navigation.css", media_type=CSS_MEDIA_TYPE)
 
     @app.get("/library.js")
     def library_javascript():
@@ -388,10 +394,10 @@ def _install_assets(app):
     @app.get("/workspace-assets/{name}")
     def workspace_asset(name: str):
         if name not in {"about-you.js", "about-you.css", "owner-terminal.js", "owner-terminal.css",
-                        "inference-controls.js", "inference-controls.css", "agent-profile.js", "agent-profile.css", "agent-portrait.js", "browser-stream.js", "browser-files.js", "conversation-workspace.css"}:
+                        "inference-controls.js", "inference-controls.css", "agent-profile.js", "agent-profile.css", "agent-portrait.js", "browser-stream.js", "browser-files.js", "conversation-workspace.css", "chat-experience.js", "chat-experience.css"}:
             raise Rejected("asset_not_found", 404)
         return FileResponse(STATIC / name,
-            media_type=JAVASCRIPT_MEDIA_TYPE if name.endswith(".js") else "text/css")
+            media_type=JAVASCRIPT_MEDIA_TYPE if name.endswith(".js") else CSS_MEDIA_TYPE)
 
     @app.get("/workspace-assets/agent-profile/catalog.json")
     def agent_catalog():
@@ -405,8 +411,8 @@ def _install_assets(app):
 
     @app.get("/workspace-assets/agent-profile/echo/{name}")
     def echo_animation(name: str):
-        assets = {"neutral.png": "image/png", "a-curious.mp4": "video/mp4",
-                  "b-thoughtful.mp4": "video/mp4", "c-playful.mp4": "video/mp4"}
+        assets = {"neutral.png": "image/png", "a-curious.mp4": MP4_MEDIA_TYPE,
+                  "b-thoughtful.mp4": MP4_MEDIA_TYPE, "c-playful.mp4": MP4_MEDIA_TYPE}
         if name not in assets:
             raise Rejected("asset_not_found", 404)
         return FileResponse(STATIC / "agent-profile" / "echo" / name, media_type=assets[name])
@@ -416,7 +422,7 @@ def _install_assets(app):
         if name not in {"xterm.js", "xterm.css", "addon-fit.js"}:
             raise Rejected("asset_not_found", 404)
         return FileResponse(STATIC / "vendor" / "xterm" / name,
-            media_type=JAVASCRIPT_MEDIA_TYPE if name.endswith(".js") else "text/css")
+            media_type=JAVASCRIPT_MEDIA_TYPE if name.endswith(".js") else CSS_MEDIA_TYPE)
 
 
 def _install_browser_routes(app, browser, owner, auth, service):

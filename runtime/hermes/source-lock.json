@@ -93,6 +93,9 @@
     "agent/turn_recovery_autorecover.py": {
       "before_sha256": "707ccacb86a342d0434e87a128bab6a832d764da7c7e2086f0679e1c29f124d9",
       "snapshot_sha256": "707ccacb86a342d0434e87a128bab6a832d764da7c7e2086f0679e1c29f124d9"
+    },
+    "agent/reasoning_effort.py": {
+      "before_sha256": "6311297a28581b831942866c328148b44bb214460e1c9d7e53cbebf1ec1482de"
     }
   },
   "upstream_license_sha256": "821556e6336796450ab852d375117b48a4887e71d255794fd6318d99982a5ab6",

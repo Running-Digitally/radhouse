@@ -1,0 +1,14 @@
+# Merge these entries into the existing Hermes profile. Keep the default model,
+# Nemo/Lucy entries, tool permissions, and gateway authentication unchanged.
+providers:
+  openai:
+    name: OpenAI
+    base_url: https://api.openai.com/v1
+    api_key_env: RADHOUSE_OPENAI_API
+    api_mode: codex_responses
+radhouse_inference:
+  providers:
+    # Retain existing enrolled providers before appending this one.
+    - provider: custom:openai
+      model: gpt-6.1-sol
+      label: OpenAI

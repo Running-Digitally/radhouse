@@ -59,8 +59,8 @@ const turnNodes=new Map(), previewUrls=new Map();
 const retainedSnapshots=new Map();
 const browserView=typeof window.BrowserView==="function" ? new window.BrowserView($("assistant-browser"),
   {persistent:true,request:browserRequest,onReturn:returnBrowser,tab:browserTab,upload:uploadBrowserOriginal}) : null;
-const workspacePages=["/agent","/library","/browser","/terminal","/about-you"];
-let currentPage=typeof location!=="undefined" && workspacePages.includes(location.pathname) ? location.pathname : "/";
+const workspacePages=new Set(["/agent","/library","/browser","/terminal","/about-you"]);
+let currentPage=typeof location!=="undefined" && workspacePages.has(location.pathname) ? location.pathname : "/";
 const library=typeof window.RadhouseLibrary==="function" ? new window.RadhouseLibrary({request:api,card:fileCard,openMessage}) : null;
 const aboutYou=typeof window.RadhouseAboutYou==="function" ? new window.RadhouseAboutYou({container:$("about-you-content"),request:api,onAuthRequired:()=>showLogin(true)}) : null;
 const inferenceControls=typeof window.RadhouseInference==="function" ? new window.RadhouseInference({container:$("inference-controls"),request:api,onAuthRequired:()=>showLogin(true),onChange:()=>updateMessageOptions()}) : null;
@@ -90,6 +90,16 @@ function currentBrowserContextAvailable() {
   return Boolean(!browserIsPrivate() && lastBrowserStatus?.state==="live" && lastBrowserStatus?.generation &&
     ["human","agent"].includes(lastBrowserStatus?.control?.mode));
 }
+const chatExperience = typeof window.RadhouseChatExperience === "function" ? new window.RadhouseChatExperience({
+  root:$("chat-view"), pane:$("history-pane"), messages:$("messages"),
+  onBrowse:()=>{followingLatest=false;updateLatest();},
+  quote:text=>{
+    if(outbox || busy)return;
+    const input=$("message"), excerpt=text.slice(0,1200).split("\n").map(line=>"> "+line).join("\n");
+    input.value+=(input.value ? "\n\n" : "")+excerpt+"\n\n";
+    input.dispatchEvent(new Event("input",{bubbles:true}));input.focus();
+  }
+}) : null;
 function updateBrowserChip() {
   const current=currentBrowserContextAvailable(),
     page=current ? {url:lastBrowserStatus.url,title:lastBrowserStatus.title} : lastBrowserStatus?.page_context?.previous;
@@ -113,11 +123,14 @@ function updateMessageOptions() {
   const browserIncluded=Boolean(!browserIsPrivate() && session?.features?.browser_control && browserContextWanted && page?.url);
   const terminalIncluded=Boolean(session?.features?.terminal && terminalContextWanted);
   const selection=inferenceControls?.selection();
-  const inferenceSelected=Boolean(selection?.model || selection?.thinking && selection.thinking!=="default");
+  const inferenceSelected=Boolean(session?.features?.inference);
   $("browser-context-summary").hidden=!browserIncluded;
   $("terminal-context-summary").hidden=!terminalIncluded;
   $("inference-summary").hidden=!inferenceSelected;
-  $("active-message-options").hidden=!(browserIncluded || terminalIncluded || inferenceSelected);
+  $("active-message-options").hidden = !(browserIncluded || terminalIncluded || inferenceSelected);
+  renderOptionSummaries(browserIncluded, current, page, inferenceSelected, selection);
+}
+function renderOptionSummaries(browserIncluded, current, page, inferenceSelected, selection) {
   if(browserIncluded){
     const full=(current ? "Current page: " : "Previous page: ")+(page.title || page.url);
     const brief=(page.title || page.url).slice(0,40);
@@ -126,7 +139,7 @@ function updateMessageOptions() {
     else button.textContent=brief;
   }
   if(inferenceSelected){
-    const text=[selection.model,selection.thinking!=="default" ? "Thinking: "+selection.thinking : null].filter(Boolean).join(" · ");
+    const text=[selection?.model || "Default model",selection?.thinking && selection.thinking!=="default" ? "Thinking: "+selection.thinking : null].filter(Boolean).join(" · ");
     $("inference-summary").textContent=text;$("inference-summary").title="Message settings: "+text;
   }
 }
@@ -138,7 +151,7 @@ $("review-browser-context").addEventListener("click",()=>openMessageOptions("use
 $("review-terminal-context").addEventListener("click",()=>openMessageOptions("use-terminal-context"));
 $("inference-summary").addEventListener("click",()=>{openMessageOptions();inferenceControls?.model.focus();});
 $("remove-browser-context").addEventListener("click",()=>{browserContextWanted=false;updateBrowserChip();$("message").focus();});
-$("remove-terminal-context").addEventListener("click",()=>{terminalContextWanted=false;if(ownerTerminal)ownerTerminal.contextEnabled=false;updateTerminalChip();$("message").focus();});
+$("remove-terminal-context").addEventListener("click",()=>{terminalContextWanted=false;if(ownerTerminal){ownerTerminal.contextEnabled=false;}updateTerminalChip();$("message").focus();});
 window.RadhouseIcons?.decorate($("message-options-toggle"),"settings","Message options",{compact:true});
 window.RadhouseIcons?.decorate($("attach"),"attach","Attach files",{compact:true});
 window.RadhouseIcons?.decorate($("review-terminal-context"),"terminal-context","Terminal context");
@@ -274,7 +287,7 @@ $("assistant-browser").addEventListener("browser-state",event=>{
 });
 $("use-browser-context").addEventListener("change",event=>{browserContextWanted=event.target.checked;lastBrowserActivity=Date.now();updateBrowserChip();});
 $("open-browser-context").addEventListener("click",()=>{lastBrowserActivity=Date.now();showPage("/browser",true,true);});
-$("use-terminal-context").addEventListener("change",event=>{terminalContextWanted=event.target.checked;if(ownerTerminal)ownerTerminal.contextEnabled=terminalContextWanted;updateTerminalChip();});
+$("use-terminal-context").addEventListener("change",event=>{terminalContextWanted=event.target.checked;if(ownerTerminal){ownerTerminal.contextEnabled=terminalContextWanted;}updateTerminalChip();});
 $("open-terminal-context").addEventListener("click",()=>showPage("/terminal",true,true));
 for(const event of ["pointerdown","keydown","wheel"])document.addEventListener(event,()=>{
   if(session && (currentPage==="/browser" || currentPage==="/" && browserContextWanted))lastBrowserActivity=Date.now();
@@ -307,7 +320,7 @@ let chatScroll=0, workspaceEpoch=0;
 function showPage(path, push=false, focus=false) {
   workspaceEpoch++;
   if (currentPage==="/" && path!=="/") { chatScroll=$("history-pane").scrollTop; }
-  currentPage=workspacePages.includes(path) ? path : "/";
+  currentPage=workspacePages.has(path) ? path : "/";
   if(currentPage==="/browser")lastBrowserActivity=Date.now();
   if (push && typeof history!=="undefined") { history.pushState(null,"",currentPage); }
   $("chat-view").hidden=!session || currentPage!=="/";
@@ -435,7 +448,7 @@ function showLogin(expired=false) {
   captureEpoch++; capturingContext=false;
   stopBrowser(); browserSuspended=false;
   lastBrowserStatus=null;updateBrowserChip();
-  library?.clear();
+  library?.clear(); chatExperience?.clear();
   aboutYou?.clear(); inferenceControls?.clear(); agentProfile?.clear(); ownerTerminal?.dispose(); terminalContextWanted=false;
   assistantDisplayName="Your Agent";$("message-options").open=false;
   if (session) {
@@ -558,7 +571,7 @@ function fileCard(file,url,removable) {
   if (removable) {
     const remove=document.createElement("button"); remove.type="button"; remove.className="remove-file"; remove.textContent="×"; remove.setAttribute("aria-label","Remove "+file.name);
     remove.dataset.removeFile="true"; remove.disabled=capturingContext;
-    remove.addEventListener("click",() => { if(capturingContext)return;releaseFile(file); draft.attachments=draft.attachments.filter(a => a.file_id!==file.file_id); persist(); render(); $("attach").focus(); }); card.append(remove);
+    remove.addEventListener("click",() => { if(capturingContext){return;}releaseFile(file); draft.attachments=draft.attachments.filter(a => a.file_id!==file.file_id); persist(); render(); $("attach").focus(); }); card.append(remove);
   }
   return card;
 }
@@ -601,7 +614,7 @@ function assistantReply(turn) {
     const notice=document.createElement("p"); notice.className="turn-error";
     notice.textContent="Reply ended before finishing."; reply.append(notice);
   }
-  reply.append(copy); return reply;
+  reply.append(copy); if(turn.output && chatExperience)reply.append(chatExperience.replyAction(turn)); return reply;
 }
 function turnStatusText(turn) {
   if (turn.error) return explanations[turn.error] || "This message needs attention. Its text and files are kept.";
@@ -639,6 +652,10 @@ function pendingReply(block, turn) {
 function makeTurn(turn) {
   const block=document.createElement("article"); block.className="turn"; block.dataset.requestId=turn.request_id;
   const label=document.createElement("p"), text=document.createElement("p"); label.className="message-label"; label.textContent="You";
+  if(turn.created_at){
+    const date=new Date(turn.created_at);
+    if(Number.isFinite(date.getTime())){const stamp=document.createElement("time");stamp.className="turn-time";stamp.dateTime=date.toISOString();stamp.textContent=date.toLocaleString(undefined,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"});label.append(stamp);}
+  }
   text.className="message-text"; text.textContent=turn.text; block.append(label,text);
   if (turn.inference) {
     const settings=document.createElement("p"); settings.className="message-label";
@@ -692,7 +709,7 @@ function renderHistory({older=false,latest=false}={}) {
   $("empty").hidden=ordered.length>0; $("older").hidden=!olderBefore;
   if (latest || followingLatest && !older) { followingLatest=true; pane.scrollTop=pane.scrollHeight; }
   else if (anchor && turnNodes.has(anchor.id)) { pane.scrollTop+=turnNodes.get(anchor.id).node.getBoundingClientRect().top-pane.getBoundingClientRect().top-anchor.offset; }
-  updateLatest();
+  updateLatest(); chatExperience?.update(ordered);
 }
 function renderDraft() {
   const signature=draft.attachments.map(a => a.file_id).join(":");
@@ -702,22 +719,16 @@ function resizeMessage() { const input=$("message"); input.style.height="auto"; 
 function replyStatus(pending) {
   if (filesLoading) return "Adding files…";
   if (busy) return outbox?.phase === "uploading" ? "Uploading…" : "Sending…";
-  return pending ? pending.status==="waiting" ? "Follow-ups are waiting…" : assistantDisplayName+" is replying…" : "";
+  if(!pending)return "";
+  return pending.status==="waiting" ? "Follow-ups are waiting…" : assistantDisplayName+" is replying…";
 }
-function controls() {
-  const pending=pendingTurn(), tooLong=!messageFits($("message").value), hasContent=!!($("message").value.trim() || draft.attachments.length);
-  $("message").disabled=openingHistory || capturingContext;
-  $("send").disabled=busy || filesLoading || !!outbox || tooLong || !hasContent || openingHistory;
-  $("attach").disabled=filesLoading || openingHistory || capturingContext; $("attach-text").disabled=filesLoading || openingHistory || capturingContext; $("long-text").hidden=!tooLong;
-  inferenceControls?.setDisabled(busy || openingHistory);
-  $("inference-controls").hidden=session?.features?.inference!==true;
-  $("message-options").hidden=!session || !["browser_control","terminal","inference"].some(feature=>session.features?.[feature]===true);
+function updateAgentStatus(pending) {
+  if(pending){window.RadhouseNavigation?.setAgentState?.(replyAgentState(pending),replyStatus(pending));return;}
   const latest=[...turns.values()].sort((a,b)=>b.seq-a.seq)[0];
-  const state=pending ? replyAgentState(pending) : latest && ["failed","cancelled","interrupted"].includes(latest.status) ? "error" : "ready";
-  window.RadhouseNavigation?.setAgentState?.(state,pending ? replyStatus(pending) : state==="error" ? "Last reply needs attention" : "Ready");
-  document.querySelectorAll("[data-remove-file]").forEach(button=>{button.disabled=capturingContext;});
-  if(window.RadhouseIcons){window.RadhouseIcons.decorate($("send"),"send",busy ? "Sending…" : "Send");window.RadhouseIcons.busy($("send"),busy);}
-  else $("send").textContent=busy ? "Sending…" : "Send";
+  const failed=latest && ["failed","cancelled","interrupted"].includes(latest.status);
+  window.RadhouseNavigation?.setAgentState?.(failed ? "error" : "ready",failed ? "Last reply needs attention" : "Ready");
+}
+function renderReplyStatus(pending) {
   const status=$("reply-status"),text=replyStatus(pending);
   const showAgent=pending && !pending.local && !filesLoading && !busy;
   // Preserve the same SVG through polling so ongoing state motion stays smooth.
@@ -729,6 +740,20 @@ function controls() {
     if(icon)window.RadhouseIcons.setAgentState(icon,replyAgentState(pending));
   }else icon?.remove();
   if(!$("empty").querySelector('.rh-icon')){const idle=agentMark("idle");if(idle)$("empty").prepend(idle);}
+}
+function controls() {
+  const pending=pendingTurn(), tooLong=!messageFits($("message").value), hasContent=!!($("message").value.trim() || draft.attachments.length);
+  $("message").disabled=openingHistory || capturingContext;
+  $("send").disabled=busy || filesLoading || !!outbox || tooLong || !hasContent || openingHistory;
+  $("attach").disabled=filesLoading || openingHistory || capturingContext; $("attach-text").disabled=filesLoading || openingHistory || capturingContext; $("long-text").hidden=!tooLong;
+  inferenceControls?.setDisabled(busy || openingHistory);
+  $("inference-controls").hidden=session?.features?.inference!==true;
+  $("message-options").hidden=!session || !["browser_control","terminal","inference"].some(feature=>session.features?.[feature]===true);
+  updateAgentStatus(pending);
+  document.querySelectorAll("[data-remove-file]").forEach(button=>{button.disabled=capturingContext;});
+  if(window.RadhouseIcons){window.RadhouseIcons.decorate($("send"),"send",busy ? "Sending…" : "Send");window.RadhouseIcons.busy($("send"),busy);}
+  else $("send").textContent=busy ? "Sending…" : "Send";
+  renderReplyStatus(pending);
   document.querySelectorAll(".retry,#notice-action").forEach(button => { button.disabled=busy || openingHistory; });
   resizeMessage();
   updateBrowserChip();
@@ -1045,7 +1070,7 @@ async function heartbeatBrowser() {
     const value=await api("/chat/browser/control/heartbeat",{generation:lastBrowserStatus.generation,
       revision:control.revision,lease_id:control.lease_id || null});
     if(session===presentSession && browserEpoch===epoch && !document.hidden && !browserView?.actionPending){
-      lastBrowserStatus=value;updateBrowserChip();if(currentPage==="/browser" || integratedBrowser() && currentPage==="/")browserView?.update(value);syncConversationWorkspace();
+      lastBrowserStatus=value;updateBrowserChip();if(currentPage==="/browser" || integratedBrowser() && currentPage==="/"){browserView?.update(value);}syncConversationWorkspace();
     }
   } catch { /* Presence never retries an input or reopens a browser. */ }
   finally {browserHeartbeat=false;}

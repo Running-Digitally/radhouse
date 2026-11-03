@@ -1,7 +1,9 @@
 // Actual Chromium layout and composer behavior; all API responses are local fixtures.
 import assert from "node:assert/strict";
+import {test} from "node:test";
 import {readFile, mkdir} from "node:fs/promises";
 import {pathToFileURL} from "node:url";
+await test("quiet composer preserves context, keyboard and touch usability", async () => {
 const {chromium,expect}=await import(pathToFileURL(process.env.RADHOUSE_PLAYWRIGHT_MODULE).href);
 const browser=await chromium.launch({headless:true,...(process.env.RADHOUSE_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.RADHOUSE_CHROMIUM_EXECUTABLE_PATH}:{})});
 const origin="http://127.0.0.1:61489",root=new URL("../src/radhouse/chat/static/",import.meta.url);
@@ -12,7 +14,7 @@ const page=await context.newPage(),errors=[],requests=[];
 page.on("pageerror",error=>errors.push(error.message));
 const profile={schema:"radhouse.agent-profile.v1",revision:0,name:"",intro:"",theme:"hearthside",portrait:"ember",accent:"fern",surface:"paper",stateMotion:true,iconMotion:true};
 let browserMode="human",previousPage=null;
-const staticNames=new Set(["index.html","chat.css","chat.js","format.js","navigation.js","navigation.css","library.js","browser-view.js","browser-view.css","about-you.js","about-you.css","owner-terminal.js","owner-terminal.css","inference-controls.js","inference-controls.css","agent-profile.js","agent-profile.css","agent-portrait.js"]);
+const staticNames=new Set(["index.html","chat.css","chat.js","format.js","navigation.js","navigation.css","library.js","browser-view.js","browser-view.css","about-you.js","about-you.css","owner-terminal.js","owner-terminal.css","inference-controls.js","inference-controls.css","agent-profile.js","agent-profile.css","agent-portrait.js","chat-experience.js","chat-experience.css"]);
 await context.route(origin+"/**",async route=>{
   const path=new URL(route.request().url()).pathname;requests.push(path);
   const json=value=>route.fulfill({contentType:"application/json",body:JSON.stringify(value)});
@@ -40,8 +42,8 @@ try{
   await expect(page.getByLabel("Thinking",{exact:true})).toBeHidden();
   await expect(page.getByRole("button",{name:"Refresh models",exact:true})).toBeHidden();
   await expect(page.locator("#use-terminal-context")).toBeHidden();
-  await expect(page.locator("#inference-summary")).toBeHidden();
-  assert.equal(await page.locator("#compose").evaluate(node=>node.getBoundingClientRect().height<175),true,"Default desktop composer should remain compact");
+  await expect(page.locator("#inference-summary")).toHaveText("Default model");
+  assert.equal(await page.locator("#compose").evaluate(node=>node.getBoundingClientRect().height<210),true,"Default desktop composer should remain compact");
   assert.equal(await page.locator("#review-browser-context").innerText().then(text=>text.length<45),true,"Long page context should be abbreviated");
   await page.locator("#message-options-toggle").click();
   await expect(page.locator("#use-terminal-context")).toBeVisible();
@@ -76,7 +78,7 @@ try{
     await expect(page.locator("#message")).toBeInViewport();
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,"No mobile horizontal overflow");
     for(const id of ["attach","message-options-toggle","send"]){
-      const box=await page.locator("#"+id).boundingBox();assert.ok(box.width>=44 && box.height>=44,"44px touch action: "+id);
+      const box=await page.locator("#"+id).boundingBox();assert.ok(box.width>=44,"44px touch width: "+id);assert.ok(box.height>=44,"44px touch height: "+id);
     }
     await page.locator("#message-options-toggle").click();
     await expect(page.getByLabel("Model",{exact:true})).toBeInViewport();
@@ -92,3 +94,5 @@ try{
   assert.deepEqual(errors,[]);
   console.log("PASS quiet chat: compact defaults, context disclosure/removal, explicit model summary, copy feedback, keyboard and 320/390px touch layouts; no runtime allocation or dispatch.");
 }finally{await browser.close();}
+
+});

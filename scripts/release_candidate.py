@@ -33,7 +33,7 @@ BROWSER_TESTS = (
     "tests/interface-browser.mjs", "tests/navigation-browser.mjs",
     "tests/agent-profile-browser.mjs", "tests/appearance-readability-browser.mjs",
     "tests/library-browser.mjs", "tests/owner-terminal-browser.mjs",
-    "tests/inference-controls-browser.mjs", "tests/about-you-browser.mjs",
+    "tests/inference-controls-browser.mjs", "tests/chat-experience-browser.mjs", "tests/about-you-browser.mjs",
     "tests/browser-session-browser.mjs", "tests/live-ux-regressions-browser.mjs",
 )
 MAX_LOG = 8 * 1024 * 1024
@@ -302,7 +302,7 @@ def run_candidate(source, baseline, *, output=None, plan_only=False, python=None
         release.atomic(qualification, release.encoded(evidence))
         qualification_pin = release.sha(release.read_file(qualification, private=True, owner=os.getuid()))
         result = release.prepare(source, revision, baseline, qualification, qualification_pin, output / "packet", identifiers)
-        manifest, _ = release.load_packet(output / "packet", result["manifest_sha256"])
+        release.load_packet(output / "packet", result["manifest_sha256"])
         if profile:
             _, checked_profile_pin = release.load_profile(profile)
             if checked_profile_pin != profile_pin:

@@ -69,7 +69,7 @@
       const row = this.catalog?.models?.find(row => row.available && (selected ? this.optionValue(row) === selected :
         row.id === this.catalog.current_model && (!row.provider || row.provider === this.catalog.engine?.id)));
       const caps = row?.thinking;
-      this.hint.textContent = row && caps?.state === "unknown" ? "Thinking settings aren’t available for this model." : "";
+      this.hint.textContent = this.modelHint(row);
       this.thinking.replaceChildren(); this.option(this.thinking, "default", "Default");
       const supported = caps?.state === "supported";
       if (supported && caps.can_enable) this.option(this.thinking, "on", "On");
@@ -83,17 +83,19 @@
       this.thinkingLabel.hidden = this.thinking.options.length === 1;
     }
 
-    async load(refresh = false) {
-      this.controller?.abort(); const epoch = ++this.epoch;
-      const controller = this.controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
-      const selected = this.selection();
-      this.loading = true; this.setDisabled(this.disabled);
-      this.status.textContent = "Checking models…";
-      try {
-        const value = await this.request("/chat/inference" + (refresh ? "?refresh=true" : ""), undefined, false, controller.signal);
-        if (epoch !== this.epoch) return;
-        if (value?.schema !== "radhouse.inference.v1" || !Array.isArray(value.models)) throw new Error("invalid_catalog");
+    modelHint(row) {
+      if (row?.provider === "custom:openai") return "Conversation context is sent to OpenAI. More thinking can take longer. Default uses the configured reasoning setting.";
+      if (row?.thinking?.state === "unknown") return "Thinking settings aren’t available for this model.";
+      return "";
+    }
+
+    catalogStatus(value) {
+      if (value.state === "available") return "";
+      if (value.models.some(row => row.reason === "transport_unsupported")) return "This engine’s connection doesn’t support workspace tools.";
+      return "Model choices are unavailable. You can use Default.";
+    }
+
+    renderCatalog(value, selected) {
         this.catalog = value;
         this.choices = new Map(value.models.map(row => [this.optionValue(row),
           row.provider ? {provider: row.provider, model: row.id} : {model: row.id}]));
@@ -112,14 +114,11 @@
         }
         this.model.value = selectedValue;
         this.renderThinking(selected?.thinking || "default");
-        this.status.textContent = value.state === "available" ? "" : value.models.some(row => row.reason === "transport_unsupported") ?
-          "This engine’s connection doesn’t support workspace tools." : "Model choices are unavailable. You can use Default.";
+        this.status.textContent = this.catalogStatus(value);
         this.setDisabled(this.disabled);
-      } catch (error) {
-        if (epoch !== this.epoch) return;
-        if (error?.status === 401 || error?.code === "authentication_required" || error?.message === "authentication_required") {
-          this.onAuthRequired(); return;
-        }
+    }
+
+    discoveryFailed(selected) {
         this.catalog = null;
         for (const option of this.model.options) if (option.value) {
           option.disabled = true;
@@ -127,6 +126,26 @@
         }
         this.renderThinking(selected?.thinking || "default"); this.setDisabled(this.disabled);
         this.status.textContent = "Model choices couldn’t be checked. You can use Default.";
+    }
+
+    async load(refresh = false) {
+      this.controller?.abort(); const epoch = ++this.epoch;
+      const controller = this.controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      const selected = this.selection();
+      this.loading = true; this.setDisabled(this.disabled);
+      this.status.textContent = "Checking models…";
+      try {
+        const value = await this.request("/chat/inference" + (refresh ? "?refresh=true" : ""), undefined, false, controller.signal);
+        if (epoch !== this.epoch) return;
+        if (value?.schema !== "radhouse.inference.v1" || !Array.isArray(value.models)) throw new Error("invalid_catalog");
+        this.renderCatalog(value, selected);
+      } catch (error) {
+        if (epoch !== this.epoch) return;
+        if (error?.status === 401 || error?.code === "authentication_required" || error?.message === "authentication_required") {
+          this.onAuthRequired(); return;
+        }
+        this.discoveryFailed(selected);
       } finally {
         clearTimeout(timeout); if (epoch === this.epoch) {
           this.controller = null; this.loading = false; this.setDisabled(this.disabled);
