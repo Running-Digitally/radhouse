@@ -247,3 +247,31 @@ def test_collection_is_bounded_and_rejects_redirected_or_private_pages(collector
     'https://example.org\\@127.0.0.1/', 'https://example.org:444/', 'https://127.0.0.1'])
 def test_unsafe_public_source_url_is_rejected(url):
     assert not contract.public_url(url)
+
+
+@pytest.mark.parametrize('reference', ['SC 2.4.13', 'https://example.org/invented'])
+def test_exact_citation_cannot_launder_an_unsupported_reference(pilot, reference):
+    review, identifier = enable(pilot)
+    claim = review.claim(research_capable=True)
+    evidence = packet(identifier, pilot[2][0])
+    prompt = review.attach_research(claim['review_id'], evidence)['prompt']
+    source = evidence['items'][0]['sources'][0]
+    raw = json.loads(output(snapshot(prompt), 'update',
+                           citations=[{'source_id': source['id'], 'quote': PUBLIC_TEXT}]))
+    raw['followups'][0]['preparation'] = 'Check ' + reference
+    assert review.complete(claim['review_id'], json.dumps(raw)) == {'status': 'failed'}
+    assert review.item(identifier)['followup']['latest_note'] is None
+    assert review.notification_items() == []
+
+
+def test_supported_reference_is_checked_as_a_whole_identifier():
+    text = 'The captured draft discusses criterion 2.4.13 in this historical context.'
+    evidence = packet('synthetic', 100, text)['items'][0]
+    source = evidence['sources'][0]
+    result = {'action': 'update', 'reason': 'Historical criterion 2.4.13.',
+              'preparation': 'Verify the current publication.',
+              'citations': [{'source_id': source['id'], 'quote': text}]}
+    assert contract.citations(result, evidence)[0]['url'] == source['url']
+    result['reason'] = 'Historical criterion 2.4.1.'
+    with pytest.raises(ValueError, match='unsupported_research_reference'):
+        contract.citations(result, evidence)

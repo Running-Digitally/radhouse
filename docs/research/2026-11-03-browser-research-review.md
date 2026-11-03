@@ -231,3 +231,28 @@ Bridge findings deferred with explicit reasons:
   retirement/outcome expressions during this bounded lifecycle correction.
 
 No findings were suppressed or accepted, and no quality gate was changed.
+
+## Live acceptance follow-up: address text and research references
+
+The shipping-source iOS simulator reached the live private browser, but native
+address submission selected the remote address bar without entering the URL.
+The pinned Selkies core suppresses text echoes for 250 ms after a shortcut. The
+adapter now waits 300 ms before the separate URL entry, rechecks the same input
+controller, focus and visibility, and cancels on dismissal or intervening input.
+The native canvas awaits that result and blocks overlapping commands. It does
+not replay uncertain input or grant additional authority.
+
+A native-provider acceptance case also returned a valid quotation alongside an
+unsupported criterion number. Research publication now rejects unsupported
+numbered references and URL references even when another quotation is valid.
+The prompt explicitly asks for a general verification step when collected
+sources only establish historical discussion. This bounded check does not
+claim to prove every semantic statement in generated prose.
+
+Review checked authority changes during the input delay, asynchronous failure
+reporting, exact source identity, and preservation of the existing quiet and
+notification cadence. Validation: 102 commitment/research tests, eight address
+sequencing/cancellation cases, and native canvas journeys in Chromium and
+WebKit. The latest processed merged-main SonarQube search found no existing
+open issues in the five modified analyzed files. Post-merge analysis and live
+navigation remain required before owner distribution.
