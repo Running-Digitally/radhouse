@@ -5,8 +5,8 @@ behaviors in scoped, human-enabled standing assignments. Prepared briefings are
 the default. Optional bot mail is the first concrete intake use case; existing
 authorized Radhouse work/status signals can use the same pattern. Implementation,
 adapter support, notification defaults, and evaluation still require qualification.
-Updated: 2026-11-02. No proactive responsibility is deployed. The first
-[implementation candidate](plans/2026-11-02-native-proactive-assistance.md) reviews
+Updated: 2026-11-03. The first standing responsibility is deployed for private
+pilot verification. The [implementation and qualification record](plans/2026-11-02-native-proactive-assistance.md) reviews
 recent conversation for commitments to confirm, using native Hermes scheduling
 and selective private push. This narrower initial source does not remove the
 broader standing-assistance direction below. See the [Hermes and UX research](research/2026-11-02-hermes-proactive-assistance.md).

@@ -1,7 +1,9 @@
 # Native proactive assistance qualification
 
-Status: source candidate implemented; isolated qualification recorded below. No production
-activation is established by this document.
+Status: merged and deployed for a private pilot. Native recurring execution,
+real-source review and provider acceptance are verified. Physical phone receipt
+and authenticated tap acceptance are tracked below. This does not qualify
+timed reminders or every wider always-on capability.
 
 The [research](../research/2026-11-02-hermes-proactive-assistance.md) grounds this
 slice in the pinned Hermes source, human-AI interaction research and community
@@ -182,12 +184,12 @@ idempotency, failure visibility, budget, quiet hours, delivery consent and API
 separation. Mobile tests cover versioned payloads, authenticated navigation,
 sign-out races, explicit opt-in and confirmation controls.
 
-Release still requires a frozen integrated web/native/mobile candidate; current
+The original release gate required a frozen integrated web/native/mobile candidate; current
 service identity and idle checks; the separate privileged service-change gate;
 verified backup and rollback; actual selected-provider semantic qualification;
 and foreground/background/cold-start notification acceptance on the owner's
 phones. Existing reply-push evidence does not establish proactive-push delivery.
-Do not enable the standing grant or claim production coverage from these tests.
+Those isolated tests alone did not authorize the standing grant or establish production coverage.
 
 A fresh 3 November [touched-file Sonar read](../research/2026-11-03-proactive-touched-findings.json)
 returned eight existing findings. The candidate addresses six: consistent resource
@@ -211,3 +213,48 @@ Chromium journeys passed. Mobile quality passed 135 Jest
 behavior tests, 15 tooling tests, typecheck, lint and coverage; both iOS and
 Android production JavaScript bundles built. Signed application builds and live
 model/device acceptance remain separate gates.
+
+
+## Private pilot rollout — 3 November 2026
+
+The implementation was rebased after the preceding OpenAI/chat release, merged,
+and deployed under explicit owner authority. The native hourly script job was
+created paused and its effective schedule, tool exclusion, script, interpreter
+and local delivery fields were read back before activation. The selected local
+provider passed a synthetic semantic check. A real native-ticker review then
+produced two strictly cited suggestions; the transient source snapshot was erased.
+The separate push store migrated with a verified backup and preserved explicit
+mobile consent. The provider accepted one resulting suggestion for both platforms.
+Physical receipt and tap confirmation are pending at this checkpoint.
+
+Live qualification found and corrected two integration defects: a single Markdown
+JSON fence was rejected despite otherwise structured output, and ordinary chat
+lacked application capability facts. The parser now accepts only that outer
+envelope while preserving all schema, size and exact-citation checks. New chat
+requests receive current source permission and latest review outcome without
+copying suggestions or granting tools; retry inputs remain immutable. A live chat
+check accurately distinguished background assistance from unsupported timed
+reminders. The cooperative local-model budget is 180 seconds within the unchanged
+240-second process deadline, two iterations and 2,500-token per-call limit.
+
+Signed iOS 1.0 (8) and Android 1.0 (6) were published to the existing owner-only
+test channels. No audience, model provider, source permission or recurring quiet
+hours were expanded. One owner-requested immediate delivery check bypassed only
+quiet hours for its exact fresh item; normal authority, source freshness, expiry,
+device consent and outbox deduplication still applied.
+
+The merged web correction passed 2,385 tests with zero failures, errors or skips
+using the owned Docker/PostgreSQL fixture; cleanup completed. Mobile merged-main
+quality and SonarQube gates passed. The bounded backend findings closed; its
+overall gate remains affected by pre-existing coverage and issue backlog. No
+findings were suppressed and no gate was changed. Three existing service
+complexity findings remain explicit follow-up work in PR121.
+
+This pilot proposes commitments and prepares text. It does not create a timed
+reminder, schedule a follow-up when confirmed, or automatically perform the
+proposed step. Suggestion wording remains subject to human review, including
+stale historical claims about platform status; current coverage is displayed
+separately. Initial qualification consumed the four-review rolling daily budget.
+Unchanged-input checks continue without inference; new-source inference waits
+for that budget to renew. This is a visible pilot limitation, not continuous
+coverage of every new message.

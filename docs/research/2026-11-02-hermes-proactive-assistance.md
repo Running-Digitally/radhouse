@@ -117,3 +117,27 @@ must not be inferred merely from delivery, reading or silence.
 The full direction remains a Guardian Angel that notices and a Cognitive
 Amplifier that prepares useful work within granted scope. Commitment discovery
 is its first testable responsibility, not a replacement definition of the agent.
+
+
+## Lessons from the first live qualification
+
+Native scheduling, permission to inspect a source, conversational capability
+knowledge and notification delivery are separate contracts. Installing a
+background job does not teach the conversational agent that it exists. Supply
+current capability facts from the application, preserve them across immutable
+retries, and distinguish permission from successful coverage and handset receipt.
+A successful proposal is also different from a scheduled reminder.
+
+Provider formatting needs qualification with real bounded input. A strict JSON
+contract can accept one outer Markdown fence without accepting prose, multiple
+objects, extra authority fields or fabricated citations. Synthetic semantic
+success did not establish timing on real conversation. Keep a cooperative
+model budget inside an independent process deadline and retain explicit failure
+status when either cannot produce valid evidence.
+
+Always-on acceptance should record the whole chain: native tick, authorized
+claim, real model execution, validated durable proposal, opted-in outbox, provider
+acceptance, physical receipt and authenticated navigation. Test notifications
+and any one-time quiet-hours exception should remain distinct from the recurring
+attention policy. Preserve failed-run evidence, and disclose when qualification
+has consumed the normal review budget instead of silently resetting it.
