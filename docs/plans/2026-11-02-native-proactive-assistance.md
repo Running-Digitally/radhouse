@@ -1,9 +1,10 @@
 # Native proactive assistance qualification
 
 Status: merged and deployed for a private pilot. Native recurring execution,
-real-source review and provider acceptance are verified. Physical phone receipt
-and authenticated tap acceptance are tracked below. This does not qualify
-timed reminders or every wider always-on capability.
+real-source review and provider acceptance are verified. On 3 November 2026 the
+owner also confirmed notification receipt and successful suggestion opening on
+both iOS and Android after backgrounding or locking both phones. This does not
+qualify timed reminders or every wider always-on capability.
 
 The [research](../research/2026-11-02-hermes-proactive-assistance.md) grounds this
 slice in the pinned Hermes source, human-AI interaction research and community
@@ -225,7 +226,11 @@ provider passed a synthetic semantic check. A real native-ticker review then
 produced two strictly cited suggestions; the transient source snapshot was erased.
 The separate push store migrated with a verified backup and preserved explicit
 mobile consent. The provider accepted one resulting suggestion for both platforms.
-Physical receipt and tap confirmation are pending at this checkpoint.
+On 3 November the owner confirmed receipt on both backgrounded/locked phones
+and that both notification taps opened the intended suggestion. Together with
+the native review and durable provider receipts, this completes the pilot's
+end-to-end push acceptance. Force-quit cold-start behavior was not separately
+tested, and tapping did not grant permission to act on a suggested commitment.
 
 Live qualification found and corrected two integration defects: a single Markdown
 JSON fence was rejected despite otherwise structured output, and ordinary chat
