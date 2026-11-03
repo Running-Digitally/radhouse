@@ -1,8 +1,9 @@
 # Browser recovery and selected public research: review record
 
 This records the candidate review for the [implementation plan](../plans/2026-11-03-browser-and-public-research.md).
-Final browser simulator acceptance, merged-main analysis and rollout are still pending.
-Research controls have been exercised on both native simulators with synthetic data.
+Candidate browser and research controls have been exercised on both native
+simulators. Merged-main analysis and rollout are still pending; the final live
+acceptance must also cover the updated server assets and runtime.
 
 ## Behavior and boundaries
 
@@ -59,6 +60,15 @@ diagnosis was incomplete: the pinned client had selected its
 worker VideoTrackGenerator path. No canvas workaround is needed. Terminal keeps
 its existing playback policy; the shipping viewer has no diagnostic script or
 inspection flag. See the [WebView API](https://github.com/react-native-webview/react-native-webview/blob/master/docs/Reference.md#mediaplaybackrequiresuseraction).
+
+Both final simulator bundles restored their saved sign-in, displayed the live
+browser and navigated to a public example page through native keyboard controls.
+Private takeover, explicit observation and handback were exercised on each;
+agent control and browser closure propagated across devices. The Android viewer
+stalled on a later handback while the existing server assets were still deployed.
+The candidate's bounded reconnect control has separate Chromium/WebKit coverage;
+its deployed simulator acceptance remains a rollout gate. Temporary inspection
+was removed from the simulator builds and Safari's developer setting was restored.
 
 A disconnect during browser relay cleanup also raised an uncaught
 WebSocketDisconnect. The relay now handles an already-disconnected peer, with a
