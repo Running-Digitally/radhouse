@@ -145,6 +145,35 @@ def test_watcher_retires_native_driver_without_waiting_for_idle_reaper(session, 
     assert payload["state"] == "idle"
 
 
+@pytest.mark.parametrize("driver_gone", [True, False])
+def test_completed_retirement_does_not_block_stream_cleanup_during_next_launch(session, monkeypatch, tmp_path, driver_gone):
+    f = orphan(session, monkeypatch, tmp_path)
+    bridge.retire_browser_transport(session.owned)
+    if not driver_gone:
+        f.gone.clear()
+    entered, release = threading.Event(), threading.Event()
+
+    def launch_holds_lock():
+        with bridge._browser_lock:
+            entered.set()
+            release.wait(timeout=3)
+
+    thread = threading.Thread(target=launch_holds_lock)
+    thread.start()
+    try:
+        assert entered.wait(timeout=2)
+        if driver_gone:
+            bridge.retire_browser_transport(session.owned)
+        else:
+            with pytest.raises(control.ControlRejected, match="browser_retirement_busy"):
+                bridge.retire_browser_transport(session.owned)
+        assert len(f.killed) == 1
+        assert session.released == ["session"]
+    finally:
+        release.set()
+        thread.join(timeout=2)
+
+
 def test_reconnect_reconciles_lost_stop_reply_before_releasing_native_driver(session, monkeypatch, tmp_path):
     from tests.test_selkies_platform import platform
     from tests.test_space_browser_control import remote, p

@@ -178,3 +178,56 @@ Additional pre-existing findings remain explicitly deferred:
   identify the standard private-network ranges in an address-admission check,
   not deployment endpoints. Retain the check and review the contextual findings
   explicitly; no suppression or server disposition is applied.
+
+## Live reopen follow-up
+
+Shipping-source simulator acceptance exposed a lifecycle conflict after a retired
+browser: the next Open held the launch lock while finishing the previous stream,
+whose already-completed native retirement tried to acquire that same lock. A
+regression reproduced the conflict before the fix. Completed retirement now
+returns without taking the lock only when the exact controller generation is
+retired, its owned handle is absent, and its retained PID/start-time identity is
+positively gone. Unknown or live drivers remain on the guarded path. The
+regression also checks that missing process-exit proof cannot use that path.
+Pinned Hermes qualification and adjacent browser, stream and native integration
+checks passed: 418 tests. Live repeat-open acceptance remains pending rollout.
+
+The processed `47a00a281d665b112b86b260bac4e200378c80d9` analysis had no findings
+in the new mobile canvas or research contract files. Its overall gate remains
+ERROR (new coverage 68.6%, 686 new-code issues); its owned verification passed
+2,470 tests. This is an existing project backlog, not a clean backend gate.
+Mobile main `7577fe0b2c92d39bb37252a97c42af491f2bdf53` passed its gate with
+90.0% new coverage, zero duplication and no open issues.
+
+The touched bridge's current findings were inspected. Repeated digest/name/page
+literals and unused bindings were corrected (`329046f8-61cb-4a66-bdf4-6044c5fe236e`,
+`3bc03915-8e81-49e2-83dd-b5875f9b61b1`, `87c29697-f84a-43ea-9258-7c599531a363`,
+`43c18135-fb09-46ce-a84c-ad37828308f3`, `7ac86e2d-2e31-4165-96ee-569e14968f6a`,
+`cf314fb6-d34f-4cfc-8288-f2d1af715e48`, `6ec542aa-8863-42d9-9dd5-d0a24f6a148b`,
+`bbd06c69-2b14-4f7f-8c0a-6d2a2cfa5090`). Closure requires the follow-up scan.
+The reconnect regression file had no open findings.
+
+Bridge findings deferred with explicit reasons:
+
+- Complexity findings `b81d52a2-9db9-4209-bd51-090a92954dc7`,
+  `71fff00e-2072-469c-9fc7-c4e6e60d8963`, `81dbeb47-078a-49cf-b860-fdb05948ba4c`,
+  `15ca4aeb-26e0-4af8-b102-035dcbf81890`, `e433bf86-6402-4761-97bd-8efce4022bfb`,
+  `90932e63-e5f6-48e0-8e73-81ce9d93a1e6`, `8207f1ac-6ef5-4431-b0d7-f35f01e4b62f`,
+  `919ebe0a-446d-43fc-aea1-d37cdf6d3d8c`, `95039eaf-25dc-4761-a25d-f1408dbdb34f`,
+  `b1472bc1-191c-4ab9-8d71-c6d9454cb472`, `7f28feeb-dd3e-4a9b-9f89-59ded1589cc0`,
+  `963b5c74-aaf2-4de7-98b8-54a1e5329f09`, `6d494d1d-f17d-48da-84d7-7d94e119ff00`,
+  `fa279f40-990b-4fd5-b732-f204180c8bab`, `f7bdab05-b505-4f9b-94eb-a3732b3c96c3`,
+  and `40a1d39c-3dad-4a5a-9848-cd0556882713` span callback, admission and lifecycle
+  coordination. Their broader extraction belongs in the bounded stabilization
+  work, with independent cancellation and pinned-runtime qualification.
+- `895a5f32-9083-4332-9b99-7c3b9584f137`: the loop can remove retired entries;
+  its list snapshot is required and is now explained in source.
+- `03ffcee4-abb4-4f4d-8270-10d906345f19`: retain ASCII-only native element IDs;
+  replacing `[0-9]` with Python's Unicode `\d` would broaden accepted input.
+- `058a0c21-a5f8-4297-bb52-da8db5c0aa94`: retain the existing dispatch keyword
+  contract; a signature change needs coordinated caller qualification.
+- `3c00a263-32d2-44e4-9b4a-9293df2afdfd`,
+  `865f9450-a2ae-403d-bc72-e2adb59ef7c7`: retain grouping around multiline
+  retirement/outcome expressions during this bounded lifecycle correction.
+
+No findings were suppressed or accepted, and no quality gate was changed.
