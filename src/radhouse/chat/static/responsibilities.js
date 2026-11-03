@@ -21,10 +21,15 @@ function showCoverage(value) {
     revoked:'The earlier review was stopped by a scope change.'};
   const coverage=value.coverage;
   const stale=active && (!coverage || Date.now()/1000-coverage.checked_at>7200);
+  let summary='No completed review yet.';
+  if(last) {
+    const detail=last.error==='review_evidence_too_large'?'Review input exceeded the size limit; shorten progress notes.':states[last.state]||'Review status unavailable.';
+    summary=detail+' '+new Date(last.created_at*1000).toLocaleString();
+  }
   $('#coverage').textContent=(active?'Permission enabled. ':'Paused. ')+
     (stale?'Recent coverage has not been established. ':'')+
     (coverage?.outcome==='budget_wait'?'Waiting for the review budget to renew. ':'')+
-    (last?(last.error==='review_evidence_too_large'?'Review input exceeded the size limit; shorten progress notes.':states[last.state]||'Review status unavailable.')+' '+new Date(last.created_at*1000).toLocaleString():'No completed review yet.');
+    summary;
 }
 function actionButton(label, item, body, secondary = false, disabled = false) {
   const button=text('button',label,secondary?'secondary':''); button.disabled=disabled;

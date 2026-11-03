@@ -134,8 +134,9 @@ def test_followup_rechecks_live_authority_and_source(pilot, change):
     if change == 'new_message':
         assert review.complete(claim['review_id'], output(snapshot)) == {'status': 'stale'}
     else:
+        raw = output(snapshot)
         with pytest.raises(Rejected):
-            review.complete(claim['review_id'], output(snapshot))
+            review.complete(claim['review_id'], raw)
     assert review.notification_items() == []
 
 
@@ -175,7 +176,8 @@ def test_quiet_checks_do_not_alert_and_checkins_back_off(pilot):
     clock[0] += 2 * DAY
     finish(review, 'check_in')
     second = review.notification_items()[0]
-    assert second['id'] == first['id'] and second['event_id'] != first['event_id']
+    assert second['id'] == first['id']
+    assert second['event_id'] != first['event_id']
     assert review.item(item['id'])['followup']['attention_at'] == clock[0] + 7 * DAY
 
 
@@ -195,7 +197,8 @@ def test_distinct_occurrences_deliver_same_item_and_stop_invalidates_queue(pilot
         sent.append(data)
         return PushResult('sent')
     assert outbox.dispatch_one(lambda _: True, send, commitment_decision=review.notification_decision)
-    assert sent[0]['event_id'] == first['event_id'] and sent[0]['item_id'] == item['id']
+    assert sent[0]['event_id'] == first['event_id']
+    assert sent[0]['item_id'] == item['id']
     clock[0] += 3 * DAY
     finish(review, 'check_in')
     outbox.enqueue_commitments('owner', review.notification_items())
