@@ -13,6 +13,7 @@ await test('connected web chat searches, quotes and sends the exact OpenAI selec
     page.on('pageerror',error=>errors.push(error.message));
     fixture.turns[0].status='running';
     await page.goto(fixture.origin);await expect(page.locator('#inference-summary')).toHaveText('Default model');
+    await expect(page.locator('[data-request-id="fixture-0"] time')).toHaveAttribute('datetime','2026-11-02T15:00:00.000Z');
     await page.getByRole('button',{name:'Find in conversation'}).click();
     await page.getByLabel('Search loaded messages').fill('useful next step');
     await expect(page.locator('.conversation-results button')).toHaveCount(1);
