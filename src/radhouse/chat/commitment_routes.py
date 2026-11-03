@@ -84,7 +84,7 @@ def install_commitment_review(app, auth, service, review, worker_bearer):
 
     def worker(request):
         supplied = request.headers.get("authorization", "")
-        if len(supplied) > 160 or not hmac.compare_digest(supplied, "Bearer " + worker_bearer):
+        if len(supplied) > 160 or not hmac.compare_digest(supplied.encode(), ("Bearer " + worker_bearer).encode()):
             raise Rejected("review_worker_denied", 403)
 
     @app.get("/chat/responsibilities/commitments")

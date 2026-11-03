@@ -82,29 +82,8 @@ def install_push(app, auth, service, outbox, sender):
     async def lifespan(application):
         stop = asyncio.Event()
 
-        def dispatch():
-            outbox.reconcile(service.store, service.owner_id)
-            review = getattr(app.state, "commitment_review", None)
-            if review is not None:
-                outbox.enqueue_commitments(service.owner_id, review.notification_items())
-            for _ in range(10):
-                if stop.is_set() or not outbox.dispatch_one(authorize, sender,
-                        commitment_decision=review.notification_decision if review else None):
-                    break
-
-        async def observe():
-            while not stop.is_set():
-                try:
-                    await asyncio.to_thread(dispatch)
-                except Exception:
-                    logging.getLogger(__name__).warning("Push delivery observation unavailable")
-                try:
-                    await asyncio.wait_for(stop.wait(), timeout=2)
-                except TimeoutError:
-                    pass
-
         async with previous(application):
-            observer = asyncio.create_task(observe())
+            observer = asyncio.create_task(_observe_notifications(app, service, outbox, authorize, sender, stop))
             try:
                 yield
             finally:
@@ -112,3 +91,26 @@ def install_push(app, auth, service, outbox, sender):
                 await observer
 
     app.router.lifespan_context = lifespan
+
+
+def _dispatch_notifications(app, service, outbox, authorize, sender, stop):
+    outbox.reconcile(service.store, service.owner_id)
+    review = getattr(app.state, "commitment_review", None)
+    if review is not None:
+        outbox.enqueue_commitments(service.owner_id, review.notification_items())
+    for _ in range(10):
+        if stop.is_set() or not outbox.dispatch_one(authorize, sender,
+                commitment_decision=review.notification_decision if review else None):
+            break
+
+
+async def _observe_notifications(app, service, outbox, authorize, sender, stop):
+    while not stop.is_set():
+        try:
+            await asyncio.to_thread(_dispatch_notifications, app, service, outbox, authorize, sender, stop)
+        except Exception:
+            logging.getLogger(__name__).warning("Push delivery observation unavailable")
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=2)
+        except TimeoutError:
+            pass

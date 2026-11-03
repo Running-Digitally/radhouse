@@ -98,7 +98,7 @@ class FCMSender:
                         return PushResult("retry")
                 try:
                     result = json.loads(content)
-                except (ValueError, UnicodeError):
+                except ValueError:
                     return PushResult("retry")
                 return _result(response.status_code, result, response.headers.get("retry-after"))
         except Exception:

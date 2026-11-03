@@ -118,7 +118,8 @@ class CommitmentReview:
                         id TEXT PRIMARY KEY, source_request_id TEXT NOT NULL UNIQUE,
                         quote TEXT NOT NULL, title TEXT NOT NULL, reason TEXT NOT NULL,
                         preparation TEXT NOT NULL, state TEXT NOT NULL,
-                        created_at REAL NOT NULL, reviewed_at REAL, epoch INTEGER NOT NULL);
+                        created_at REAL NOT NULL, reviewed_at REAL, epoch INTEGER NOT NULL,
+                        input_hash TEXT NOT NULL);
                     CREATE TABLE coverage (id INTEGER PRIMARY KEY CHECK(id=1), checked_at REAL NOT NULL, outcome TEXT NOT NULL);
                     PRAGMA user_version=1;
                     COMMIT;
@@ -150,7 +151,7 @@ class CommitmentReview:
                 conversation=excluded.conversation,binding_revision=excluded.binding_revision,
                 epoch=excluded.epoch,active=excluded.active""", (self.owner, conversation,
                 binding_revision, old["epoch"] + 1 if old else 1, int(active), self.clock()))
-            db.execute("UPDATE reviews SET state='revoked' WHERE state='running'")
+            db.execute("UPDATE reviews SET state='revoked',snapshot='{}' WHERE state='running'")
         return self.status()
 
     def _mandate(self, db):
@@ -195,7 +196,7 @@ class CommitmentReview:
         with self.connection() as db:
             db.execute("BEGIN IMMEDIATE")
             mandate = self._mandate(db)
-            db.execute("UPDATE reviews SET state='interrupted',error='review_expired' WHERE state='running' AND expires_at<=?", (now,))
+            db.execute("UPDATE reviews SET state='interrupted',error='review_expired',snapshot='{}' WHERE state='running' AND expires_at<=?", (now,))
             if db.execute("SELECT 1 FROM reviews WHERE state='running'").fetchone():
                 return self._checked(db, "running")
             snapshot = self._snapshot(db)
@@ -243,8 +244,8 @@ class CommitmentReview:
                     state, error = "failed", "invalid_commitment_evidence"
             for item in suggestions:
                 candidate_id = str(uuid5(NAMESPACE_URL, f"radhouse:commitment:{self.owner}:{item['source_request_id']}"))
-                result = db.execute("INSERT OR IGNORE INTO suggestions VALUES(?,?,?,?,?,?,'suggested',?,NULL,?)",
-                    (candidate_id, item["source_request_id"], item["quote"], item["title"], item["reason"], item["preparation"], now, mandate["epoch"]))
+                result = db.execute("INSERT OR IGNORE INTO suggestions VALUES(?,?,?,?,?,?,'suggested',?,NULL,?,?)",
+                    (candidate_id, item["source_request_id"], item["quote"], item["title"], item["reason"], item["preparation"], now, mandate["epoch"], review["input_hash"]))
                 if result.rowcount:
                     state = "ready"
             # Empty results and duplicates are successful and quiet, not empty_reply.
@@ -306,8 +307,10 @@ class CommitmentReview:
                 if exc.code in {"responsibility_paused", "responsibility_authority_revoked"}:
                     return "discard"
                 raise
-            row = db.execute("SELECT state,created_at,epoch FROM suggestions WHERE id=?", (identifier,)).fetchone()
+            row = db.execute("SELECT state,created_at,epoch,input_hash FROM suggestions WHERE id=?", (identifier,)).fetchone()
             if row is None or row["state"] != "suggested" or row["epoch"] != mandate["epoch"] or row["created_at"] + DAY <= self.clock():
+                return "discard"
+            if row["input_hash"] != digest(self._snapshot(db)["exchanges"]):
                 return "discard"
         hour = datetime.fromtimestamp(self.clock(), self.timezone).hour
         return "allow" if 8 <= hour < 22 else "hold"

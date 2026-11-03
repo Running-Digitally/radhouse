@@ -1,0 +1,86 @@
+{
+  "retrieved": "2026-11-03",
+  "project": "Running-Digitally_radhouse",
+  "scope": [
+    "src/radhouse/chat/main.py",
+    "src/radhouse/chat/push.py",
+    "src/radhouse/chat/push_fcm.py",
+    "src/radhouse/chat/push_routes.py",
+    "src/radhouse/chat/static/index.html"
+  ],
+  "total": 8,
+  "issues": [
+    {
+      "key": "ad1e8676-573e-4b82-923c-6f233cd8c416",
+      "rule": "python:S8495",
+      "component": "Running-Digitally_radhouse:src/radhouse/chat/main.py",
+      "line": 93,
+      "message": "Refactor this function to always return tuples of the same length.",
+      "status": "OPEN",
+      "disposition": "Addressed in candidate source; closure requires normal processed merged-main analysis."
+    },
+    {
+      "key": "eb78fb9e-c41e-462e-b51a-8612354c9cd3",
+      "rule": "python:S1110",
+      "component": "Running-Digitally_radhouse:src/radhouse/chat/push_fcm.py",
+      "line": 48,
+      "message": "Remove those redundant parentheses.",
+      "status": "OPEN",
+      "disposition": "Contextual review proposed: parentheses group a datetime subtraction before total_seconds(); removing them changes the expression. Retained; no server disposition changed."
+    },
+    {
+      "key": "f6c4ff8b-cbf9-4150-8e01-a75f3b6525cf",
+      "rule": "python:S5713",
+      "component": "Running-Digitally_radhouse:src/radhouse/chat/push_fcm.py",
+      "line": 97,
+      "message": "Remove this redundant Exception class; it derives from another which is already caught.",
+      "status": "OPEN",
+      "disposition": "Addressed in candidate source; closure requires normal processed merged-main analysis."
+    },
+    {
+      "key": "dc1a07b5-db6a-4632-b936-dad7227b841b",
+      "rule": "python:S3776",
+      "component": "Running-Digitally_radhouse:src/radhouse/chat/push_routes.py",
+      "line": 36,
+      "message": "Refactor this function to reduce its Cognitive Complexity from 21 to the 15 allowed.",
+      "status": "OPEN",
+      "disposition": "Addressed in candidate source; closure requires normal processed merged-main analysis."
+    },
+    {
+      "key": "ac759fb4-3b15-45e3-9287-6f4132161ff7",
+      "rule": "Web:S6819",
+      "component": "Running-Digitally_radhouse:src/radhouse/chat/static/index.html",
+      "line": 34,
+      "message": "Use <output> instead of the status role to ensure accessibility across all devices.",
+      "status": "OPEN",
+      "disposition": "Addressed in candidate source; closure requires normal processed merged-main analysis."
+    },
+    {
+      "key": "f761bb99-3377-4a18-99f4-234203084ac1",
+      "rule": "Web:S6853",
+      "component": "Running-Digitally_radhouse:src/radhouse/chat/static/index.html",
+      "line": 53,
+      "message": "A form label must be associated with a control and have accessible text.",
+      "status": "OPEN",
+      "disposition": "Addressed in candidate source; closure requires normal processed merged-main analysis."
+    },
+    {
+      "key": "f10e2ed6-78da-4b3d-a4ed-d6b66851ed11",
+      "rule": "Web:S6819",
+      "component": "Running-Digitally_radhouse:src/radhouse/chat/static/index.html",
+      "line": 71,
+      "message": "Use <output> instead of the status role to ensure accessibility across all devices.",
+      "status": "OPEN",
+      "disposition": "Addressed in candidate source; closure requires normal processed merged-main analysis."
+    },
+    {
+      "key": "a4f7fee7-7b32-45b8-93c4-9f485267b396",
+      "rule": "Web:S6845",
+      "component": "Running-Digitally_radhouse:src/radhouse/chat/static/index.html",
+      "line": 28,
+      "message": "\"tabindex\" should only be declared on interactive elements.",
+      "status": "OPEN",
+      "disposition": "Deferred for contextual accessibility review: the scrollable conversation region intentionally remains keyboard focusable. Removing tabindex would remove existing keyboard access; no server disposition changed."
+    }
+  ]
+}

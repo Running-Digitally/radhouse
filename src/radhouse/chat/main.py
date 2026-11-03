@@ -94,7 +94,7 @@ def app_factory():
 
 def _configure_push(config, app, auth, service):
     if "push" not in config:
-        return ()
+        return []
     from .push import PushOutbox
     from .push_credentials import GooglePushToken
     from .push_fcm import FCMSender
@@ -117,7 +117,7 @@ def _configure_push(config, app, auth, service):
     except Exception:
         credentials.close()
         raise
-    return (sender, credentials)
+    return [sender, credentials]
 
 def _load_chat_config():
     path = Path(os.environ["RADHOUSE_CHAT_CONFIG"])

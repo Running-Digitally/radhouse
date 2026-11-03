@@ -383,3 +383,14 @@ def test_status_does_not_claim_active_after_binding_revocation(pilot):
     assert review.status()["active"] is True
     allowed[0] = False
     assert review.status()["active"] is False
+
+
+def test_new_conversation_suppresses_a_previously_queued_suggestion(pilot):
+    review, chat, clock, _ = pilot
+    source = message(chat, clock)
+    claim = review.claim()
+    review.complete(claim["review_id"], suggestion(source))
+    item = review.notification_items()[0]
+    assert review.notification_decision(item["id"]) == "allow"
+    message(chat, clock, "Cancel that draft, I no longer plan to send it.")
+    assert review.notification_decision(item["id"]) == "discard"
