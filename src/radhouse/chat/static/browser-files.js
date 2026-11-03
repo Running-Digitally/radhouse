@@ -30,10 +30,15 @@
     update(value) {
       this.enabled=value?.files_enabled===true;
       this.transferStatus.hidden=!this.enabled;
-      this.transferStatus.textContent=value?.downloads?.unavailable ? "Downloads couldn’t be saved yet. Reconnect to check again." :
-        value?.downloads?.saving ? "Saving downloads to Library…" : "Downloads are saved to Library automatically.";
+      let status="Downloads are saved to Library automatically.";
+      if(value?.downloads?.previous_unavailable)status="An earlier browser is no longer available for download recovery. Files already saved remain in Library.";
+      if(value?.downloads?.saving)status="Saving downloads to Library…";
+      if(value?.downloads?.unavailable)status="Downloads couldn’t be checked yet. Reconnect to check again.";
+      this.transferStatus.textContent=status;
       if(!this.enabled || !this.view._human()) {
-        this.chooser=null; if(this.dialog.open)this.dialog.close(); return;
+        this.chooser=null;
+        if(this.dialog.open){this.dialog.close();}
+        return;
       }
       if(this.pending || Date.now()-this.lastPoll<1500)return;
       this.lastPoll=Date.now(); void this.poll();
@@ -44,7 +49,11 @@
       try {
         const result=await this.view.request("/chat/browser/files",binding);
         if(this.view.generation!==binding.generation || !this.view._human())return;
-        if(!result.chooser) {this.chooser=null;if(this.dialog.open)this.dialog.close();return;}
+        if(!result.chooser) {
+          this.chooser=null;
+          if(this.dialog.open){this.dialog.close();}
+          return;
+        }
         if(result.chooser.id===this.chooser?.id || result.chooser.id===this.dismissed)return;
         this.chooser=result.chooser; this.binding=binding;
         this.destination.textContent="Upload to "+new URL(this.chooser.destination).origin;

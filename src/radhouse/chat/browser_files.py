@@ -20,6 +20,7 @@ class BrowserFiles:
         self.collect_lock = Lock()
         self.pending_count = 0
         self.unavailable = False
+        self.previous_unavailable = False
 
     def human(self, session, tab, binding, value):
         return self.browser._call(session, tab, "files", {**binding, "file": value})
@@ -60,11 +61,13 @@ class BrowserFiles:
         try:
             launches = self.remote(session, None, {"action": "list"})
             self.pending_count = 0
+            self.previous_unavailable = False
             for launch in launches["launches"]:
                 identity = launch["launch_id"]
                 if type(identity) is not str or not re.fullmatch(r"[a-f0-9]{32}", identity):
                     raise Rejected("browser_download_unconfirmed", 503)
                 listing = self.remote(session, identity, {"action": "list"})
+                self.previous_unavailable |= listing.get('previous_unavailable') is True
                 self.pending_count += len(listing["downloads"])
                 for download in listing["downloads"]:
                     if download["state"] == "completed":

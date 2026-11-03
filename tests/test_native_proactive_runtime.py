@@ -273,6 +273,27 @@ def test_native_cron_paused_job_roundtrip_and_explicit_scope(source, isolated_ho
         assert jobs.pause_job(created["id"])["enabled"] is False
 
 
+def test_public_research_native_provider_is_pinned_without_fallback(source, tmp_path):
+    pins = json.loads((PACKAGE / 'research-source-lock.json').read_text())
+    for name, expected in pins['files'].items():
+        assert hashlib.sha256((source / name).read_bytes()).hexdigest() == expected
+    spec = importlib.util.spec_from_file_location('research_qualification', PACKAGE / 'public_research.py')
+    collector = importlib.util.module_from_spec(spec); spec.loader.exec_module(collector)
+    (tmp_path / 'config.yaml').write_text(json.dumps(collector.WEB_CONFIG))
+    code = '''import sys,json
+sys.path.insert(0,sys.argv[1])
+from tools import web_tools
+from plugins.web.keyless_mcp import _ring_order
+from tools.web_tools_rescue import _keyless_rescue_enabled
+from tools.web_result_cache import cache_enabled
+print(json.dumps([web_tools._get_search_backend(),web_tools._get_extract_backend(),_ring_order('keenable'),_keyless_rescue_enabled(),cache_enabled()]))
+'''
+    response = subprocess.run([sys.executable, '-I', '-c', code, str(source)],
+        env={'HOME': str(tmp_path), 'HERMES_HOME': str(tmp_path), 'PATH': '/usr/bin:/bin', 'PYTHONNOUSERSITE': '1'},
+        cwd=tmp_path, capture_output=True, text=True, timeout=30, check=True)
+    assert json.loads(response.stdout) == ['keenable', 'keenable', ['keenable'], False, False]
+
+
 def test_radhouse_provisioning_is_native_paused_idempotent_and_checks_effective_scope(source, isolated_home):
     spec = importlib.util.spec_from_file_location("native_commitment_worker_test", PACKAGE / "commitment_worker.py")
     worker = importlib.util.module_from_spec(spec)

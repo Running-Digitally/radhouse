@@ -1,0 +1,15 @@
+{
+  "upstream_commit": "818c13be1dc4fd28987e1e881a9408224afd4535",
+  "files": {
+    "tools/web_tools.py": "e49bff309953a42664f0cf06ad7902a3593d7940ab69af5690a7fc8cd14ff790",
+    "tools/web_tools_extract.py": "802c29f78a6aa5f14daf412012f1392846e6135232bd2aa2310015e7c130da4a",
+    "tools/web_tools_rescue.py": "fe9da6e1fa7bc907ca2013d48a1406a28d40a454c59b296a27fcc8ddd4cae52f",
+    "tools/web_tools_truncate.py": "f3e168e0d10285c687e204d3c61b5b254d6c3673bbd0e629d13276adedf285a8",
+    "tools/url_safety.py": "70cfab89c89fef866326ab27d2e812bb04eeb347fbef152eb64a37fcb6265ccd",
+    "agent/web_search_registry.py": "0d8bacd5096dff1868be5594bd722dc042fad194fde119d9a26845556727038b",
+    "agent/web_search_provider.py": "794b8eb07426ae5f0f29d427932b33c980d1506a5241ba8bdaef0e37c3c60e66",
+    "plugins/web/_common.py": "b82c5bfb632c2dee19ddd3259246f5e65e2647df01e38bc05aaa46880487fef6",
+    "plugins/web/keyless_mcp.py": "fe81f02531701605b7e4866a6a2e69eb53225c1715177b9a17c46370638c0624",
+    "plugins/web/keenable/provider.py": "b1fa4f069768aedd15ae52c6791ab895d1f273f5af43d44795bec08483d41fbf"
+  }
+}

@@ -235,7 +235,7 @@ def test_schema_one_migrates_without_auto_starting_old_confirmations(tmp_path):
     assert review.item('saved')['followup'] is None
     assert review.item('saved')['conversation'] == 'conversation'
     with review.connection() as db:
-        assert db.execute('PRAGMA user_version').fetchone()[0] == 2
+        assert db.execute('PRAGMA user_version').fetchone()[0] == 3
 
 
 def test_authenticated_route_accepts_lifecycle_but_worker_bearer_cannot_decide(web_pilot):

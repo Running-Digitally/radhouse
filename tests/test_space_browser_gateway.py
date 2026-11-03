@@ -73,7 +73,8 @@ def test_fixed_gateway_renews_attachment_without_replaying_browser_request(tmp_p
                 'X-Radhouse-Browser-Launch': 'a' * 32, 'Authorization': 'Bearer caller-token-not-forwarded'}
             async with TestClient(TestServer(service.application())) as client:
                 response = await client.post('/v1/request', json=envelope(1))
-                assert response.status == 403 and not events
+                assert response.status == 403
+                assert not events
                 for path in ('/v1/sandboxes', '/v1/exec', '/chat/browser/stream/api/exec', '/v1/request?target=elsewhere'):
                     assert (await client.post(path, headers=headers, json={})).status == 403
                 assert not events
@@ -116,10 +117,12 @@ def test_host_retirement_receipt_survives_gateway_replacement(tmp_path):
     assert old.admit(envelope(1)) is None
     old.database.close()  # Lose the reply and restart the gateway.
     replacement = gateway.LaunchJournal(path, SID[:-1] + '9')
+    stop = envelope(2, 'stop')
+    start = envelope(3, 'start')
     with pytest.raises(gateway.protocol.Rejected):
-        replacement.admit(envelope(2, 'stop'))
+        replacement.admit(stop)
     with pytest.raises(gateway.protocol.Rejected):
-        replacement.admit(envelope(3, 'start'))
+        replacement.admit(start)
     assert not replacement.active('a' * 32)
     # Represents the fixed operator procedure, after positive old-VM retirement.
     with replacement.database:
@@ -128,9 +131,32 @@ def test_host_retirement_receipt_survives_gateway_replacement(tmp_path):
         receipt = replacement.admit(envelope(4, operation))
         assert receipt['data']['state'] == 'retired'
         assert receipt['launch_id'] == 'a' * 32
+    start = envelope(5, 'start')
     with pytest.raises(gateway.protocol.Rejected):
-        replacement.admit(envelope(5, 'start'))
+        replacement.admit(start)
     assert replacement.admit(envelope(1, identity='b' * 32)) is None
     assert replacement.active('b' * 32)
     assert not replacement.active('a' * 32)
     replacement.database.close()
+
+
+def test_only_positive_retired_old_guest_receipt_reports_unavailable_outbox(tmp_path):
+    import pytest
+    journal = gateway.LaunchJournal(tmp_path / 'launches.sqlite3', SID)
+    journal.admit(envelope(1))
+    listing = {**envelope(2, 'files'), 'body': {'action': 'list'}}
+    assert journal.admit(listing) is None
+    with journal.database:
+        journal.database.execute('UPDATE launches SET retired=1')
+    assert journal.admit(listing) is None  # Same guest retains its durable outbox.
+    journal.sandbox = SID[:-1] + '9'
+    assert journal.admit(listing)['data'] == {'downloads': [], 'previous_unavailable': True}
+    for action in ('read', 'ack'):
+        request = {**listing, 'body': {'action': action}}
+        with pytest.raises(gateway.protocol.Rejected):
+            journal.admit(request)
+    with journal.database:
+        journal.database.execute('UPDATE launches SET retired=0')
+    with pytest.raises(gateway.protocol.Rejected):
+        journal.admit(listing)
+    journal.database.close()

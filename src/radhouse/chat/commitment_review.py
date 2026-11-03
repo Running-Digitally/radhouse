@@ -17,6 +17,8 @@ from uuid import NAMESPACE_URL, uuid5
 
 from radhouse.domain.tasks import Rejected
 from . import commitment_followup as followup
+from . import commitment_research as research
+from radhouse.domain import research_contract
 from .commitment_followup import canonical, digest, structured_output
 from .push import notification
 
@@ -27,9 +29,10 @@ SELECT_MANDATE = "SELECT * FROM mandate WHERE id=1"
 SCOPE = {
     "purpose": "Suggest commitments and follow up on those you explicitly activate",
     "sources": "Recent text in this Radhouse conversation (up to 30 exchanges from the last 7 days), plus the saved commitments and progress notes you activate for follow-up",
-    "preparation": "Prepare private next steps and revisit active commitments with permitted recent evidence",
+    "preparation": "Prepare private next steps and revisit active commitments with permitted recent evidence; optionally research an explicit public question for a selected commitment",
     "confirmation": "Confirm and follow up starts ongoing review; you control progress, snooze, completion and stop. No external action or message is authorized",
     "followups_supported": True,
+    "public_research_supported": True,
     "excluded": "Attachments, Library, browser, other conversations and external actions",
     "maximum_reviews_per_day": 4,
 }
@@ -123,10 +126,12 @@ class CommitmentReview:
                     PRAGMA user_version=1;
                     COMMIT;
                 """)
-            elif version != 2 and version != 1:
+            elif version not in {1, 2, 3}:
                 raise ValueError("review_schema_mismatch")
             if version in {0, 1}:
                 followup.migrate(db)
+            if version in {0, 1, 2}:
+                research.migrate(db)
 
     @contextmanager
     def connection(self):
@@ -206,7 +211,7 @@ class CommitmentReview:
             return snapshot, input_hash, "followup"
         return (snapshot, input_hash, "discovery") if discovery else (None, input_hash, None)
 
-    def claim(self):
+    def claim(self, *, research_capable=False):
         now = self.clock()
         with self.connection() as db:
             db.execute(BEGIN_WRITE)
@@ -217,6 +222,9 @@ class CommitmentReview:
             snapshot, input_hash, kind = self._claim_snapshot(db, mandate, now)
             if snapshot is None:
                 return self._checked(db, "unchanged")
+            research_requests = research_contract.requests(snapshot)
+            if research_requests and not research_capable:
+                return self._checked(db, 'worker_upgrade_required')
             if db.execute("SELECT count(*) FROM reviews WHERE created_at>?", (now - DAY,)).fetchone()[0] >= 4:
                 return self._checked(db, "budget_wait")
             identifier = secrets.token_urlsafe(32)
@@ -230,7 +238,37 @@ class CommitmentReview:
                        (identifier, mandate["epoch"], input_hash, canonical(snapshot), now, now + 600, kind))
             db.execute("DELETE FROM reviews WHERE created_at<? AND state!='running'", (now - 7 * DAY,))
             self._checked(db, "running")
-            return {"status": "claimed", "review_id": identifier, "prompt": prompt}
+            result = {"status": "claimed", "review_id": identifier, "prompt": prompt}
+            if research_requests:
+                result.update(prompt='', research_requests=research_requests)
+            return result
+
+    def attach_research(self, identifier, packet):
+        now = self.clock()
+        with self.connection() as db:
+            db.execute(BEGIN_WRITE)
+            mandate = self._mandate(db)
+            review = db.execute('SELECT * FROM reviews WHERE id=?', (identifier,)).fetchone()
+            if (review is None or review['epoch'] != mandate['epoch'] or review['state'] != 'running'
+                    or review['expires_at'] <= now or review['kind'] != 'followup'):
+                raise Rejected('review_not_current', 409)
+            snapshot = json.loads(review['snapshot'])
+            if (digest(self._snapshot(db)['exchanges']) != review['input_hash']
+                    or not followup.current(db, snapshot, mandate, now)):
+                raise Rejected('review_not_current', 409)
+            expected = research_contract.requests(snapshot)
+            if not expected:
+                raise Rejected('research_not_authorized', 403)
+            try:
+                research_contract.validate_packet(packet, expected, review['created_at'], now)
+            except (ValueError, TypeError, KeyError):
+                raise Rejected('invalid_research_evidence', 422) from None
+            if 'research' in snapshot and snapshot['research'] != packet:
+                raise Rejected('research_already_collected', 409)
+            snapshot['research'] = packet
+            prompt = self._bounded_prompt(snapshot, 'followup')
+            db.execute('UPDATE reviews SET snapshot=? WHERE id=?', (canonical(snapshot), identifier))
+            return {'prompt': prompt}
 
     @staticmethod
     def _bounded_prompt(snapshot, kind):
@@ -248,6 +286,8 @@ class CommitmentReview:
             return "stale", None, []
         if failed:
             return "failed", "runtime_review_failed", []
+        if research_contract.requests(snapshot) and 'research' not in snapshot:
+            return 'failed', 'research_not_collected', []
         try:
             if review["kind"] == "followup":
                 results = followup.validate(raw, snapshot)
@@ -304,7 +344,8 @@ class CommitmentReview:
     def followup_action(self, identifier, body):
         with self.connection() as db:
             db.execute(BEGIN_WRITE)
-            mandate = None if body.get("action") in {"complete", "stop"} else self._mandate(db)
+            revoking = body.get('action') == 'research' and body.get('question') == ''
+            mandate = None if revoking or body.get("action") in {"complete", "stop"} else self._mandate(db)
             followup.change(db, identifier, body, mandate, self.clock())
             return {"followup": followup.present(db, identifier)}
 
@@ -355,7 +396,11 @@ class CommitmentReview:
             "follow-ups directly. In Responsibilities, Confirm and follow up activates ongoing private "
             "review of a commitment; the owner can add progress, snooze, complete or stop it. "
             "Older save-only confirmations need explicit follow-up activation. These bounded "
-            "periodic checks are not exact-time alarms. Do not promise a timed alert or "
+            "reviews can also use public-web research when the owner enables a public question "
+            "on a selected commitment. Only that question is sent to the search provider; the "
+            "review cannot use browser logins, Library or other chats. The owner can stop research "
+            "separately, and inspect citations and coverage in Responsibilities. "
+            "These periodic checks are not exact-time alarms. Do not promise a timed alert or "
             "claim that you scheduled one. Do not say the whole platform lacks scheduling or push."
         )
 

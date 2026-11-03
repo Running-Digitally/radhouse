@@ -22,7 +22,8 @@ try {
       if(url.pathname.endsWith(id)) {
         const item=state.suggestions[0];
         if(body.decision==='confirmed_followup') {
-          item.state='confirmed';item.followup={state:'active',revision:1,progress:'',next_review_at:Date.now()/1000,last_review_at:null,latest_note:null};
+          item.state='confirmed';item.followup={state:'active',revision:1,progress:'',next_review_at:Date.now()/1000,last_review_at:null,latest_note:null,
+            research:{enabled:false,question:'',coverage:null}};
         } else if(body.action) {
           expect(body.revision).toBe(item.followup.revision);
           item.followup.revision++;
@@ -30,6 +31,7 @@ try {
           if(body.action==='snooze')item.followup.state='snoozed';
           if(body.action==='resume')item.followup.state='active';
           if(body.action==='complete')item.followup.state='completed';
+          if(body.action==='research')item.followup.research={enabled:Boolean(body.question),question:body.question,coverage:null};
         } else item.state=body.decision;
       } else state.active=body.active;
       await route.fulfill({json:{status:'saved'}});return;
@@ -63,6 +65,26 @@ try {
   await expect(page.getByRole('button',{name:'Resume now'})).toBeVisible();
   await page.getByRole('button',{name:'Resume now'}).click();
   await expect(page.getByRole('button',{name:'Resume now'})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Enable public research'})).toBeVisible();
+  await page.getByLabel('Public research question').fill('What makes a clear technical draft?');
+  await page.getByRole('button',{name:'Enable public research'}).click();
+  await expect(page.getByRole('button',{name:'Stop public research'})).toBeVisible();
+  expect(mutations.at(-1)).toEqual({action:'research',revision:4,question:'What makes a clear technical draft?'});
+  const followup=state.suggestions[0].followup;
+  followup.research.coverage={coverage:'partial',checked_at:Date.now()/1000,provider:'keenable',source_count:1};
+  followup.latest_note={action:'update',reason:'Public source supports this next step.',preparation:'Consider the audience first.',quote:'send the draft',
+    citations:[{source_id:'a'.repeat(64),title:'Public writing guide <img onerror=alert(1)>',url:'https://example.org/guide',quote:'Identify the audience before drafting.',retrieved_at:Date.now()/1000}]};
+  await page.reload();
+  await expect(page.getByText(/Limited research: 1 source/)).toBeVisible();
+  const citation=page.getByRole('link',{name:/Public writing guide/});
+  await expect(citation).toHaveAttribute('rel','noopener noreferrer');
+  await expect(page.locator('article aside img')).toHaveCount(0);
+  if(evidence)await page.screenshot({path:path.join(evidence,'public-research-mobile.png'),fullPage:true});
+  await page.setViewportSize({width:1120,height:900});
+  if(evidence)await page.screenshot({path:path.join(evidence,'public-research-desktop.png'),fullPage:true});
+  await page.getByRole('button',{name:'Stop public research'}).click();
+  await expect(page.getByRole('button',{name:'Enable public research'})).toBeVisible();
+  expect(mutations.at(-1)).toEqual({action:'research',revision:5,question:''});
   if(evidence)await page.screenshot({path:path.join(evidence,'active-followup.png'),fullPage:true});
   await page.getByRole('button',{name:'Mark complete'}).click();
   await expect(page.getByText('completed',{exact:true})).toBeVisible();

@@ -39,6 +39,37 @@ function actionButton(label, item, body, secondary = false, disabled = false) {
   }catch(error){showError(error);button.disabled=false;}});
   return button;
 }
+function researchCard(card, item, live) {
+  const research=item.followup.research;
+  if(!research) return;
+  card.append(text('h4','Public-web research'),text('p',research.enabled?'Enabled for this commitment.':'Off for this commitment.','badge'));
+  const coverage=research.coverage;
+  if(coverage) card.append(text('p',
+    (coverage.coverage==='unavailable'?'Sources could not be checked.':'Limited research: '+coverage.source_count+' source(s) checked.')+
+    ' '+new Date(coverage.checked_at*1000).toLocaleString()+'. Search does not cover the whole web.','muted'));
+  else if(research.enabled) card.append(text('p','Awaiting its first public-web check.','muted'));
+  if(!live) return;
+  const label=text('label','Public research question');label.htmlFor='research-'+item.id;
+  const question=document.createElement('textarea');question.id=label.htmlFor;question.rows=2;question.maxLength=300;
+  question.value=research.question;question.placeholder='A public question that would help this commitment';
+  const disclosure=text('small','Only this question is sent to Keenable for search. Leave out private details. Radhouse reads up to two public pages; it cannot use your browser logins or act on the results.');
+  const actions=document.createElement('div');actions.className='actions';
+  actions.append(actionButton(research.enabled?'Update public question':'Enable public research',item,
+    ()=>({action:'research',revision:item.followup.revision,question:question.value}),false,!active));
+  if(research.enabled) actions.append(actionButton('Stop public research',item,
+    {action:'research',revision:item.followup.revision,question:''},true));
+  card.append(label,question,disclosure,actions);
+}
+function citations(card, note) {
+  for(const citation of note.citations||[]) {
+    const url=new URL(citation.url);
+    if(url.protocol!=='https:' || url.username || url.password) continue;
+    const link=document.createElement('a');link.href=url.href;link.target='_blank';link.rel='noopener noreferrer';
+    link.textContent=citation.title;
+    const source=document.createElement('aside');source.append(link,text('blockquote',citation.quote),
+      text('small','Checked '+new Date(citation.retrieved_at*1000).toLocaleString()));card.append(source);
+  }
+}
 function followupCard(card, item) {
   const followup=item.followup;
   if(!followup) return;
@@ -51,7 +82,9 @@ function followupCard(card, item) {
     const note=followup.latest_note;
     card.append(text('h4',note.action==='completion_check'?'Does this mean it is complete?':'Latest preparation'),
       text('p',note.reason),text('p',note.preparation),text('blockquote',note.quote));
+    citations(card,note);
   }
+  researchCard(card,item,live);
   if(!live) return;
   const label=text('label','Progress or a correction'); label.htmlFor='progress-'+item.id;
   const progress=document.createElement('textarea');progress.id=label.htmlFor;progress.rows=3;progress.maxLength=2000;

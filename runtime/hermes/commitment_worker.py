@@ -6,6 +6,7 @@ selects the existing native provider; Radhouse supplies and publishes the eviden
 import argparse
 import contextlib
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -21,6 +22,13 @@ import httpx
 
 CONFIG_ENV = "RADHOUSE_COMMITMENT_WORKER_CONFIG"
 JOB_NAME = "radhouse-commitment-review-v1"
+
+
+def research_module():
+    spec = importlib.util.spec_from_file_location('radhouse_public_research', Path(__file__).with_name('public_research.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def configuration():
@@ -102,12 +110,13 @@ def isolated_review(prompt, config):
     return result.stdout
 
 
-def run_once(config, *, infer=isolated_review, transport=None):
+def run_once(config, *, infer=isolated_review, transport=None, collect=None):
     verify = True if transport is not None else ssl.create_default_context(cafile=config["ca_file"])
     extensions = {"sni_hostname": config.get("tls_server_name", "fixture.test")}
     with httpx.Client(base_url=config["endpoint"], timeout=15, follow_redirects=False, trust_env=False,
                       transport=transport, verify=verify, headers={"Authorization": "Bearer " + config["worker_bearer"]}) as client:
-        claim = client.post("/internal/commitment-review/claim", extensions=extensions)
+        claim = client.post("/internal/commitment-review/claim", extensions=extensions,
+                            headers={'X-Radhouse-Research': 'v1'})
         if claim.status_code == 409 and claim.json().get("error") == "responsibility_paused":
             return "paused"
         claim.raise_for_status()
@@ -120,7 +129,17 @@ def run_once(config, *, infer=isolated_review, transport=None):
             raise ValueError("invalid_review_claim")
         failed = False
         try:
-            output = infer(value["prompt"], config)
+            prompt = value['prompt']
+            if value.get('research_requests'):
+                collector = collect or research_module().collect_requests
+                packet = collector(value['research_requests'], config)
+                evidence = client.post('/internal/commitment-review/research', extensions=extensions,
+                    json={'review_id': value['review_id'], 'evidence': packet})
+                evidence.raise_for_status()
+                if len(evidence.content) > 60000:
+                    raise ValueError('research_prompt_too_large')
+                prompt = evidence.json()['prompt']
+            output = infer(prompt, config)
         except Exception:
             failed, output = True, ""
         completion = client.post("/internal/commitment-review/complete", extensions=extensions, json={
@@ -136,6 +155,9 @@ def _install_script(home):
     source = Path(__file__).resolve()
     manifest = source.with_name("base-runtime-manifest.json")
     contents = {source.name: source.read_bytes(), manifest.name: manifest.read_bytes()}
+    for name in ('public_research.py', 'research-source-lock.json'):
+        contents[name] = source.with_name(name).read_bytes()
+    contents['research_contract.py'] = research_module().contract_path().read_bytes()
     revision = hashlib.sha256(b"".join(contents.values())).hexdigest()[:16]
     directory = home / "scripts" / "radhouse-review" / revision
     directory.mkdir(parents=True, mode=0o700, exist_ok=True)

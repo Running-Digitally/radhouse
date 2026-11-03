@@ -4,6 +4,8 @@ import json
 from uuid import uuid4
 
 from radhouse.domain.tasks import Rejected
+from radhouse.domain import research_contract
+from . import commitment_research as research
 
 DAY = 86400
 LIVE_STATES = ('active', 'snoozed')
@@ -68,18 +70,20 @@ def start(db, identifier, mandate, now):
     count = db.execute("SELECT count(*) FROM followups WHERE state IN ('active','snoozed')").fetchone()[0]
     if count >= 10:
         raise Rejected('followup_capacity_reached', 409)
-    db.execute('INSERT INTO followups VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+    db.execute('INSERT INTO followups (id,state,revision,conversation,binding_revision,started_at,'
+               'next_review_at,snoozed_until,last_review_at,last_input_hash,progress,attention_at,'
+               'checkin_count,latest_note,latest_notice_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                (identifier, 'active', 1, mandate['conversation'], mandate['binding_revision'],
                 now, now, 0, None, '', '', now + DAY, 0, None, None))
 
 
 def _validated_action(body):
     action = body.get('action')
-    extras = {'progress': 'progress', 'snooze': 'days'}
+    extras = {'progress': 'progress', 'snooze': 'days', 'research': 'question'}
     fields = {'action', 'revision'} | ({extras[action]} if action in extras else set())
     if set(body) != fields or type(body.get('revision')) is not int:
         raise Rejected('invalid_followup_action', 422)
-    if action not in {'progress', 'snooze', 'resume', 'complete', 'stop'}:
+    if action not in {'progress', 'snooze', 'resume', 'complete', 'stop', 'research'}:
         raise Rejected('invalid_followup_action', 422)
     if action == 'progress':
         progress = body['progress']
@@ -102,8 +106,14 @@ def change(db, identifier, body, mandate, now):
         db.execute('UPDATE followups SET state=?,revision=revision+1,latest_notice_id=NULL WHERE id=?',
                    (state, identifier))
         return
+    if action == 'research' and body['question'] == '':
+        research.change(db, row, '', now)
+        return
     if mandate is None or not matches_binding(row, mandate):
         raise Rejected('responsibility_authority_revoked', 403)
+    if action == 'research':
+        research.change(db, row, body['question'], now)
+        return
     if action == 'snooze':
         until = now + body['days'] * DAY
         db.execute("UPDATE followups SET state='snoozed',revision=revision+1,snoozed_until=?,next_review_at=?,attention_at=?,latest_notice_id=NULL WHERE id=?",
@@ -125,7 +135,8 @@ def selected(db, mandate, source_hash, now):
     items = []
     for row in rows:
         item = {key: row[key] for key in ('id', 'revision', 'source_request_id', 'quote', 'title',
-                 'progress', 'last_review_at', 'attention_at', 'checkin_count')}
+                 'progress', 'last_review_at', 'attention_at', 'checkin_count',
+                 'research_query', 'last_research_hash')}
         item['preparation'] = row['preparation'][:1500]
         item['last_note'] = json.loads(row['latest_note']) if row['latest_note'] else None
         item['check_in_due'] = now >= row['attention_at']
@@ -141,7 +152,8 @@ def prompt(snapshot):
         'Account for corrections and progress. Never repeat stale claims about platform capabilities. '
         'The review time and timezone are supplied; do not invent deadlines or urgency. '
         'Return only {"followups":[...]}, exactly one object for each selected commitment. '
-        'Each object has exactly commitment_id, action, source_request_id, quote, reason, preparation. '
+        'Each object has commitment_id, action, source_request_id, quote, reason, preparation, '
+        'and only the additional citations field when the research instructions below require it. '
         'action is quiet, update, check_in, or completion_check. For quiet, the four text fields '
         'source_request_id, quote, reason, preparation must be empty strings. '
         'Use update for useful new preparation based on evidence, completion_check to ask the owner '
@@ -152,6 +164,7 @@ def prompt(snapshot):
         'exchanges, or its progress note (source_request_id = progress:<commitment id>). '
         'Keep reason under 1000 characters, preparation under 2000, quote under 500. '
         'The application controls cadence, notification consent, quiet hours and completion.\n'
+        + research.prompt_instructions(snapshot) +
         'BEGIN BOUNDED EVIDENCE\n' + canonical(snapshot) + '\nEND BOUNDED EVIDENCE'
     )
 
@@ -168,6 +181,7 @@ def validate(raw, snapshot):
         seen = set()
         for result in results:
             _validate_item(result, expected, snapshot['exchanges'])
+            research_contract.citations(result, research.evidence(snapshot, result['commitment_id']))
             if result['commitment_id'] in seen:
                 raise ValueError
             seen.add(result['commitment_id'])
@@ -179,7 +193,7 @@ def validate(raw, snapshot):
 def _validate_item(result, expected, exchanges):
     fields = {'commitment_id': 100, 'action': 30, 'source_request_id': 100,
               'quote': 500, 'reason': 1000, 'preparation': 2000}
-    if type(result) is not dict or set(result) != set(fields):
+    if type(result) is not dict or set(result) not in (set(fields), set(fields) | {'citations'}):
         raise ValueError
     for key, limit in fields.items():
         if not isinstance(result[key], str) or len(result[key]) > limit:
@@ -219,9 +233,12 @@ def publish(db, results, snapshot, mandate, source_hash, now):
         identifier = original['id']
         db.execute("UPDATE followups SET state='active',last_review_at=?,last_input_hash=?,next_review_at=? WHERE id=?",
                    (now, source_hash, now + DAY, identifier))
+        research.record(db, identifier, snapshot)
         if result['action'] == 'quiet':
             continue
         note = {**result, 'created_at': now}
+        if 'citations' in result:
+            note['citations'] = research_contract.citations(result, research.evidence(snapshot, identifier))
         db.execute('UPDATE followups SET latest_note=? WHERE id=?', (canonical(note), identifier))
         ready = True
         if not _attention_warranted(result, original, snapshot):
@@ -243,6 +260,10 @@ def _attention_warranted(result, original, snapshot):
     last = original['last_review_at']
     if last is None:
         return False
+    collected = research.evidence(snapshot, original['id'])
+    if (collected and result.get('citations') and result['action'] == 'update'
+            and research_contract.source_set_hash(collected['sources']) != original['last_research_hash']):
+        return True
     return any(item['request_id'] == result['source_request_id'] and item['created_at'] > last
                for item in snapshot['exchanges'])
 
@@ -254,4 +275,5 @@ def present(db, identifier):
     value = {key: row[key] for key in ('state', 'revision', 'started_at', 'next_review_at',
               'snoozed_until', 'last_review_at', 'progress', 'attention_at')}
     value['latest_note'] = json.loads(row['latest_note']) if row['latest_note'] else None
+    value['research'] = research.present(row)
     return value
