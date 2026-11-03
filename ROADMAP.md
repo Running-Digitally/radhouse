@@ -32,7 +32,8 @@ and agent downloads, explicit sharing and Private-mode denial passed end to end.
 Next: retained browser profiles (DW-3), with their own persistence and recovery contract.
 Off-host recovery custody, replacement-host boot and
 on-demand placement remain separate from this same-host operator slice. Helpers,
-schedules and optional browser import follow later. Memory snapshots and a
+helper fleets and optional browser import follow later. The first standing
+responsibility can be qualified independently of worker fleets. Memory snapshots and a
 runtime comparison do not block this work.
 
 The owner-authorized [browser-first SPACE slice](docs/design/space-browser-pilot.md)
@@ -45,6 +46,20 @@ the earlier isolated experiments.
 
 The remaining sequence is proposed; a standing fleet is not required. See the
 [technical assessment](docs/research/space-and-durable-agent-workspaces.md).
+
+## Always-on assistance: first standing responsibility
+
+The accepted [proactive assistance design](docs/proactive-assistance.md) combines
+Guardian Angel observation with Cognitive Amplifier preparation. The first
+[source candidate](docs/plans/2026-11-02-native-proactive-assistance.md) uses native
+Hermes scheduling to suggest commitments from explicitly authorized recent
+conversation, prepare a next step and ask the owner to confirm. It adds visible
+scope, coverage, pause and selective agent-originated push. It is not deployed.
+Confirmation currently records a commitment; ongoing follow-up, broader sources,
+prepared artifacts and adjustable attention policy remain in this same backlog.
+Standing responsibilities are an early, independent part of DW-6; helper fleets
+and placement are not prerequisites. The [source and UX research](docs/research/2026-11-02-hermes-proactive-assistance.md)
+records the native capabilities, constraints and evidence behind this sequence.
 
 ## First release: one private web conversation
 

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Responsibilities · Radhouse</title>
+  <link rel="stylesheet" href="/responsibilities.css">
+  <script src="/responsibilities.js" type="module"></script>
+</head>
+<body>
+  <main>
+    <nav><a href="/">← Conversation</a><span>Radhouse</span></nav>
+    <header><p class="eyebrow">Standing responsibility · Personal pilot</p>
+      <h1>A little help keeping track.</h1>
+      <p>Radhouse can notice possible commitments in your recent conversation and prepare a useful next step. You decide what counts.</p>
+    </header>
+    <section aria-labelledby="scope-title" class="scope">
+      <div class="heading"><h2 id="scope-title">Commitment suggestions</h2><button id="toggle" disabled>Loading…</button></div>
+      <p id="sources"></p><p id="preparation"></p><p id="excluded" class="muted"></p>
+      <p id="coverage" role="status">Checking coverage…</p>
+    </section>
+    <p id="error" role="alert" hidden></p>
+    <section aria-labelledby="suggestions-title"><h2 id="suggestions-title">For you to consider</h2>
+      <p id="empty" hidden>Nothing to consider yet. Successful checks can finish quietly.</p>
+      <div id="suggestions"></div>
+    </section>
+  </main>
+</body>
+</html>
