@@ -309,7 +309,7 @@ def test_push_is_opt_in_private_quiet_hours_and_revocable(pilot, tmp_path):
     def send(token, platform, data):
         sent.append(_payload(token, platform, data)["message"])
         return PushResult("sent")
-    assert outbox.dispatch_one(lambda _:True, send, commitment_decision=lambda _:"hold")
+    assert outbox.dispatch_one(lambda _:True, send, commitment_decision=lambda _, **__:"hold")
     assert sent == []
     clock[0]+=61
     assert outbox.dispatch_one(lambda _:True, send, commitment_decision=review.notification_decision)

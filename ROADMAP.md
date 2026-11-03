@@ -58,8 +58,10 @@ scope, coverage, pause and selective agent-originated push. The private pilot is
 deployed; native review and provider delivery have passed live checks. The owner
 confirmed receipt and successful suggestion opening on both iOS and Android;
 the qualification record preserves the tested phone state and remaining limits.
-Confirmation currently records a commitment; ongoing follow-up, broader sources,
-prepared artifacts and adjustable attention policy remain in this same backlog.
+The [ongoing follow-up extension](docs/plans/2026-11-03-confirmed-commitment-followup.md)
+adds explicit activation, progress, snooze, completion and selective later updates;
+its rollout is being qualified. Broader sources, prepared artifacts and adjustable
+attention policy remain in this same backlog.
 Standing responsibilities are an early, independent part of DW-6; helper fleets
 and placement are not prerequisites. The [source and UX research](docs/research/2026-11-02-hermes-proactive-assistance.md)
 records the native capabilities, constraints and evidence behind this sequence.

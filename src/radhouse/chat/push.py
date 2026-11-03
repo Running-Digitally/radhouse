@@ -233,6 +233,8 @@ class PushOutbox:
             admitted = {row[0] for row in db.execute("SELECT DISTINCT q.event_id FROM deliveries q JOIN devices d USING(installation) WHERE q.kind='commitment_ready' AND q.created_at>? AND d.owner=?", (now - DAY, owner))}
             for item in items:
                 payload = notification(owner, item["id"], "commitment_ready")
+                if "event_id" in item:
+                    payload["event_id"] = str(UUID(item["event_id"]))
                 if payload["event_id"] not in admitted and len(admitted) >= 2:
                     continue
                 for device in devices:
@@ -270,8 +272,9 @@ class PushOutbox:
                     return True
                 if self._defer_commitment(db, item, commitment_decision, now):
                     return True
-                result = send(self.cipher.decrypt(item["token"]).decode(), item["platform"],
-                              notification(item["owner"], item["request_id"], item["kind"]))
+                payload = notification(item["owner"], item["request_id"], item["kind"])
+                payload["event_id"] = item["event_id"]
+                result = send(self.cipher.decrypt(item["token"]).decode(), item["platform"], payload)
             except Exception:
                 # Provider exceptions may contain registration tokens. Never log them.
                 result = PushResult("retry")
@@ -290,7 +293,7 @@ class PushOutbox:
     def _defer_commitment(self, db, item, decide, now):
         if item["kind"] != "commitment_ready":
             return False
-        decision = decide(item["request_id"]) if decide and item["commitments_since"] is not None else "discard"
+        decision = decide(item["request_id"], event_id=item["event_id"]) if decide and item["commitments_since"] is not None else "discard"
         if decision == "allow":
             return False
         if decision == "hold":

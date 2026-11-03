@@ -141,3 +141,21 @@ acceptance, physical receipt and authenticated navigation. Test notifications
 and any one-time quiet-hours exception should remain distinct from the recurring
 attention policy. Preserve failed-run evidence, and disclose when qualification
 has consumed the normal review budget instead of silently resetting it.
+
+
+## Extending a confirmed commitment across runs
+
+The follow-up extension keeps owner-confirmed state in the application and uses
+the existing native job to review it. A saved quotation and progress note can
+outlive the discovery window without granting access to other chats or general
+agent memory. Owner edits advance an item revision so late model output and
+queued notifications cannot contradict a newer snooze, correction or completion.
+A later update needs its own delivery occurrence identity while still opening
+the same authenticated commitment. Reusing the initial suggestion's event ID
+would suppress legitimate later updates as duplicates.
+
+Scheduled review and notification cadence remain separate. New evidence and due
+check-ins can justify work; unchanged checks can stay silent. Backoff after an
+unanswered check-in is an explicit pilot policy, not a research-established
+optimal cadence. The [implementation record](../plans/2026-11-03-confirmed-commitment-followup.md)
+keeps these limits and the observed qualification separate from future claims.
