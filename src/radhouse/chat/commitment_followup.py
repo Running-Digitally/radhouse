@@ -7,6 +7,7 @@ from radhouse.domain.tasks import Rejected
 
 DAY = 86400
 LIVE_STATES = ('active', 'snoozed')
+SELECT_FOLLOWUP = 'SELECT * FROM followups WHERE id=?'
 
 
 def canonical(value):
@@ -56,7 +57,7 @@ def matches_binding(row, mandate):
 
 
 def start(db, identifier, mandate, now):
-    old = db.execute('SELECT * FROM followups WHERE id=?', (identifier,)).fetchone()
+    old = db.execute(SELECT_FOLLOWUP, (identifier,)).fetchone()
     if old:
         if old['state'] in LIVE_STATES and matches_binding(old, mandate):
             return
@@ -91,7 +92,7 @@ def _validated_action(body):
 
 def change(db, identifier, body, mandate, now):
     action = _validated_action(body)
-    row = db.execute('SELECT * FROM followups WHERE id=?', (identifier,)).fetchone()
+    row = db.execute(SELECT_FOLLOWUP, (identifier,)).fetchone()
     if row is None:
         raise Rejected('followup_not_found', 404)
     if row['revision'] != body['revision'] or row['state'] not in LIVE_STATES:
@@ -203,7 +204,7 @@ def _validate_item(result, expected, exchanges):
 
 def current(db, snapshot, mandate, now):
     for item in snapshot['followups']:
-        row = db.execute('SELECT * FROM followups WHERE id=?', (item['id'],)).fetchone()
+        row = db.execute(SELECT_FOLLOWUP, (item['id'],)).fetchone()
         if (row is None or row['revision'] != item['revision'] or row['state'] not in LIVE_STATES
                 or row['snoozed_until'] > now or not matches_binding(row, mandate)):
             return False
@@ -247,7 +248,7 @@ def _attention_warranted(result, original, snapshot):
 
 
 def present(db, identifier):
-    row = db.execute('SELECT * FROM followups WHERE id=?', (identifier,)).fetchone()
+    row = db.execute(SELECT_FOLLOWUP, (identifier,)).fetchone()
     if row is None:
         return None
     value = {key: row[key] for key in ('state', 'revision', 'started_at', 'next_review_at',
