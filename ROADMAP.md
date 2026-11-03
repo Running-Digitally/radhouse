@@ -55,8 +55,9 @@ Guardian Angel observation with Cognitive Amplifier preparation. The first
 Hermes scheduling to suggest commitments from explicitly authorized recent
 conversation, prepare a next step and ask the owner to confirm. It adds visible
 scope, coverage, pause and selective agent-originated push. The private pilot is
-deployed; native review and provider delivery have passed live checks. Physical
-phone acceptance is recorded separately in the qualification record.
+deployed; native review and provider delivery have passed live checks. The owner
+confirmed receipt and successful suggestion opening on both iOS and Android;
+the qualification record preserves the tested phone state and remaining limits.
 Confirmation currently records a commitment; ongoing follow-up, broader sources,
 prepared artifacts and adjustable attention policy remain in this same backlog.
 Standing responsibilities are an early, independent part of DW-6; helper fleets
