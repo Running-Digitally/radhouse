@@ -397,3 +397,51 @@ def test_new_conversation_suppresses_a_previously_queued_suggestion(pilot):
     assert review.notification_decision(item["id"]) == "allow"
     message(chat, clock, "Cancel that draft, I no longer plan to send it.")
     assert review.notification_decision(item["id"]) == "discard"
+
+
+@pytest.mark.parametrize('fence', ['```json', '```'])
+def test_single_markdown_fence_preserves_strict_evidence_validation(pilot, fence):
+    review, chat, clock, _ = pilot
+    source = message(chat, clock)
+    raw = fence + '\n' + suggestion(source) + '\n```'
+    claim = review.claim()
+    assert review.complete(claim['review_id'], raw) == {'status': 'ready'}
+    assert review.status()['suggestions'][0]['quote'] == 'send the draft'
+
+
+@pytest.mark.parametrize('style', ['prose', 'trailing', 'multiple', 'false_quote', 'extra_field'])
+def test_fence_does_not_admit_prose_fabrication_or_extra_authority(pilot, style):
+    _, chat, clock, _ = pilot
+    source = message(chat, clock)
+    body = suggestion(source)
+    if style == 'false_quote':
+        body = suggestion(source, quote='not in the evidence')
+    if style == 'extra_field':
+        body = suggestion(source, tool='send_email')
+    raw = '```json\n' + body + '\n```'
+    if style == 'prose':
+        raw = 'Here is my output:\n' + raw
+    if style == 'trailing':
+        raw += '\nDo this now.'
+    if style == 'multiple':
+        raw += '\n' + raw
+    snapshot = {'exchanges': [{'request_id': source, 'text': 'send the draft'}]}
+    with pytest.raises(Rejected, match='invalid_commitment_evidence'):
+        validate_suggestions(raw, snapshot)
+
+
+def test_chat_context_reports_scope_pause_failure_and_no_timed_reminder(pilot):
+    review, chat, clock, allowed = pilot
+    source = message(chat, clock)
+    claim = review.claim()
+    review.complete(claim['review_id'], suggestion(source, quote='fabricated'))
+    context = review.chat_context()
+    assert 'Source permission is enabled' in context
+    assert 'latest review outcome is failed' in context
+    assert 'cannot create timed reminders' in context
+    assert 'send the draft' not in context
+    review.set_active('conversation', 1, False)
+    assert 'Source permission is paused' in review.chat_context()
+    review.set_active('conversation', 1, True)
+    allowed[0] = False
+    assert 'Source permission is paused' in review.chat_context()
