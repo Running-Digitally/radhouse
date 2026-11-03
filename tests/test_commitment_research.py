@@ -68,8 +68,9 @@ def test_owner_change_prevents_collection_and_publication(pilot, change):
     else:
         extra = {'question': ''} if change == 'research' else {'days': 1} if change == 'snooze' else {}
         review.followup_action(identifier, {'action': change, 'revision': 2, **extra})
+    evidence = packet(identifier, pilot[2][0])
     with pytest.raises(Rejected):
-        review.attach_research(claim['review_id'], packet(identifier, pilot[2][0]))
+        review.attach_research(claim['review_id'], evidence)
     assert review.notification_items() == []
 
 
@@ -191,10 +192,11 @@ def test_worker_never_infers_after_collection_authority_rejected(worker):
             return httpx.Response(409, json={'error': 'review_not_current'})
         completions.append(json.loads(request.content))
         return httpx.Response(200, json={'status': 'stale'})
+    transport = httpx.MockTransport(handler)
     with pytest.raises(ValueError, match='review_failed'):
         worker.run_once({'endpoint': 'https://fixture.test', 'worker_bearer': 'synthetic'},
             infer=lambda *_: pytest.fail('stale evidence must not reach inference'), collect=lambda *_: {'items': []},
-            transport=httpx.MockTransport(handler))
+            transport=transport)
     assert completions == [{'review_id': 'synthetic', 'output': '', 'failed': True}]
 
 
@@ -212,7 +214,8 @@ def test_collector_environment_has_no_owner_context_and_cleans_up(collector, mon
     def run(command, **kwargs):
         env = kwargs['env']; homes.append(Path(env['HERMES_HOME']))
         assert set(env) == {'HOME', 'HERMES_HOME', 'PATH', 'LANG', 'PYTHONNOUSERSITE'}
-        assert kwargs['cwd'] == str(homes[-1]) and kwargs['timeout'] == 65
+        assert kwargs['cwd'] == str(homes[-1])
+        assert kwargs['timeout'] == 65
         assert json.loads(kwargs['input']) == {'commitment_id': 'synthetic', 'query': QUESTION}
         assert json.loads((homes[-1] / 'config.yaml').read_text())['web']['keyless_rescue'] is False
         return SimpleNamespace(returncode=1, stdout='')
@@ -224,7 +227,8 @@ def test_collector_environment_has_no_owner_context_and_cleans_up(collector, mon
 
 def test_collection_is_bounded_and_rejects_redirected_or_private_pages(collector):
     def search(query, limit):
-        assert query == QUESTION and limit == 3
+        assert query == QUESTION
+        assert limit == 3
         return json.dumps({'success': True, 'data': {'web': [{'url': 'https://example.org/guide'},
             {'url': 'https://127.0.0.1/'}, {'url': 'https://example.net/guide'}]}})
     def extract(urls, char_limit):
@@ -233,7 +237,8 @@ def test_collection_is_bounded_and_rejects_redirected_or_private_pages(collector
                                      {'url': 'https://redirect.example.com/', 'content': PUBLIC_TEXT}]})
     result = collector.collect_one({'commitment_id': 'synthetic', 'query': QUESTION}, search, extract,
                                    address_check=contract.public_url)
-    assert result['coverage'] == 'partial' and len(result['sources']) == 1
+    assert result['coverage'] == 'partial'
+    assert len(result['sources']) == 1
     assert len(result['sources'][0]['text'].encode()) == 3000
 
 

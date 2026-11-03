@@ -98,3 +98,83 @@ quality gate, rule or coverage exclusion was changed.
 The post-merge cycle must inspect both all-code and new-code findings, fix
 applicable findings introduced by this change in a follow-up PR, and rescan the
 follow-up merge. Existing backlog and a failed quality gate must remain visible.
+
+## Native browser follow-up
+
+The first functional changes merged in backend PR 129 and mobile PR 12. Their
+processed-main scans were not clean: backend main `975aad56e2d2c470f63fc1b88fb51988a1b476db`
+failed the new-code coverage/issue conditions; mobile main
+`e45dc4749d0740fb392847c1a3e1a597d6a230e4` had one open nested-ternary finding.
+Those merges did not establish native mobile UX acceptance or phone publication.
+The owner subsequently required native controls and a live chat preview.
+
+The follow-up adds a dedicated authenticated canvas document and a closed native
+presentation/action contract. Native chat displays the view-only preview only
+while the agent is active and controls the browser. Expansion preserves the
+same tab and mounted conversation without taking control. Native address and
+tools sheets, explicit Private/Observe and handback, reading zoom, reconnect and
+foreground/session handling replace the full embedded web workspace. Reading
+zoom blocks remote input so local panning cannot become a page action.
+
+Simulator checks caught two platform-dependent failures before publication.
+An initially hidden preview must still read browser status without mounting its
+stream; otherwise it can never discover agent activity. Android also reports a
+message's source origin, whereas iOS supplies the document URL. The Android
+origin form is admitted only while the exact trusted canvas is loaded, with
+navigation confined to that canvas and the owned stream. Remote web content
+continues to execute in the isolated browser and contributes pixels only.
+
+The earlier research simulator harness bypassed `SessionClient` and missed a
+missing `research` action in its allowlist. The follow-up fixes that path and
+adds real-client/component integration coverage for explicit enable, refreshed
+saved revision and revocation. Earlier component-only evidence must not be read
+as proof of the production client's authenticated request path.
+
+The follow-up backend gate passed 2,470 tests, no failures/errors/skips, four
+JavaScript browser checks and owned coverage with complete fixture cleanup.
+It used pinned Hermes `818c13be1dc4fd28987e1e881a9408224afd4535` and a disposable
+synthetic profile. The tested source fingerprint was
+`d6ee22e3c9265d85f93b4bbd66c80fe7185180743814733e7f1dfb77b96771d6`.
+A prior run correctly failed because it lacked the pinned source and skipped 68
+checks; that run is not qualification evidence. The canvas separately passes
+Chromium and WebKit preview/control/privacy/uncertain-outcome/expiry checks.
+Mobile passes typecheck, lint, 161 application tests and 15 tooling tests.
+
+Native simulator evidence includes preview, expansion, explicit takeover,
+Private/Observe, handback and conversation continuity on iOS and Android. iOS
+also shows the actual software keyboard with a compact preview and an accessible
+native address sheet. These are synthetic-data checks; real deployed stream
+navigation and physical phone publication/receipt remain separate release gates.
+
+The broader web regression reproduced Send being pushed outside a narrow browser
+chat drawer by the conversation toolbar and privacy bar. The targeted CSS change
+reserves the focused drawer for chat and compacts its secondary toolbar/history
+padding at keyboard height, retaining the privacy controls and mounted stream.
+It also consolidates the duplicate privacy selector and overridden flex property.
+The CSS change follows the full fixture run and has separate Chromium/WebKit
+responsive regression verification; the merged-main scan must regenerate fresh
+coverage for the complete final source.
+
+The touched-file corrections address research collection/validation complexity,
+ambiguous test assertions, unconditional JavaScript formatting, a redundant
+conditional expression in the coverage launcher and the mobile nested ternary.
+Closure is established only by the next processed merged-main analysis.
+Additional pre-existing findings remain explicitly deferred:
+
+- `app.py`: `9c62afc9-bc71-4a57-b73e-d177e0d6e32a` and
+  `f6953f63-a3ca-49cc-8058-5f51bda10c54` concern application assembly and controlled
+  routes outside the three static-asset routes. Refactoring their authentication
+  and lifecycle paths requires a separate bounded change.
+- `scripts/release.py`: complexity findings `aed15df4-f811-4b25-970e-89b5a2a56810`,
+  `e8cfb83b-1928-40e6-9ce7-8d1027fa16bb`, `8cbb5336-b7c9-4acf-ad53-d38034ffb0c9`,
+  `cfcf6769-e937-48e8-aa8e-60bda092fcd4`, `ab2f5c61-b8a1-4678-9039-eee4037b4bb7`,
+  `c8a160d6-e03e-4e8b-a55d-e6922cd240f6`, `be247303-2834-4a4c-a40c-63ead861c001`,
+  `78a201f9-06d9-49b0-8bb7-6cf8c2d7c412`, and `cbb33f75-8d66-4239-a83a-8f7a1d4d09db`
+  concern release admission, manifests and operational transitions. This change
+  only extends static-route verification; refactor the broader release lifecycle
+  independently with its recovery qualification.
+- `scripts/release.py`: `1a97b4c5-fa8c-498c-b7e2-d8e9fcefb73f`,
+  `52a60062-a057-40b7-a3d1-f8fc1934b207`, and `ac2a6bdf-2c17-446c-a556-f2b1c98d8c9e`
+  identify the standard private-network ranges in an address-admission check,
+  not deployment endpoints. Retain the check and review the contextual findings
+  explicitly; no suppression or server disposition is applied.

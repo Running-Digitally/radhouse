@@ -67,16 +67,20 @@ def _validate_item(item, earliest, latest):
         raise ValueError('invalid_research_coverage')
     seen = set()
     for source in sources:
-        if type(source) is not dict or set(source) != {'id', 'url', 'title', 'text'}:
-            raise ValueError('invalid_research_source')
-        if not public_url(source['url']):
-            raise ValueError('public_url_required')
-        if any(not isinstance(source[k], str) or not source[k].strip() or len(source[k]) > limit
-               for k, limit in [('title', 200), ('text', MAX_TEXT)]):
-            raise ValueError('invalid_research_text')
-        if source['id'] != source_id(source['url'], source['text']) or source['url'] in seen:
-            raise ValueError('invalid_research_source_identity')
+        _validate_source(source, seen)
         seen.add(source['url'])
+
+
+def _validate_source(source, seen):
+    if type(source) is not dict or set(source) != {'id', 'url', 'title', 'text'}:
+        raise ValueError('invalid_research_source')
+    if not public_url(source['url']):
+        raise ValueError('public_url_required')
+    if any(not isinstance(source[k], str) or not source[k].strip() or len(source[k]) > limit
+           for k, limit in [('title', 200), ('text', MAX_TEXT)]):
+        raise ValueError('invalid_research_text')
+    if source['id'] != source_id(source['url'], source['text']) or source['url'] in seen:
+        raise ValueError('invalid_research_source_identity')
 
 
 def citations(result, evidence):

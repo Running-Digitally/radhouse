@@ -351,7 +351,8 @@ def main(run_factory=Run):
     except Exception as exc:
         prerequisite_missing = isinstance(exc, PrerequisiteError)
         run.manifest["result"] = "failed"
-        print("FAIL: " + (str(exc) if isinstance(exc, FixtureError) else f"{type(exc).__name__} during local fixture execution; no proof recorded"), file=sys.stderr)
+        detail = str(exc) if isinstance(exc, FixtureError) else f"{type(exc).__name__} during local fixture execution; no proof recorded"
+        print("FAIL: " + detail, file=sys.stderr)
     finally:
         signal.alarm(0)
         run.cleanup()
@@ -456,9 +457,10 @@ def _save_measurement(run, measurement):
 def _finish_coverage(run):
     directory = run.output / COVERAGE_DIRECTORY
     run.command(["node", "--test", *[str(path.relative_to(ROOT)) for path in sorted((ROOT / "web/test").glob("*.test.mjs"))]])
-    for script in ("admin-browser.mjs", "browser-view-browser.mjs", "chat-browser-view-browser.mjs"):
+    browser_checks = ("admin-browser.mjs", "browser-view-browser.mjs", "chat-browser-view-browser.mjs", "native-browser-canvas.mjs")
+    for script in browser_checks:
         run.command(["node", f"tests/{script}"])
-    run.manifest["javascript_browser_checks"] = 3
+    run.manifest["javascript_browser_checks"] = len(browser_checks)
     run.command(["node", "scripts/coverage-report.mjs", str(directory)])
 
 

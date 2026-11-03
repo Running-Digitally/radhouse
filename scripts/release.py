@@ -190,10 +190,12 @@ def static_route(name):
     if not name.startswith(STATIC):
         return None
     name = name.removeprefix(STATIC)
-    direct = {"chat.js", "chat.css", "format.js", "browser-view.js", "browser-view.css", "navigation.js", "navigation.css", "library.js", "admin.js", "admin.css"}
+    direct = {"chat.js", "chat.css", "format.js", "browser-view.js", "browser-view.css", "navigation.js", "navigation.css", "library.js", "admin.js", "admin.css", "mobile-browser.js", "mobile-browser.css"}
     workspace = {"chat-experience.js", "chat-experience.css", "about-you.js", "about-you.css", "owner-terminal.js", "owner-terminal.css", "inference-controls.js", "inference-controls.css", "agent-profile.js", "agent-profile.css", "agent-portrait.js"}
     if name == "index.html":
         return "/"
+    if name == "mobile-browser.html":
+        return "/mobile/browser"
     if name in direct or name in {"icons/pdf.svg", "icons/word.svg", "icons/excel.svg", "icons/powerpoint.svg"}:
         return "/" + name
     if name in workspace or name == "agent-profile/catalog.json":
