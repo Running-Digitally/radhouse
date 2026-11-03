@@ -365,7 +365,8 @@ class BrowserSessionService:
             "can_return": pending is None, "vault_enabled": self.credential_vault_enabled}
         if self.files_enabled:
             result["files_enabled"] = True
-            result["downloads"] = {"saving": self.files.pending_count, "unavailable": self.files.unavailable}
+            result["downloads"] = {"saving": self.files.pending_count, "unavailable": self.files.unavailable,
+                                   "previous_unavailable": self.files.previous_unavailable}
         if payload.get("stream") is not None:
             stream = payload["stream"]
             if (type(stream) is not dict or set(stream) != {"path","token"}

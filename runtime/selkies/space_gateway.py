@@ -65,6 +65,12 @@ class LaunchJournal:
                 self.database.execute('INSERT INTO launches(id,sandbox) VALUES (?,?)', (identity,self.sandbox))
         elif row is not None and row[0] == self.sandbox and operation == 'files':
             return None  # A retired launch retains only its acknowledgement-driven outbox.
+        elif (row is not None and row[0] != self.sandbox and row[1] == 1 and operation == 'files'
+              and envelope['body'] == {'action': 'list'}):
+            # Positive retirement of the old guest proves its outbox cannot be
+            # recovered here. Keep the receipt; never report those files saved.
+            return {**{k: envelope[k] for k in ('schema', 'launch_id', 'request_id', 'sequence')},
+                    'data': {'downloads': [], 'previous_unavailable': True}}
         elif row is not None and row[1] == 1 and operation in {'status', 'stop'}:
             return {**{k:envelope[k] for k in ('schema','launch_id','request_id','sequence')},
                     'data':{'state':'retired','connected':[],'faulted':False}}
@@ -279,7 +285,7 @@ class Gateway:
             try:
                 yield
             finally:
-                await asyncio.gather(*(p.close(code=1001) for p in list(self.pipes)))
+                await asyncio.gather(*(p.close(code=1001) for p in self.pipes))
                 await self.http.close()
                 self.journal.database.close()
         app.cleanup_ctx.append(lifetime)

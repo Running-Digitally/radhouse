@@ -8,7 +8,7 @@ const results=[];
 for(const [name,engine] of [['chromium',chromium],['webkit',webkit]]){
  const browser=await engine.launch({headless:true,...(name==='chromium'?{channel:'chrome'}:{})});
  const c=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
- let foreign=true,rev=3,moves=[],errors=[];
+ let foreign=true,rev=3,moves=[],errors=[],stallViewer=false;
  const state=()=>({state:'live',generation:'generation-1',url:'https://example.org/',title:'Example',viewport:{width:1280,height:900},agent_active:false,
   stream:{path:'/chat/browser/stream/index.html',token:(foreign?'v':'h').repeat(43)},control:{mode:'human',revision:rev,can_take:false,...(!foreign?{lease_id:'phone-lease',lease_expires_at:Date.now()/1000+60,next_sequence:1,observation_mode:'private',observation_epoch:0}:{})},page_context:{current:{url:'https://example.org/',title:'Example'},previous:null},can_return:true,vault_enabled:false});
  await c.addInitScript(()=>{
@@ -25,6 +25,7 @@ for(const [name,engine] of [['chromium',chromium],['webkit',webkit]]){
    const body=req.postDataJSON();expect(body.move_here).toBe(true);moves.push(body);foreign=false;rev++;return json(state());
   }
   if(path==='/chat/browser/control/heartbeat')return json(state());
+  if(path==='/chat/browser/stream/index.html'&&stallViewer)return route.fulfill({contentType:'text/html',body:'<p>Connecting fixture</p>'});
   if(path==='/chat/browser/stream/index.html')return route.fulfill({contentType:'text/html',body:`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><script>
    const baseline=parent.trustedPlaybackTaps;let playing=false;window.remoteInput=0;
    document.addEventListener('pointerdown',()=>remoteInput++);
@@ -91,6 +92,18 @@ for(const [name,engine] of [['chromium',chromium],['webkit',webkit]]){
   await expect(page.getByRole('button',{name:'Tap to view browser',exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Tap to view browser',exact:true}).click();
   await expect(page.locator('.browser-connection')).toHaveText('Live');
+  expect(await page.frameLocator('.browser-stream-frame').locator('video').evaluate(()=>window.remoteInput)).toBe(0);
+  stallViewer=true;
+  await page.reload();
+  await expect(page.getByRole('button',{name:'Reconnect viewer',exact:true})).toBeVisible({timeout:20000});
+  const stalledSource=await page.locator('.browser-stream-frame').getAttribute('src');
+  stallViewer=false;
+  await page.getByRole('button',{name:'Reconnect viewer',exact:true}).click();
+  await expect(page.locator('.browser-stream-frame')).not.toHaveAttribute('src',stalledSource);
+  await expect(page.getByRole('button',{name:'Tap to view browser',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Tap to view browser',exact:true}).click();
+  await expect(page.locator('.browser-connection')).toHaveText('Live');
+  expect(moves.length).toBe(1);
   expect(await page.frameLocator('.browser-stream-frame').locator('video').evaluate(()=>window.remoteInput)).toBe(0);
   expect(errors).toEqual([]);
   results.push({engine:name,policy_rejection_visible:true,trusted_tap_resumes:true,play_does_not_take_control:true,no_remote_input_from_play:true,explicit_move_private:true,new_role_requires_fresh_playback:true,trusted_activity_forwarded:true,synthetic_activity_denied:true,foreign_activity_denied:true,foreign_frame_recovery:true,no_input_to_inaccessible_frame:true});

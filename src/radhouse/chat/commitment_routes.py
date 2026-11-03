@@ -124,7 +124,19 @@ def install_commitment_review(app, auth, service, review, worker_bearer):
     def claim(request: Request):
         worker(request)
         with service.dispatch_gate.admission():
-            return review.claim()
+            return review.claim(research_capable=request.headers.get('X-Radhouse-Research') == 'v1')
+
+    @app.post('/internal/commitment-review/research')
+    async def attach_research(request: Request):
+        worker(request)
+        body = await _body(request, 45000)
+        if (set(body) != {'review_id', 'evidence'} or not isinstance(body['review_id'], str)
+                or len(body['review_id']) > 100):
+            raise Rejected('invalid_review_request', 422)
+        def attach():
+            with service.dispatch_gate.admission():
+                return review.attach_research(body['review_id'], body['evidence'])
+        return await asyncio.to_thread(attach)
 
     @app.post("/internal/commitment-review/complete")
     async def complete(request: Request):

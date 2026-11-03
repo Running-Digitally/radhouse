@@ -23,6 +23,11 @@ _display = None
 _chrome = None
 _endpoint = None
 _root = None
+SPACE_PROTOCOL = 'space_protocol.py'
+SPACE_CLIENT = 'space_client.py'
+SANDBOX_MODULE = 'sandbox.py'
+DISABLED_SETTING = 'false|locked'
+API_PATH = '/api/'
 
 
 def load(name, path):
@@ -61,20 +66,32 @@ def configure(bridge, path):
     if remote:
         # Production packages place this module in their pinned adapter directory.
         adapter = Path(__file__).parent.relative_to(root)
-        required = {str(adapter / name) for name in ('platform.py', 'space_protocol.py',
-            'space_client.py', 'space_platform.py', 'control.py', 'sandbox.py', 'browser_files.py')}
+        required = {str(adapter / name) for name in ('platform.py', SPACE_PROTOCOL,
+            SPACE_CLIENT, 'space_platform.py', 'control.py', SANDBOX_MODULE, 'browser_files.py')}
         if not required.issubset(value['files']):
             raise ValueError('stream_installation_unverified')
-        load('radhouse_space_protocol', Path(__file__).with_name('space_protocol.py'))
-        client = load('radhouse_space_client', Path(__file__).with_name('space_client.py'))
+        load('radhouse_space_protocol', Path(__file__).with_name(SPACE_PROTOCOL))
+        client = load('radhouse_space_client', Path(__file__).with_name(SPACE_CLIENT))
         client.Client(network, bridge._root_file)  # Validate TLS and credentials before selection.
     configuration, _root = value, root
 
 
-def launch(bridge, directory, environment):
-    global _display, _chrome, _endpoint
-    if not configuration or (_chrome is not None and _chrome.poll() is None):
+def _require_launch_available():
+    if not configuration:
         raise ValueError('stream_browser_busy')
+    if _chrome is None or _chrome.poll() is not None:
+        return
+    # A failed start retains its exact remote identity even before a stream or
+    # native driver exists. Cold recovery can later publish a retirement receipt.
+    # Observe that receipt; never replay start/stop or replace a live/unknown guest.
+    if (configuration['network'].get('kind') == 'space-browser-v1'
+            and runtime is None and _chrome.endpoint is None
+            and _chrome.reconcile_retirement()):
+        return
+    raise ValueError('stream_browser_busy')
+
+
+def _finish_previous_stream(bridge):
     previous = runtime
     if previous is not None:
         # Finish the old server/watcher before spawning another Chrome or
@@ -95,9 +112,15 @@ def launch(bridge, directory, environment):
             raise
         if runtime is not None:
             raise ValueError('stream_retirement_unconfirmed')
+
+
+def launch(bridge, _directory, environment):
+    global _display, _chrome, _endpoint
+    _require_launch_available()
+    _finish_previous_stream(bridge)
     if configuration['network'].get('kind') == 'space-browser-v1':
-        load('radhouse_space_protocol', Path(__file__).with_name('space_protocol.py'))
-        client = load('radhouse_space_client', Path(__file__).with_name('space_client.py'))
+        load('radhouse_space_protocol', Path(__file__).with_name(SPACE_PROTOCOL))
+        client = load('radhouse_space_client', Path(__file__).with_name(SPACE_CLIENT))
         _chrome = client.RemoteChrome(client.Client(configuration['network'], bridge._root_file))
         # Retain uncertain launches. Only a confirmed stop releases ownership.
         _chrome.start(environment)
@@ -123,7 +146,7 @@ def launch(bridge, directory, environment):
             raise ValueError('stream_display_unavailable')
     environment['DISPLAY'] = os.environ['DISPLAY']
     environment['XAUTHORITY'] = os.environ['XAUTHORITY']
-    sandbox = load('radhouse_platform_sandbox', Path(__file__).with_name('sandbox.py'))
+    sandbox = load('radhouse_platform_sandbox', Path(__file__).with_name(SANDBOX_MODULE))
     sandbox.CHROME = bridge._browser_configuration['chromium_path']
     client = load('radhouse_isolated_browser_client',Path(__file__).with_name('network_client.py'))
     _chrome = client.RemoteChrome(configuration['network']['worker_socket'])
@@ -233,7 +256,7 @@ class Platform:
         bridge, owned = self.bridge, self.owned
         control, native = bridge._control_modules()
         stream = load('radhouse_platform_control', Path(__file__).with_name('control.py'))
-        self.sandbox = load('radhouse_platform_sandbox', Path(__file__).with_name('sandbox.py'))
+        self.sandbox = load('radhouse_platform_sandbox', Path(__file__).with_name(SANDBOX_MODULE))
         # Import settings only after the closed platform configuration is set.
         os.environ.update({
             'SELKIES_MASTER_TOKEN':secrets.token_urlsafe(32),
@@ -243,13 +266,13 @@ class Platform:
             'SELKIES_WEBCAM_SOCKET_PATH':str(self.socket.parent),
             'SELKIES_ENABLE_BASIC_AUTH':'false','SELKIES_ENABLE_DUAL_MODE':'false',
             'SELKIES_AUDIO_ENABLED':'false','SELKIES_ENABLE_RESIZE':'false',
-            'SELKIES_GAMEPAD_ENABLED':'false|locked','SELKIES_PRINTING_ENABLED':'false|locked',
-            'SELKIES_MICROPHONE_ENABLED':'false|locked','SELKIES_WEBCAM_ENABLED':'false|locked',
-            'SELKIES_SECOND_SCREEN':'false|locked','SELKIES_COMPUTER_USE_BIND':'',
+            'SELKIES_GAMEPAD_ENABLED':DISABLED_SETTING,'SELKIES_PRINTING_ENABLED':DISABLED_SETTING,
+            'SELKIES_MICROPHONE_ENABLED':DISABLED_SETTING,'SELKIES_WEBCAM_ENABLED':DISABLED_SETTING,
+            'SELKIES_SECOND_SCREEN':DISABLED_SETTING,'SELKIES_COMPUTER_USE_BIND':'',
             'SELKIES_MANUAL_WIDTH':'1280','SELKIES_MANUAL_HEIGHT':'900',
             'SELKIES_FRAMERATE':'30-30','SELKIES_ENCODER':'h264enc',
             'SELKIES_ENABLE_CLIPBOARD':'true','SELKIES_CLIPBOARD_SEAMLESS':'true|locked',
-            'SELKIES_ENABLE_BINARY_CLIPBOARD':'false|locked','SELKIES_COMMAND_ENABLED':'false|locked',
+            'SELKIES_ENABLE_BINARY_CLIPBOARD':DISABLED_SETTING,'SELKIES_COMMAND_ENABLED':DISABLED_SETTING,
             'SELKIES_ENABLE_COLLAB':'true|locked','SELKIES_USE_CPU':'true',
             'SELKIES_WAYLAND':'false','SELKIES_GPU_ID':'-1','SELKIES_MAC_CMD_AS_CTRL':'true'})
         os.environ.pop('PIXELFLUX_CU', None)
@@ -302,7 +325,7 @@ class Platform:
             clear_clipboard=clear_clipboard, sensitive_clear=self.sensitive_clear)
         @web.middleware
         async def closed(request, handler):
-            if '/api/' in request.path and request.path not in {
+            if API_PATH in request.path and request.path not in {
                     '/chat/browser/stream/api/status','/chat/browser/stream/api/health',
                     '/chat/browser/stream/api/websockets'}:
                 return web.Response(status=403)
@@ -347,6 +370,7 @@ class Platform:
         if len(b.viewers) >= 16:
             # Only prune disconnected non-holders; capability reuse never crosses owners.
             connected = {p.get('token') for p in self.client_permissions.values()}
+            # Entries are removed below; iterate a snapshot of the live mapping.
             for token,v in list(b.viewers.items()):
                 if token not in connected and v.owner != b.input_owner:
                     b.viewers.pop(token); b._viewer_last_seen.pop(token,None)
@@ -522,7 +546,7 @@ class Platform:
                 await self.server.stop_server()
 
 
-async def relay(bridge, adapter, request):
+async def relay(_bridge, adapter, request):
     """Owner-authenticated fixed relay. Never resolves caller-provided hosts."""
     from aiohttp import web, ClientSession, ClientTimeout, UnixConnector, TCPConnector, WSMsgType
     error = adapter._check_auth(request)
@@ -541,14 +565,14 @@ async def relay(bridge, adapter, request):
         bound = json.loads(request.headers['X-Radhouse-Stream-Owner'])
         if bound.get('conversation_id') != current.owned.identity.conversation_id:
             raise ValueError('owner_mismatch')
-        if '/api/' in path:
+        if API_PATH in path:
             b = current.boundary
             owner = b.input_owner if token is not None and token==b.input_token else b.viewer(token).owner
             if any(bound.get(k) != getattr(owner,k) for k in ('principal_id','auth_session_digest','binding_revision')):
                 raise ValueError('owner_mismatch')
     except Exception:
         return web.Response(status=403)
-    if '/api/' in path and tail not in {'api/status','api/health','api/websockets'}:
+    if API_PATH in path and tail not in {'api/status','api/health','api/websockets'}:
         return web.Response(status=403)
     remote = getattr(current, 'remote', None)
     connector = TCPConnector(ssl=remote.ssl) if remote else UnixConnector(path=str(current.socket))

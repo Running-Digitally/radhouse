@@ -74,7 +74,8 @@ def test_real_uvicorn_websocket_upgrade_and_binary_transfer():
                     assert ws.protocol=='selkies'
                     await ws.send_str('START_VIDEO')
                     message=await ws.receive(timeout=3)
-                    assert message.type==aiohttp.WSMsgType.BINARY and message.data==payload
+                    assert message.type==aiohttp.WSMsgType.BINARY
+                    assert message.data==payload
         finally:
             server.should_exit=True
             await task
@@ -82,7 +83,8 @@ def test_real_uvicorn_websocket_upgrade_and_binary_transfer():
     asyncio.run(scenario())
 
 
-def test_actual_authenticated_relay_through_uvicorn_wsproto():
+@pytest.mark.parametrize("disconnected_on_close", [False, True])
+def test_actual_authenticated_relay_through_uvicorn_wsproto(disconnected_on_close, monkeypatch, caplog):
     """ASGI owns subprotocols; wsproto removes their original HTTP header."""
     import base64,hashlib,socket
     import aiohttp
@@ -91,6 +93,13 @@ def test_actual_authenticated_relay_through_uvicorn_wsproto():
     import uvicorn
     from radhouse.chat.browser_transport import install_stream_routes
     from tests.test_minimal_chat import SyntheticAuth
+    if disconnected_on_close:
+        from starlette.websockets import WebSocket, WebSocketDisconnect
+        original_close = WebSocket.close
+        async def closed_peer(self, code=1000, reason=None):
+            await original_close(self, code=code, reason=reason)
+            raise WebSocketDisconnect(1006)
+        monkeypatch.setattr(WebSocket, 'close', closed_peer)
     async def scenario():
         token='x'*43;payload=b'qualified-frame'*20000;calls=[]
         async def native(request):
@@ -123,11 +132,13 @@ def test_actual_authenticated_relay_through_uvicorn_wsproto():
                     assert ws.protocol=='selkies'
                     assert (await ws.receive(timeout=3)).data=='AUTH_SUCCESS,synthetic'
                     message=await ws.receive(timeout=3)
-                    assert message.type==aiohttp.WSMsgType.BINARY and message.data==payload
+                    assert message.type==aiohttp.WSMsgType.BINARY
+                    assert message.data==payload
             assert calls==[True]
         finally:
             server.should_exit=True;await task;listener.close();await runner.cleanup()
     asyncio.run(scenario())
+    assert 'Exception in ASGI application' not in caplog.text
 
 
 @pytest.mark.parametrize('flag',['observation_only','return_to_agent'])
@@ -176,7 +187,9 @@ def test_dead_browser_watcher_revokes_without_a_human_lease(monkeypatch):
         monkeypatch.setattr(platform,'retire',lambda:events.append('retire'))
         await p.watch()
         await p.shutdown
-        assert p.stopped and p.boundary._blocked and p.boundary.input_token is None
+        assert p.stopped
+        assert p.boundary._blocked
+        assert p.boundary.input_token is None
         assert events==['revoke','drain','retire','cleanup']
     asyncio.run(scenario())
 
@@ -216,6 +229,36 @@ def test_unretired_stream_cannot_be_replaced(monkeypatch,tmp_path):
     monkeypatch.setattr(platform,'configuration',{'synthetic':True})
     with pytest.raises(ValueError,match='stream_retirement_unconfirmed'):
         platform.launch(bridge,tmp_path,{})
+
+
+@pytest.mark.parametrize('retired', [False, True])
+def test_failed_remote_launch_requires_positive_retirement_before_new_launch(monkeypatch, retired):
+    calls=[]
+    def reconcile():
+        calls.append('status-only')
+        return retired
+    old=SimpleNamespace(endpoint=None,poll=lambda:None,reconcile_retirement=reconcile)
+    monkeypatch.setattr(platform,'_chrome',old)
+    monkeypatch.setattr(platform,'runtime',None)
+    monkeypatch.setattr(platform,'configuration',{'network':{'kind':'space-browser-v1'}})
+    if retired:
+        platform._require_launch_available()
+    else:
+        with pytest.raises(ValueError,match='stream_browser_busy'):
+            platform._require_launch_available()
+    assert calls==['status-only']
+
+
+def test_failed_remote_launch_remains_owned_when_retirement_receipt_is_unavailable(monkeypatch):
+    def unavailable():
+        raise TimeoutError
+    old=SimpleNamespace(endpoint=None,poll=lambda:None,reconcile_retirement=unavailable)
+    monkeypatch.setattr(platform,'_chrome',old)
+    monkeypatch.setattr(platform,'runtime',None)
+    monkeypatch.setattr(platform,'configuration',{'network':{'kind':'space-browser-v1'}})
+    with pytest.raises(TimeoutError):
+        platform._require_launch_available()
+    assert platform._chrome is old
 
 
 def test_ensure_cannot_teardown_a_previous_generation_after_rebind(monkeypatch):

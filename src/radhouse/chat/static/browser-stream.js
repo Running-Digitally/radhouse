@@ -21,6 +21,11 @@
       this.tools.append(this.keyboard,this.keys,this.panel);view.viewport.before(this.tools);
       this.playback='connecting';
       this.playButton=button('Tap to view browser',()=>{
+        if(this.playback==='stalled'){
+          // A new viewer connection only: never repeat a browser operation,
+          // navigation, input event or change of control.
+          this.connectionNonce=crypto.randomUUID();this.mount();this.render();return;
+        }
         // Synchronous same-origin call retains the browser's user gesture.
         // This changes local video playback only, never remote input authority.
         if(!this.viewerApi('radhousePlayback')?.play()){
@@ -44,10 +49,11 @@
           view.container.dispatchEvent(new CustomEvent('browser-input-focus',{bubbles:true,detail:{focused:this.input.focused}}));
         }
         if(event.data?.type==='browserPlaybackStatus'&&['connecting','playing','tap_required','unavailable'].includes(event.data.state)){
-          this.playback=event.data.state;this.render();
+          if(this.playback!=='stalled'||event.data.state!=='connecting')this.playback=event.data.state;
+          this.render();
         }
         if(event.data?.type==='browserActivity')view.container.dispatchEvent(new CustomEvent('browser-activity',{bubbles:true}));
-        if(event.data?.type==='framePresented'){const first=!this.presented;this.presented=true;this.render();if(first&&!this.preview)this.view.container.closest('#browser-page')?.scrollTo({top:0});}
+        if(event.data?.type==='framePresented'){const first=!this.presented;this.presented=true;clearTimeout(this.connectionTimer);this.render();if(first&&!this.preview)this.view.container.closest('#browser-page')?.scrollTo({top:0});}
       };
       window.addEventListener('message',this.message);
       this.focus=event=>{if(event.target.closest?.('#compose'))this.hideKeyboard();};document.addEventListener('focusin',this.focus);
@@ -65,7 +71,15 @@
     mount(){
       if(!this.info||!this.visible)return;
       const url=this.info.path+'?connection='+encodeURIComponent(this.connectionNonce)+'#token='+encodeURIComponent(this.info.token);
-      if(this.frame.getAttribute('src')!==url){this.hideKeyboard();this.input.ready=false;this.presented=false;this.playback='connecting';this.frame.src=url;}
+      if(this.frame.getAttribute('src')!==url){
+        this.hideKeyboard();this.input.ready=false;this.presented=false;this.playback='connecting';this.frame.src=url;
+        clearTimeout(this.connectionTimer);
+        this.connectionTimer=setTimeout(()=>{
+          if(this.info&&this.visible&&!this.presented&&this.playback==='connecting'){
+            this.playback='stalled';this.render();
+          }
+        },15000);
+      }
       if(!this.frame.isConnected)this.view.viewport.append(this.frame);
       this.view.image.hidden=true;this.view.viewport.hidden=false;
     }
@@ -81,11 +95,14 @@
       this.observeButton.setAttribute('aria-pressed',String(mode==='observe'));
       this.privateButton.disabled=this.observeButton.disabled=view.actionPending;
       this.privacyText.textContent=mode==='observe'?'Agent can read this page when you ask in chat. You keep control.':'Private. Only you can see the page.';
-      const needsTap=this.playback==='tap_required'||this.playback==='unavailable';
-      view.connection.textContent=needsTap?'Tap to view':this.presented?'Live':'Connecting';
+      const needsTap=['tap_required','unavailable','stalled'].includes(this.playback);
+      let connection=this.presented?'Live':'Connecting';
+      if(needsTap)connection=this.playback==='stalled'?'Viewer connection stalled':'Tap to view';
+      view.connection.textContent=connection;
       view.connection.dataset.state=this.presented&&!needsTap?'live':'pending';
       this.playButton.hidden=!needsTap||this.preview||!this.visible;
       this.playButton.textContent=this.playback==='unavailable'?'Retry browser video':'Tap to view browser';
+      if(this.playback==='stalled')this.playButton.textContent='Reconnect viewer';
 
       view._decorate(view.closeButton,"close","Close browser",true);
       this.tools.hidden=!view.active||this.preview||!human||!touch;
@@ -119,12 +136,14 @@
     }
     hideKeyboard(){this.viewerApi('radhouseInput')?.hide();}
     presentation({preview,visible}){
-      if(preview&&!this.preview)this.hideKeyboard();this.preview=preview;this.visible=visible;
+      if(preview&&!this.preview){this.hideKeyboard();}
+      this.preview=preview;this.visible=visible;
       this.view.body.inert=preview;this.frame.inert=preview;
       if(visible)this.mount();else if(this.frame.isConnected){this.hideKeyboard();this.frame.remove();this.frame.removeAttribute('src');this.presented=false;}
       this.render();
     }
     clear(){
+      clearTimeout(this.connectionTimer);
       this.hideKeyboard();this.frame.remove();this.frame.removeAttribute('src');this.info=null;this.input.ready=false;
       this.presented=false;this.playback='connecting';this.playButton.hidden=true;this.tools.hidden=true;this.privacy.hidden=true;this.notice.hidden=true;this.toggleKeys(false);
       this.view.container.classList.remove('browser-view--streaming');this.view.body.inert=false;
