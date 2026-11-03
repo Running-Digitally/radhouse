@@ -51,6 +51,17 @@ def clipped(value, size):
     return value.encode()[:size].decode('utf-8', errors='ignore').strip()
 
 
+def search_candidates(found, address_check):
+    candidates = {}
+    for row in found.get('data', {}).get('web', [])[:3]:
+        url = row.get('url')
+        if address_check(url):
+            candidates[url] = row.get('title') or urlsplit(url).hostname
+        if len(candidates) == contract.MAX_SOURCES:
+            break
+    return candidates
+
+
 def collect_one(request, search, extract, *, address_check=public_address, clock=time.time):
     result = {'commitment_id': request['commitment_id'], 'provider': contract.PROVIDER,
               'coverage': 'unavailable', 'checked_at': clock(), 'sources': []}
@@ -60,13 +71,7 @@ def collect_one(request, search, extract, *, address_check=public_address, clock
     found = json.loads(search(query, limit=3))
     if not found.get('success') or found.get('data', {}).get('served_by') not in {None, contract.PROVIDER}:
         return result
-    candidates = {}
-    for row in found.get('data', {}).get('web', [])[:3]:
-        url = row.get('url')
-        if address_check(url):
-            candidates[url] = row.get('title') or urlsplit(url).hostname
-        if len(candidates) == contract.MAX_SOURCES:
-            break
+    candidates = search_candidates(found, address_check)
     if not candidates:
         return result
     # Keep our retained prefix before Hermes' own head/tail truncation footer;

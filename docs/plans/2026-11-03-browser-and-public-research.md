@@ -114,3 +114,59 @@ exact citation. The review prompt therefore explicitly distinguishes historical
 discussions and drafts from current authority, forbids unsupported factual
 details, and asks for verification when the captured evidence is insufficient.
 Citation validation proves provenance, not the truth or completeness of a claim.
+
+## Mobile experience acceptance — revised 3 November
+
+The owner rejected treating a functioning embedded web workspace as mobile
+completion. The release now requires a native browser interface and a live mini
+browser in native chat while the agent is browsing. The earlier functional PRs
+are merged; publication is held for this follow-up and its review/scan cycle.
+
+The expanded view dedicates its content region to the remote page. React Native
+owns the page title/address entry, explicit control and privacy state, primary
+actions and a compact tools sheet. It must not display the website's application
+header, sidebar, chat composer or duplicate app navigation. Chat contains a
+compact live, view-only card when `agent_active` is true and control belongs to
+the agent. Tapping expands without taking control. Returning preserves the draft
+and chat position. Preview scrolling never becomes remote browser input.
+
+Use a dedicated same-origin canvas document inside the existing authenticated
+WebView. It reuses the current control APIs, stream and input lease; a bounded
+native-to-canvas command contract exposes only named browser actions. The canvas
+reports typed presentation/control status, never credentials, lease tokens,
+clipboard or page text to React Native. Remote website code runs in the isolated
+browser, not in this document. No page-driven native navigation, external action
+or general JavaScript bridge is admitted. Session expiry, backgrounding and
+Private transitions remove the preview immediately. Unknown mutation outcomes
+are shown and never retried automatically. Reconnect only remounts presentation.
+
+Components: `NativeBrowser` owns native layout and a validated presentation
+projection; `BrowserCanvas` owns the exact-origin WebView and closed command
+serialization; the server's mobile canvas owns the session/tab binding, existing
+HTTP controls and stream input. One stable tab identity survives expansion and
+collapse. A state or lease change invalidates stale input. Keyboard commands
+continue through the qualified Selkies input gate. Address submission is an
+explicit owner action, never a navigation inferred from typing or page content.
+
+The remote browser remains a fixed-size isolated desktop surface. Local zoom
+and pan improve reading; changing remote display geometry, owner browser access
+or agent authority is outside this change. Do not claim that a streamed desktop
+website becomes a native or responsive mobile website.
+
+Acceptance includes actual native screenshots at normal phone size, readable
+controls with at least 44-point iOS/48-dp Android targets, keyboard and safe-area
+handling, a useful expanded viewport, preview-to-full-to-chat continuity,
+view-only preview input isolation, Private redaction, stale-state/background
+handling, meaningful reconnect feedback, and actual session-client research
+enable/revoke tests. Synthetic route/component checks alone do not establish the
+real mobile client's request path. Repeat live acceptance after deployment and
+publish only when these UX and security checks pass.
+
+Design grounding: Apple's [toolbars](https://developer.apple.com/design/human-interface-guidelines/toolbars)
+keep contextual actions associated with the content; its
+[sheets](https://developer.apple.com/design/human-interface-guidelines/sheets)
+support focused supplementary tasks. Android's
+[bottom-sheet guidance](https://github.com/material-components/material-components-android/blob/master/docs/components/BottomSheet.md)
+distinguishes persistent supporting content from modal choices and requires
+accessible expansion/collapse. The design applies these patterns to browser
+tools and a persistent chat preview; they do not prescribe this architecture.

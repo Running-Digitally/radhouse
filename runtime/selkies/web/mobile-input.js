@@ -31,7 +31,8 @@ export function installMobileInput(notify) {
     return document.activeElement === field();
   }
   const keys = new Map([["tab", "Tab"], ["enter", "Enter"], ["escape", "Esc"],
-    ["backspace", "Backspace"], ["address", "Ctrl+l"]]);
+    ["backspace", "Backspace"], ["address", "Ctrl+l"],
+    ["back", "Alt+Left"], ["reload", "Ctrl+r"]]);
   function press(name) {
     if (!ready() || !keys.has(name)) return false;
     for (const event of chordEvents(parseChord(keys.get(name)))) {
@@ -42,12 +43,33 @@ export function installMobileInput(notify) {
     if (name === "address") show();
     return true;
   }
+  function navigate(value) {
+    if (!ready() || !field() || typeof value !== "string" || value.length > 4096) return false;
+    let url;
+    try { url = new URL(value); } catch { return false; }
+    if (!["http:", "https:"].includes(url.protocol) || !url.hostname || url.username || url.password) return false;
+    // Explicit owner address submission uses the same role-bound keyboard path.
+    // No clipboard, remote resize, extra transport command or automatic replay.
+    if (!press("address") || !ready()) return false;
+    const input = field();
+    input.value = url.href;
+    input.dispatchEvent(new InputEvent("input", {bubbles: true, inputType: "insertText", data: url.href}));
+    const sent = press("enter");
+    clear();
+    return sent;
+  }
   watch.subscribe(publish);
   window.addEventListener("touchstart", () => { touched = true; publish(); }, {capture: true, passive: true});
-  coarse.addEventListener("change", event => { touched ||= event.matches; publish(); });
+  coarse.addEventListener("change", event => {
+    touched ||= event.matches;
+    publish();
+  });
   window.addEventListener("focusin", publish);
   window.addEventListener("focusout", publish);
-  document.addEventListener("visibilitychange", () => { if (document.hidden) clear(); publish(); });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) clear();
+    publish();
+  });
   window.addEventListener("pagehide", clear);
   // Readiness is the core's role-bound input attachment, not screen size.
   setInterval(() => {
@@ -55,6 +77,6 @@ export function installMobileInput(notify) {
     wasReady = ready();
     publish();
   }, 300);
-  window.radhouseInput = Object.freeze({status, show, hide: () => { clear(); publish(); }, press});
+  window.radhouseInput = Object.freeze({status, show, hide: () => { clear(); publish(); }, press, navigate});
   publish();
 }

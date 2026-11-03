@@ -49,7 +49,7 @@
 .browser-privacy,#browser-privacy-bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px;border-top:1px solid var(--line);font-size:13px}
 .browser-privacy button,#browser-privacy-bar button{min-height:44px}
 .browser-privacy [aria-pressed="true"]{background:var(--rh-green,#456d55);color:#fff}
-.browser-privacy span{flex-basis:100%;color:var(--muted)}
+.browser-privacy span{flex:1;min-width:130px;color:var(--muted)}
 #browser-privacy-bar{justify-content:space-between;margin-bottom:6px;border:1px solid var(--line);border-radius:10px}
 #browser-privacy-bar[hidden],.browser-privacy[hidden]{display:none}
 
@@ -63,7 +63,6 @@
 .browser-view--streaming .browser-actions button{min-height:44px;padding:6px;font-size:13px;white-space:normal}
 .workspace-browser .browser-view--streaming .browser-view-viewport{flex:1;min-height:96px;height:auto;aspect-ratio:auto}
 .browser-privacy,.browser-stream-tools,.browser-utilities{flex-shrink:0}
-.browser-privacy span{flex-basis:auto;flex:1;min-width:130px}
 .browser-stream-tools[hidden],.browser-stream-keys[hidden]{display:none}
 @media(max-width:950px){
   .workspace-browser #browser-page{overflow:auto}
@@ -92,14 +91,15 @@
   .navigation-shell:has(.conversation-workspace){height:var(--conversation-viewport-height,100dvh)}
   .conversation-workspace #message{max-height:min(180px,calc(var(--conversation-viewport-height,100dvh) / 4))}
   .conversation-workspace .message-options-panel{max-height:min(430px,calc(var(--conversation-viewport-height,100dvh) - var(--composer-height,150px) - 110px))}
-  .conversation-keyboard-open .workspace-browser.chat-drawer-open:has(#compose:focus-within){grid-template-rows:auto minmax(0,1fr);gap:8px}
-  .conversation-keyboard-open .workspace-browser.chat-drawer-open:has(#compose:focus-within) #assistant-browser,
-  .conversation-keyboard-open .workspace-browser.chat-drawer-open:has(#compose:focus-within) #browser-idle-hint{display:none}
-}
-@media(max-width:950px) and (max-height:560px){
+  .conversation-keyboard-open .conversation-workspace:has(#compose:focus-within) .conversation-toolbar{display:none}
+  .conversation-keyboard-open .conversation-workspace:has(#compose:focus-within) #history-pane{padding-block:0}
   .workspace-browser.chat-drawer-open:has(#compose:focus-within){grid-template-rows:auto minmax(0,1fr);gap:8px}
   .workspace-browser.chat-drawer-open:has(#compose:focus-within) #assistant-browser,
   .workspace-browser.chat-drawer-open:has(#compose:focus-within) #browser-idle-hint{display:none}
+}
+@media(max-width:950px) and (max-height:560px){
+  .conversation-workspace:has(#compose:focus-within) .conversation-toolbar{display:none}
+  .conversation-workspace:has(#compose:focus-within) #history-pane{padding-block:0}
 }
 
 @media(max-width:950px){

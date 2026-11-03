@@ -353,6 +353,18 @@ def _install_response_handlers(app, service):
 
 
 def _install_assets(app):
+    @app.get("/mobile/browser")
+    def mobile_browser():
+        return FileResponse(STATIC / "mobile-browser.html")
+
+    @app.get("/mobile-browser.js")
+    def mobile_browser_javascript():
+        return FileResponse(STATIC / "mobile-browser.js", media_type=JAVASCRIPT_MEDIA_TYPE)
+
+    @app.get("/mobile-browser.css")
+    def mobile_browser_stylesheet():
+        return FileResponse(STATIC / "mobile-browser.css", media_type=CSS_MEDIA_TYPE)
+
     @app.get("/")
     @app.get("/library")
     @app.get("/browser")

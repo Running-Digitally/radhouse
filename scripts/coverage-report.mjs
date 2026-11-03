@@ -9,7 +9,7 @@ const v8ToIstanbul = require("v8-to-istanbul");
 const { createCoverageMap } = require("istanbul-lib-coverage");
 const { createContext } = require("istanbul-lib-report");
 const reports = require("istanbul-reports");
-const staticNames = new Set(["chat.js", "format.js", "browser-view.js", "admin.js"]);
+const staticNames = new Set(["chat.js", "format.js", "browser-view.js", "admin.js", "mobile-browser.js"]);
 
 function within(path, base) {
   const name = relative(base, path);
