@@ -51,10 +51,12 @@ The remaining sequence is proposed; a standing fleet is not required. See the
 
 The accepted [proactive assistance design](docs/proactive-assistance.md) combines
 Guardian Angel observation with Cognitive Amplifier preparation. The first
-[source candidate](docs/plans/2026-11-02-native-proactive-assistance.md) uses native
+[implementation](docs/plans/2026-11-02-native-proactive-assistance.md) uses native
 Hermes scheduling to suggest commitments from explicitly authorized recent
 conversation, prepare a next step and ask the owner to confirm. It adds visible
-scope, coverage, pause and selective agent-originated push. It is not deployed.
+scope, coverage, pause and selective agent-originated push. The private pilot is
+deployed; native review and provider delivery have passed live checks. Physical
+phone acceptance is recorded separately in the qualification record.
 Confirmation currently records a commitment; ongoing follow-up, broader sources,
 prepared artifacts and adjustable attention policy remain in this same backlog.
 Standing responsibilities are an early, independent part of DW-6; helper fleets
