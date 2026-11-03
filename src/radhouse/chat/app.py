@@ -275,38 +275,41 @@ def create_app(auth, service, *, admin=None, documents=None, browser=None, about
 
     return app
 
+async def _observe_reply(stop, service):
+    # Save completion and advance already-authorized queued follow-ups,
+    # including when the browser is closed. Unknown dispatch stays held.
+    while not stop.is_set():
+        try:
+            await asyncio.to_thread(service.poll, service.owner_id)
+        except (Rejected, sqlite3.Error):
+            logging.getLogger(__name__).warning("Pending reply observation unavailable")
+        await _wait_for_reply_tick(stop)
+
+
+async def _collect_browser_files(stop, browser):
+    while not stop.is_set():
+        if browser is not None and getattr(browser, "files", None) is not None:
+            try:
+                await asyncio.to_thread(browser.files.collect)
+            except Exception:
+                # File names, URLs, credentials and contents stay out of logs.
+                logging.getLogger(__name__).warning("Browser download collection unavailable")
+        await _wait_for_reply_tick(stop)
+
+
+async def _wait_for_reply_tick(stop):
+    try:
+        await asyncio.wait_for(stop.wait(), timeout=2)
+    except TimeoutError:
+        pass
+
+
 def _reply_lifespan(service, browser=None):
     @asynccontextmanager
     async def lifespan(_app):
         stop = asyncio.Event()
-
-        async def observe_reply():
-            # Save completion and advance already-authorized queued follow-ups,
-            # including when the browser is closed. Unknown dispatch stays held.
-            while not stop.is_set():
-                try:
-                    await asyncio.to_thread(service.poll, service.owner_id)
-                except (Rejected, sqlite3.Error):
-                    logging.getLogger(__name__).warning("Pending reply observation unavailable")
-                try:
-                    await asyncio.wait_for(stop.wait(), timeout=2)
-                except TimeoutError:
-                    pass
-
-        observer = asyncio.create_task(observe_reply())
-        async def collect_files():
-            while not stop.is_set():
-                if browser is not None and getattr(browser, "files", None) is not None:
-                    try:
-                        await asyncio.to_thread(browser.files.collect)
-                    except Exception:
-                        # File names, URLs, credentials and contents stay out of logs.
-                        logging.getLogger(__name__).warning("Browser download collection unavailable")
-                try:
-                    await asyncio.wait_for(stop.wait(), timeout=2)
-                except TimeoutError:
-                    pass
-        collector = asyncio.create_task(collect_files())
+        observer = asyncio.create_task(_observe_reply(stop, service))
+        collector = asyncio.create_task(_collect_browser_files(stop, browser))
         try:
             yield
         finally:
