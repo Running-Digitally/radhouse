@@ -655,7 +655,7 @@ function makeTurn(turn) {
   const block=document.createElement("article"); block.className="turn"; block.dataset.requestId=turn.request_id;
   const label=document.createElement("p"), text=document.createElement("p"); label.className="message-label"; label.textContent="You";
   if(turn.created_at){
-    const date=new Date(turn.created_at);
+    const date=new Date(typeof turn.created_at === "number" ? turn.created_at * 1000 : turn.created_at);
     if(Number.isFinite(date.getTime())){const stamp=document.createElement("time");stamp.className="turn-time";stamp.dateTime=date.toISOString();stamp.textContent=date.toLocaleString(undefined,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"});label.append(stamp);}
   }
   text.className="message-text"; text.textContent=turn.text; block.append(label,text);
