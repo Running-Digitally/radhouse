@@ -72,7 +72,7 @@ const agentProfile=typeof window.RadhouseAgentProfile==="function" ? new window.
     if(session)controls();
   }}) : null;
 const ownerTerminal=typeof window.OwnerTerminalView==="function" ? new window.OwnerTerminalView($("owner-terminal"),
-  {request:(path,body,method="POST",signal)=>api(path,body,false,signal,method),tab:browserTab,
+  {request:(path,body,method,signal)=>api(path,body,false,signal,method ?? "POST"),tab:browserTab,
     onAuthRequired:()=>showLogin(true),onContextChange:wanted=>{terminalContextWanted=Boolean(wanted);updateTerminalChip();}}) : null;
 let terminalContextWanted=false;
 let browserEpoch=0, browserStatusRequest=null, browserRequestId=null, browserSuspended=false;
@@ -614,7 +614,9 @@ function assistantReply(turn) {
     const notice=document.createElement("p"); notice.className="turn-error";
     notice.textContent="Reply ended before finishing."; reply.append(notice);
   }
-  reply.append(copy); if(turn.output && chatExperience)reply.append(chatExperience.replyAction(turn)); return reply;
+  reply.append(copy);
+  if(turn.output && chatExperience) { reply.append(chatExperience.replyAction(turn)); }
+  return reply;
 }
 function turnStatusText(turn) {
   if (turn.error) return explanations[turn.error] || "This message needs attention. Its text and files are kept.";
