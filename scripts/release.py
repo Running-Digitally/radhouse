@@ -25,6 +25,7 @@ from urllib.parse import urlsplit
 
 SCHEMA = "radhouse.release.v1"
 STATIC = "src/radhouse/chat/static/"
+VENDOR_PREFIX = "vendor/"
 UNIT = "radhouse-api.service"
 MAX_FILE = 16 * 1024 * 1024
 MAX_PACKET = 128 * 1024 * 1024
@@ -190,7 +191,7 @@ def static_route(name):
         return None
     name = name.removeprefix(STATIC)
     direct = {"chat.js", "chat.css", "format.js", "browser-view.js", "browser-view.css", "navigation.js", "navigation.css", "library.js", "admin.js", "admin.css"}
-    workspace = {"about-you.js", "about-you.css", "owner-terminal.js", "owner-terminal.css", "inference-controls.js", "inference-controls.css", "agent-profile.js", "agent-profile.css", "agent-portrait.js"}
+    workspace = {"chat-experience.js", "chat-experience.css", "about-you.js", "about-you.css", "owner-terminal.js", "owner-terminal.css", "inference-controls.js", "inference-controls.css", "agent-profile.js", "agent-profile.css", "agent-portrait.js"}
     if name == "index.html":
         return "/"
     if name in direct or name in {"icons/pdf.svg", "icons/word.svg", "icons/excel.svg", "icons/powerpoint.svg"}:
@@ -210,7 +211,7 @@ def plan(source, revision, baseline):
     changes = sorted(name for name in changes if name)
     application = [name for name in changes if name.startswith(("src/", "runtime/", "deploy/", "web/"))
                    or name in {"pyproject.toml", "uv.lock"}]
-    supported = bool(application) and all(static_route(name) and not name.startswith(STATIC + "vendor/") for name in application)
+    supported = bool(application) and all(static_route(name) and not name.startswith(STATIC + VENDOR_PREFIX) for name in application)
     lane = "static-web" if supported else "separate-qualification-required"
     return {"source_revision": revision, "baseline_revision": baseline, "lane": lane,
             "apply_supported": supported, "changed_files": changes,
@@ -302,7 +303,7 @@ def load_profile(path):
         if key not in PROFILE_KEYS or key in profile or not value or "REPLACE_" in value or any(c in value for c in "\r\n\0"):
             raise Refusal("profile_key_or_value_invalid")
         profile[key] = value
-    if not REQUIRED <= profile.keys():
+    if REQUIRED.difference(profile):
         raise Refusal("profile_incomplete")
     for key, value in profile.items():
         if key.endswith(("_FILE", "_DIR", "_ROOT")) and (not Path(value).is_absolute() or ".." in Path(value).parts):
@@ -338,7 +339,7 @@ def retained_files(profile):
         raise Refusal("retained_runtime_manifest_drift")
     mapping = json.loads(raw)
     if (not isinstance(mapping, dict) or not mapping
-            or any(not safe_name(n) or not n.startswith("vendor/") or not HEX64.fullmatch(h) for n, h in mapping.items())):
+            or any(not safe_name(n) or not n.startswith(VENDOR_PREFIX) or not HEX64.fullmatch(h) for n, h in mapping.items())):
         raise Refusal("retained_runtime_scope_invalid")
     return mapping
 
@@ -376,7 +377,7 @@ def require_supported(manifest):
     before, after = manifest["baseline_files_sha256"], manifest["files_sha256"]
     changes = {n for n in before.keys() | after.keys() if before.get(n) != after.get(n)}
     if (manifest.get("apply_supported") is not True or manifest.get("lane") != "static-web" or not changes
-            or not all(static_route(n) and not n.startswith(STATIC + "vendor/") for n in changes)
+            or not all(static_route(n) and not n.startswith(STATIC + VENDOR_PREFIX) for n in changes)
             or not all(manifest.get(k) is False for k in ("native_restart", "database_restore", "automatic_rollback"))
             or manifest.get("provider_calls") != 0):
         raise Refusal("static_web_lane_only_separate_qualification_required")
@@ -594,7 +595,7 @@ class Host:
 
     def service(self, expected=None):
         raw = self._systemctl(["show", UNIT, "-pActiveState", "-pMainPID", "-pUser", "-pGroup", "-pNoNewPrivileges", "-pControlGroup", "-pFragmentPath", "-pDropInPaths"])
-        value = dict(line.split("=", 1) for line in raw.splitlines() if "=" in line)
+        value = {key: value for line in raw.splitlines() if "=" in line for key, value in [line.split("=", 1)]}
         if (value.get("User") != self.profile["RADHOUSE_SERVICE_USER"] or value.get("Group") != self.profile["RADHOUSE_SERVICE_GROUP"]
                 or value.get("NoNewPrivileges") != "yes"):
             raise Refusal("service_identity_drift")

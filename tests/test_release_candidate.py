@@ -72,9 +72,10 @@ def test_plan_only_requires_no_dependencies_and_writes_nothing(source, monkeypat
     result = candidate.run_candidate(root, baseline, plan_only=True)
     assert result["state"] == "plan"
     assert result["apply_supported"]
-    assert len(result["gates"]) == 14
+    assert len(result["gates"]) == 15
     assert not (root / ".release-private").exists()
-    assert result["target_contact"] is False and result["automatic_approval"] is False
+    assert result['target_contact'] is False
+    assert result['automatic_approval'] is False
 
 
 def test_unsupported_native_change_routes_separately_without_execution(source, monkeypatch):
@@ -85,18 +86,22 @@ def test_unsupported_native_change_routes_separately_without_execution(source, m
     monkeypatch.setattr(candidate, "preflight", lambda *_: pytest.fail("unsupported lane must not execute gates"))
     result = candidate.run_candidate(root, baseline)
     assert result["state"] == "separate-qualification-required"
-    assert not result["gates"] and not (root / ".release-private").exists()
+    assert not result['gates']
+    assert not (root / '.release-private').exists()
 
 
 def test_candidate_freezes_executed_checks_with_timings_and_pins(source, execution):
     root, baseline, revision = source
     result = candidate.run_candidate(root, baseline)
-    assert result["state"] == "candidate-ready" and result["checked"]
+    assert result['state'] == 'candidate-ready'
+    assert result['checked']
     assert result["duration_seconds"] >= result["gate_duration_seconds"]
     output = root / ".release-private" / ("candidate-" + revision)
     evidence = json.loads((output / "qualification.json").read_bytes())
-    assert evidence["state"] == "qualified" and evidence["ci_authenticated"] is False
-    assert evidence["source_revision"] == revision and evidence["baseline_revision"] == baseline
+    assert evidence['state'] == 'qualified'
+    assert evidence['ci_authenticated'] is False
+    assert evidence['source_revision'] == revision
+    assert evidence['baseline_revision'] == baseline
     assert {c["name"] for c in evidence["checks"]} == {g["name"] for g in candidate.gate_plan(root, revision, baseline)["gates"]}
     assert all(c["duration_seconds"] >= 0 and c["commands"] and c["executed_checks"] > 0 for c in evidence["checks"])
     assert evidence["runner_sha256"] == release.sha(Path(candidate.__file__).read_bytes())
@@ -104,7 +109,7 @@ def test_candidate_freezes_executed_checks_with_timings_and_pins(source, executi
     assert result["qualification_sha256"] == release.sha((output / "qualification.json").read_bytes())
     manifest, _ = release.load_packet(output / "packet", result["manifest_sha256"])
     assert manifest["qualification_sha256"] == result["qualification_sha256"]
-    assert len(execution) == 14
+    assert len(execution) == 15
     assert not git(root, "status", "--porcelain")
     assert output.stat().st_mode & 0o777 == 0o700
     assert all(p.stat().st_mode & 0o777 == 0o600 for p in output.iterdir() if p.is_file())
@@ -140,7 +145,8 @@ def test_success_exit_with_skipped_checks_cannot_qualify(source, execution, monk
 
     monkeypatch.setattr(candidate, "execute", skipped)
     result = candidate.run_candidate(root, baseline)
-    assert result["state"] == "failed" and "skipped" in result["reason"]
+    assert result['state'] == 'failed'
+    assert 'skipped' in result['reason']
     assert not (root / ".release-private" / ("candidate-" + revision) / "packet").exists()
 
 
@@ -155,7 +161,8 @@ def test_source_changes_during_checks_invalidate_evidence(source, execution, mon
 
     monkeypatch.setattr(candidate, "execute", mutating)
     result = candidate.run_candidate(root, baseline)
-    assert result["state"] == "failed" and result["reason"] == "source_checkout_must_be_clean"
+    assert result['state'] == 'failed'
+    assert result['reason'] == 'source_checkout_must_be_clean'
     evidence = root / ".release-private" / ("candidate-" + revision) / "qualification.json"
     assert json.loads(evidence.read_bytes())["state"] == "failed"
     assert not evidence.with_name("packet").exists()
@@ -195,7 +202,8 @@ def test_cli_refusal_is_sanitized(source, capsys, monkeypatch):
     monkeypatch.setattr(candidate, "preflight", lambda *_: (_ for _ in ()).throw(OSError(private_location)))
     assert candidate.main(["--source", str(root), "--baseline", baseline]) == 2
     output = capsys.readouterr().out
-    assert private_location not in output and str(root) not in output
+    assert private_location not in output
+    assert str(root) not in output
 
 
 def test_preflight_missing_browser_is_explicit(source, monkeypatch, tmp_path):
@@ -290,7 +298,8 @@ def test_mutating_frozen_policy_refuses_qualification(source, execution, monkeyp
 
     monkeypatch.setattr(candidate, "execute", mutate_snapshot)
     result = candidate.run_candidate(root, baseline, private_policy=policy)
-    assert result["state"] == "failed" and result["reason"] == "frozen_private_policy_changed"
+    assert result['state'] == 'failed'
+    assert result['reason'] == 'frozen_private_policy_changed'
     assert not (root / ".release-private" / ("candidate-" + revision) / "packet").exists()
 
 

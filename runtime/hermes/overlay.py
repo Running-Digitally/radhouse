@@ -17,6 +17,13 @@ def _replace(source, old, new):
     return source.replace(old, new, 1)
 
 
+def patch_openai_efforts(source):
+    """Teach the pinned Responses serializer Terra's documented max effort."""
+    return _replace(source,
+        'GPT6_TIER_PREFIXES: tuple[str, ...] = ("gpt-6-sol", "gpt-6-luna")',
+        'GPT6_TIER_PREFIXES: tuple[str, ...] = ("gpt-6-sol", "gpt-6-luna", "gpt-6.1-terra")')
+
+
 def _insert_function(source, name, block):
     tree = ast.parse(source)
     nodes = [
@@ -359,6 +366,7 @@ def patch_budget_recovery(source):
 
 
 TRANSFORMS = {
+    "agent/reasoning_effort.py": patch_openai_efforts,
     "gateway/platforms/api_server.py": patch_api,
     "gateway/platforms/api_server_runs.py": patch_runs,
     "tools/browser_tool.py": patch_browser,

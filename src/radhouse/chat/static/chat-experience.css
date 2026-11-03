@@ -1,0 +1,13 @@
+.conversation-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 4px;border-bottom:1px solid var(--line);flex-shrink:0}
+.conversation-toolbar>div{display:grid;gap:2px}.conversation-toolbar strong{font-size:17px;font-weight:650}.conversation-status{font-size:12px;color:var(--muted)}
+.conversation-toolbar button{font-size:13px;flex-shrink:0}.conversation-finder{padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--panel);max-height:50dvh;overflow:auto;flex-shrink:0}
+.conversation-finder p{font-size:12px;color:var(--muted)}.conversation-results{display:grid;gap:8px}.conversation-results button{display:grid;gap:5px;text-align:left;overflow-wrap:anywhere;background:var(--rh-soft,#f5f7f1)}.conversation-results span{font-size:13px;color:var(--muted)}
+#chat-view .turn{padding:12px 0 28px}#chat-view .turn>.message-text{margin-left:auto;width:fit-content;max-width:92%;background:var(--rh-soft,#e8ede4);border:1px solid var(--line);border-radius:18px 18px 4px 18px;padding:13px 17px}
+#chat-view .turn>.message-label{margin-left:auto;text-align:right;max-width:92%}#chat-view .assistant{margin-top:24px;border-left:0;padding:0 4px;line-height:1.7}
+#chat-view .answer{max-width:74ch}.quote-answer{font-size:12px;border:0;margin-left:8px}.turn-time{display:block;font-size:12px;font-weight:400;color:var(--muted);margin-top:3px}
+#chat-view .copy-answer,#chat-view .code-header button{min-height:44px}#chat-view #compose{border-radius:18px;box-shadow:0 6px 24px #24332d0a}
+.conversation-draft-hint{font-size:12px;color:var(--muted);margin:4px 3px 0}.conversation-cloud-hint{font-size:12px;color:var(--muted);max-width:40ch}
+@media(max-width:600px){.conversation-toolbar{padding:8px 2px;align-items:flex-start}.conversation-toolbar strong{font-size:16px}.conversation-toolbar button{max-width:125px}.conversation-status{max-width:25ch}.conversation-finder{max-height:38dvh}#chat-view .turn>.message-text{max-width:96%}.conversation-draft-hint{display:none}}
+@media(prefers-reduced-motion:reduce){#history-pane{scroll-behavior:auto}}
+
+#chat-view .inference-summary{min-height:44px}

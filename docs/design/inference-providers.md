@@ -43,3 +43,15 @@ The optional default label changes presentation only; its native route and crede
 5. Actual current-release S5 tool journeys, browser isolation, data preservation and strict lifecycle cleanup. Update private operational truth and close operator authority. Persistent provider enrollment and narrow backend admission remain selected; no automatic model startup or fallback is introduced.
 
 Stop on source/configuration drift, foreign work, an unsupported native route, unknown retirement, 32K overflow or failed isolation. Preserve failed proof. Current endpoint performance/model quality is separate from routing and boundary acceptance; changing provider does not qualify a different model's behavior.
+
+
+## OpenAI and native mobile extension — 2 November 2026
+
+The same v1 contract now serves both web and connected native mobile chat.
+The qualified `custom:openai` route uses the Responses transport at the official
+OpenAI endpoint; only the three requested, account-visible model IDs are offered.
+Thinking levels follow the official per-model contract and are tested through
+the pinned serializer. The key stays in the native runtime's named environment
+variable. See [setup, effort matrix and rollout acceptance](../openai-models.md).
+Existing local providers, the four-provider enrollment bound, immutable retry
+settings and refusal of silent fallback retain their existing semantics.

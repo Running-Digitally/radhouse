@@ -14,6 +14,26 @@ import time
 
 SCHEMA = "radhouse.inference.v1"
 CACHE_SECONDS = 60
+OPENAI_MODELS = {
+    "gpt-6-astra": "GPT-6 Astra",
+    "gpt-6.1-terra": "GPT-6.1 Terra",
+    "gpt-6.1-sol": "GPT-6.1 Sol",
+}
+OPENAI_EFFORTS = ("low", "medium", "high", "xhigh", "max")
+
+
+def _openai_responses(engine):
+    # This is a qualified route, not a general Responses/proxy allowlist.
+    return (engine.provider == "custom:openai" and engine.wire_kind == "custom"
+        and engine.base_url.rstrip("/") == "https://api.openai.com/v1"
+        and engine.api_mode == "codex_responses" and not engine.headers)
+
+
+def _openai_thinking(model):
+    # Official model guide, verified 2026-11-02. /models proves account visibility,
+    # but does not publish reasoning metadata. Ultra is a harness mode, not API effort.
+    return {"state": "supported", "choices": list(OPENAI_EFFORTS),
+        "can_disable": model == "gpt-6.1-terra", "can_enable": False}
 
 
 def patch_selected_run(source):
@@ -270,11 +290,9 @@ def _identifier(value):
     return type(value) is str and bool(value) and len(value) <= 512 and not any(ord(c) < 32 for c in value)
 
 
-def _thinking(item, engine):
-    from agent.reasoning_effort import OPENAI_COMPAT_WIRE_EFFORTS
+def _advertised_thinking(item):
     from hermes_cli.models_reasoning_caps import parse_openrouter_reasoning_capabilities
 
-    unknown = {"state": "unknown", "choices": [], "can_disable": False, "can_enable": False}
     parameters = item.get("supported_parameters")
     parsed = item
     if isinstance(parameters, list) and "reasoning_effort" in parameters:
@@ -290,6 +308,13 @@ def _thinking(item, engine):
     if detail is None and allowed is not None:
         detail = {"supports_reasoning": any(option != "off" for option in allowed),
             "supported_efforts": allowed, "mandatory": "off" not in allowed}
+    return detail, allowed
+
+
+def _thinking(item, engine):
+    from agent.reasoning_effort import OPENAI_COMPAT_WIRE_EFFORTS
+    unknown = {"state": "unknown", "choices": [], "can_disable": False, "can_enable": False}
+    detail, allowed = _advertised_thinking(item)
     if detail is None:
         return unknown
     if detail.get("supports_reasoning") is not True:
@@ -342,33 +367,57 @@ class NativeInferenceCatalog:
                     raise ValueError("inference_engine_invalid")
                 self.engine = engine
                 result.update(engine={"id": engine.provider, "label": engine.label}, current_model=engine.model)
-                if engine.api_mode != "chat_completions":
-                    result["models"] = [self._row(engine.model, available=False, reason="transport_unsupported")]
-                else:
-                    from hermes_cli.chat_catalog import catalog_item_is_generation
-                    rows, seen = [], set()
-                    for item in self.fetch(engine):
-                        if not isinstance(item, dict) or catalog_item_is_generation(item):
-                            continue
-                        model = item.get("id") or item.get("key") or item.get("name")
-                        if not _identifier(model) or model in seen or str(item.get("type") or "").lower() == "embedding":
-                            continue
-                        seen.add(model)
-                        transport = item.get("api_mode")
-                        mode = engine.mode_reader(model) if engine.mode_reader is not None else engine.api_mode
-                        incompatible = mode != "chat_completions" or (transport is not None and transport != "chat_completions")
-                        rows.append(self._row(model, available=not incompatible,
-                            reason="transport_unsupported" if incompatible else None,
-                            thinking=_thinking(item, engine) if not incompatible else None))
-                    if engine.model not in seen:
-                        rows.append(self._row(engine.model, available=False, reason="not_offered"))
-                    result.update(state="available", models=rows)
+                models, available = self._models(engine)
+                result.update(models=models, state="available" if available else "unavailable")
             except Exception:
                 # No stale model is made selectable after a failed refresh.
                 if result["current_model"]:
                     result["models"] = [self._row(result["current_model"], available=False, reason="catalog_unavailable")]
             self.cached, self.until = result, now + CACHE_SECONDS
             return deepcopy(result)
+
+    def _models(self, engine):
+        if _openai_responses(engine):
+            offered = {item.get("id") for item in self.fetch(engine) if isinstance(item, dict)
+                and isinstance(item.get("id"), str)}
+            return [{**self._row(model, available=model in offered,
+                reason=None if model in offered else "not_offered", thinking=_openai_thinking(model)),
+                "label": label} for model, label in OPENAI_MODELS.items()], True
+        if engine.api_mode != "chat_completions":
+            return [self._row(engine.model, available=False, reason="transport_unsupported")], False
+        return self._chat_models(engine), True
+
+    def _chat_models(self, engine):
+        from hermes_cli.chat_catalog import catalog_item_is_generation
+        rows, seen = [], set()
+        for item in self.fetch(engine):
+            if not isinstance(item, dict) or catalog_item_is_generation(item):
+                continue
+            model = item.get("id") or item.get("key") or item.get("name")
+            if not _identifier(model) or model in seen or str(item.get("type") or "").lower() == "embedding":
+                continue
+            seen.add(model)
+            rows.append(self._chat_model(engine, item, model))
+        if engine.model not in seen:
+            rows.append(self._row(engine.model, available=False, reason="not_offered"))
+        return rows
+
+    def _chat_model(self, engine, item, model):
+        transport = item.get("api_mode")
+        mode = engine.mode_reader(model) if engine.mode_reader is not None else engine.api_mode
+        incompatible = mode != "chat_completions" or (transport is not None and transport != "chat_completions")
+        return self._row(model, available=not incompatible,
+            reason="transport_unsupported" if incompatible else None,
+            thinking=_thinking(item, engine) if not incompatible else None)
+
+    def _route_changed(self, admitted_engine, model):
+        if admitted_engine.identity_reader is not None:
+            return _identity_for_model(admitted_engine.config_identity, model) != _identity_for_model(
+                admitted_engine.identity_reader(), model)
+        current_engine = self.load_engine()
+        return (admitted_engine.provider, admitted_engine.base_url.rstrip("/"), admitted_engine.api_mode,
+            admitted_engine.headers) != (current_engine.provider, current_engine.base_url.rstrip("/"),
+                current_engine.api_mode, current_engine.headers)
 
     @staticmethod
     def _row(model, *, available=True, reason=None, thinking=None):
@@ -387,15 +436,7 @@ class NativeInferenceCatalog:
         try:
             if admitted_engine is None:
                 return "inference_catalog_unavailable"
-            if admitted_engine.identity_reader is not None:
-                changed = _identity_for_model(admitted_engine.config_identity, body.get("model")) != _identity_for_model(
-                    admitted_engine.identity_reader(), body.get("model"))
-            else:
-                # Injected test engines have no private config reader.
-                current_engine = self.load_engine()
-                changed = (admitted_engine.provider, admitted_engine.base_url.rstrip("/"), admitted_engine.api_mode,
-                    admitted_engine.headers) != (current_engine.provider, current_engine.base_url.rstrip("/"),
-                    current_engine.api_mode, current_engine.headers)
+            changed = self._route_changed(admitted_engine, body.get("model"))
         except Exception:
             return "inference_catalog_unavailable"
         # Credential rotation does not change an engine. Endpoint/transport or
@@ -409,10 +450,13 @@ class NativeInferenceCatalog:
             return "inference_model_unavailable"
         if "model_options" not in body:
             return None
-        options = body["model_options"]
+        return self._reasoning_error(body["model_options"], row["thinking"])
+
+    @staticmethod
+    def _reasoning_error(options, caps):
         if type(options) is not dict or set(options) != {"reasoning"} or type(options["reasoning"]) is not dict:
             return "inference_selection_invalid"
-        reasoning, caps = options["reasoning"], row["thinking"]
+        reasoning = options["reasoning"]
         if caps["state"] != "supported":
             return "inference_thinking_unavailable"
         if set(reasoning) == {"enabled"} and reasoning.get("enabled") is False and caps["can_disable"]:
