@@ -10,7 +10,9 @@ pilot, with native review and end-to-end push acceptance on iOS and Android.
 The [implementation and qualification record](plans/2026-11-02-native-proactive-assistance.md) reviews
 recent conversation for commitments to confirm, using native Hermes scheduling
 and selective private push. This narrower initial source does not remove the
-broader standing-assistance direction below. See the [Hermes and UX research](research/2026-11-02-hermes-proactive-assistance.md).
+broader standing-assistance direction below. The [confirmed-commitment extension](plans/2026-11-03-confirmed-commitment-followup.md)
+adds ongoing lifecycle controls and review within the same native job; see its
+record for current qualification and rollout status. See the [Hermes and UX research](research/2026-11-02-hermes-proactive-assistance.md).
 
 ## Notice what matters and reduce the effort to act
 

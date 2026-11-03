@@ -16,7 +16,7 @@ function text(tag, content, className) {
 function showError(error) { $('#error').textContent=error.message; $('#error').hidden=false; }
 function showCoverage(value) {
   const last=value.last_review;
-  const states={quiet:'Checked; nothing new to suggest.', ready:'Suggestions prepared.', running:'Review in progress.',
+  const states={quiet:'Checked; nothing needs your attention.', ready:'Suggestions or follow-up preparation ready.', running:'Review in progress.',
     failed:'The last review failed.', interrupted:'The last review was interrupted.', stale:'New conversation arrived; a fresh review is needed.',
     revoked:'The earlier review was stopped by a scope change.'};
   const coverage=value.coverage;
@@ -24,35 +24,70 @@ function showCoverage(value) {
   $('#coverage').textContent=(active?'Permission enabled. ':'Paused. ')+
     (stale?'Recent coverage has not been established. ':'')+
     (coverage?.outcome==='budget_wait'?'Waiting for the review budget to renew. ':'')+
-    (last?(states[last.state]||'Review status unavailable.')+' '+new Date(last.created_at*1000).toLocaleString():'No completed review yet.');
+    (last?(last.error==='review_evidence_too_large'?'Review input exceeded the size limit; shorten progress notes.':states[last.state]||'Review status unavailable.')+' '+new Date(last.created_at*1000).toLocaleString():'No completed review yet.');
+}
+function actionButton(label, item, body, secondary = false, disabled = false) {
+  const button=text('button',label,secondary?'secondary':''); button.disabled=disabled;
+  button.addEventListener('click',async()=>{button.disabled=true;try {
+    await request('/chat/responsibilities/commitments/'+encodeURIComponent(item.id),typeof body==='function'?body():body);
+    $('#error').hidden=true; await refresh();
+  }catch(error){showError(error);button.disabled=false;}});
+  return button;
+}
+function followupCard(card, item) {
+  const followup=item.followup;
+  if(!followup) return;
+  card.append(text('h4','Ongoing follow-up'),text('p',followup.state,'badge'));
+  const live=['active','snoozed'].includes(followup.state);
+  if(live) card.append(text('p','Next review: '+new Date(followup.next_review_at*1000).toLocaleString()+
+    '. Checks may wait for the shared review budget.','muted'));
+  card.append(text('p',followup.last_review_at?'Last reviewed: '+new Date(followup.last_review_at*1000).toLocaleString():'Awaiting its first follow-up review.','muted'));
+  if(followup.latest_note) {
+    const note=followup.latest_note;
+    card.append(text('h4',note.action==='completion_check'?'Does this mean it is complete?':'Latest preparation'),
+      text('p',note.reason),text('p',note.preparation),text('blockquote',note.quote));
+  }
+  if(!live) return;
+  const label=text('label','Progress or a correction'); label.htmlFor='progress-'+item.id;
+  const progress=document.createElement('textarea');progress.id=label.htmlFor;progress.rows=3;progress.maxLength=2000;
+  progress.value=followup.progress;progress.placeholder='What has changed?';
+  const controls=document.createElement('div');controls.className='actions';
+  const body=action=>({action,revision:followup.revision});
+  controls.append(actionButton('Save progress',item,()=>({...body('progress'),progress:progress.value}),false,!active),
+    actionButton('Snooze 1 day',item,{...body('snooze'),days:1},true,!active),
+    actionButton('Snooze 1 week',item,{...body('snooze'),days:7},true,!active));
+  if(followup.state==='snoozed') controls.append(actionButton('Resume now',item,body('resume'),false,!active));
+  controls.append(actionButton('Mark complete',item,body('complete')),
+    actionButton('Stop following up',item,body('stop'),true));
+  card.append(label,progress,controls);
+}
+function renderItem(item) {
+  const card=document.createElement('article');card.id='commitment-'+item.id;
+  card.append(text('span',item.state==='suggested'?'For your confirmation':item.state,'badge'),text('h3',item.title),
+    text('blockquote',item.quote),text('p',item.reason),text('h4','A possible next step'),text('p',item.preparation));
+  const source=document.createElement('a');source.href='/?request='+encodeURIComponent(item.source_request_id);
+  source.textContent='Return to the conversation';card.append(source);
+  if(item.state==='suggested') {
+    const actions=document.createElement('div');actions.className='actions';
+    actions.append(actionButton('Confirm and follow up',item,{decision:'confirmed_followup'},false,!active),
+      actionButton('Not a commitment',item,{decision:'dismissed'},true));
+    card.append(actions,text('small','Confirmation starts private ongoing review. Radhouse can prepare next steps and ask about progress; you control snooze, completion and stop. No external action is authorized.'));
+  } else if(item.state==='confirmed' && !item.followup) {
+    card.append(text('p','Saved only. Ongoing follow-up has not been started.'),
+      actionButton('Start follow-up',item,{decision:'confirmed_followup'},false,!active));
+  }
+  followupCard(card,item);
+  return card;
 }
 async function refresh() {
-  const value = await request('/chat/responsibilities/commitments');
-  active = value.active;
-  $('#toggle').textContent=active?'Pause':'Enable suggestions'; $('#toggle').disabled=false;
+  const value=await request('/chat/responsibilities/commitments');active=value.active;
+  $('#toggle').textContent=active?'Pause':'Resume reviews';$('#toggle').disabled=false;
   $('#sources').textContent=value.scope.sources;
   $('#preparation').textContent=value.scope.preparation+'. '+value.scope.confirmation+'.';
-  $('#excluded').textContent='Outside this scope: '+value.scope.excluded+'. Up to four reviews per day.';
+  $('#excluded').textContent='Outside this scope: '+value.scope.excluded+'. Up to ten active commitments, four reviews and two new notifications per day. Check-ins become eligible after one day; unanswered check-ins back off to three days, then weekly.';
   showCoverage(value);
-  $('#suggestions').replaceChildren(); $('#empty').hidden=value.suggestions.length>0;
-  for(const item of value.suggestions) {
-    const card=document.createElement('article'); card.id='commitment-'+item.id;
-    card.append(text('span', item.state==='suggested'?'For your confirmation':item.state,'badge'), text('h3',item.title),
-      text('blockquote',item.quote),text('p',item.reason),text('h4','A possible next step'),text('p',item.preparation));
-    const source=document.createElement('a'); source.href='/?request='+encodeURIComponent(item.source_request_id);
-    source.textContent='Return to the conversation'; card.append(source);
-    if(item.state==='suggested') {
-      const actions=document.createElement('div');actions.className='actions';
-      for(const [label,decision] of [['Confirm commitment','confirmed'],['Not a commitment','dismissed']]) {
-        const button=text('button',label,decision==='dismissed'?'secondary':'');
-        button.addEventListener('click',async()=>{button.disabled=true;try {
-          await request('/chat/responsibilities/commitments/'+encodeURIComponent(item.id),{decision}); await refresh();
-        }catch(error){showError(error);button.disabled=false;}});actions.append(button);
-      }
-      card.append(actions,text('small','Confirmation saves this commitment. It does not schedule follow-ups or authorize external actions.'));
-    }
-    $('#suggestions').append(card);
-  }
+  $('#suggestions').replaceChildren();$('#empty').hidden=value.suggestions.length>0;
+  for(const item of value.suggestions) $('#suggestions').append(renderItem(item));
 }
 $('#toggle').addEventListener('click',async()=>{ $('#toggle').disabled=true;try {
   await request('/chat/responsibilities/commitments',{active:!active});await refresh();

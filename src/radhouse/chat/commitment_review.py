@@ -4,7 +4,6 @@ The native scheduler calls this lane. It owns no timer and never invents a user
 turn. This module is intentionally independent of browser and document grants.
 """
 from contextlib import contextmanager
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -17,27 +16,23 @@ from zoneinfo import ZoneInfo
 from uuid import NAMESPACE_URL, uuid5
 
 from radhouse.domain.tasks import Rejected
+from . import commitment_followup as followup
+from .commitment_followup import canonical, digest, structured_output
+from .push import notification
 
 
 DAY = 86400
 BEGIN_WRITE = "BEGIN IMMEDIATE"
 SELECT_MANDATE = "SELECT * FROM mandate WHERE id=1"
 SCOPE = {
-    "purpose": "Suggest possible commitments for confirmation",
-    "sources": "Recent text in this Radhouse conversation; up to 30 exchanges from the last 7 days",
-    "preparation": "Explain a possible commitment and prepare a suggested next step",
-    "confirmation": "Save the commitment as confirmed; no external action or message is authorized",
+    "purpose": "Suggest commitments and follow up on those you explicitly activate",
+    "sources": "Recent text in this Radhouse conversation (up to 30 exchanges from the last 7 days), plus the saved commitments and progress notes you activate for follow-up",
+    "preparation": "Prepare private next steps and revisit active commitments with permitted recent evidence",
+    "confirmation": "Confirm and follow up starts ongoing review; you control progress, snooze, completion and stop. No external action or message is authorized",
+    "followups_supported": True,
     "excluded": "Attachments, Library, browser, other conversations and external actions",
     "maximum_reviews_per_day": 4,
 }
-
-
-def canonical(value):
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-
-
-def digest(value):
-    return hashlib.sha256(canonical(value).encode()).hexdigest()
 
 
 def review_prompt(snapshot):
@@ -71,14 +66,7 @@ def _validate_suggestion(item, sources):
 def validate_suggestions(raw, snapshot):
     """Model output may propose text; it cannot choose an owner, tool or recipient."""
     try:
-        if not isinstance(raw, str) or len(raw.encode()) > 12000:
-            raise ValueError
-        # Some providers wrap otherwise valid structured output in one Markdown
-        # fence. Remove only that envelope; all JSON and citation checks remain.
-        lines = raw.strip().splitlines()
-        if len(lines) >= 3 and lines[0] in {"```json", "```"} and lines[-1] == "```":
-            raw = "\n".join(lines[1:-1])
-        value = json.loads(raw)
+        value = structured_output(raw)
         if type(value) is not dict or set(value) != {"suggestions"}:
             raise ValueError
         suggestions = value["suggestions"]
@@ -135,8 +123,10 @@ class CommitmentReview:
                     PRAGMA user_version=1;
                     COMMIT;
                 """)
-            elif version != 1:
+            elif version != 2 and version != 1:
                 raise ValueError("review_schema_mismatch")
+            if version in {0, 1}:
+                followup.migrate(db)
 
     @contextmanager
     def connection(self):
@@ -163,6 +153,7 @@ class CommitmentReview:
                 epoch=excluded.epoch,active=excluded.active""", (self.owner, conversation,
                 binding_revision, old["epoch"] + 1 if old else 1, int(active), self.clock()))
             db.execute("UPDATE reviews SET state='revoked',snapshot='{}' WHERE state='running'")
+            db.execute("UPDATE followups SET state='scope_changed',revision=revision+1,latest_notice_id=NULL WHERE conversation!=? OR binding_revision!=?", (conversation, binding_revision))
         return self.status()
 
     def _mandate(self, db):
@@ -202,6 +193,19 @@ class CommitmentReview:
                    (self.clock(), outcome))
         return {"status": outcome}
 
+    def _claim_snapshot(self, db, mandate, now):
+        snapshot = self._snapshot(db)
+        input_hash = digest(snapshot["exchanges"])
+        previous = db.execute("SELECT 1 FROM reviews WHERE input_hash=? AND epoch=? AND kind='discovery' AND state IN ('quiet','ready')",
+                              (input_hash, mandate["epoch"])).fetchone()
+        discovery = bool(snapshot["exchanges"] and not previous)
+        due = followup.selected(db, mandate, input_hash, now)
+        last = db.execute("SELECT kind FROM reviews ORDER BY created_at DESC,rowid DESC LIMIT 1").fetchone()
+        if due and (not discovery or not last or last["kind"] != "followup"):
+            snapshot.update(followups=due, review_time=now, timezone=str(self.timezone))
+            return snapshot, input_hash, "followup"
+        return (snapshot, input_hash, "discovery") if discovery else (None, input_hash, None)
+
     def claim(self):
         now = self.clock()
         with self.connection() as db:
@@ -210,20 +214,47 @@ class CommitmentReview:
             db.execute("UPDATE reviews SET state='interrupted',error='review_expired',snapshot='{}' WHERE state='running' AND expires_at<=?", (now,))
             if db.execute("SELECT 1 FROM reviews WHERE state='running'").fetchone():
                 return self._checked(db, "running")
-            snapshot = self._snapshot(db)
-            input_hash = digest(snapshot["exchanges"])
-            previous = db.execute("SELECT state FROM reviews WHERE input_hash=? AND epoch=? AND state IN ('quiet','ready')",
-                                  (input_hash, mandate["epoch"])).fetchone()
-            if previous or not snapshot["exchanges"]:
+            snapshot, input_hash, kind = self._claim_snapshot(db, mandate, now)
+            if snapshot is None:
                 return self._checked(db, "unchanged")
             if db.execute("SELECT count(*) FROM reviews WHERE created_at>?", (now - DAY,)).fetchone()[0] >= 4:
                 return self._checked(db, "budget_wait")
             identifier = secrets.token_urlsafe(32)
-            db.execute("INSERT INTO reviews VALUES(?,?,?,?,?,?,'running',NULL,NULL)",
-                       (identifier, mandate["epoch"], input_hash, canonical(snapshot), now, now + 600))
+            try:
+                prompt = self._bounded_prompt(snapshot, kind)
+            except Rejected:
+                db.execute("INSERT INTO reviews VALUES(?,?,?,'{}',?,?,'failed','review_evidence_too_large',NULL,?)",
+                           (identifier, mandate["epoch"], input_hash, now, now + 600, kind))
+                return self._checked(db, "failed")
+            db.execute("INSERT INTO reviews VALUES(?,?,?,?,?,?,'running',NULL,NULL,?)",
+                       (identifier, mandate["epoch"], input_hash, canonical(snapshot), now, now + 600, kind))
             db.execute("DELETE FROM reviews WHERE created_at<? AND state!='running'", (now - 7 * DAY,))
             self._checked(db, "running")
-            return {"status": "claimed", "review_id": identifier, "prompt": review_prompt(snapshot)}
+            return {"status": "claimed", "review_id": identifier, "prompt": prompt}
+
+    @staticmethod
+    def _bounded_prompt(snapshot, kind):
+        make_prompt = followup.prompt if kind == "followup" else review_prompt
+        prompt = make_prompt(snapshot)
+        if len(canonical({"prompt": prompt}).encode()) > 57000:
+            raise Rejected("review_evidence_too_large", 422)
+        return prompt
+
+    def _result(self, db, review, mandate, raw, failed, now):
+        snapshot = json.loads(review["snapshot"])
+        if digest(self._snapshot(db)["exchanges"]) != review["input_hash"]:
+            return "stale", None, []
+        if review["kind"] == "followup" and not followup.current(db, snapshot, mandate, now):
+            return "stale", None, []
+        if failed:
+            return "failed", "runtime_review_failed", []
+        try:
+            if review["kind"] == "followup":
+                results = followup.validate(raw, snapshot)
+                return followup.publish(db, results, snapshot, mandate, review["input_hash"], now), None, []
+            return "quiet", None, validate_suggestions(raw, snapshot)
+        except Rejected:
+            return "failed", "invalid_commitment_evidence", []
 
     def complete(self, identifier, raw, *, failed=False):
         now = self.clock()
@@ -240,23 +271,11 @@ class CommitmentReview:
                 raise Rejected("review_not_current", 409)
             if review["expires_at"] <= now:
                 raise Rejected("review_expired", 409)
-            # A newly arrived correction supersedes the frozen review. Its output
-            # cannot become a notification while a newer message is unexamined.
-            if digest(self._snapshot(db)["exchanges"]) != review["input_hash"]:
-                state, error, suggestions = "stale", None, []
-            elif failed:
-                state, error, suggestions = "failed", "runtime_review_failed", []
-            else:
-                try:
-                    suggestions = validate_suggestions(raw, json.loads(review["snapshot"]))
-                    state, error = "quiet", None
-                except Rejected:
-                    suggestions = []
-                    state, error = "failed", "invalid_commitment_evidence"
+            state, error, suggestions = self._result(db, review, mandate, raw, failed, now)
             for item in suggestions:
                 candidate_id = str(uuid5(NAMESPACE_URL, f"radhouse:commitment:{self.owner}:{item['source_request_id']}"))
-                result = db.execute("INSERT OR IGNORE INTO suggestions VALUES(?,?,?,?,?,?,'suggested',?,NULL,?,?)",
-                    (candidate_id, item["source_request_id"], item["quote"], item["title"], item["reason"], item["preparation"], now, mandate["epoch"], review["input_hash"]))
+                result = db.execute("INSERT OR IGNORE INTO suggestions VALUES(?,?,?,?,?,?,'suggested',?,NULL,?,?,?,?)",
+                    (candidate_id, item["source_request_id"], item["quote"], item["title"], item["reason"], item["preparation"], now, mandate["epoch"], review["input_hash"], mandate["conversation"], mandate["binding_revision"]))
                 if result.rowcount:
                     state = "ready"
             # Empty results and duplicates are successful and quiet, not empty_reply.
@@ -266,24 +285,37 @@ class CommitmentReview:
             return {"status": state}
 
     def decide(self, identifier, decision):
-        if decision not in {"confirmed", "dismissed"}:
+        if decision not in {"confirmed", "dismissed", "confirmed_followup"}:
             raise Rejected("invalid_commitment_decision", 422)
         with self.connection() as db:
             db.execute(BEGIN_WRITE)
+            start_followup = decision == "confirmed_followup"
+            decision = "confirmed" if start_followup else decision
             row = db.execute("SELECT state FROM suggestions WHERE id=?", (identifier,)).fetchone()
             if row is None:
                 raise Rejected("commitment_not_found", 404)
             if row["state"] != "suggested" and row["state"] != decision:
                 raise Rejected("commitment_already_decided", 409)
-            db.execute("UPDATE suggestions SET state=?,reviewed_at=? WHERE id=?", (decision, self.clock(), identifier))
+            db.execute("UPDATE suggestions SET state=?,reviewed_at=COALESCE(reviewed_at,?) WHERE id=?", (decision, self.clock(), identifier))
+            if start_followup:
+                followup.start(db, identifier, self._mandate(db), self.clock())
         return {"status": decision}
+
+    def followup_action(self, identifier, body):
+        with self.connection() as db:
+            db.execute(BEGIN_WRITE)
+            mandate = None if body.get("action") in {"complete", "stop"} else self._mandate(db)
+            followup.change(db, identifier, body, mandate, self.clock())
+            return {"followup": followup.present(db, identifier)}
 
     def status(self):
         with self.connection() as db:
             mandate = db.execute(SELECT_MANDATE).fetchone()
-            last = db.execute("SELECT state,created_at,expires_at,error FROM reviews ORDER BY created_at DESC,rowid DESC LIMIT 1").fetchone()
+            last = db.execute("SELECT state,created_at,expires_at,error,kind FROM reviews ORDER BY created_at DESC,rowid DESC LIMIT 1").fetchone()
             coverage = db.execute("SELECT checked_at,outcome FROM coverage WHERE id=1").fetchone()
-            suggestions = [dict(row) for row in db.execute("SELECT * FROM suggestions ORDER BY created_at DESC LIMIT 100")]
+            suggestions = [dict(row) for row in db.execute("SELECT * FROM suggestions ORDER BY id IN (SELECT id FROM followups WHERE state IN ('active','snoozed')) DESC,created_at DESC LIMIT 100")]
+            for item in suggestions:
+                item["followup"] = followup.present(db, item["id"])
         last = dict(last) if last else None
         if last and last["state"] == "running" and last["expires_at"] <= self.clock():
             last.update(state="interrupted", error="review_expired")
@@ -296,9 +328,10 @@ class CommitmentReview:
     def item(self, identifier):
         with self.connection() as db:
             row = db.execute("SELECT * FROM suggestions WHERE id=?", (identifier,)).fetchone()
+            details = followup.present(db, identifier)
         if row is None:
             raise Rejected("commitment_not_found", 404)
-        return dict(row)
+        return {**dict(row), "followup": details}
 
     def chat_context(self):
         """Application capability facts, without copying suggestions into chat."""
@@ -311,7 +344,7 @@ class CommitmentReview:
             permission, outcome = "unavailable", "unavailable"
         return (
             "Current Radhouse application capabilities: this installation has a separate "
-            "background commitment-suggestion responsibility, run by native Hermes scheduling. "
+            "background commitment responsibility, run by native Hermes scheduling. "
             "It reviews authorized recent conversation, prepares possible next steps, and can "
             "send private push notifications to opted-in signed-in phones. "
             f"Source permission is {permission}; latest review outcome is {outcome}. "
@@ -319,7 +352,10 @@ class CommitmentReview:
             "The owner can inspect coverage, enable or pause it at /responsibilities, and "
             "control agent suggestion notifications separately in mobile Settings. "
             "Your chat tools cannot create timed reminders, change this permission, or schedule "
-            "follow-ups. Confirming a suggestion only saves it. Do not promise a timed alert or "
+            "follow-ups directly. In Responsibilities, Confirm and follow up activates ongoing private "
+            "review of a commitment; the owner can add progress, snooze, complete or stop it. "
+            "Older save-only confirmations need explicit follow-up activation. These bounded "
+            "periodic checks are not exact-time alarms. Do not promise a timed alert or "
             "claim that you scheduled one. Do not say the whole platform lacks scheduling or push."
         )
 
@@ -331,9 +367,18 @@ class CommitmentReview:
                 if exc.code in {"responsibility_paused", "responsibility_authority_revoked"}:
                     return []
                 raise
-            return [dict(row) for row in db.execute("SELECT id,created_at FROM suggestions WHERE state='suggested' AND created_at>? AND epoch=? ORDER BY created_at,id LIMIT 100", (self.clock() - DAY, mandate["epoch"]))]
+            items = [dict(row) for row in db.execute("SELECT id,created_at FROM suggestions WHERE state='suggested' AND created_at>? AND epoch=? ORDER BY created_at,id LIMIT 100", (self.clock() - DAY, mandate["epoch"]))]
+            items += [dict(row) for row in db.execute("SELECT n.item_id AS id,n.created_at,n.event_id FROM followup_notices n JOIN followups f ON f.latest_notice_id=n.event_id WHERE n.created_at>? AND n.epoch=?", (self.clock() - DAY, mandate["epoch"]))]
+            return sorted(items, key=lambda item: (item["created_at"], item["id"]))
 
-    def notification_decision(self, identifier):
+    def _followup_notice_current(self, db, identifier, event_id, mandate):
+        row = db.execute("SELECT n.*,f.state,f.snoozed_until,f.revision AS current_revision,f.conversation,f.binding_revision FROM followup_notices n JOIN followups f ON f.latest_notice_id=n.event_id WHERE n.item_id=? AND n.event_id=?", (identifier, event_id)).fetchone()
+        return bool(row and row["state"] == "active" and row["snoozed_until"] <= self.clock()
+                    and row["revision"] == row["current_revision"] and row["epoch"] == mandate["epoch"]
+                    and row["created_at"] + DAY > self.clock() and followup.matches_binding(row, mandate)
+                    and row["input_hash"] == digest(self._snapshot(db)["exchanges"]))
+
+    def notification_decision(self, identifier, *, event_id=None):
         with self.connection() as db:
             try:
                 mandate = self._mandate(db)
@@ -341,10 +386,15 @@ class CommitmentReview:
                 if exc.code in {"responsibility_paused", "responsibility_authority_revoked"}:
                     return "discard"
                 raise
-            row = db.execute("SELECT state,created_at,epoch,input_hash FROM suggestions WHERE id=?", (identifier,)).fetchone()
-            if row is None or row["state"] != "suggested" or row["epoch"] != mandate["epoch"] or row["created_at"] + DAY <= self.clock():
-                return "discard"
-            if row["input_hash"] != digest(self._snapshot(db)["exchanges"]):
-                return "discard"
+            initial_event = notification(self.owner, identifier, "commitment_ready")["event_id"]
+            if event_id is not None and event_id != initial_event:
+                if not self._followup_notice_current(db, identifier, event_id, mandate):
+                    return "discard"
+            else:
+                row = db.execute("SELECT state,created_at,epoch,input_hash FROM suggestions WHERE id=?", (identifier,)).fetchone()
+                if row is None or row["state"] != "suggested" or row["epoch"] != mandate["epoch"] or row["created_at"] + DAY <= self.clock():
+                    return "discard"
+                if row["input_hash"] != digest(self._snapshot(db)["exchanges"]):
+                    return "discard"
         hour = datetime.fromtimestamp(self.clock(), self.timezone).hour
         return "allow" if 8 <= hour < 22 else "hold"

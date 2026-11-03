@@ -82,6 +82,10 @@ def install_commitment_review(app, auth, service, review, worker_bearer):
         service.authorize(current)
         return current
 
+    def owner_change(operation, *args):
+        with service.dispatch_gate.admission():
+            return operation(*args)
+
     def worker(request):
         supplied = request.headers.get("authorization", "")
         if len(supplied) > 160 or not hmac.compare_digest(supplied.encode(), ("Bearer " + worker_bearer).encode()):
@@ -98,16 +102,18 @@ def install_commitment_review(app, auth, service, review, worker_bearer):
         body = await _body(request, 1024)
         if set(body) != {"active"}:
             raise Rejected("invalid_responsibility", 422)
-        return await asyncio.to_thread(review.set_active, current.conversation_id,
+        return await asyncio.to_thread(owner_change, review.set_active, current.conversation_id,
                                        current.binding_revision, body["active"])
 
     @app.post("/chat/responsibilities/commitments/{identifier}")
     async def decide(identifier: str, request: Request):
         await asyncio.to_thread(owner_session, request)
-        body = await _body(request, 1024)
+        body = await _body(request, 10000)
+        if "action" in body:
+            return await asyncio.to_thread(owner_change, review.followup_action, identifier, body)
         if set(body) != {"decision"}:
             raise Rejected("invalid_commitment_decision", 422)
-        return await asyncio.to_thread(review.decide, identifier, body["decision"])
+        return await asyncio.to_thread(owner_change, review.decide, identifier, body["decision"])
 
     @app.get("/chat/responsibilities/commitments/{identifier}")
     def item(identifier: str, request: Request):
