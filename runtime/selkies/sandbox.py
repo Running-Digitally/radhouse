@@ -19,6 +19,9 @@ def chrome_arguments(profile, proxy=None, *, start_url=None, public_only=False):
     args = [CHROME, '--disable-extensions', '--no-first-run', '--no-default-browser-check',
         '--disable-background-networking', '--disable-component-update', '--disable-sync',
         '--disable-breakpad', '--disable-infobars', '--password-store=basic', '--use-mock-keychain',
+        # The host UI owns navigation. Ordinary fullscreen keeps the existing
+        # owner keyboard/navigation path available without duplicate chrome.
+        '--start-fullscreen',
         '--remote-debugging-address=127.0.0.1', '--remote-debugging-port=0',
         '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
         f'--window-size={DISPLAY_WIDTH//DEVICE_SCALE},{DISPLAY_HEIGHT//DEVICE_SCALE}',
