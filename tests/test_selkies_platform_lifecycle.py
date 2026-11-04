@@ -408,7 +408,8 @@ def test_reopen_does_not_resurrect_retired_paths_from_cached_settings(monkeypatc
     monkeypatch.setitem(sys.modules, 'selkies.settings', settings_module)
     monkeypatch.setitem(sys.modules, 'selkies.stream_server', backend_module)
     monkeypatch.setattr(platform, '_root', tmp_path)
-    monkeypatch.setattr(platform, 'load', lambda *_: object())
+    sandbox = platform.load('radhouse_test_display_geometry', Path(platform.__file__).with_name('sandbox.py'))
+    monkeypatch.setattr(platform, 'load', lambda name, path: sandbox if path.name == 'sandbox.py' else object())
     monkeypatch.setattr(platform, 'runtime', None)
     # Restore generation configuration after this process-cached import test.
     monkeypatch.setattr(os, 'environ', os.environ.copy())
