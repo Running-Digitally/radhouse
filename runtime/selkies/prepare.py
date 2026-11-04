@@ -32,22 +32,37 @@ def verify_native_provenance(lock):
         raise ValueError('native_provenance_mismatch')
 
 
-def prepare(archive, native, chrome_archive, output):
-    lock = json.loads((HERE / "source-lock.json").read_text())
-    verify_native_provenance(lock)
-    if sha(archive) != lock["selkies_archive_sha256"] or sha(native) != lock["native_binary_sha256"]:
-        raise ValueError("source_identity_mismatch")
-    output.mkdir(mode=0o700, parents=True, exist_ok=False)
-    upstream = output / "upstream"
-    upstream.mkdir()
-    with tarfile.open(archive) as tar:
-        tar.extractall(upstream, filter="data")
-    members = list(upstream.iterdir())
-    if len(members) != 1 or not members[0].is_dir():
-        raise ValueError("unexpected_source_layout")
-    source = members[0]
-    target = source / "addons/selkies-web-core/selkies-ws-core.js"
-    before = target.read_text()
+def patch_viewer_recovery(source):
+    """Use the pinned decoder retry for viewers, with a terminal failure state."""
+    changes = (
+        ('if (document.hidden || isSharedMode || window.isFallingBack || retrySettling || codecRefusalUnanswerable ||',
+         'if (document.hidden || (isSharedMode && sharedVideoPaused) || window.isFallingBack || retrySettling || codecRefusalUnanswerable ||'),
+        ('''        console.log("Shared client fallback: Reloading page to re-sync with the stream.");
+        if (statusDisplayElement) {
+            statusDisplayElement.textContent = 'A video error occurred. Reloading to re-sync with the stream...';
+            statusDisplayElement.classList.remove('hidden');
+        }''', '''        // Radhouse viewers may reset their decoder, never encoder or control.
+        // Both local decoder choices failed. Stop instead of a reload loop;
+        // the owner can explicitly reconnect from the surrounding UI.
+        clearSharedStallWatchdog();
+        stopReconnecting();
+        clearAllVncStripeDecoders();
+        if (statusDisplayElement) {
+            statusDisplayElement.textContent = 'Video unavailable. Reconnect to try again.';
+            statusDisplayElement.classList.remove('hidden');
+        }
+        window.parent.postMessage({type: 'browserPlaybackStatus', state: 'unavailable'}, window.location.origin);
+        return;'''),
+    )
+    for anchor, replacement in changes:
+        if source.count(anchor) != 1:
+            raise ValueError('viewer_recovery_anchor_changed')
+        source = source.replace(anchor, replacement)
+    return source
+
+
+def patch_stream_client(before):
+    """Apply owned adaptations only when every pinned upstream anchor matches."""
     anchor = """    isSharedMode: () => isSharedMode,
     canSync: () => !!window.clipboard_enabled && clipboard_seamless,
 """
@@ -64,7 +79,25 @@ def prepare(archive, native, chrome_archive, output):
     if patched.count(warning) != 1:
         raise ValueError("input_logging_anchor_changed")
     patched = patched.replace(warning, 'console.warn("Stream input unavailable.");')
-    target.write_text(patched)
+    return patch_viewer_recovery(patched)
+
+
+def prepare(archive, native, chrome_archive, output):
+    lock = json.loads((HERE / "source-lock.json").read_text())
+    verify_native_provenance(lock)
+    if sha(archive) != lock["selkies_archive_sha256"] or sha(native) != lock["native_binary_sha256"]:
+        raise ValueError("source_identity_mismatch")
+    output.mkdir(mode=0o700, parents=True, exist_ok=False)
+    upstream = output / "upstream"
+    upstream.mkdir()
+    with tarfile.open(archive) as tar:
+        tar.extractall(upstream, filter="data")
+    members = list(upstream.iterdir())
+    if len(members) != 1 or not members[0].is_dir():
+        raise ValueError("unexpected_source_layout")
+    source = members[0]
+    target = source / "addons/selkies-web-core/selkies-ws-core.js"
+    target.write_text(patch_stream_client(target.read_text()))
     gestures = source / "addons/selkies-web-core/lib/clipboard-sync.js"
     text = gestures.read_text()
     changes = (

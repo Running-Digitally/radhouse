@@ -61,6 +61,22 @@ server's background clipboard monitor is disabled. Clipboard reads are explicit
 and confined to the controlling connection. No clipboard payload or input text
 is forwarded to the outer UI's status bridge or collected by diagnostics.
 
+The client also enables the pinned decoder's no-output watchdog for viewers.
+A visible stream that continues receiving chunks without decoded output first
+retries with software decoding, then with the browser's decoder choice. Hidden,
+paused, quiet, unsupported and still-configuring streams do not trigger this
+recovery. Exhausted retries stop with an explicit reconnect state instead of
+reloading indefinitely. This only changes local decoding and keyframe requests;
+viewer roles, input leases, encoder settings and remote navigation are unchanged.
+
+Qualify this adaptation against the actual patched upstream functions after
+preparation, alongside the build and live mobile handback checks:
+
+```sh
+RADHOUSE_SELKIES_CORE_SOURCE=/path/to/build/client-source/selkies-ws-core.js \
+  node tests/selkies-decoder-recovery.mjs
+```
+
 ## Build and run
 
 Supply the frozen upstream archive and the qualified driver/Chromium artifacts
