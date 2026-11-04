@@ -13,6 +13,7 @@
 #browser-preview-open{position:absolute;inset:0;width:100%;height:100%;border-radius:14px;background:transparent;border:1px solid var(--line);padding:0;z-index:4;cursor:pointer}
 #browser-preview-open span{position:absolute;bottom:0;left:0;right:0;padding:10px;background:var(--panel);border-radius:0 0 14px 14px;font-size:13px}
 #browser-preview-open:focus-visible{outline:3px solid var(--rh-green,#456d55);outline-offset:2px}
+#browser-preview-dismiss{position:absolute;top:6px;right:6px;z-index:5;min-height:44px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px 12px}
 .workspace-chat #browser-page{align-self:start;max-height:330px;border-radius:14px}
 .workspace-chat #browser-page>.workspace-heading,.workspace-chat #browser-idle-hint,.workspace-chat .browser-view-header,.workspace-chat .browser-actions,.workspace-chat .browser-control-status,.workspace-chat .browser-utilities,.workspace-chat .browser-logins{display:none!important}
 .workspace-chat #assistant-browser{margin:0;padding-bottom:38px}

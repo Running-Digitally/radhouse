@@ -9,6 +9,7 @@
   let frame = null, streamKey = '', playback = 'connecting', inputReady = false;
   let epoch = 0, uncertain = false, notice = '', lastActivity = 0, lastHeartbeat = 0;
   let timer = null, connectTimer = null, authenticated = false, searchEngine = null;
+  let dismissedPreview = null;
   const post = value => window.ReactNativeWebView?.postMessage(JSON.stringify({schema:'radhouse.mobile-browser.v1', ...value}));
   const human = () => state?.state === 'live' && state.control?.mode === 'human'
     && typeof state.control.lease_id === 'string' && state.control.lease_expires_at > Date.now()/1000;
@@ -16,11 +17,12 @@
   const readOnly = () => presentation === 'preview' || !human() || uncertain || zoomed();
   function syncInput() { if (frame) frame.inert = readOnly(); }
   const binding = () => ({generation:state.generation, revision:state.control.revision, lease_id:state.control.lease_id || null});
-  const previewVisible = () => state?.state === 'live' && state.agent_active === true && state.control?.mode === 'agent';
+  const previewVisible = () => state?.state === 'live' && state.control?.mode === 'agent'
+    && state.generation !== dismissedPreview;
   function publish(event = 'state') {
     const hidden = presentation === 'preview' && !previewVisible();
     post({event, authenticated, state:state?.state || 'unavailable',
-      active:previewVisible(), mode:state?.control?.mode || 'paused', human:human(),
+      active:state?.agent_active === true, previewAvailable:previewVisible(), mode:state?.control?.mode || 'paused', human:human(),
       observing:human() && state.control.observation_mode === 'observe',
       canTake:state?.control?.can_take === true || state?.control?.mode === 'human' && !human(),
       canReturn:human() && state?.can_return === true,
@@ -70,6 +72,7 @@
   function accept(value) {
     if (!value || !['live','idle','starting','unavailable'].includes(value.state)) throw new Error('invalid');
     if (state?.generation === value.generation && state?.control?.revision > value.control?.revision) return false;
+    if (state?.generation !== value.generation || value.agent_active === true && state?.agent_active !== true) dismissedPreview = null;
     state = value;
     mount();
     if (frame) frame.inert = readOnly();
@@ -140,6 +143,7 @@
   function present(message) {
     if (!['preview','full'].includes(message.mode)) return;
     presentation = message.mode;
+    if (presentation === 'full') dismissedPreview = null;
     if (presentation === 'preview') hideInput();
     mount(); syncInput(); publish();
   }
@@ -176,6 +180,7 @@
   }
   const presentationActions = new Map([
     ['present',present],
+    ['dismissPreview',() => { if (presentation === 'preview') { dismissedPreview = state?.generation; clearFrame(); publish(); } }],
     ['refresh',() => { if (!busy) return refresh(true); }],
     ['reconnect',() => { clearFrame(); mount(); publish(); }],
   ]);

@@ -180,11 +180,15 @@ async function returnBrowser(binding) {
   finally { if(session===returningSession){busy=false;controls();} }
 }
 function integratedBrowser() { return session?.features?.browser_streaming===true; }
+let dismissedBrowserPreview=null, previewGeneration=null, previewAgentActive=false;
 function browserPreviewActive() {
-  return lastBrowserStatus?.state==="live" && (lastBrowserStatus.agent_active===true || lastBrowserStatus.control?.mode==="human");
+  return lastBrowserStatus?.state==="live" && lastBrowserStatus.generation!==dismissedBrowserPreview
+    && (lastBrowserStatus.control?.mode==="agent" || lastBrowserStatus.control?.mode==="human" && !!lastBrowserStatus.control.lease_id);
 }
 let browserChatOpen=false;
 function syncConversationWorkspace() {
+  if(lastBrowserStatus?.generation!==previewGeneration || lastBrowserStatus?.agent_active===true && !previewAgentActive) dismissedBrowserPreview=null;
+  previewGeneration=lastBrowserStatus?.generation;previewAgentActive=lastBrowserStatus?.agent_active===true;
   const root=document.querySelector("main"), enabled=integratedBrowser() && ["/","/browser"].includes(currentPage);
   const human=enabled && lastBrowserStatus?.control?.mode==='human' && !!lastBrowserStatus.control.lease_id;
   const observing=human && lastBrowserStatus.control.observation_mode==='observe';
@@ -200,6 +204,8 @@ function syncConversationWorkspace() {
   root.classList.toggle("chat-drawer-open",browserMode && browserChatOpen);
   $("browser-minimize").hidden=!browserMode;$("browser-chat-toggle").hidden=!browserMode;
   $("browser-preview-open").hidden=!preview;
+  $("browser-preview-dismiss").hidden=!preview;
+  $("browser-preview-open").querySelector('span').textContent=lastBrowserStatus?.control?.mode==='agent' && !previewAgentActive ? 'Browser ready · Open ↗' : 'Open live browser ↗';
   $("browser-chat-toggle").setAttribute("aria-expanded",String(browserChatOpen));
   if(enabled){$("chat-view").hidden=false;$("browser-page").hidden=!browserMode && !preview;}
   browserView?.streamPresenter?.presentation({preview,visible:enabled ? browserMode || preview : currentPage==="/browser"});
@@ -207,6 +213,7 @@ function syncConversationWorkspace() {
 $("assistant-browser").addEventListener("browser-action-settled",()=>{syncConversationWorkspace();void refreshBrowser();});
 $("browser-privacy-toggle").addEventListener("click",()=>browserView?.streamPresenter?.changeMode(lastBrowserStatus?.control?.observation_mode==='observe'?'private':'observe'));
 $("browser-preview-open").addEventListener("click",()=>showPage("/browser",true,true));
+$("browser-preview-dismiss").addEventListener("click",()=>{dismissedBrowserPreview=lastBrowserStatus?.generation;syncConversationWorkspace();});
 $("browser-minimize").addEventListener("click",()=>{browserView?.streamPresenter?.hideKeyboard();showPage("/",true,true);});
 $("browser-chat-toggle").addEventListener("click",()=>{
   browserChatOpen=!browserChatOpen;browserView?.streamPresenter?.hideKeyboard();syncConversationWorkspace();
@@ -321,7 +328,7 @@ function showPage(path, push=false, focus=false) {
   workspaceEpoch++;
   if (currentPage==="/" && path!=="/") { chatScroll=$("history-pane").scrollTop; }
   currentPage=workspacePages.has(path) ? path : "/";
-  if(currentPage==="/browser")lastBrowserActivity=Date.now();
+  if(currentPage==="/browser"){lastBrowserActivity=Date.now();dismissedBrowserPreview=null;}
   if (push && typeof history!=="undefined") { history.pushState(null,"",currentPage); }
   $("chat-view").hidden=!session || currentPage!=="/";
   $("library-view").hidden=!session || currentPage!=="/library";

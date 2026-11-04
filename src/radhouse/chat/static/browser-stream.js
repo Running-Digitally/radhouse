@@ -5,8 +5,7 @@
     constructor(view) {
       this.view=view;this.info=null;this.preview=false;this.visible=true;this.presented=false;
       this.input={ready:false,touch:matchMedia('(pointer:coarse)').matches,hardware:false,focused:false};
-      this.frame=document.createElement('iframe');this.frame.className='browser-stream-frame';
-      this.frame.title='Live assistant browser';this.frame.allow='autoplay; clipboard-read; clipboard-write';this.frame.tabIndex=-1;
+      this.frame=this.createFrame();
       this.tools=document.createElement('div');this.tools.className='browser-stream-tools';this.tools.hidden=true;
       const button=(label,action)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.addEventListener('click',action);return b;};
       this.keyboard=button('Keyboard',()=>this.input.focused?this.hideKeyboard():this.invoke('show',false));
@@ -59,6 +58,11 @@
       this.focus=event=>{if(event.target.closest?.('#compose'))this.hideKeyboard();};document.addEventListener('focusin',this.focus);
     }
     get enabled(){return this.info!==null;}
+    createFrame(){
+      const frame=document.createElement('iframe');frame.className='browser-stream-frame';
+      frame.title='Live assistant browser';frame.allow='autoplay; clipboard-read; clipboard-write';frame.tabIndex=-1;
+      frame.inert=this.preview;return frame;
+    }
     update(value){
       const stream=value?.stream;
       if(!stream){this.clear();return;}
@@ -72,7 +76,13 @@
       if(!this.info||!this.visible)return;
       const url=this.info.path+'?connection='+encodeURIComponent(this.connectionNonce)+'#token='+encodeURIComponent(this.info.token);
       if(this.frame.getAttribute('src')!==url){
-        this.hideKeyboard();this.input.ready=false;this.presented=false;this.playback='connecting';this.frame.src=url;
+        this.hideKeyboard();
+        // A capability/generation change gets a new browsing context. Reusing
+        // its WindowProxy admits late status from the retiring viewer, including
+        // its unload cleanup, as though it came from the current connection.
+        const retired=this.frame;this.frame=this.createFrame();
+        retired.remove();retired.removeAttribute('src');
+        this.input.ready=false;this.presented=false;this.playback='connecting';this.frame.src=url;
         clearTimeout(this.connectionTimer);
         this.connectionTimer=setTimeout(()=>{
           if(this.info&&this.visible&&!this.presented&&this.playback==='connecting'){
