@@ -34,7 +34,11 @@ def present(row):
 
 
 def evidence(snapshot, identifier):
-    return next((i for i in snapshot.get('research', {}).get('items', []) if i['commitment_id'] == identifier), None)
+    collected = next((i for i in snapshot.get('research', {}).get('items', []) if i['commitment_id'] == identifier), None)
+    if collected is None:
+        return None
+    question = next((i['research_query'] for i in snapshot.get('followups', []) if i['id'] == identifier), '')
+    return {**collected, 'question': question}
 
 
 def record(db, identifier, snapshot):
@@ -60,6 +64,7 @@ def prompt_instructions(snapshot):
         'You cannot search again or expand the question. Include a citations array on every result '
         '(empty when unused). Each citation has exactly source_id and quote: cite an exact 20–400 '
         'character excerpt from that commitment\'s collected source text. Never invent a URL or source. '
+        'Use at most one citation per source_id; select its most useful exact excerpt. '
         'Any public finding must cite its evidence. Distinguish facts from your suggested next step. '
         'Assess the source date and authority: an old discussion or draft does not establish a '
         'current rule. Do not add standard numbers, requirements or factual details absent from '
@@ -68,6 +73,11 @@ def prompt_instructions(snapshot):
         'Do not supply a criterion number, version or link from memory. If only a historical '
         'discussion is available, suggest checking the current official publication in general '
         'terms; do not invent its title, section number or URL. '
+        'Address the owner directly in plain language, without internal field names. '
+        'Keep reason under 240 characters, preparation under 600 and citation excerpts under 200. '
+        'For the owner quotation, copy source_request_id and quote from the selected followup '
+        'object. Only use progress:<id> when its progress field is nonempty and contains '
+        'the exact quotation; an original commitment quotation is not a progress quotation. '
         'If collection is unavailable or partial, say so without claiming complete coverage. '
         'Stay quiet when the sources and useful preparation are unchanged. '
         'The same owner quotation is still required for every nonquiet result.\n'

@@ -275,3 +275,16 @@ def test_supported_reference_is_checked_as_a_whole_identifier():
     result['reason'] = 'Historical criterion 2.4.1.'
     with pytest.raises(ValueError, match='unsupported_research_reference'):
         contract.citations(result, evidence)
+
+
+def test_owner_requested_version_can_be_named_in_a_coverage_caveat():
+    text = 'This historical discussion describes proposed focus visibility rules.'
+    source = {'id': 'synthetic-source', 'title': 'Historical discussion', 'url': 'https://example.org/draft', 'text': text}
+    evidence = {'sources': [source], 'checked_at': 1000, 'question': 'Check the current WCAG 2.2 focus requirements'}
+    result = {'action': 'update', 'reason': 'This historical source does not establish the current 2.2 requirements.',
+              'preparation': 'Check the current official publication.',
+              'citations': [{'source_id': source['id'], 'quote': text}]}
+    assert len(contract.citations(result, evidence)) == 1
+    result['preparation'] = 'Apply criterion 2.4.13.'
+    with pytest.raises(ValueError, match='unsupported_research_reference'):
+        contract.citations(result, evidence)

@@ -1,9 +1,10 @@
 # Browser recovery and selected public research: review record
 
 This records the candidate review for the [implementation plan](../plans/2026-11-03-browser-and-public-research.md).
-Candidate browser and research controls have been exercised on both native
-simulators. Merged-main analysis and rollout are still pending; the final live
-acceptance must also cover the updated server assets and runtime.
+Browser and research controls have been exercised on both native simulators.
+Several reviewed follow-ups are merged and deployed; the acceptance findings and
+processed-main analysis below distinguish those results from work still pending.
+Physical-phone publication remains a separate release gate.
 
 ## Behavior and boundaries
 
@@ -93,7 +94,7 @@ quality gate, rule or coverage exclusion was changed.
 | `runtime/selkies/platform.py`: `5d7e2a71-4a3e-486a-aca1-320761dcc7bf` | `mkdtemp` creates a private directory and the authority file is mode 0600. Retain the hotspot for explicit contextual review; do not replace safe temporary creation with a predictable name. |
 | `runtime/selkies/space_gateway.py`: `dcc0d072-b2e5-482e-9d6f-fe5a1a833bcd`, `072afbe9-5688-4f53-af93-d7d1ec16ea80` | Existing attachment rotation and authenticated forwarding complexity. Refactoring the admission/proxy path is broader than the retired-outbox receipt change and needs independent transport qualification. |
 | `src/radhouse/chat/browser_transport.py`: `0cca92cd-eab0-4044-8e29-9126d17c96f7` | Existing route-installation complexity spans authenticated HTTP and WebSocket admission. Keep the observed disconnect fix bounded; extraction needs separate relay qualification. |
-| `src/radhouse/chat/browser.py`: `96b7978c-846a-41ed-897a-051c703414bb`, `cb28af5a-b937-4582-a862-6a3912ecaad0`, `596c1981-7606-4330-ab2d-1cc1c783259e` | Existing browser status, reconnect and activity state-machine complexity. This change only propagates the prior-outbox availability field; consolidate the state machine in the established stabilization work. |
+| `src/radhouse/chat/browser.py`: `96b7978c-846a-41ed-897a-051c703414bb`, `cb28af5a-b937-4582-a862-6a3912ecaad0`, `596c1981-7606-4330-ab2d-1cc1c783259e` | Subsequently addressed by extracting status validation, admission checks and vault item validation in the continuity follow-up below. Closure awaits its processed-main scan. |
 
 The post-merge cycle must inspect both all-code and new-code findings, fix
 applicable findings introduced by this change in a follow-up PR, and rescan the
@@ -256,3 +257,50 @@ sequencing/cancellation cases, and native canvas journeys in Chromium and
 WebKit. The latest processed merged-main SonarQube search found no existing
 open issues in the five modified analyzed files. Post-merge analysis and live
 navigation remain required before owner distribution.
+
+
+## Live acceptance follow-up: browser continuity and native research output
+
+Shipping-source iOS and Android both passed native address submission, Private,
+Observe and explicit return to agent against the deployed service. A subsequent
+ordinary chat request exposed a separate admission defect: the interface showed
+agent control, but a new turn without explicit page context remained outside the
+prior run's browser admission. The new turn now carries a server-frozen browser
+binding only when the current live session already belongs to the agent. The
+native controller still checks generation, revision and the previous run's
+terminal state. Human, Observe, paused and recovering sessions are never acquired
+implicitly; ordinary text does not attach page metadata. Retries reuse the saved
+binding without resampling browser state. An optional browser outage leaves
+ordinary chat available without inferring browser authority.
+
+The native Hermes worker now uses fixed JSON-object output mode and deterministic
+temperature through its supported request overrides. Provider-supplied arbitrary
+overrides remain excluded. The worker has no tools, memory, identity files or
+fallback model, and retains its existing time and token bounds. Publication still
+checks the complete schema, owner quotation, source identity and exact excerpt.
+The prompt now explicitly requests concise prose, the original owner quotation
+and one quotation per cited source.
+
+Live isolated acceptance retained failed results for malformed output, wrong
+owner quotation, duplicate citations and an unsupported criterion reference.
+Another rejection revealed that a historical-coverage caveat could name the
+version in the owner's approved question without inventing a source claim. The
+reference guard now permits numeric scope identifiers from that trusted question,
+while still rejecting new criterion identifiers or uncaptured source URLs.
+This is bounded identifier validation, not semantic proof of generated prose.
+A subsequent real native-provider run completed in 49.09 seconds and published a
+validated check-in from the isolated synthetic commitment. It cited one exact
+excerpt and disclosed that the collected W3C mailing-list discussion was
+historical, insufficient to establish the current final standard. This does not
+claim exhaustive source coverage or physical-phone delivery.
+
+The complete candidate gate passed 2,488 tests with no failures, errors or skips,
+owned Python/JavaScript coverage, pinned native Hermes qualification and fixture
+cleanup. The touched browser complexity findings above were refactored; the two
+research-contract S6353 findings (`90b005de-d484-4090-acfe-766fd26bedce` and
+`bf851f97-db6a-42c8-943f-f4d953fb2cd7`) use `\d` with explicit ASCII semantics.
+The existing application-factory and controlled-route complexity findings remain
+explicitly deferred: extracting their authentication and lifecycle assembly is
+broader than the three-line replay compatibility correction. No suppression,
+quality-gate change or coverage exclusion was applied. Follow-up merged-main
+analysis and deployed mini-preview acceptance remain pending.

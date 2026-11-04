@@ -363,7 +363,7 @@ def test_native_review_has_no_memory_context_tools_or_fallback(worker, monkeypat
     assert received["load_soul_identity"] is False
     assert received["skip_background_review"] is True
     assert received["fallback_model"] is None
-    assert "request_overrides" not in received
+    assert received["request_overrides"] == {"response_format": {"type": "json_object"}, "temperature": 0}
     assert agent._allowed_tool_names == frozenset()
     assert closed == [True]
 
