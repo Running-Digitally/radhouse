@@ -49,7 +49,8 @@ assert.equal(stalled.events.filter(value => value === 'reset-decoder').length, 2
 assert.equal(stalled.events.filter(value => value === 'unavailable').length, 1);
 assert.equal(stalled.context.window.isFallingBack, true);
 assert.ok(stalled.events.includes('close-decoders'));
-assert.ok(!stalled.events.includes('reload') && !stalled.events.includes('scheduled-reload'));
+assert.ok(!stalled.events.includes('reload'));
+assert.ok(!stalled.events.includes('scheduled-reload'));
 
 // A recovered decoder keeps playing rather than progressing to terminal state.
 const recovered = fixture();
