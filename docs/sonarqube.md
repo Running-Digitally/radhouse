@@ -9,7 +9,9 @@ The rationale, scope and review triggers are recorded in
 [ADR-0001](decisions/0001-local-post-merge-sonarqube-analysis.md).
 
 The latest processed scan is summarized in the
-[3 November browser release analysis](research/2026-11-03-browser-sonarqube.md).
+[3 November viewer recovery analysis](research/2026-11-03-viewer-decoder-recovery.md).
+The preceding [browser release analysis](research/2026-11-03-browser-sonarqube.md)
+records the earlier runtime findings and closures.
 The [25 October full findings inventory](research/2026-10-25-sonarqube-findings.md)
 remains a starting index for gradual cleanup outside the touched browser files.
 Both distinguish the overall backlog from the configured new-code period.

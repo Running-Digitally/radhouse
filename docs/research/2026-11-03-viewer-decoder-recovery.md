@@ -24,9 +24,20 @@ does not reload indefinitely, modify encoder settings or grant input authority.
   fallback functions with synthetic clock and output conditions. It covers
   recovery, exhausted retries, hidden, paused, quiet, unsupported and configuring
   streams. The stream-client build preserves the existing clipboard adaptations.
-- The latest processed merged-main Sonar query returned no unresolved findings
-  for `runtime/selkies/prepare.py`. Test files are not exposed as issue components.
-  A new main scan and final live acceptance remain required before release.
+- The initial merged-main Sonar query returned no unresolved findings for
+  `runtime/selkies/prepare.py`. The Python preparation test was not exposed as an
+  issue component; the JavaScript regression test is analyzed.
+- PR #136 merged as `0a3e691a61c3e4030d9c6e853fc8b4359a778412`.
+  Its exact-main scan processed successfully, with 2,490 tests and four browser
+  checks passing and fixture cleanup complete. The overall gate remains ERROR:
+  68.7% new coverage, 0.88014% new duplication, 668 new-period issues and 766
+  all-code issues. Overall coverage is 72.1%.
+- The sole new finding, `10773fbf-253d-4123-ad62-3fb0945334df`
+  (`javascript:S9073`), concerns a combined regression assertion. The follow-up
+  splits it into independent assertions; closure requires the next main scan.
+  No rule, exclusion, quality gate or issue disposition is changed.
+
+Final live acceptance remains required before the owner phone release.
 
 Raw simulator counters, screenshots and operational deployment identities remain
 in the private release evidence, outside public Git. No page text, addresses,
