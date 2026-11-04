@@ -8,10 +8,11 @@ local development laptop after committing and merging changes into GitHub's
 The rationale, scope and review triggers are recorded in
 [ADR-0001](decisions/0001-local-post-merge-sonarqube-analysis.md).
 
-The latest recorded results are in the
-[25 October 2026 findings report](research/2026-10-25-sonarqube-findings.md).
-It distinguishes the overall backlog from the configured new-code period and
-provides a starting point for gradual cleanup when affected files are edited.
+The latest processed scan is summarized in the
+[3 November browser release analysis](research/2026-11-03-browser-sonarqube.md).
+The [25 October full findings inventory](research/2026-10-25-sonarqube-findings.md)
+remains a starting index for gradual cleanup outside the touched browser files.
+Both distinguish the overall backlog from the configured new-code period.
 Recheck current source and server results before acting on a dated finding.
 
 Community Build supports analysis of one main branch. The launcher clones only
