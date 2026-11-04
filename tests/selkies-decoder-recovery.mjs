@@ -10,11 +10,15 @@ function functionSource(name) {
   assert.ok(start >= 0, `missing upstream function ${name}`);
   return source.slice(start, source.indexOf('\n}', start) + 2);
 }
-const functions = ['checkVideoOutputWatchdog', 'initiateFallback'].map(functionSource).join('\n');
+const metricsStart = source.indexOf('  const sendClientMetrics = () => {');
+assert.ok(metricsStart >= 0, 'missing upstream metrics timer callback');
+const metrics = source.slice(metricsStart, source.indexOf('\n  };', metricsStart) + 5);
+const functions = ['checkVideoOutputWatchdog', 'initiateFallback'].map(functionSource).join('\n') + '\n' + metrics;
 function fixture() {
   const events = [];
   const context = vm.createContext({
     console: {log() {}, warn() {}, error() {}},
+    audioWorkletProcessorPort: null, describeClient() {},
     now: 10000, performance: {now: () => context.now},
     document: {hidden: false}, window: {isFallingBack: false, location: {origin: 'https://fixture.invalid', reload: () => events.push('reload')}, parent: {postMessage: value => events.push(value.state)}},
     isSharedMode: true, sharedVideoPaused: false, isVideoPipelineActive: true,
@@ -37,7 +41,7 @@ function fixture() {
   return {context, events, tick(time, output = false) {
     context.now = context.lastVideoChunkAt = time;
     if (output) context.lastVideoOutputAt = time;
-    vm.runInContext('checkVideoOutputWatchdog()', context);
+    vm.runInContext('sendClientMetrics()', context);
   }};
 }
 
@@ -67,8 +71,8 @@ for (const mode of ['hidden', 'paused', 'quiet', 'unsupported', 'configuring']) 
   if (mode === 'paused') f.context.sharedVideoPaused = true;
   if (mode === 'unsupported') f.context.codecRefusalUnanswerable = true;
   if (mode === 'configuring') { f.context.firstConfigAskedAt = 9000; f.context.vncStripeDecoders = {0: {decoder: {state: 'unconfigured'}}}; }
-  if (mode === 'quiet') { f.context.lastVideoChunkAt = 0; vm.runInContext('checkVideoOutputWatchdog()', f.context); }
+  if (mode === 'quiet') { f.context.lastVideoChunkAt = 0; vm.runInContext('sendClientMetrics()', f.context); }
   else { f.tick(10000); f.tick(14000); }
   assert.deepEqual(f.events, [], mode);
 }
-console.log(JSON.stringify({passed: 7, actual_pinned_functions: true, bounded_viewer_recovery: true}));
+console.log(JSON.stringify({passed: 7, actual_pinned_timer_callback: true, bounded_viewer_recovery: true}));
