@@ -35,6 +35,15 @@ def verify_native_provenance(lock):
 def patch_viewer_recovery(source):
     """Use the pinned decoder retry for viewers, with a terminal failure state."""
     changes = (
+        ("""    describeClient();
+    // A shared page keeps its local audio stats live but sends nothing.
+    if (isSharedMode) return;""", """    describeClient();
+    // Decoder recovery is local and must run before the viewer metrics guard.
+    checkVideoOutputWatchdog();
+    // A shared page keeps its local audio stats live but sends nothing.
+    if (isSharedMode) return;"""),
+        ("""    retireCrashCountWhenHealthy();
+    checkVideoOutputWatchdog();""", """    retireCrashCountWhenHealthy();"""),
         ('if (document.hidden || isSharedMode || window.isFallingBack || retrySettling || codecRefusalUnanswerable ||',
          'if (document.hidden || (isSharedMode && sharedVideoPaused) || window.isFallingBack || retrySettling || codecRefusalUnanswerable ||'),
         ('''        console.log("Shared client fallback: Reloading page to re-sync with the stream.");

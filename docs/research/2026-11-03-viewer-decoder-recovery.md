@@ -21,7 +21,8 @@ does not reload indefinitely, modify encoder settings or grant input authority.
 - Upstream archive identity remains the digest in `runtime/selkies/source-lock.json`.
   Each altered anchor must match exactly once; upstream drift fails preparation.
 - The regression harness executes the actual patched upstream watchdog and
-  fallback functions with synthetic clock and output conditions. It covers
+  fallback functions through the actual metrics-timer callback, with synthetic
+  clock and output conditions. It covers
   recovery, exhausted retries, hidden, paused, quiet, unsupported and configuring
   streams. The stream-client build preserves the existing clipboard adaptations.
 - The initial merged-main Sonar query returned no unresolved findings for
@@ -46,3 +47,21 @@ credentials or input payloads are included in the diagnostic counters.
 This change handles the observed failure mode. It does not establish that the
 underlying WebCodecs implementation is repaired; physical-phone acceptance is
 still necessary after the owner builds are published.
+
+## Timer follow-up
+
+Live acceptance after the first deployment still reproduced a stalled Android
+viewer while iOS displayed the same page. Review found a second shared-viewer
+return in `sendClientMetrics`, before its watchdog call. Testing only the
+watchdog function missed this unreachable call path.
+
+The follow-up moves the local watchdog call before that return, leaving the
+shared-viewer metrics and control restrictions intact. The regression harness
+now invokes the actual pinned timer callback. It fails against the first patch
+(zero decoder resets instead of two) and passes all seven scenarios with the
+caller fix. Final live acceptance is still pending; unit success alone does not
+establish engine recovery.
+
+The first scan attempt of PR #137's merged commit stopped before submission:
+one synthetic browser-login integration case failed; fixture cleanup completed.
+The unchanged-main retry remains subject to the same full verification gate.
