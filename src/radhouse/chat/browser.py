@@ -310,6 +310,39 @@ class BrowserSessionService:
             raise Rejected("browser_unavailable", 503)
         return {"url": url, "title": title}
 
+    @staticmethod
+    def _public_control(control):
+        if control is not None:
+            if (type(control) is not dict or control.get("mode") not in {"agent", "takeover_pending", "human", "paused", "recovering"}
+                    or type(control.get("revision")) is not int or control["revision"] < 1
+                    or type(control.get("can_take")) is not bool):
+                raise Rejected("browser_unavailable", 503)
+            exposed = {key: control[key] for key in ("mode", "revision", "can_take")}
+            if control.get("lease_id") is not None:
+                BrowserSessionService._public_lease(control, exposed)
+            control = exposed
+        return control
+
+    @staticmethod
+    def _public_lease(control, exposed):
+        try:
+            exposed["lease_id"] = _identifier(control["lease_id"])
+        except HermesGatewayError:
+            raise Rejected("browser_unavailable", 503) from None
+        expiry = control.get("lease_expires_at")
+        if type(expiry) not in {int, float} or not math.isfinite(expiry):
+            raise Rejected("browser_unavailable", 503)
+        exposed["lease_expires_at"] = expiry
+        next_sequence = control.get("next_sequence")
+        if type(next_sequence) is not int or next_sequence < 1:
+            raise Rejected("browser_unavailable", 503)
+        exposed["next_sequence"] = next_sequence
+        if "observation_mode" in control:
+            mode, epoch = control.get("observation_mode"), control.get("observation_epoch")
+            if mode not in {"private","observe"} or type(epoch) is not int or epoch < 0:
+                raise Rejected("browser_unavailable",503)
+            exposed.update(observation_mode=mode,observation_epoch=epoch)
+
     def _public(self, payload):
         state = payload.get("state")
         if state not in {"starting", "live", "idle", "unavailable"}:
@@ -323,32 +356,7 @@ class BrowserSessionService:
             raise Rejected("browser_unavailable", 503) from None
         if state == "live" and generation is None:
             raise Rejected("browser_unavailable", 503)
-        control = payload.get("control")
-        if control is not None:
-            if (type(control) is not dict or control.get("mode") not in {"agent", "takeover_pending", "human", "paused", "recovering"}
-                    or type(control.get("revision")) is not int or control["revision"] < 1
-                    or type(control.get("can_take")) is not bool):
-                raise Rejected("browser_unavailable", 503)
-            exposed = {key: control[key] for key in ("mode", "revision", "can_take")}
-            if control.get("lease_id") is not None:
-                try:
-                    exposed["lease_id"] = _identifier(control["lease_id"])
-                except HermesGatewayError:
-                    raise Rejected("browser_unavailable", 503) from None
-                expiry = control.get("lease_expires_at")
-                if type(expiry) not in {int, float} or not math.isfinite(expiry):
-                    raise Rejected("browser_unavailable", 503)
-                exposed["lease_expires_at"] = expiry
-                next_sequence = control.get("next_sequence")
-                if type(next_sequence) is not int or next_sequence < 1:
-                    raise Rejected("browser_unavailable", 503)
-                exposed["next_sequence"] = next_sequence
-                if "observation_mode" in control:
-                    mode, epoch = control.get("observation_mode"), control.get("observation_epoch")
-                    if mode not in {"private","observe"} or type(epoch) is not int or epoch < 0:
-                        raise Rejected("browser_unavailable",503)
-                    exposed.update(observation_mode=mode,observation_epoch=epoch)
-            control = exposed
+        control = self._public_control(payload.get("control"))
         viewport = payload.get("viewport")
         if viewport is not None and (type(viewport) is not dict or set(viewport) != {"width", "height"}
                 or any(type(value) is not int or not 1 <= value <= 8192 for value in viewport.values())):
@@ -367,6 +375,11 @@ class BrowserSessionService:
             result["files_enabled"] = True
             result["downloads"] = {"saving": self.files.pending_count, "unavailable": self.files.unavailable,
                                    "previous_unavailable": self.files.previous_unavailable}
+        self._public_stream(payload, result)
+        return result
+
+    @staticmethod
+    def _public_stream(payload, result):
         if payload.get("stream") is not None:
             stream = payload["stream"]
             if (type(stream) is not dict or set(stream) != {"path","token"}
@@ -375,7 +388,6 @@ class BrowserSessionService:
                     or type(payload.get("agent_active")) is not bool):
                 raise Rejected("browser_unavailable",503)
             result.update(stream=dict(stream),agent_active=payload["agent_active"])
-        return result
 
     def status(self, session, tab_id):
         return self._public(self._call(session, tab_id, "status"))
@@ -423,35 +435,12 @@ class BrowserSessionService:
         binding = self.binding(session, tab_id)
         result = {"browser_owner": {key: binding["owner"][key] for key in ("principal_id", "conversation_id")}}
         if requested is None:
-            if use_previous:
-                status = self.status(session,tab_id)
-                control = status.get("control") or {}
-                if status.get("stream") and control.get("mode")=="human" and control.get("observation_mode")!="observe":
-                    raise Rejected("browser_private",409)
-                previous = status.get("page_context", {}).get("previous")
-                if previous is not None:
-                    result["page"] = {**previous, "state": "previous"}
-                    result["use_previous_browser"] = True
+            self._continue_agent_browser(session, tab_id, binding, result, use_previous)
             return result
         if use_previous:
             raise Rejected("browser_context_changed", 409)
-        if (type(requested) is not dict or set(requested) not in ({"generation", "revision", "lease_id"}, {"generation", "revision", "lease_id", "observation_only"})
-                or type(requested["revision"]) is not int or requested["revision"] < 1):
-            raise Rejected("browser_context_changed", 409)
         status = self.status(session, tab_id)
-        control = status.get("control") or {}
-        if (status["state"] != "live" or requested.get("generation") != status["generation"]
-                or requested.get("revision") != control.get("revision")
-                or requested.get("lease_id") != control.get("lease_id")
-                or control.get("mode") not in {"human", "agent"}
-                or control.get("mode") == "human" and not requested.get("lease_id")):
-            raise Rejected("browser_context_changed", 409)
-        if status.get("stream") is not None and control.get("mode") == "human":
-            if return_to_agent:
-                if requested.get("observation_only"):
-                    raise Rejected("browser_context_changed",409)
-            elif requested.get("observation_only") is not True or control.get("observation_mode") != "observe":
-                raise Rejected("browser_private",409)
+        self._check_requested_control(status, requested, return_to_agent)
         context = {**binding, **requested}
         if return_to_agent and status.get("stream") is not None:
             context["return_to_agent"] = True
@@ -461,6 +450,73 @@ class BrowserSessionService:
         result["browser_context"] = context
         result["page"] = {"url": status["url"], "title": status["title"]}
         return result
+
+    @staticmethod
+    def _check_requested_control(status, requested, return_to_agent):
+        if (type(requested) is not dict or set(requested) not in ({"generation", "revision", "lease_id"}, {"generation", "revision", "lease_id", "observation_only"})
+                or type(requested["revision"]) is not int or requested["revision"] < 1):
+            raise Rejected("browser_context_changed", 409)
+        control = status.get("control") or {}
+        if (status["state"] != "live" or requested.get("generation") != status["generation"]
+                or requested.get("revision") != control.get("revision")
+                or requested.get("lease_id") != control.get("lease_id")
+                or control.get("mode") not in {"human", "agent"}
+                or control.get("mode") == "human" and not requested.get("lease_id")):
+            raise Rejected("browser_context_changed", 409)
+        BrowserSessionService._check_stream_control(status, requested, return_to_agent)
+
+    @staticmethod
+    def _check_stream_control(status, requested, return_to_agent):
+        control = status.get("control") or {}
+        if status.get("stream") is None or control.get("mode") != "human":
+            return
+        if return_to_agent:
+            if requested.get("observation_only"):
+                raise Rejected("browser_context_changed", 409)
+        elif requested.get("observation_only") is not True or control.get("observation_mode") != "observe":
+            raise Rejected("browser_private", 409)
+
+    def _continuation_status(self, session, tab_id, use_previous):
+        try:
+            return self.status(session, tab_id)
+        except Rejected as error:
+            if error.code != 'browser_unavailable' or use_previous:
+                raise
+            # An optional browser outage must not disable ordinary chat. No
+            # admission is inferred from an unavailable status.
+            return None
+
+    def _continue_agent_browser(self, session, tab_id, binding, result, use_previous):
+        status = self._continuation_status(session, tab_id, use_previous)
+        if status is None:
+            return
+        control = status.get("control") or {}
+        if status["state"] == "live" and control.get("mode") == "agent":
+            # A native client need not attach page metadata to use a browser
+            # already returned to the agent. Transfer admission to this reply;
+            # native validation still checks generation, revision and the prior
+            # run's terminal state. Never take a human/Observe lease implicitly.
+            context = {**binding, "generation": status["generation"],
+                       "revision": control["revision"], "lease_id": None}
+            run = self.store.browser_run(self.owner_id)
+            if run and run.get("run_id"):
+                context["previous_run_id"] = run["run_id"]
+            result.update(browser_context=context, implicit_browser_context=True)
+        if use_previous:
+            if status.get("stream") and control.get("mode") == "human" and control.get("observation_mode") != "observe":
+                raise Rejected("browser_private", 409)
+            previous = status.get("page_context", {}).get("previous")
+            if previous is not None:
+                result.update(page={**previous, "state": "previous"}, use_previous_browser=True)
+
+    @staticmethod
+    def _login_item(value):
+        if (type(value) is not dict or value.get("kind") != "login"
+                or value.get("identifier_type") not in {"email", "phone", "username"}
+                or any(type(value.get(key)) is not str or len(value[key]) > 512
+                       or any(ord(c) < 32 for c in value[key]) for key in ("id", "label", "origin", "created_at", "identifier"))):
+            raise Rejected("browser_vault_unavailable", 503)
+        return {key: value[key] for key in ("id", "kind", "label", "origin", "created_at", "identifier_type", "identifier")}
 
     def logins(self, session, tab_id, operation, values):
         if not self.credential_vault_enabled:
@@ -476,20 +532,13 @@ class BrowserSessionService:
         if (payload.get("success") is not True or payload.get("outcome") != "applied"
                 or payload.get("sequence") != values.get("sequence")):
             raise Rejected("browser_vault_unavailable", 503)
-        def item(value):
-            if (type(value) is not dict or value.get("kind") != "login"
-                    or value.get("identifier_type") not in {"email", "phone", "username"}
-                    or any(type(value.get(key)) is not str or len(value[key]) > 512
-                           or any(ord(c) < 32 for c in value[key]) for key in ("id", "label", "origin", "created_at", "identifier"))):
-                raise Rejected("browser_vault_unavailable", 503)
-            return {key: value[key] for key in ("id", "kind", "label", "origin", "created_at", "identifier_type", "identifier")}
         if operation == "list":
             items = payload.get("items")
             if type(items) is not list or len(items) > 1000:
                 raise Rejected("browser_vault_unavailable", 503)
-            return {"items": [item(value) for value in items]}
+            return {"items": [self._login_item(value) for value in items]}
         if operation == "save":
-            return {"item": item(payload.get("item"))}
+            return {"item": self._login_item(payload.get("item"))}
         if type(payload.get("removed")) is not bool:
             raise Rejected("browser_vault_unavailable", 503)
         return {"removed": payload["removed"]}

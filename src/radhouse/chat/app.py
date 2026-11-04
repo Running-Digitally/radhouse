@@ -221,7 +221,8 @@ def create_app(auth, service, *, admin=None, documents=None, browser=None, about
                 import json
                 browser_data = json.loads(existing["browser_context"])
                 saved = browser_data.get("browser_context")
-                expected = {key: saved[key] for key in ("generation", "revision", "lease_id")} if saved else None
+                expected = ({key: saved[key] for key in ("generation", "revision", "lease_id")}
+                    if saved and not browser_data.get("implicit_browser_context") else None)
                 if (body.browser_context.snapshot() if body.browser_context else None) != expected or bool(browser_data.get("use_previous_browser")) != body.use_previous_browser or browser_data["browser_owner"] != {
                         "principal_id": session.principal_id, "conversation_id": session.conversation_id}:
                     raise Rejected("browser_context_changed", 409)

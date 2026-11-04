@@ -103,18 +103,23 @@ def citations(result, evidence):
     if result['action'] == 'quiet' and values:
         raise ValueError('quiet_result_has_citations')
     if evidence:
-        _check_reference_identifiers(result, [sources[item['source_id']] for item in values])
+        _check_reference_identifiers(result, [sources[item['source_id']] for item in values], evidence.get('question', ''))
     return resolved
 
 
-def _check_reference_identifiers(result, sources):
+def _check_reference_identifiers(result, sources, question):
     # An exact quotation does not validate unrelated details the model adds.
     # Reject invented dotted standard/version identifiers and URL references.
     # This is a bounded check, not a claim of general semantic verification.
     text = result.get('reason', '') + '\n' + result.get('preparation', '')
     supported = '\n'.join(source['text'] + '\n' + source['url'] for source in sources)
-    pattern = r'\b[0-9]+(?:\.[0-9]+)+\b|https?://[^\s<>")]+'
-    references = {value.rstrip('.,;:') for value in re.findall(pattern, text)}
-    supported_references = {value.rstrip('.,;:') for value in re.findall(pattern, supported)}
+    pattern = r'\b\d+(?:\.\d+)+\b|https?://[^\s<>")]+'
+    references = {value.rstrip('.,;:') for value in re.findall(pattern, text, flags=re.ASCII)}
+    supported_references = {value.rstrip('.,;:') for value in re.findall(pattern, supported, flags=re.ASCII)}
+    # The owner may ask about a version absent from the returned excerpt. A
+    # caveat such as "this does not establish the current 2.2 requirement" must
+    # remain expressible. The trusted snapshot supplies this question, never
+    # the model or collector. It identifies scope, not factual corroboration.
+    supported_references.update(re.findall(r'\b\d+(?:\.\d+)+\b', question, flags=re.ASCII))
     if not references.issubset(supported_references):
         raise ValueError('unsupported_research_reference')

@@ -81,6 +81,10 @@ def native_review(prompt, config):
     agent = AIAgent(**{key: runtime[key] for key in allowed if key in runtime},
         model=config["model"], enabled_toolsets=[], disabled_toolsets=["memory", "cronjob", "messaging"],
         skip_context_files=True, load_soul_identity=False, skip_memory=True, skip_background_review=True,
+        # Use Hermes' native chat-completions JSON mode. These fixed overrides
+        # control syntax only; provider-supplied overrides remain excluded and
+        # the application still verifies every field, quotation and citation.
+        request_overrides={"response_format": {"type": "json_object"}, "temperature": 0},
         # Leave room for a second bounded call on the local model. The parent
         # process still enforces the independent 240-second wall-clock limit.
         max_iterations=2, max_tokens=2500, run_budget_seconds=180, quiet_mode=True,
@@ -94,6 +98,8 @@ def native_review(prompt, config):
             raise ValueError("review_execution_failed")
         output = result.get("final_response")
         if not isinstance(output, str) or not output.strip() or len(output.encode()) > 12000:
+            raise ValueError("review_output_invalid")
+        if type(json.loads(output)) is not dict:
             raise ValueError("review_output_invalid")
         return output
     finally:
