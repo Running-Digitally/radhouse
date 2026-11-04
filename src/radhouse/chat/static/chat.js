@@ -186,9 +186,12 @@ function browserPreviewActive() {
     && (lastBrowserStatus.control?.mode==="agent" || lastBrowserStatus.control?.mode==="human" && !!lastBrowserStatus.control.lease_id);
 }
 let browserChatOpen=false;
-function syncConversationWorkspace() {
+function syncBrowserPreviewActivity() {
   if(lastBrowserStatus?.generation!==previewGeneration || lastBrowserStatus?.agent_active===true && !previewAgentActive) dismissedBrowserPreview=null;
   previewGeneration=lastBrowserStatus?.generation;previewAgentActive=lastBrowserStatus?.agent_active===true;
+}
+function syncConversationWorkspace() {
+  syncBrowserPreviewActivity();
   const root=document.querySelector("main"), enabled=integratedBrowser() && ["/","/browser"].includes(currentPage);
   const human=enabled && lastBrowserStatus?.control?.mode==='human' && !!lastBrowserStatus.control.lease_id;
   const observing=human && lastBrowserStatus.control.observation_mode==='observe';
