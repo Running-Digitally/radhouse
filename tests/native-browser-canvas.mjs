@@ -18,6 +18,7 @@ for (const [name,engine] of engines) {
   const context = await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
   let mode='agent', active=true, revision=1, failure=false, readFailure=false, expired=false, mutations=[], loads=0, stallLoads=0;
   const state = () => ({state:'live',generation:'generation-one',title:'Example page',url:'https://example.org/',
+    viewport:{width:500,height:632},
     agent_active:active,can_return:true,stream:{path:'/chat/browser/stream/index.html',token:mode.repeat(43).slice(0,43)},
     control:{mode,revision,can_take:mode==='agent',...(mode==='human'?{lease_id:'lease-one',lease_expires_at:Date.now()/1000+60,observation_mode:'private'}:{})}});
   await context.addInitScript(() => {window.fixtureHidden=true;Object.defineProperty(document,'hidden',{get:()=>window.fixtureHidden});window.nativeStates=[];window.ReactNativeWebView={postMessage(raw){window.nativeStates.push(JSON.parse(raw));}};});
@@ -40,6 +41,7 @@ for (const [name,engine] of engines) {
       loads++;
       if(stallLoads>0){stallLoads--;return route.fulfill({contentType:'text/html',body:'<p>Waiting fixture</p>'});}
       return route.fulfill({contentType:'text/html',body:`<html><body style="margin:0;background:#e4ede2"><h1>Example page</h1><script>
+        const video=document.createElement('video');video.id='videoStream';Object.defineProperties(video,{videoWidth:{value:1000},videoHeight:{value:1440}});document.body.append(video);
         window.inputs=[];window.radhouseInput={hide(){},show(){return true},press(key){inputs.push(key);return true},navigate(url){inputs.push(url);return true}};
         parent.postMessage({type:'framePresented'},location.origin);
         parent.postMessage({type:'mobileInputStatus',ready:true},location.origin);
@@ -57,10 +59,16 @@ for (const [name,engine] of engines) {
   await page.goto(origin+'/mobile/browser?tab='+tab);
   await expect.poll(async()=>(await latest())?.active).toBe(true);
   await expect(page.locator('iframe')).toHaveCount(0);
+  await page.setViewportSize({width:390,height:180});
   await page.evaluate(()=>{window.fixtureHidden=false;document.dispatchEvent(new Event('visibilitychange'));});
   await expect(page.locator('iframe')).toHaveCount(1);
   await expect.poll(async()=>(await latest()).playback).toBe('live');
   expect(await page.locator('iframe').evaluate(f=>f.inert)).toBe(true);
+  const preview=await page.locator('iframe').boundingBox();
+  expect(preview.width).toBe(390);
+  expect(preview.height/preview.width).toBeCloseTo(1.44,2);
+  expect(preview.y).toBe(0);
+  expect(await page.locator('#canvas').evaluate(c=>getComputedStyle(c).overflow)).toBe('hidden');
   const readySource=await page.locator('iframe').getAttribute('src');
   active=false;
   await command({action:'refresh'});
@@ -80,6 +88,10 @@ for (const [name,engine] of engines) {
   expect(mutations).toHaveLength(0);
   const initial=await page.locator('iframe').getAttribute('src');
   await command({action:'present',mode:'full'});
+  await page.setViewportSize({width:390,height:844});
+  const full=await page.locator('iframe').boundingBox();
+  expect(full.width).toBe(390);
+  expect(full.height).toBe(844);
   expect(await page.locator('iframe').getAttribute('src')).toBe(initial);
   expect(mutations).toHaveLength(0);
   await command({action:'zoom',enabled:true});

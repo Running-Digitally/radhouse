@@ -52,7 +52,7 @@
           this.render();
         }
         if(event.data?.type==='browserActivity')view.container.dispatchEvent(new CustomEvent('browser-activity',{bubbles:true}));
-        if(event.data?.type==='framePresented'){const first=!this.presented;this.presented=true;clearTimeout(this.connectionTimer);this.render();if(first&&!this.preview)this.view.container.closest('#browser-page')?.scrollTo({top:0});}
+        if(event.data?.type==='framePresented'){const first=!this.presented;this.presented=true;this.sizePreview();clearTimeout(this.connectionTimer);this.render();if(first&&!this.preview)this.view.container.closest('#browser-page')?.scrollTo({top:0});}
       };
       window.addEventListener('message',this.message);
       this.focus=event=>{if(event.target.closest?.('#compose'))this.hideKeyboard();};document.addEventListener('focusin',this.focus);
@@ -71,6 +71,15 @@
       }
       if(this.info?.token!==stream.token || this.streamGeneration!==this.view.generation){this.connectionNonce=crypto.randomUUID();this.streamGeneration=this.view.generation;this.connectionRetried=false;}
       this.info={path:stream.path,token:stream.token};this.mount();this.render();
+    }
+    sizePreview(){
+      // The page's CSS viewport excludes browser chrome. Use the actual video
+      // dimensions from our trusted viewer, never page metadata or a fixed crop.
+      let video;
+      try{video=this.frame.contentDocument?.getElementById('videoStream');}catch{return;}
+      const width=video?.videoWidth,height=video?.videoHeight;
+      if([width,height].every(n=>Number.isInteger(n)&&n>0&&n<=16384))
+        this.view.viewport.style.setProperty('--browser-stream-aspect',`${width} / ${height}`);
     }
     mount(){
       if(!this.info||!this.visible)return;

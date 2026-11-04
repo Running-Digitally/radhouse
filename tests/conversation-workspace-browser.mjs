@@ -11,7 +11,7 @@ const c=await browser.newContext({viewport:{width:1360,height:900},hasTouch:true
 await c.route(origin+'/**',async route=>{
  const req=route.request(),path=new URL(req.url()).pathname;
  const json=v=>route.fulfill({contentType:'application/json',body:JSON.stringify(v)});
- const state=()=>active?({state:'live',generation:'generation-'+generation,url:'https://example.org/',title:'Example',viewport:{width:1280,height:900},agent_active:agentActive,
+ const state=()=>active?({state:'live',generation:'generation-'+generation,url:'https://example.org/',title:'Example',viewport:{width:500,height:632},agent_active:agentActive,
   stream:{path:'/chat/browser/stream/index.html',token:(mode==='human'?'h':'v').repeat(43)},control:{mode,revision:rev,can_take:mode==='agent',...(mode==='human'?{lease_id:'lease-1',lease_expires_at:Date.now()/1000+60,next_sequence:1,observation_mode:visibility,observation_epoch:rev}:{})},page_context:{current:{url:'https://example.org/',title:'Example'},previous:null},can_return:true,vault_enabled:false}):({state:'idle',generation:null,control:null});
  if(path==='/auth/session')return json({username:'alice',csrf_token:'synthetic',features:{browser:true,browser_control:true,browser_streaming:true,documents:true}});
  if(path==='/chat/history'||path==='/chat/reply')return json({turns,older_before:null});
@@ -37,7 +37,7 @@ await c.route(origin+'/**',async route=>{
   if(viewerDelay)await new Promise(resolve=>setTimeout(resolve,viewerDelay));
   return route.fulfill({contentType:'text/html',headers:{'Content-Security-Policy':"default-src 'self'; script-src 'self'; frame-ancestors 'self'",'X-Frame-Options':'SAMEORIGIN','Cache-Control':'no-store'},body:'<!doctype html><html><head><script defer src="./synthetic-viewer.js"></script></head><body>Synthetic live browser</body></html>'});
  }
- if(path==='/chat/browser/stream/synthetic-viewer.js')return route.fulfill({contentType:'text/javascript',body:`window.radhouseInput={hide(){},show(){return true},press(){return true}};parent.postMessage({type:'mobileInputStatus',ready:true,touch:true,hardware:false,focused:false},location.origin);parent.postMessage({type:'framePresented'},location.origin);`});
+ if(path==='/chat/browser/stream/synthetic-viewer.js')return route.fulfill({contentType:'text/javascript',body:`const video=document.createElement('video');video.id='videoStream';Object.defineProperties(video,{videoWidth:{value:1000},videoHeight:{value:1440}});document.body.append(video);window.radhouseInput={hide(){},show(){return true},press(){return true}};parent.postMessage({type:'mobileInputStatus',ready:true,touch:true,hardware:false,focused:false},location.origin);parent.postMessage({type:'framePresented'},location.origin);`});
  let file=path.startsWith('/workspace-assets/')?path.slice(18):path.slice(1);
  if(path==='/'||path==='/browser')file='index.html';
  if(!/^[\w.-]+$/.test(file))return route.fulfill({status:404});
@@ -112,6 +112,16 @@ try{
   await expect(page.frameLocator('.browser-stream-frame').locator('body')).toHaveText('Synthetic live browser');
   await expect(page.locator('.browser-connection')).toHaveText('Live');
   await expect(page.locator('#message')).toHaveValue('Keep this draft while switching views. The composer must stay editable and Send must remain reachable when the browser drawer is open.');
+  const geometry=await page.locator('.browser-view-viewport').evaluate(viewport=>{
+   const frame=viewport.querySelector('iframe'),v=viewport.getBoundingClientRect(),f=frame.getBoundingClientRect();
+   return {width:f.width,height:f.height,viewportWidth:v.width,viewportHeight:v.height,top:f.top-v.top,inert:frame.inert,overflow:getComputedStyle(viewport).overflow};
+  });
+  expect(geometry.width).toBeCloseTo(geometry.viewportWidth,0);
+  expect(geometry.height/geometry.width).toBeCloseTo(1.44,2);
+  expect(geometry.height).toBeGreaterThan(geometry.viewportHeight);
+  expect(geometry.top).toBeCloseTo(0,0);
+  expect(geometry.inert).toBe(true);
+  expect(geometry.overflow).toBe('hidden');
  }
  results.push('three real return-handler cycles initialize a viewer document in mini mode and retain the draft');
  // Finishing a reply must not remove the card beneath an in-progress tap.

@@ -62,6 +62,14 @@
       publish();
     },connectionRetried ? 10000 : 5000);
   }
+  function sizePreview() {
+    // Stream dimensions include the whole display; page metadata does not.
+    let video;
+    try { video = frame?.contentDocument?.getElementById('videoStream'); } catch { return; }
+    const width = video?.videoWidth, height = video?.videoHeight;
+    if ([width,height].every(n => Number.isInteger(n) && n > 0 && n <= 16384))
+      canvas.style.setProperty('--browser-stream-aspect',`${width} / ${height}`);
+  }
   async function request(path, body) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(),15000);
@@ -204,7 +212,7 @@
     if (event.origin !== location.origin || event.source !== frame?.contentWindow) return;
     const value = event.data;
     if (value?.type === 'mobileInputStatus' && typeof value.ready === 'boolean') inputReady = value.ready;
-    if (value?.type === 'framePresented') { playback = 'live'; clearTimeout(connectTimer); }
+    if (value?.type === 'framePresented') { playback = 'live'; sizePreview(); clearTimeout(connectTimer); }
     if (value?.type === 'browserPlaybackStatus' && ['tap_required','unavailable'].includes(value.state)) playback = value.state;
     if (value?.type === 'browserActivity' && presentation === 'full' && human()) lastActivity = Date.now();
     publish();
