@@ -26,6 +26,10 @@ await c.route(origin+'/**',async route=>{
  if(path==='/chat/browser/open'){openRequests++;active=true;generation++;mode='human';visibility='private';rev++;return json(state());}
  if(path==='/chat/browser/control/close'){active=false;rev++;return json(state());}
  if(path==='/chat/browser/control/take'){mode='human';visibility='private';rev++;return json(state());}
+ if(path==='/chat/browser/return'){
+  mode='agent';agentActive=false;rev++;
+  return json({turns,older_before:null});
+ }
  if(path==='/chat/browser/control/visibility'){visibility=req.postDataJSON().mode;rev++;return json(state());}
  if(path==='/chat/browser/control/heartbeat')return json(state());
  if(path==='/chat/browser/stream/index.html'){
@@ -99,6 +103,17 @@ try{
  await expect(page.locator('#message')).toHaveValue('Keep this draft while switching views. The composer must stay editable and Send must remain reachable when the browser drawer is open.');
  expect(await page.locator('.browser-stream-frame').evaluate((e,old)=>e===old,frame)).toBe(true);
  results.push('desktop preview expansion, same stream, privacy switch, minimize and draft retention');
+ for(let cycle=0;cycle<3;cycle++){
+  await page.locator('#browser-preview-open').click();
+  if(mode==='agent')await page.getByRole('button',{name:'Take control privately',exact:true}).click();
+  await expect(page.locator('.browser-connection')).toHaveText('Live');
+  await page.getByRole('button',{name:'Return to agent',exact:true}).click();
+  await expect(page.locator('main')).toHaveClass(/workspace-chat/);
+  await expect(page.frameLocator('.browser-stream-frame').locator('body')).toHaveText('Synthetic live browser');
+  await expect(page.locator('.browser-connection')).toHaveText('Live');
+  await expect(page.locator('#message')).toHaveValue('Keep this draft while switching views. The composer must stay editable and Send must remain reachable when the browser drawer is open.');
+ }
+ results.push('three real return-handler cycles initialize a viewer document in mini mode and retain the draft');
  // Finishing a reply must not remove the card beneath an in-progress tap.
  mode='agent';agentActive=false;rev++;
  const beforeReady=requestCount;
