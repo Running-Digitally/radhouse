@@ -304,3 +304,82 @@ explicitly deferred: extracting their authentication and lifecycle assembly is
 broader than the three-line replay compatibility correction. No suppression,
 quality-gate change or coverage exclusion was applied. Follow-up merged-main
 analysis and deployed mini-preview acceptance remain pending.
+
+PR 133 merged as `c34ce37f336d994583986f93eebda3af27472f9d`. Its clean
+merged-main verification again passed 2,488 tests with no skips. The processed
+analysis closed all three browser complexity findings and both research regex
+findings. All other touched worker, research and regression files have no open
+findings; the two application-assembly findings remain deferred. The overall
+gate remains ERROR: 68.7% new coverage, 675 new-code issues, 773 total issues,
+0.88264% new duplication and 72.1% overall coverage. The analysis was processed;
+this is a failed quality gate, not a missing scan. No disposition or gate changed.
+
+## Mobile page geometry follow-up
+
+Actual stream acceptance showed desktop Chrome occupying only part of its fixed
+display, with excessive letterboxing and a reading zoom that required broad
+horizontal panning. Native controls alone did not resolve that page layout.
+The shared isolated browser now uses a fixed 1000×1440 display, with an explicitly
+positioned 500×720 Chromium window at 2× density. This makes responsive sites use
+a phone-sized layout and fills the display even without a window manager.
+Desktop viewers see the same portrait browser; there is no independent device
+session or automatic page reload when switching viewers. Viewer resize remains
+disabled, and no new command, permission or agent tool is exposed. Local reading
+zoom uses the logical 500×720 dimensions instead of magnifying a desktop canvas.
+
+A disposable real-Chromium probe verified the window bounds, 500-pixel page width,
+2× density and matching display dimensions. An attempted narrower window was
+rejected by Chromium's 500-pixel minimum and was not used. The fixture has only
+synthetic content and routes network access to an unused local proxy. Chromium
+and WebKit canvas checks pass; 93 adjacent browser, input-boundary, guest and
+relay regressions pass. The initial sandboxed test attempt could not bind its
+loopback test sockets; the authorized local-socket rerun passed. Full candidate
+qualification subsequently passed as recorded below. Live portrait-stream
+acceptance remains a separate rollout gate.
+
+Touched-file cleanup extracts repeated frame-tree, disabled-setting and socket
+literals, removes nested conditionals and uses a dictionary comprehension. The
+following remaining findings are explicitly deferred without server disposition:
+
+- `sandbox.py`: `88377af1-7778-4303-aec4-b0822791b743` and
+  `5d37716d-1af0-4cc4-8987-9c719563013f` concern sandbox process proof and sensitive
+  frame traversal. Broader security-path extraction is outside fixed geometry.
+  `75018b79-a583-4f33-b07b-a6e1defd73b0` flags a timeout parameter, but `_rpc`
+  already uses an overall `asyncio.timeout` context; the parameter supplies the
+  tested total deadline rather than a transport timeout argument.
+- `platform.py`: the earlier documented coordination, callback, collection
+  snapshot and private temporary-directory findings remain deferred. Additional
+  `f54b722b-cd79-4401-9977-41a270e43024` concerns the broader route dispatcher;
+  fixed launch geometry does not alter that path.
+- `space_guest.py`: `4e08d654-27b9-480c-a15f-1bf0840a0004`,
+  `143dea49-a36f-45e3-899b-1a84603d04b4`, `7607f045-5ec7-484d-9328-7d21c440a660`
+  and `41e87091-f6bc-4a2d-84bf-c95e4557add6` concern watcher, retirement and
+  authenticated protocol/relay complexity. Preserve those boundaries in this
+  geometry change. `da748fb1-8bfc-4fd3-9da9-9374acd90757` concerns checking the
+  standard X11 socket directory while the authority file remains private;
+  `29446c76-e2fa-4a26-926c-e780586d1389` is an async callback contract;
+  `471ebdc3-ebac-455f-8e5f-b39c46a00857` and
+  `f2ef374a-de2e-4ad8-8f21-de18af4c4fac` retain snapshots because pipe closure
+  may remove entries from the live set.
+- `qualification.py`: `1c26988c-81f3-4e00-bf40-b75c16ebdeeb` is the existing
+  qualification orchestration; `5876cf49-0c9f-4914-80e2-bcb3b26608e3`,
+  `2f89b417-f084-470b-b239-a4da128dff85`, `6bdccbc7-0732-4bdc-88f5-a8af8793d204`
+  and `5f3878f5-1ab3-4914-8862-1823d086e2d0` retain their async callback contracts.
+  `6ee62fe0-f758-44a7-9504-1e855248af68` concerns the standard X11 socket readiness
+  check inside the existing disposable qualification image.
+
+
+The fixed launcher also hides Chrome for Testing's noninteractive informational
+banner using its supported `--disable-infobars` switch. This does not bypass TLS
+interstitials or permission decisions; the native Private/Observe/agent labels
+remain visible. The [Chromium documentation](https://chromium.googlesource.com/chromium/src/+show/4983f401f403549ad326d694f8724ffe2e24063a/docs/chrome_for_testing/README.md)
+describes the noninteractive-only behavior. The pinned-browser probe separately
+verifies the resulting page viewport; no browser binary or sandbox flag changes.
+
+The final portrait candidate passed the complete 2,488-test gate, with no
+failures, errors or skips, four JavaScript checks, owned coverage and complete
+fixture cleanup. Its tested source fingerprint is `8afb41301b47fe6abaf06c9f70e659d98b0ee82c8cf8e070f4dcfdf07a6b6ec0`.
+The initial full run found a lifecycle test whose sandbox placeholder lacked
+the new display contract; it now loads the actual fixed-geometry module and its
+18 lifecycle regressions pass. The final run includes that correction and the
+supported noninteractive-banner option.

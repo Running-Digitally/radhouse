@@ -24,6 +24,8 @@ import time
 from urllib.parse import urlsplit
 
 HERE = Path(__file__).parent
+DISABLED_SETTING = "false|locked"
+STREAM_SOCKET = "stream.sock"
 
 
 def load(name, path):
@@ -93,7 +95,10 @@ class Guest:
         connected = []
         if self.data is not None:
             connected = list({p.get("token") for p in self.permissions.values() if p.get("token")})
-        return {"state": "running" if self.running() else ("unavailable" if self.launch_id else "retired"), "connected": connected,
+        state = "unavailable" if self.launch_id else "retired"
+        if self.running():
+            state = "running"
+        return {"state": state, "connected": connected,
                 "faulted": self.faulted}
 
     async def start(self, identity):
@@ -137,7 +142,7 @@ class Guest:
         home.mkdir(mode=0o700)
         env["HOME"] = str(home)
         env.update(DISPLAY=display, XAUTHORITY=str(authority))
-        self.display = subprocess.Popen(["/usr/bin/Xvfb", display, "-screen", "0", "1280x900x24",
+        self.display = subprocess.Popen(["/usr/bin/Xvfb", display, "-screen", "0", sandbox.DISPLAY_GEOMETRY,
             "-nolisten", "tcp", "-auth", str(authority), "-noreset"], env=env,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         for _ in range(100):
@@ -169,17 +174,17 @@ class Guest:
         os.environ.update({
             "SELKIES_MASTER_TOKEN": secrets.token_urlsafe(32),
             "SELKIES_MODE": "websockets", "SELKIES_SUBFOLDER": "/chat/browser/stream",
-            "SELKIES_WEB_ROOT": "/opt/selkies-web", "SELKIES_UNIX_SOCKET": str(self.directory / "stream.sock"),
+            "SELKIES_WEB_ROOT": "/opt/selkies-web", "SELKIES_UNIX_SOCKET": str(self.directory / STREAM_SOCKET),
             "SELKIES_JS_SOCKET_PATH": str(self.directory), "SELKIES_WEBCAM_SOCKET_PATH": str(self.directory),
             "SELKIES_ENABLE_BASIC_AUTH": "false", "SELKIES_ENABLE_DUAL_MODE": "false",
             "SELKIES_AUDIO_ENABLED": "false", "SELKIES_ENABLE_RESIZE": "false",
-            "SELKIES_GAMEPAD_ENABLED": "false|locked", "SELKIES_PRINTING_ENABLED": "false|locked",
-            "SELKIES_MICROPHONE_ENABLED": "false|locked", "SELKIES_WEBCAM_ENABLED": "false|locked",
-            "SELKIES_SECOND_SCREEN": "false|locked", "SELKIES_COMPUTER_USE_BIND": "",
-            "SELKIES_MANUAL_WIDTH": "1280", "SELKIES_MANUAL_HEIGHT": "900",
+            "SELKIES_GAMEPAD_ENABLED": DISABLED_SETTING, "SELKIES_PRINTING_ENABLED": DISABLED_SETTING,
+            "SELKIES_MICROPHONE_ENABLED": DISABLED_SETTING, "SELKIES_WEBCAM_ENABLED": DISABLED_SETTING,
+            "SELKIES_SECOND_SCREEN": DISABLED_SETTING, "SELKIES_COMPUTER_USE_BIND": "",
+            "SELKIES_MANUAL_WIDTH": str(sandbox.DISPLAY_WIDTH), "SELKIES_MANUAL_HEIGHT": str(sandbox.DISPLAY_HEIGHT),
             "SELKIES_FRAMERATE": "30-30", "SELKIES_ENCODER": "h264enc",
             "SELKIES_ENABLE_CLIPBOARD": "true", "SELKIES_CLIPBOARD_SEAMLESS": "true|locked",
-            "SELKIES_ENABLE_BINARY_CLIPBOARD": "false|locked", "SELKIES_COMMAND_ENABLED": "false|locked",
+            "SELKIES_ENABLE_BINARY_CLIPBOARD": DISABLED_SETTING, "SELKIES_COMMAND_ENABLED": DISABLED_SETTING,
             "SELKIES_ENABLE_COLLAB": "true|locked", "SELKIES_USE_CPU": "true",
             "SELKIES_WAYLAND": "false", "SELKIES_GPU_ID": "-1", "SELKIES_MAC_CMD_AS_CTRL": "true"})
         os.environ.pop("PIXELFLUX_CU", None)
@@ -187,7 +192,7 @@ class Guest:
         from selkies.settings import settings
         from selkies.stream_server import CentralizedStreamServer
         from selkies.websockets_mode import DataStreamingServer, client_permissions, reconcile_clients
-        settings.unix_socket = str(self.directory / "stream.sock")
+        settings.unix_socket = str(self.directory / STREAM_SOCKET)
         settings.js_socket_path = settings.webcam_socket_path = str(self.directory)
         settings.master_token = os.environ["SELKIES_MASTER_TOKEN"]
         if (settings.enable_collab != (True, True) or settings.command_enabled[0]
@@ -269,7 +274,9 @@ class Guest:
                 expired = (not self.grants.live() if self.grants.initialized
                     else time.monotonic() - self.started_at >= 60)
                 if not self.running() or expired or self.files is not None and self.files.faulted:
-                    reason = "process_gone" if not self.running() else "grant_expired" if expired else "file_observer"
+                    reason = "grant_expired" if expired else "file_observer"
+                    if not self.running():
+                        reason = "process_gone"
                     logging.getLogger(__name__).warning("Browser execution revoked: reason=%s", reason)
                     self.faulted = True
                     await self.revoke()
@@ -483,7 +490,7 @@ class Guest:
                     or "/api/" in "/" + tail and tail not in {"api/status", "api/health", "api/websockets"}):
                 raise protocol.Rejected("stream_request_rejected")
             url = "http://localhost/chat/browser/stream/" + tail
-            async with ClientSession(connector=UnixConnector(path=str(self.directory / "stream.sock")),
+            async with ClientSession(connector=UnixConnector(path=str(self.directory / STREAM_SOCKET)),
                     timeout=ClientTimeout(total=None, connect=5), trust_env=False) as client:
                 if request.headers.get("Upgrade", "").lower() == "websocket":
                     if tail != "api/websockets":

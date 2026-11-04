@@ -36,7 +36,10 @@ fragment; a public connection nonce forces the iframe to reload on authority
 changes. A fragment change alone would leave the old connection running.
 
 Every human input is checked against the current generation and live durable
-lease inside an input lock. The sole display is fixed at 1280×900; viewer resize
+lease inside an input lock. The sole display is fixed at 1000×1440, with a 500×720 Chromium window at
+2× pixel density. Pages use a responsive phone-sized layout in the same shared
+browser on web and mobile; the window fills the display without a window manager.
+The launch bounds are fixed installation code, not client input. Viewer resize
 and phone orientation change local presentation only. General file, recording,
 terminal, media, settings and alternative input APIs are denied by the server.
 Trusted internal punctuation commits remain inside their admitted operation.

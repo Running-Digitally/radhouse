@@ -31,6 +31,7 @@ PROXY = os.environ.get("RADHOUSE_REVIEW_PROXY")
 SANDBOX_PROOF = None
 CHROME_CHILD = None
 CHROME_ENDPOINT = None
+DISABLED_SETTING = "false|locked"
 
 
 def load(name, path):
@@ -58,14 +59,14 @@ def prepare_environment():
         "SELKIES_WEB_ROOT": "/opt/selkies-web", "SELKIES_ADDR": "0.0.0.0",
         "SELKIES_ENABLE_BASIC_AUTH": "false", "SELKIES_ENABLE_DUAL_MODE": "false",
         "SELKIES_AUDIO_ENABLED": "false", "SELKIES_ENABLE_RESIZE": "false",
-        "SELKIES_GAMEPAD_ENABLED": "false|locked", "SELKIES_PRINTING_ENABLED": "false|locked",
-        "SELKIES_MICROPHONE_ENABLED": "false|locked", "SELKIES_WEBCAM_ENABLED": "false|locked",
-        "SELKIES_SECOND_SCREEN": "false|locked", "SELKIES_COMPUTER_USE_BIND": "",
-        "SELKIES_MANUAL_WIDTH": "1280", "SELKIES_MANUAL_HEIGHT": "900",
+        "SELKIES_GAMEPAD_ENABLED": DISABLED_SETTING, "SELKIES_PRINTING_ENABLED": DISABLED_SETTING,
+        "SELKIES_MICROPHONE_ENABLED": DISABLED_SETTING, "SELKIES_WEBCAM_ENABLED": DISABLED_SETTING,
+        "SELKIES_SECOND_SCREEN": DISABLED_SETTING, "SELKIES_COMPUTER_USE_BIND": "",
+        "SELKIES_MANUAL_WIDTH": str(sandbox.DISPLAY_WIDTH), "SELKIES_MANUAL_HEIGHT": str(sandbox.DISPLAY_HEIGHT),
         "SELKIES_FRAMERATE": "30-30", "SELKIES_ENCODER": "h264enc",
         "SELKIES_ENABLE_CLIPBOARD": "true", "SELKIES_CLIPBOARD_SEAMLESS": "true|locked",
-        "SELKIES_ENABLE_BINARY_CLIPBOARD": "false|locked",
-        "SELKIES_COMMAND_ENABLED": "false|locked", "SELKIES_ENABLE_COLLAB": "true|locked",
+        "SELKIES_ENABLE_BINARY_CLIPBOARD": DISABLED_SETTING,
+        "SELKIES_COMMAND_ENABLED": DISABLED_SETTING, "SELKIES_ENABLE_COLLAB": "true|locked",
         "SELKIES_USE_CPU": "true",
         "SELKIES_WAYLAND": "false", "SELKIES_GPU_ID": "-1",
         "SELKIES_MAC_CMD_AS_CTRL": "true",
@@ -427,7 +428,7 @@ async def run():
 
 def main():
     prepare_environment()
-    processes = [subprocess.Popen(["Xvfb", os.environ["DISPLAY"], "-screen", "0", "1280x900x24", "-ac", "-nolisten", "tcp"],
+    processes = [subprocess.Popen(["Xvfb", os.environ["DISPLAY"], "-screen", "0", sandbox.DISPLAY_GEOMETRY, "-ac", "-nolisten", "tcp"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL),
         subprocess.Popen([sys.executable, str(Path(__file__).with_name("fixture") / "server.py")],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)]

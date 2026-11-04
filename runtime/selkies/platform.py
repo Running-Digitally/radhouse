@@ -127,13 +127,14 @@ def launch(bridge, _directory, environment):
         _endpoint = _chrome.endpoint
         return _endpoint
     if _display is None:
+        sandbox = load('radhouse_platform_sandbox', Path(__file__).with_name(SANDBOX_MODULE))
         display_number = secrets.randbelow(50000) + 100
         auth = Path(tempfile.mkdtemp(prefix='radhouse-display-')) / 'Xauthority'
         auth.touch(mode=0o600)
         subprocess.run(['/usr/bin/xauth','-f',str(auth),'add',':'+str(display_number),'.',secrets.token_hex(16)],
             check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         os.environ['XAUTHORITY'] = str(auth)
-        _display = subprocess.Popen(['/usr/bin/Xvfb', ':'+str(display_number), '-screen', '0', '1280x900x24', '-nolisten', 'tcp', '-auth',str(auth), '-noreset'],
+        _display = subprocess.Popen(['/usr/bin/Xvfb', ':'+str(display_number), '-screen', '0', sandbox.DISPLAY_GEOMETRY, '-nolisten', 'tcp', '-auth',str(auth), '-noreset'],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         os.environ['DISPLAY'] = ':'+str(display_number)
         for _ in range(100):
@@ -269,7 +270,7 @@ class Platform:
             'SELKIES_GAMEPAD_ENABLED':DISABLED_SETTING,'SELKIES_PRINTING_ENABLED':DISABLED_SETTING,
             'SELKIES_MICROPHONE_ENABLED':DISABLED_SETTING,'SELKIES_WEBCAM_ENABLED':DISABLED_SETTING,
             'SELKIES_SECOND_SCREEN':DISABLED_SETTING,'SELKIES_COMPUTER_USE_BIND':'',
-            'SELKIES_MANUAL_WIDTH':'1280','SELKIES_MANUAL_HEIGHT':'900',
+            'SELKIES_MANUAL_WIDTH':str(self.sandbox.DISPLAY_WIDTH),'SELKIES_MANUAL_HEIGHT':str(self.sandbox.DISPLAY_HEIGHT),
             'SELKIES_FRAMERATE':'30-30','SELKIES_ENCODER':'h264enc',
             'SELKIES_ENABLE_CLIPBOARD':'true','SELKIES_CLIPBOARD_SEAMLESS':'true|locked',
             'SELKIES_ENABLE_BINARY_CLIPBOARD':DISABLED_SETTING,'SELKIES_COMMAND_ENABLED':DISABLED_SETTING,

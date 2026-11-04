@@ -8,14 +8,21 @@ import time
 from urllib.parse import urlsplit
 
 CHROME = '/opt/browser/chrome-linux64/chrome'
+# One fixed shared display: responsive page layout at 500 CSS pixels, rendered
+# at 2x for readable phone pixels. Viewer resize remains disabled.
+DISPLAY_WIDTH, DISPLAY_HEIGHT, DEVICE_SCALE = 1000, 1440, 2
+DISPLAY_GEOMETRY = f'{DISPLAY_WIDTH}x{DISPLAY_HEIGHT}x24'
+FRAME_TREE = 'Page.getFrameTree'
 
 
 def chrome_arguments(profile, proxy=None, *, start_url=None, public_only=False):
     args = [CHROME, '--disable-extensions', '--no-first-run', '--no-default-browser-check',
         '--disable-background-networking', '--disable-component-update', '--disable-sync',
-        '--disable-breakpad', '--password-store=basic', '--use-mock-keychain',
+        '--disable-breakpad', '--disable-infobars', '--password-store=basic', '--use-mock-keychain',
         '--remote-debugging-address=127.0.0.1', '--remote-debugging-port=0',
-        '--force-webrtc-ip-handling-policy=disable_non_proxied_udp', '--start-maximized',
+        '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
+        f'--window-size={DISPLAY_WIDTH//DEVICE_SCALE},{DISPLAY_HEIGHT//DEVICE_SCALE}',
+        '--window-position=0,0', f'--force-device-scale-factor={DEVICE_SCALE}',
         '--user-data-dir='+str(profile)]
     if public_only and not proxy:
         raise ValueError('public_browser_proxy_required')
@@ -27,7 +34,9 @@ def chrome_arguments(profile, proxy=None, *, start_url=None, public_only=False):
             '--proxy-bypass-list=<-loopback>' if public_only else '--proxy-bypass-list=<-loopback>;127.0.0.1:18081']
         if public_only:
             args.append('--disable-quic')
-    args.append(start_url if start_url is not None else ("about:blank" if public_only else "http://127.0.0.1:18081/"))
+    if start_url is None:
+        start_url = "about:blank" if public_only else "http://127.0.0.1:18081/"
+    args.append(start_url)
     return args
 
 
@@ -66,7 +75,8 @@ def verify(browser_pid, proc=Path('/proc'), *, require_namespaces=True):
     """
     parent = proc / str(browser_pid)
     def status(p):
-        return dict(l.split(':', 1) for l in (p/'status').read_text().splitlines() if ':' in l)
+        return {key: value for line in (p/'status').read_text().splitlines() if ':' in line
+                for key, value in [line.split(':', 1)]}
     main = status(parent)
     parent_ns = {n: os.readlink(parent/'ns'/n) for n in ('user', 'pid', 'net')}
     parent_filters = int(main.get('Seccomp_filters', '0'))
@@ -193,7 +203,7 @@ async def visible_target(endpoint):
         for page in pages:
             target = page.get('id')
             async with client.ws_connect(_target_url(endpoint, target)) as ws:
-                tree = await _rpc(ws, 'Page.getFrameTree')
+                tree = await _rpc(ws, FRAME_TREE)
                 frame = tree['frameTree']['frame']['id']
                 if await _isolated_boolean(ws, frame, "document.visibilityState === 'visible'"):
                     visible.append(target)
@@ -237,14 +247,14 @@ async def sensitive_clear(endpoint, target):
                         client.ws_connect(_target_url(endpoint, owner)))
                 return sockets[owner]
             ws = await connection(target)
-            tree = await _rpc(ws, 'Page.getFrameTree')
+            tree = await _rpc(ws, FRAME_TREE)
             pending = [(tree['frameTree'], target)]
             # Page.getFrameTree omits OOP children too. Each OOP root carries
             # its real parentId; join only descendants of the selected page.
             children_by_parent = {}
             for frame in oop_frames:
                 peer = await connection(frame)
-                child_tree = (await _rpc(peer, 'Page.getFrameTree'))['frameTree']
+                child_tree = (await _rpc(peer, FRAME_TREE))['frameTree']
                 if child_tree['frame']['id'] != frame or not child_tree['frame'].get('parentId'):
                     raise RuntimeError('page_check_unconfirmed')
                 children_by_parent.setdefault(child_tree['frame']['parentId'], []).append((child_tree, frame))
@@ -263,7 +273,7 @@ async def sensitive_clear(endpoint, target):
                     return False
                 children = list(node.get('childFrames', []))
                 if owner != inherited:
-                    child_tree = await _rpc(peer, 'Page.getFrameTree')
+                    child_tree = await _rpc(peer, FRAME_TREE)
                     children.extend(child_tree['frameTree'].get('childFrames', []))
                 pending.extend((child, owner) for child in children)
                 pending.extend(children_by_parent.get(frame, []))
