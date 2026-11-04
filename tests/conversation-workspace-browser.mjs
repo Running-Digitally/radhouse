@@ -121,7 +121,14 @@ try{
   expect(geometry.height).toBeGreaterThan(geometry.viewportHeight);
   expect(geometry.top).toBeCloseTo(0,0);
   expect(geometry.inert).toBe(true);
-  expect(geometry.overflow).toBe('hidden');
+  expect(geometry.overflow).toBe('clip');
+  // A theme's generic hover style must not cover the live pixels. A tall
+  // viewer's autofocus must not scroll the clipped preview away from its top.
+  await page.evaluate(()=>document.documentElement.dataset.rhSurface='night');
+  await page.locator('#browser-preview-open').hover();
+  await expect(page.locator('#browser-preview-open')).toHaveCSS('background-color','rgba(0, 0, 0, 0)');
+  await page.locator('.browser-view-viewport').evaluate(e=>e.scrollTop=100);
+  expect(await page.locator('.browser-view-viewport').evaluate(e=>e.scrollTop)).toBe(0);
  }
  results.push('three real return-handler cycles initialize a viewer document in mini mode and retain the draft');
  // Finishing a reply must not remove the card beneath an in-progress tap.
