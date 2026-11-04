@@ -13,6 +13,7 @@ async function client({ browser = null } = {}) {
       value: "", style: {}, dataset: {}, children: [], classList:{toggle(){},add(){},remove(){}},
       setAttribute() {},
       addEventListener() {}, replaceChildren() {},
+      querySelector(selector) { return element(`${id} ${selector}`); },
       querySelectorAll() { return []; },
       getBoundingClientRect() { return { top: 0 }; },
     });
