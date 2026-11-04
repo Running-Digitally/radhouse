@@ -16,7 +16,7 @@ const engines = process.env.RADHOUSE_CANVAS_WEBKIT === '1'
 for (const [name,engine] of engines) {
   const browser = await engine.launch({headless:true});
   const context = await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
-  let mode='agent', active=true, revision=1, failure=false, readFailure=false, expired=false, mutations=[], loads=0;
+  let mode='agent', active=true, revision=1, failure=false, readFailure=false, expired=false, mutations=[], loads=0, stallLoads=0;
   const state = () => ({state:'live',generation:'generation-one',title:'Example page',url:'https://example.org/',
     agent_active:active,can_return:true,stream:{path:'/chat/browser/stream/index.html',token:mode.repeat(43).slice(0,43)},
     control:{mode,revision,can_take:mode==='agent',...(mode==='human'?{lease_id:'lease-one',lease_expires_at:Date.now()/1000+60,observation_mode:'private'}:{})}});
@@ -38,6 +38,7 @@ for (const [name,engine] of engines) {
     }
     if(path==='/chat/browser/stream/index.html') {
       loads++;
+      if(stallLoads>0){stallLoads--;return route.fulfill({contentType:'text/html',body:'<p>Waiting fixture</p>'});}
       return route.fulfill({contentType:'text/html',body:`<html><body style="margin:0;background:#e4ede2"><h1>Example page</h1><script>
         window.inputs=[];window.radhouseInput={hide(){},show(){return true},press(key){inputs.push(key);return true},navigate(url){inputs.push(url);return true}};
         parent.postMessage({type:'framePresented'},location.origin);
@@ -117,6 +118,16 @@ for (const [name,engine] of engines) {
   await command({action:'refresh'});
   expect((await latest()).uncertain).toBe(false);
   expect(mutations).toHaveLength(before);
+  // The first connection stalls, then the single automatic retry renders.
+  const actionMutations=()=>mutations.filter(m=>!m.path.endsWith('/heartbeat')).length;
+  const recoveryLoads=loads, recoveryMutations=actionMutations();stallLoads=1;
+  await command({action:'reconnect'});
+  await expect.poll(async()=>(await latest()).playback,{timeout:8000}).toBe('live');
+  expect(loads).toBe(recoveryLoads+2);expect(actionMutations()).toBe(recoveryMutations);
+  // Another failure under the same capability cannot spin a retry loop.
+  stallLoads=10;await command({action:'reconnect'});
+  await expect.poll(async()=>(await latest()).playback,{timeout:12000}).toBe('stalled');
+  expect(loads).toBe(recoveryLoads+3);expect(actionMutations()).toBe(recoveryMutations);
   expired=true;
   await command({action:'refresh'});
   await expect(page.locator('iframe')).toHaveCount(0);

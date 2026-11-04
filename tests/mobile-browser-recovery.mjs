@@ -8,7 +8,7 @@ const results=[];
 for(const [name,engine] of [['chromium',chromium],['webkit',webkit]]){
  const browser=await engine.launch({headless:true,...(name==='chromium'?{channel:'chrome'}:{})});
  const c=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
- let foreign=true,rev=3,moves=[],errors=[],stallViewer=false;
+ let foreign=true,rev=3,moves=[],errors=[],stallViewer=false, stalledLoads=0;
  const state=()=>({state:'live',generation:'generation-1',url:'https://example.org/',title:'Example',viewport:{width:1280,height:900},agent_active:false,
   stream:{path:'/chat/browser/stream/index.html',token:(foreign?'v':'h').repeat(43)},control:{mode:'human',revision:rev,can_take:false,...(!foreign?{lease_id:'phone-lease',lease_expires_at:Date.now()/1000+60,next_sequence:1,observation_mode:'private',observation_epoch:0}:{})},page_context:{current:{url:'https://example.org/',title:'Example'},previous:null},can_return:true,vault_enabled:false});
  await c.addInitScript(()=>{
@@ -25,7 +25,7 @@ for(const [name,engine] of [['chromium',chromium],['webkit',webkit]]){
    const body=req.postDataJSON();expect(body.move_here).toBe(true);moves.push(body);foreign=false;rev++;return json(state());
   }
   if(path==='/chat/browser/control/heartbeat')return json(state());
-  if(path==='/chat/browser/stream/index.html'&&stallViewer)return route.fulfill({contentType:'text/html',body:'<p>Connecting fixture</p>'});
+  if(path==='/chat/browser/stream/index.html'&&stallViewer){stalledLoads++;return route.fulfill({contentType:'text/html',body:'<p>Connecting fixture</p>'});}
   if(path==='/chat/browser/stream/index.html')return route.fulfill({contentType:'text/html',body:`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><script>
    const baseline=parent.trustedPlaybackTaps;let playing=false;window.remoteInput=0;
    document.addEventListener('pointerdown',()=>remoteInput++);
@@ -96,8 +96,9 @@ for(const [name,engine] of [['chromium',chromium],['webkit',webkit]]){
   stallViewer=true;
   await page.reload();
   await expect(page.getByRole('button',{name:'Reconnect viewer',exact:true})).toBeVisible({timeout:20000});
+  expect(stalledLoads).toBe(2);
   const stalledSource=await page.locator('.browser-stream-frame').getAttribute('src');
-  stallViewer=false;
+  stallViewer=false, stalledLoads=0;
   await page.getByRole('button',{name:'Reconnect viewer',exact:true}).click();
   await expect(page.locator('.browser-stream-frame')).not.toHaveAttribute('src',stalledSource);
   await expect(page.getByRole('button',{name:'Tap to view browser',exact:true})).toBeVisible();

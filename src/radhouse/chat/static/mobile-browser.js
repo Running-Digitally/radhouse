@@ -9,7 +9,7 @@
   let frame = null, streamKey = '', playback = 'connecting', inputReady = false;
   let epoch = 0, uncertain = false, notice = '', lastActivity = 0, lastHeartbeat = 0;
   let timer = null, connectTimer = null, authenticated = false, searchEngine = null;
-  let dismissedPreview = null;
+  let dismissedPreview = null, recoveryKey = '', connectionRetried = false;
   const post = value => window.ReactNativeWebView?.postMessage(JSON.stringify({schema:'radhouse.mobile-browser.v1', ...value}));
   const human = () => state?.state === 'live' && state.control?.mode === 'human'
     && typeof state.control.lease_id === 'string' && state.control.lease_expires_at > Date.now()/1000;
@@ -46,6 +46,7 @@
     canvas.classList.toggle('zoom', zoomed());
     syncInput();
     const key = state.generation + ':' + stream.token;
+    if (key !== recoveryKey) { recoveryKey = key; connectionRetried = false; }
     if (frame && key === streamKey) return;
     clearFrame(); streamKey = key;
     frame = document.createElement('iframe');
@@ -53,7 +54,13 @@
     frame.inert = readOnly();
     frame.src = stream.path + '?connection=' + crypto.randomUUID() + '#token=' + stream.token;
     canvas.append(frame);
-    connectTimer = setTimeout(() => { if (frame && playback === 'connecting') { playback = 'stalled'; publish(); } },15000);
+    connectTimer = setTimeout(() => {
+      if (!frame || playback !== 'connecting') return;
+      // One video-only reconnect per capability; input and control never replay.
+      if (!connectionRetried) { connectionRetried = true; clearFrame(); mount(); }
+      else playback = 'stalled';
+      publish();
+    },connectionRetried ? 10000 : 5000);
   }
   async function request(path, body) {
     const controller = new AbortController();

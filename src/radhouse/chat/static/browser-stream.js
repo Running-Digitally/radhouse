@@ -69,7 +69,7 @@
       if(stream.path!=='/chat/browser/stream/index.html'||typeof stream.token!=='string'||!/^[-_A-Za-z0-9]{32,128}$/.test(stream.token)){
         this.clear();return;
       }
-      if(this.info?.token!==stream.token || this.streamGeneration!==this.view.generation){this.connectionNonce=crypto.randomUUID();this.streamGeneration=this.view.generation;}
+      if(this.info?.token!==stream.token || this.streamGeneration!==this.view.generation){this.connectionNonce=crypto.randomUUID();this.streamGeneration=this.view.generation;this.connectionRetried=false;}
       this.info={path:stream.path,token:stream.token};this.mount();this.render();
     }
     mount(){
@@ -77,18 +77,21 @@
       const url=this.info.path+'?connection='+encodeURIComponent(this.connectionNonce)+'#token='+encodeURIComponent(this.info.token);
       if(this.frame.getAttribute('src')!==url){
         this.hideKeyboard();
-        // A capability/generation change gets a new browsing context. Reusing
-        // its WindowProxy admits late status from the retiring viewer, including
-        // its unload cleanup, as though it came from the current connection.
+        // Keep status messages bound to one viewer connection, including when
+        // the server rotates its capability after a control handback.
         const retired=this.frame;this.frame=this.createFrame();
         retired.remove();retired.removeAttribute('src');
         this.input.ready=false;this.presented=false;this.playback='connecting';this.frame.src=url;
         clearTimeout(this.connectionTimer);
         this.connectionTimer=setTimeout(()=>{
           if(this.info&&this.visible&&!this.presented&&this.playback==='connecting'){
-            this.playback='stalled';this.render();
+            if(!this.connectionRetried){
+              // Retry video initialization once. Never replay a remote action.
+              this.connectionRetried=true;this.connectionNonce=crypto.randomUUID();this.mount();
+            }else this.playback='stalled';
+            this.render();
           }
-        },15000);
+        },this.connectionRetried?10000:5000);
       }
       if(!this.frame.isConnected)this.view.viewport.append(this.frame);
       this.view.image.hidden=true;this.view.viewport.hidden=false;
