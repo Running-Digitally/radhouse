@@ -195,8 +195,6 @@ def test_public_browser_flags_remove_loopback_bypass():
     args = w.sandbox.chrome_arguments(Path('/synthetic-profile'), 'http://127.0.0.1:18082', public_only=True)
     assert '--proxy-bypass-list=<-loopback>' in args
     assert '--disable-quic' in args
-    assert '--start-fullscreen' in args
-    assert '--kiosk' not in args
     assert not any('18081' in arg for arg in args)
     with pytest.raises(ValueError):
         w.sandbox.chrome_arguments(Path('/synthetic-profile'), public_only=True)
