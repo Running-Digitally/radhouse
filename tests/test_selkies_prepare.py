@@ -47,3 +47,9 @@ def test_corrupted_provenance_aborts_before_creating_build_context():
         with patch.object(p, 'HERE', root), pytest.raises(ValueError, match='native_provenance_mismatch'):
             p.prepare(archive, native, root/'unused-chrome.tar', root/'output')
         assert not (root/'output').exists()
+
+
+@pytest.mark.parametrize('source', ['', 'if (document.hidden || isSharedMode || window.isFallingBack || retrySettling || codecRefusalUnanswerable ||'])
+def test_viewer_recovery_rejects_incomplete_or_changed_upstream(source):
+    with pytest.raises(ValueError, match='viewer_recovery_anchor_changed'):
+        p.patch_viewer_recovery(source)
