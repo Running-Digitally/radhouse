@@ -6,6 +6,11 @@ chat-owned Chromium through the integrated Selkies workspace described below.
 The earlier disposable test browser remains a separate pilot. The platform
 binds the same principal, conversation, run and owned browser throughout.
 
+For diagnosis, repeatable acceptance and limits of the latest proof, start with
+[browser reliability lessons](research/2026-11-04-browser-reliability-lessons.md).
+It separates service readiness, transport, decoding, visible layout and release
+availability instead of treating them as one browser-health signal.
+
 ## What is developed
 
 - Continuous Selkies video and direct pointer/touch/keyboard input.
@@ -117,13 +122,22 @@ environment; existing dependency versions remain authoritative. Private X11
 authentication, a renderer sandbox proof and the existing public-web firewall
 remain required. Closed broad desktop/file/command APIs are not exposed.
 
-Chat displays a small live browser while an agent browser step or human takeover
-is active. Select that preview for Browser emphasis; Back to chat restores chat
+Chat displays a live mini while the agent browses and keeps a dismissible
+Browser ready view afterward. The controlling web client can also minimize its
+own private takeover; other clients must not receive its private preview.
+Select that preview for Browser emphasis; Back to chat restores chat
 emphasis without moving the stream or losing the draft. Desktop retains chat
 alongside Browser. On phones the Chat button opens a compact drawer; switching
 focus hides the remote keyboard assist. Keys uses an inline grid with at least
 44-pixel targets. Browser mode compacts the phone header to preserve vertical
 space; the normal Chat header remains. Fit and Zoom change local presentation only.
+
+The mini fills its card width using actual video dimensions, clips the lower
+display and cannot scroll or send remote input. Page viewport metadata is not
+the stream aspect ratio. Native mobile owns address, privacy and tools controls
+around its authenticated canvas; it does not embed the full web application UI.
+Remote Chrome controls remain visible in this release by explicit owner choice.
+The remote page itself remains a fixed-size desktop surface.
 
 Take control privately is the default. Private blocks model page reads and
 mutations; chat attaches neither the current nor previous page. Select Let agent

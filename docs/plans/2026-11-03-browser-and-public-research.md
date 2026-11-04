@@ -1,6 +1,10 @@
 # Reliable browser recovery and opt-in commitment research
 
-Status: implementation and qualification in progress. The owner authorized the
+Status as of 4 November: implementation merged; focused live web and native
+simulator acceptance passed. Publication and physical-phone acceptance are
+separate, evidence-backed states in the private operational record. The
+[closing lessons and analysis](../research/2026-11-04-browser-reliability-lessons.md)
+supersede intermediate acceptance holds below. The owner authorized the
 browser repair, selected-commitment public research, web/mobile simulator
 verification, review/merge/SonarQube correction cycle and owner-channel rollout
 on 3 November 2026. This is a D2 extension of the confirmed-commitment design.
@@ -118,16 +122,19 @@ Citation validation proves provenance, not the truth or completeness of a claim.
 ## Mobile experience acceptance — revised 3 November
 
 The owner rejected treating a functioning embedded web workspace as mobile
-completion. The release now requires a native browser interface and a live mini
-browser in native chat while the agent is browsing. The earlier functional PRs
-are merged; publication is held for this follow-up and its review/scan cycle.
+completion. Acceptance requires a native browser interface and a live mini
+browser in native chat while the agent is browsing. That follow-up and its
+review/scan correction cycle are now merged; the dated closing record above
+owns the evidence rather than this design plan implying publication.
 
 The expanded view dedicates its content region to the remote page. React Native
 owns the page title/address entry, explicit control and privacy state, primary
 actions and a compact tools sheet. It must not display the website's application
 header, sidebar, chat composer or duplicate app navigation. Chat contains a
-compact live, view-only card when `agent_active` is true and control belongs to
-the agent. Tapping expands without taking control. Returning preserves the draft
+compact, view-only preview while control belongs to the agent, labelled with
+current activity or Browser ready. Availability is separate from `agent_active`;
+the owner can dismiss the preview until a new generation or agent-activity edge.
+Tapping expands without taking control. Returning preserves the draft
 and chat position. Preview scrolling never becomes remote browser input.
 
 Use a dedicated same-origin canvas document inside the existing authenticated

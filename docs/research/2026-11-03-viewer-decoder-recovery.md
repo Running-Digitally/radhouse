@@ -1,5 +1,9 @@
 # Viewer decoder recovery
 
+Historical investigation. The [4 November closeout and troubleshooting guide](2026-11-04-browser-reliability-lessons.md)
+supersedes this report's pending live-acceptance statements, preserves the limits
+of the decoder diagnosis and records the later lifecycle/layout corrections.
+
 ## Evidence and scope
 
 The Android simulator intermittently rendered a black preview after returning

@@ -166,6 +166,9 @@ answers and explicit navigation back to the latest message. The native composer
 stays above the keyboard and preserves drafts while moving around the workspace.
 The selected model is visible beside the composer in both clients. See the
 [connected-chat usability audit](docs/research/2026-11-02-connected-chat-audit.md).
+For browser diagnosis and release acceptance, see the
+[browser reliability lessons](docs/research/2026-11-04-browser-reliability-lessons.md)
+and [current browser guide](docs/selkies-browser.md).
 
 Optional `transcription_endpoint` selects an existing OpenAI-compatible
 `/v1/audio/transcriptions` service; optional `transcription_bearer` belongs only to
