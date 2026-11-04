@@ -10,14 +10,19 @@
 .browser-workspace-actions{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .browser-workspace-actions button{min-height:44px}
 #browser-chat-toggle{display:none}
-#browser-preview-open{position:absolute;inset:0;width:100%;height:100%;border-radius:14px;background:transparent;border:1px solid var(--line);padding:0;z-index:4;cursor:pointer}
+#browser-page #browser-preview-open{position:absolute;inset:0;width:100%;height:100%;border-radius:14px;background:transparent;border:1px solid var(--line);padding:0;z-index:4;cursor:pointer}
 #browser-preview-open span{position:absolute;bottom:0;left:0;right:0;padding:10px;background:var(--panel);border-radius:0 0 14px 14px;font-size:13px}
 #browser-preview-open:focus-visible{outline:3px solid var(--rh-green,#456d55);outline-offset:2px}
+#browser-preview-dismiss{position:absolute;top:6px;right:6px;z-index:5;min-height:44px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px 12px}
 .workspace-chat #browser-page{align-self:start;max-height:330px;border-radius:14px}
 .workspace-chat #browser-page>.workspace-heading,.workspace-chat #browser-idle-hint,.workspace-chat .browser-view-header,.workspace-chat .browser-actions,.workspace-chat .browser-control-status,.workspace-chat .browser-utilities,.workspace-chat .browser-logins{display:none!important}
 .workspace-chat #assistant-browser{margin:0;padding-bottom:38px}
 .workspace-chat .browser-view-body{padding:0;border:0}
-.workspace-chat .browser-stream-frame{aspect-ratio:1280/900}
+.workspace-chat .browser-view-body>p[role="status"]{display:none}
+.workspace-chat .browser-view--streaming .browser-view-viewport{overflow:clip;min-height:0;align-items:flex-start;justify-content:flex-start}
+/* A preview shows the top of the page at its full width. Expanding restores
+   the fitted interactive viewport without recreating the stream. */
+.workspace-chat .browser-stream-frame{height:auto;min-height:100%;aspect-ratio:var(--browser-stream-aspect,1280/900)}
 .browser-view--streaming .browser-view-header{display:none!important}
 .browser-view--streaming .browser-view-viewport{aspect-ratio:1280/900;overflow:auto;position:relative;background:#000}
 .browser-stream-frame{width:100%;height:100%;border:0;display:block;flex:none}

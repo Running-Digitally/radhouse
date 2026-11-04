@@ -5,8 +5,7 @@
     constructor(view) {
       this.view=view;this.info=null;this.preview=false;this.visible=true;this.presented=false;
       this.input={ready:false,touch:matchMedia('(pointer:coarse)').matches,hardware:false,focused:false};
-      this.frame=document.createElement('iframe');this.frame.className='browser-stream-frame';
-      this.frame.title='Live assistant browser';this.frame.allow='autoplay; clipboard-read; clipboard-write';this.frame.tabIndex=-1;
+      this.frame=this.createFrame();
       this.tools=document.createElement('div');this.tools.className='browser-stream-tools';this.tools.hidden=true;
       const button=(label,action)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.addEventListener('click',action);return b;};
       this.keyboard=button('Keyboard',()=>this.input.focused?this.hideKeyboard():this.invoke('show',false));
@@ -53,32 +52,55 @@
           this.render();
         }
         if(event.data?.type==='browserActivity')view.container.dispatchEvent(new CustomEvent('browser-activity',{bubbles:true}));
-        if(event.data?.type==='framePresented'){const first=!this.presented;this.presented=true;clearTimeout(this.connectionTimer);this.render();if(first&&!this.preview)this.view.container.closest('#browser-page')?.scrollTo({top:0});}
+        if(event.data?.type==='framePresented'){const first=!this.presented;this.presented=true;this.sizePreview();clearTimeout(this.connectionTimer);this.render();if(first&&!this.preview)this.view.container.closest('#browser-page')?.scrollTo({top:0});}
       };
       window.addEventListener('message',this.message);
       this.focus=event=>{if(event.target.closest?.('#compose'))this.hideKeyboard();};document.addEventListener('focusin',this.focus);
     }
     get enabled(){return this.info!==null;}
+    createFrame(){
+      const frame=document.createElement('iframe');frame.className='browser-stream-frame';
+      frame.title='Live assistant browser';frame.allow='autoplay; clipboard-read; clipboard-write';frame.tabIndex=-1;
+      frame.inert=this.preview;return frame;
+    }
     update(value){
       const stream=value?.stream;
       if(!stream){this.clear();return;}
       if(stream.path!=='/chat/browser/stream/index.html'||typeof stream.token!=='string'||!/^[-_A-Za-z0-9]{32,128}$/.test(stream.token)){
         this.clear();return;
       }
-      if(this.info?.token!==stream.token || this.streamGeneration!==this.view.generation){this.connectionNonce=crypto.randomUUID();this.streamGeneration=this.view.generation;}
+      if(this.info?.token!==stream.token || this.streamGeneration!==this.view.generation){this.connectionNonce=crypto.randomUUID();this.streamGeneration=this.view.generation;this.connectionRetried=false;}
       this.info={path:stream.path,token:stream.token};this.mount();this.render();
+    }
+    sizePreview(){
+      // The page's CSS viewport excludes browser chrome. Use the actual video
+      // dimensions from our trusted viewer, never page metadata or a fixed crop.
+      let video;
+      try{video=this.frame.contentDocument?.getElementById('videoStream');}catch{return;}
+      const width=video?.videoWidth,height=video?.videoHeight;
+      if([width,height].every(n=>Number.isInteger(n)&&n>0&&n<=16384))
+        this.view.viewport.style.setProperty('--browser-stream-aspect',`${width} / ${height}`);
     }
     mount(){
       if(!this.info||!this.visible)return;
       const url=this.info.path+'?connection='+encodeURIComponent(this.connectionNonce)+'#token='+encodeURIComponent(this.info.token);
       if(this.frame.getAttribute('src')!==url){
-        this.hideKeyboard();this.input.ready=false;this.presented=false;this.playback='connecting';this.frame.src=url;
+        this.hideKeyboard();
+        // Keep status messages bound to one viewer connection, including when
+        // the server rotates its capability after a control handback.
+        const retired=this.frame;this.frame=this.createFrame();
+        retired.remove();retired.removeAttribute('src');
+        this.input.ready=false;this.presented=false;this.playback='connecting';this.frame.src=url;
         clearTimeout(this.connectionTimer);
         this.connectionTimer=setTimeout(()=>{
           if(this.info&&this.visible&&!this.presented&&this.playback==='connecting'){
-            this.playback='stalled';this.render();
+            if(!this.connectionRetried){
+              // Retry video initialization once. Never replay a remote action.
+              this.connectionRetried=true;this.connectionNonce=crypto.randomUUID();this.mount();
+            }else this.playback='stalled';
+            this.render();
           }
-        },15000);
+        },this.connectionRetried?10000:5000);
       }
       if(!this.frame.isConnected)this.view.viewport.append(this.frame);
       this.view.image.hidden=true;this.view.viewport.hidden=false;

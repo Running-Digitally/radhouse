@@ -9,6 +9,7 @@
   let frame = null, streamKey = '', playback = 'connecting', inputReady = false;
   let epoch = 0, uncertain = false, notice = '', lastActivity = 0, lastHeartbeat = 0;
   let timer = null, connectTimer = null, authenticated = false, searchEngine = null;
+  let dismissedPreview = null, recoveryKey = '', connectionRetried = false;
   const post = value => window.ReactNativeWebView?.postMessage(JSON.stringify({schema:'radhouse.mobile-browser.v1', ...value}));
   const human = () => state?.state === 'live' && state.control?.mode === 'human'
     && typeof state.control.lease_id === 'string' && state.control.lease_expires_at > Date.now()/1000;
@@ -16,11 +17,12 @@
   const readOnly = () => presentation === 'preview' || !human() || uncertain || zoomed();
   function syncInput() { if (frame) frame.inert = readOnly(); }
   const binding = () => ({generation:state.generation, revision:state.control.revision, lease_id:state.control.lease_id || null});
-  const previewVisible = () => state?.state === 'live' && state.agent_active === true && state.control?.mode === 'agent';
+  const previewVisible = () => state?.state === 'live' && state.control?.mode === 'agent'
+    && state.generation !== dismissedPreview;
   function publish(event = 'state') {
     const hidden = presentation === 'preview' && !previewVisible();
     post({event, authenticated, state:state?.state || 'unavailable',
-      active:previewVisible(), mode:state?.control?.mode || 'paused', human:human(),
+      active:state?.agent_active === true, previewAvailable:previewVisible(), mode:state?.control?.mode || 'paused', human:human(),
       observing:human() && state.control.observation_mode === 'observe',
       canTake:state?.control?.can_take === true || state?.control?.mode === 'human' && !human(),
       canReturn:human() && state?.can_return === true,
@@ -44,6 +46,7 @@
     canvas.classList.toggle('zoom', zoomed());
     syncInput();
     const key = state.generation + ':' + stream.token;
+    if (key !== recoveryKey) { recoveryKey = key; connectionRetried = false; }
     if (frame && key === streamKey) return;
     clearFrame(); streamKey = key;
     frame = document.createElement('iframe');
@@ -51,7 +54,21 @@
     frame.inert = readOnly();
     frame.src = stream.path + '?connection=' + crypto.randomUUID() + '#token=' + stream.token;
     canvas.append(frame);
-    connectTimer = setTimeout(() => { if (frame && playback === 'connecting') { playback = 'stalled'; publish(); } },15000);
+    connectTimer = setTimeout(() => {
+      if (!frame || playback !== 'connecting') return;
+      // One video-only reconnect per capability; input and control never replay.
+      if (!connectionRetried) { connectionRetried = true; clearFrame(); mount(); }
+      else playback = 'stalled';
+      publish();
+    },connectionRetried ? 10000 : 5000);
+  }
+  function sizePreview() {
+    // Stream dimensions include the whole display; page metadata does not.
+    let video;
+    try { video = frame?.contentDocument?.getElementById('videoStream'); } catch { return; }
+    const width = video?.videoWidth, height = video?.videoHeight;
+    if ([width,height].every(n => Number.isInteger(n) && n > 0 && n <= 16384))
+      canvas.style.setProperty('--browser-stream-aspect',`${width} / ${height}`);
   }
   async function request(path, body) {
     const controller = new AbortController();
@@ -70,6 +87,7 @@
   function accept(value) {
     if (!value || !['live','idle','starting','unavailable'].includes(value.state)) throw new Error('invalid');
     if (state?.generation === value.generation && state?.control?.revision > value.control?.revision) return false;
+    if (state?.generation !== value.generation || value.agent_active === true && state?.agent_active !== true) dismissedPreview = null;
     state = value;
     mount();
     if (frame) frame.inert = readOnly();
@@ -140,6 +158,7 @@
   function present(message) {
     if (!['preview','full'].includes(message.mode)) return;
     presentation = message.mode;
+    if (presentation === 'full') dismissedPreview = null;
     if (presentation === 'preview') hideInput();
     mount(); syncInput(); publish();
   }
@@ -176,6 +195,7 @@
   }
   const presentationActions = new Map([
     ['present',present],
+    ['dismissPreview',() => { if (presentation === 'preview') { dismissedPreview = state?.generation; clearFrame(); publish(); } }],
     ['refresh',() => { if (!busy) return refresh(true); }],
     ['reconnect',() => { clearFrame(); mount(); publish(); }],
   ]);
@@ -192,7 +212,7 @@
     if (event.origin !== location.origin || event.source !== frame?.contentWindow) return;
     const value = event.data;
     if (value?.type === 'mobileInputStatus' && typeof value.ready === 'boolean') inputReady = value.ready;
-    if (value?.type === 'framePresented') { playback = 'live'; clearTimeout(connectTimer); }
+    if (value?.type === 'framePresented') { playback = 'live'; sizePreview(); clearTimeout(connectTimer); }
     if (value?.type === 'browserPlaybackStatus' && ['tap_required','unavailable'].includes(value.state)) playback = value.state;
     if (value?.type === 'browserActivity' && presentation === 'full' && human()) lastActivity = Date.now();
     publish();
