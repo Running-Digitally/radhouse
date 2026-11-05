@@ -33,6 +33,10 @@ for (const [name,engine] of engines) {
       expect(request.headers()['x-radhouse-browser-tab']).toBe(tab);
       mutations.push({path,body:request.postDataJSON()});
       if(failure)return json({error:'unconfirmed'},503);
+      if(path.endsWith('/return')){
+        await new Promise(resolve=>setTimeout(resolve,250));
+        mode='agent';active=false;revision++;
+      }
       if(path.endsWith('/take')){mode='human';active=false;revision++;}
       if(path.endsWith('/visibility'))revision++;
       return json(state());
@@ -130,6 +134,17 @@ for (const [name,engine] of engines) {
   await command({action:'refresh'});
   expect((await latest()).uncertain).toBe(false);
   expect(mutations).toHaveLength(before);
+  // A slow handoff has visible progress and a second tap cannot resubmit it.
+  await page.evaluate(()=>{
+    window.RadhouseMobileBrowser.command({action:'return'});
+    window.RadhouseMobileBrowser.command({action:'return'});
+  });
+  await expect.poll(()=>page.evaluate(()=>nativeStates.some(s=>s.event==='returned' && !s.returning))).toBe(true);
+  expect(await page.evaluate(()=>nativeStates.some(s=>s.event==='state' && s.mode==='human' && s.busy && s.returning))).toBe(true);
+  expect(mutations.filter(m=>m.path.endsWith('/return'))).toHaveLength(1);
+  await expect.poll(async()=>(await latest()).mode).toBe('agent');
+  await command({action:'take'});
+  await expect.poll(async()=>(await latest()).inputReady).toBe(true);
   // The first connection stalls, then the single automatic retry renders.
   const actionMutations=()=>mutations.filter(m=>!m.path.endsWith('/heartbeat')).length;
   const recoveryLoads=loads, recoveryMutations=actionMutations();stallLoads=1;

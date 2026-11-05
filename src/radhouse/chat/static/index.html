@@ -31,7 +31,11 @@
         <div id="empty" hidden><h1>What’s on your mind?</h1><p>Ask a question or attach something to work through.</p></div>
       </section>
       <button id="latest" hidden>Latest ↓</button>
-      <div id="browser-privacy-bar" hidden><output id="browser-privacy-label"></output><button id="browser-privacy-toggle" type="button"></button></div>
+      <div id="browser-privacy-bar" hidden>
+        <output id="browser-privacy-label" aria-live="polite"></output>
+        <button id="browser-handoff-open" type="button" hidden>Open browser to return</button>
+        <button id="browser-privacy-toggle" type="button" hidden></button>
+      </div>
       <form id="compose">
         <div id="draft-files" class="attachments" aria-label="Attached files"></div>
         <div id="active-message-options" class="active-message-options" aria-label="Included with your next message" hidden>

@@ -491,6 +491,10 @@ class BrowserSessionService:
         if status is None:
             return
         control = status.get("control") or {}
+        if status["state"] == "live" and control.get("mode") in {"human", "paused"}:
+            # Ordinary chat may proceed, but only explicit handback can admit
+            # navigation on this retained browser. No page data is needed.
+            result["browser_handoff_required"] = True
         if status["state"] == "live" and control.get("mode") == "agent":
             # A native client need not attach page metadata to use a browser
             # already returned to the agent. Transfer admission to this reply;
