@@ -83,7 +83,8 @@ def test_factory_and_non_agent_views_survive_outage_then_browser_recovers(factor
     assert client.get("/auth/session").status_code==200
     state["offline"]=False
     response=client.post("/chat/browser/open",headers=HEADERS,json={})
-    assert response.status_code==200 and response.json()["vault_enabled"] is True
+    assert response.status_code==200
+    assert response.json()["vault_enabled"] is True
     assert client.get("/chat/browser",headers=HEADERS).json()["generation"]=="generation-1"
     state["cap_offline"]=True
     assert client.get("/chat/browser",headers=HEADERS).json()["vault_enabled"] is False
@@ -99,9 +100,11 @@ def test_factory_and_non_agent_views_survive_outage_then_browser_recovers(factor
 def test_unqualified_runtime_never_enables_or_receives_vault_tools(factory,vault):
     client,state,calls=factory;state.update(offline=False,vault=vault)
     assert client.post("/chat/browser/open",headers=HEADERS,json={}).json()["vault_enabled"] is False
-    response=client.post("/chat/messages",headers=HEADERS,json={"request_id":str(uuid4()),"text":"Open this website"})
+    response=client.post("/chat/browser/return",headers=HEADERS,json={
+        "request_id":str(uuid4()),"generation":"generation-1","revision":1,"lease_id":"lease-1"})
     assert response.status_code==200
     dispatch=next(body for path,body in calls if path=="/v1/runs")
+    assert {"browser_navigate","browser_snapshot"} <= set(dispatch["allowed_tools"])
     assert not {"browser_login_list","browser_login_fill"}&set(dispatch["allowed_tools"])
 
 
