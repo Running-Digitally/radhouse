@@ -197,7 +197,7 @@ function syncBrowserHandoff(enabled, browserMode) {
   const paused=enabled && control?.mode==="paused";
   const elsewhere=enabled && control?.mode==="human" && !own;
   const open=$("browser-handoff-open");
-  $("browser-privacy-bar").hidden=!(own || paused || elsewhere && !browserMode);
+  $("browser-privacy-bar").hidden = !(own || paused || (elsewhere && !browserMode));
   let label="Browser is private. Choose Return to agent to let Radhouse browse.";
   if(observing)label="The agent can read this page. Return control to let it browse.";
   if(paused)label="Browser paused. Take control, then choose Return to agent.";
