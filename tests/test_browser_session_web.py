@@ -82,8 +82,10 @@ def test_viewing_before_chat_does_not_open_or_create_session(app):
     client,_,native,store,_=app
     assert client.get("/browser").status_code==200
     result=client.get("/chat/browser",headers=HEADERS).json()
-    assert result["state"]=="idle" and result["generation"] is None
-    assert native.calls==[] and store.browser_session("alice") is None
+    assert result["state"]=="idle"
+    assert result["generation"] is None
+    assert native.calls==[]
+    assert store.browser_session("alice") is None
     assert store.history("alice")["turns"]==[]
 
 
@@ -92,10 +94,13 @@ def test_explicit_open_before_chat_uses_durable_same_session_and_hashed_auth(app
     response=client.post("/chat/browser/open",headers=HEADERS,json={})
     assert response.status_code==200
     payload=response.json()
-    assert payload["state"]=="live" and payload["control"]["next_sequence"]==1
-    assert "session_id" not in payload and "synthetic-cookie" not in response.text
+    assert payload["state"]=="live"
+    assert payload["control"]["next_sequence"]==1
+    assert "session_id" not in payload
+    assert "synthetic-cookie" not in response.text
     native_session,operation,body=native.calls[0]
-    assert operation=="open" and native_session==store.browser_session("alice")
+    assert operation=="open"
+    assert native_session==store.browser_session("alice")
     assert body["owner"]["auth_session_digest"]==hashlib.sha256(b"synthetic-cookie").hexdigest()
     assert body["auth_expires_at"]==2000
     assert payload["url"]=="https://example.org/login"
@@ -106,7 +111,8 @@ def test_explicit_open_before_chat_uses_durable_same_session_and_hashed_auth(app
 def test_mutating_origin_and_csrf_are_checked_before_native_or_session_creation(app,headers):
     client,_,native,store,_=app
     assert client.post("/chat/browser/open",headers=headers,json={}).status_code==403
-    assert native.calls==[] and store.browser_session("alice") is None
+    assert native.calls==[]
+    assert store.browser_session("alice") is None
 
 
 def test_sibling_tab_cannot_receive_human_lease(app):
@@ -160,13 +166,16 @@ def test_owner_save_is_relayed_to_native_but_never_saved_or_echoed_by_web(app):
     response=client.post("/chat/browser/logins",headers=HEADERS,json=LOGIN)
     assert response.status_code==200
     assert response.json()["item"]["origin"]=="https://example.org"
-    assert "password" not in response.text and LOGIN["password"] not in response.text
+    assert "password" not in response.text
+    assert LOGIN["password"] not in response.text
     call=native.calls[-1]
-    assert call[1]=="logins/save" and call[2]["arguments"]["password"]==LOGIN["password"]
+    assert call[1]=="logins/save"
+    assert call[2]["arguments"]["password"]==LOGIN["password"]
     assert set(call[2]["arguments"])=={"label","identifier_type","identifier","password"}
     assert "password" not in {key for key in call[2] if key != "arguments"}
     assert LOGIN["password"].encode() not in store.path.read_bytes()
-    assert store.history("alice")["turns"]==[] and store.library("alice")["files"]==[]
+    assert store.history("alice")["turns"]==[]
+    assert store.library("alice")["files"]==[]
 
 
 @pytest.mark.parametrize("extra",[{"origin":"https://attacker.example"},{"owner":{"principal_id":"mallory"}},{"otp":"DO-NOT-ECHO"}])
@@ -174,15 +183,18 @@ def test_save_login_authority_and_unsupported_fields_rejected_without_secret_ech
     client,_,native,_,_=app
     client.post("/chat/browser/open",headers=HEADERS,json={});count=len(native.calls)
     response=client.post("/chat/browser/logins",headers=HEADERS,json={**LOGIN,**extra})
-    assert response.status_code==422 and response.json()=={"error":"invalid_request"}
-    assert len(native.calls)==count and LOGIN["password"] not in response.text
+    assert response.status_code==422
+    assert response.json()=={"error":"invalid_request"}
+    assert len(native.calls)==count
+    assert LOGIN["password"] not in response.text
 
 
 def test_save_login_expired_auth_is_denied_before_secret_relay(app):
     client,auth,native,_,_=app
     client.post("/chat/browser/open",headers=HEADERS,json={});count=len(native.calls);auth.expires=999
     response=client.post("/chat/browser/logins",headers=HEADERS,json=LOGIN)
-    assert response.status_code==401 and len(native.calls)==count
+    assert response.status_code==401
+    assert len(native.calls)==count
     assert LOGIN["password"] not in response.text
 
 
@@ -195,7 +207,8 @@ def test_previous_closed_page_is_only_trusted_locator_metadata(app):
     data=browser.dispatch_data(session,TAB,use_previous=True)
     assert "browser_context" not in data
     assert data["page"]=={"url":"https://example.org/login","title":"Example sign-in","state":"previous"}
-    assert data["use_previous_browser"] is True and store.history("alice")["turns"]==[]
+    assert data["use_previous_browser"] is True
+    assert store.history("alice")["turns"]==[]
 
 
 def test_actual_private_http_save_route_and_error_bodies_never_escape():
@@ -278,7 +291,8 @@ def test_real_run_handoff_freezes_current_page_not_secrets_and_retries_exact_pay
         saved=store.find("alice",request_id)
         assert "synthetic-cookie" not in saved["browser_context"]
         assert "token=discard" not in saved["input_text"]
-        assert "current page" in saved["input_text"] and "Example sign-in" in saved["input_text"]
+        assert "current page" in saved["input_text"]
+        assert "Example sign-in" in saved["input_text"]
         assert "browser_login_list" in json.loads(saved["tool_policy"])
         service.retry("alice",request_id)
         assert calls[0]==calls[1]
@@ -331,7 +345,9 @@ def test_only_positive_exact_pre_admission_proof_can_close_expired_handoff(app,p
         expires_at=datetime.fromtimestamp(2000,timezone.utc))
     try:
         request_id=str(uuid4())
-        with pytest.raises(Rejected):service.send("alice",request_id,"Continue",browser_data=browser.dispatch_data(session,TAB,CONTROL))
+        browser_data = browser.dispatch_data(session, TAB, CONTROL)
+        with pytest.raises(Rejected):
+            service.send("alice", request_id, "Continue", browser_data=browser_data)
         saved=store.find("alice",request_id)
         assert saved["status"]==("failed" if terminal else "awaiting_dispatch")
         assert (store.pending("alice") is None)==terminal
@@ -400,6 +416,45 @@ def _enable_stream(native):
     native.browser_session = call
 
 
+@pytest.mark.parametrize("mode", ["idle", "agent", "human", "paused"])
+def test_chat_browser_tools_follow_authoritative_control_status(app, mode):
+    _, auth, native, store, browser = app
+    _enable_stream(native)
+    native.active = mode != "idle"
+    store.browser_session("alice", create=True)
+    original = native.browser_session
+
+    def status(*args):
+        result = original(*args)
+        if result["state"] == "live" and mode != "human":
+            result["control"] = {"mode": mode, "revision": 3, "can_take": True}
+        return result
+
+    native.browser_session = status
+    runtime, calls, _ = dispatch_client()
+    service = ChatService(store, runtime, owner_id="alice", clock=lambda: 1000,
+        browser_enabled=True, browser_control=True)
+    try:
+        with TestClient(create_app(auth, service, browser=browser),
+                base_url="http://127.0.0.1") as client:
+            client.cookies.set(auth.cookie_name, "synthetic-cookie")
+            response = client.post("/chat/messages", headers=HEADERS,
+                json={"request_id": str(uuid4()), "text": "Open example.org"})
+        assert response.status_code == 200
+        assert len(calls) == 1
+        _, body = calls[0]
+        blocked = mode in {"human", "paused"}
+        assert ("Open browser to return" in body["input"]) is blocked
+        assert ("browser_navigate" in body.get("allowed_tools", [])) is not blocked
+        assert ("browser_login_list" in body.get("allowed_tools", [])) is not blocked
+        assert ("browser_context" in body) is (mode == "agent")
+        assert ("browser_owner" in body) is not blocked
+        assert "Example sign-in" not in body["input"]
+        assert all(call[1] == "status" for call in native.calls)
+    finally:
+        runtime.close()
+
+
 def test_streaming_private_chat_requires_explicit_return_or_observation(app):
     client,auth,native,store,browser=app
     native.active=True;_enable_stream(native)
@@ -407,10 +462,13 @@ def test_streaming_private_chat_requires_explicit_return_or_observation(app):
     status=client.get('/chat/browser',headers=HEADERS).json()
     assert status['control']['observation_mode']=='private'
     assert status['stream']['path']=='/chat/browser/stream/index.html'
-    with pytest.raises(Rejected,match='browser_private'):
-        browser.dispatch_data(auth.session(type('Request',(),{'method':'GET','cookies':{auth.cookie_name:'synthetic-cookie'},'headers':HEADERS})()),TAB,CONTROL)
+    session = auth.session(type('Request', (), {'method': 'GET',
+        'cookies': {auth.cookie_name: 'synthetic-cookie'}, 'headers': HEADERS})())
+    with pytest.raises(Rejected, match='browser_private'):
+        browser.dispatch_data(session, TAB, CONTROL)
     response=client.post('/chat/messages',headers=HEADERS,json={'request_id':str(uuid4()),'text':'Hello','browser_context':CONTROL})
-    assert response.status_code==409 and response.json()=={'error':'browser_private'}
+    assert response.status_code==409
+    assert response.json()=={'error':'browser_private'}
     response=client.post('/chat/browser/control/visibility',headers=HEADERS,json={**CONTROL,'mode':'private'})
     assert response.status_code==200
     assert native.calls[-1][1]=='control/visibility'
@@ -496,7 +554,8 @@ def test_explicit_device_move_is_typed_authenticated_and_csrf_bound(app):
     body={'generation':'generation-1','revision':3,'request_id':str(uuid4()),'move_here':True}
     response=client.post('/chat/browser/control/take',headers={**HEADERS,'X-Radhouse-Browser-Tab':OTHER_TAB},json=body)
     assert response.status_code==200
-    assert native.calls[-1][1]=='control/take' and native.calls[-1][2]['move_here'] is True
+    assert native.calls[-1][1]=='control/take'
+    assert native.calls[-1][2]['move_here'] is True
     assert native.calls[-1][2]['owner']['tab_id']==OTHER_TAB
     before=len(native.calls)
     for flag in ('true',1):

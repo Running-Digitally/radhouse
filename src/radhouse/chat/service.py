@@ -78,6 +78,8 @@ class ChatService:
             return prepared
         turn, images, session_id, tools, token = prepared
         browser = json.loads(turn["browser_context"]) if turn.get("browser_context") else {}
+        if browser.get("browser_handoff_required"):
+            browser = {}  # Hermes requires navigation tools whenever browser ownership is supplied.
         options = json.loads(turn["request_options"]) if turn.get("request_options") else {}
         try:
             dispatch = self.hermes.start_or_attach(input_text=turn["input_text"],
@@ -114,25 +116,35 @@ class ChatService:
 
     def _supported_tools(self, turn, capabilities):
         from .browser import BROWSER_TOOLS, LOGIN_TOOLS
-        chosen = (("document_search", "document_read") if self.document_access else ()) + (
-            BROWSER_TOOLS if self.browser_enabled else ()) + (
-            ("file_share",) if self.document_access and capabilities.file_share else ())
         browser = json.loads(turn["browser_context"]) if turn.get("browser_context") else {}
-        if self.document_access and self.browser_enabled and self.browser_control and capabilities.browser_files and browser.get("browser_owner"):
+        browser_available = self.browser_enabled and not browser.get("browser_handoff_required")
+        chosen = (("document_search", "document_read") if self.document_access else ()) + (
+            BROWSER_TOOLS if browser_available else ()) + (
+            ("file_share",) if self.document_access and capabilities.file_share else ())
+        if self.document_access and browser_available and self.browser_control and capabilities.browser_files and browser.get("browser_owner"):
             chosen += ("browser_upload",)
-        if self.browser_enabled and self.browser_control and capabilities.browser_credential_vault and browser.get("browser_owner"):
+        if browser_available and self.browser_control and capabilities.browser_credential_vault and browser.get("browser_owner"):
             chosen += LOGIN_TOOLS
         turn = self.store.select_tools(turn, chosen)
         tools = self.store.tools(turn)
+        return turn, tools, self._validate_tool_capabilities(tools, capabilities)
+
+    @staticmethod
+    def _validate_tool_capabilities(tools, capabilities):
+        from .browser import BROWSER_TOOLS, LOGIN_TOOLS
         documents = "document_read" in tools
-        if (tools and not capabilities.allowed_tools
-                or documents and not capabilities.document_scope
-                or "file_share" in tools and not capabilities.file_share
-                or "browser_upload" in tools and not capabilities.browser_files
-                or set(tools) & set(LOGIN_TOOLS) and not capabilities.browser_credential_vault
-                or set(tools) & set(BROWSER_TOOLS) and not capabilities.browser_view):
+        names = set(tools)
+        requirements = (
+            (tools, capabilities.allowed_tools),
+            (documents, capabilities.document_scope),
+            ("file_share" in names, capabilities.file_share),
+            ("browser_upload" in names, capabilities.browser_files),
+            (names.intersection(LOGIN_TOOLS), capabilities.browser_credential_vault),
+            (names.intersection(BROWSER_TOOLS), capabilities.browser_view),
+        )
+        if any(required and not supported for required, supported in requirements):
             raise Rejected("chat_capability_unavailable", 503)
-        return turn, tools, documents
+        return documents
 
 
     def _prepare_dispatch(self, owner, request_id, text, attachments, browser_data=None, request_options=None):
@@ -270,6 +282,11 @@ class ChatService:
 
     def _reference_context(self, turn, parts):
         browser = json.loads(turn["browser_context"]) if turn.get("browser_context") else {}
+        if browser.get("browser_handoff_required"):
+            parts.append("For this reply, the browser needs an explicit handoff before you can browse. "
+                "If the request needs browser actions, tell the user to use Open browser to return "
+                "in chat, take control if prompted, and choose Return to agent. "
+                "Wait for handoff before trying the request again. Continue ordinary chat as usual.")
         options = json.loads(turn["request_options"]) if turn.get("request_options") else {}
         if options.get("terminal_context"):
             parts.append("The user explicitly shared this terminal excerpt as reference material. "

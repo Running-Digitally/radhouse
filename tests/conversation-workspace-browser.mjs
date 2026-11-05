@@ -5,14 +5,14 @@ const root=new URL('../src/radhouse/chat/static/',import.meta.url),origin='http:
 const engine=process.env.RADHOUSE_BROWSER_ENGINE || 'chromium';
 const browser=await ({chromium,webkit})[engine].launch({headless:true,...(engine==='chromium'?{channel:'chrome'}:{})});
 let mode='agent',visibility='private',rev=3,agentActive=true,requestCount=0,turns=[];
-let active=false,generation=0,viewerLoads=0,viewerDelay=0,openRequests=0;
+let active=false,generation=0,viewerLoads=0,viewerDelay=0,openRequests=0,takeRequests=0,returnRequests=0;
 const submitted=[];
 const c=await browser.newContext({viewport:{width:1360,height:900},hasTouch:true}),errors=[];
 await c.route(origin+'/**',async route=>{
  const req=route.request(),path=new URL(req.url()).pathname;
  const json=v=>route.fulfill({contentType:'application/json',body:JSON.stringify(v)});
  const state=()=>active?({state:'live',generation:'generation-'+generation,url:'https://example.org/',title:'Example',viewport:{width:500,height:632},agent_active:agentActive,
-  stream:{path:'/chat/browser/stream/index.html',token:(mode==='human'?'h':'v').repeat(43)},control:{mode,revision:rev,can_take:mode==='agent',...(mode==='human'?{lease_id:'lease-1',lease_expires_at:Date.now()/1000+60,next_sequence:1,observation_mode:visibility,observation_epoch:rev}:{})},page_context:{current:{url:'https://example.org/',title:'Example'},previous:null},can_return:true,vault_enabled:false}):({state:'idle',generation:null,control:null});
+  stream:{path:'/chat/browser/stream/index.html',token:(mode==='human'?'h':'v').repeat(43)},control:{mode,revision:rev,can_take:['agent','paused'].includes(mode),...(mode==='human'?{lease_id:'lease-1',lease_expires_at:Date.now()/1000+60,next_sequence:1,observation_mode:visibility,observation_epoch:rev}:{})},page_context:{current:{url:'https://example.org/',title:'Example'},previous:null},can_return:true,vault_enabled:false}):({state:'idle',generation:null,control:null});
  if(path==='/auth/session')return json({username:'alice',csrf_token:'synthetic',features:{browser:true,browser_control:true,browser_streaming:true,documents:true}});
  if(path==='/chat/history'||path==='/chat/reply')return json({turns,older_before:null});
  if(path==='/chat/messages'){
@@ -25,9 +25,9 @@ await c.route(origin+'/**',async route=>{
  if(path==='/chat/browser'){requestCount++;return json(state());}
  if(path==='/chat/browser/open'){openRequests++;active=true;generation++;mode='human';visibility='private';rev++;return json(state());}
  if(path==='/chat/browser/control/close'){active=false;rev++;return json(state());}
- if(path==='/chat/browser/control/take'){mode='human';visibility='private';rev++;return json(state());}
+ if(path==='/chat/browser/control/take'){takeRequests++;mode='human';visibility='private';rev++;return json(state());}
  if(path==='/chat/browser/return'){
-  mode='agent';agentActive=false;rev++;
+  returnRequests++;mode='agent';agentActive=false;rev++;
   return json({turns,older_before:null});
  }
  if(path==='/chat/browser/control/visibility'){visibility=req.postDataJSON().mode;rev++;return json(state());}
@@ -131,6 +131,25 @@ try{
   expect(await page.locator('.browser-view-viewport').evaluate(e=>e.scrollTop)).toBe(0);
  }
  results.push('three real return-handler cycles initialize a viewer document in mini mode and retain the draft');
+ mode='paused';rev++;
+ const handoff=page.getByRole('button',{name:'Open browser to return',exact:true});
+ await expect(handoff).toBeVisible();
+ await expect(page.locator('#browser-privacy-label')).toContainText('Browser paused');
+ await expect(page.locator('.browser-stream-frame')).toHaveCount(0);
+ const beforeHandoff={take:takeRequests,returned:returnRequests};
+ await handoff.click();
+ await expect(page.locator('main')).toHaveClass(/workspace-browser/);
+ expect(takeRequests).toBe(beforeHandoff.take);
+ expect(returnRequests).toBe(beforeHandoff.returned);
+ await expect(page.getByRole('button',{name:'Return to agent',exact:true})).toBeHidden();
+ await page.getByRole('button',{name:'Take control privately',exact:true}).click();
+ await page.getByRole('button',{name:'Return to agent',exact:true}).click();
+ await expect(page.locator('main')).toHaveClass(/workspace-chat/);
+ await expect(handoff).toBeHidden();
+ await expect(page.locator('#message')).toHaveValue('Keep this draft while switching views. The composer must stay editable and Send must remain reachable when the browser drawer is open.');
+ expect(takeRequests).toBe(beforeHandoff.take+1);
+ expect(returnRequests).toBe(beforeHandoff.returned+1);
+ results.push('paused chat offers a safe route to explicit handoff without replay or draft loss');
  // Finishing a reply must not remove the card beneath an in-progress tap.
  mode='agent';agentActive=false;rev++;
  const beforeReady=requestCount;

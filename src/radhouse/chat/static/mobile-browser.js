@@ -8,6 +8,7 @@
   let presentation = 'preview', state = null, csrf = '', busy = false, reading = false;
   let frame = null, streamKey = '', playback = 'connecting', inputReady = false;
   let epoch = 0, uncertain = false, notice = '', lastActivity = 0, lastHeartbeat = 0;
+  let returnPending = false;
   let timer = null, connectTimer = null, authenticated = false, searchEngine = null;
   let dismissedPreview = null, recoveryKey = '', connectionRetried = false;
   const post = value => window.ReactNativeWebView?.postMessage(JSON.stringify({schema:'radhouse.mobile-browser.v1', ...value}));
@@ -28,7 +29,7 @@
       canReturn:human() && state?.can_return === true,
       title:hidden ? '' : String(state?.title || '').slice(0,512),
       url:hidden ? '' : String(state?.url || '').slice(0,4096),
-      busy, uncertain, playback, inputReady:human() && inputReady && !uncertain && !zoomed(),
+      busy, returning:returnPending, uncertain, playback, inputReady:human() && inputReady && !uncertain && !zoomed(),
       notice, previousDownloadsUnavailable:state?.downloads?.previous_unavailable === true});
   }
   function clearFrame() {
@@ -116,11 +117,11 @@
   }
   async function act(path, body, returning = false) {
     if (busy || !authenticated || document.hidden || uncertain) return;
-    busy = true; notice = ''; const expected = ++epoch; lastActivity = Date.now(); publish();
+    busy = true; returnPending = returning; notice = ''; const expected = ++epoch; lastActivity = Date.now(); publish();
     try {
       const value = await request(path,body);
       if (expected !== epoch) return;
-      if (returning) { clearFrame(); state = null; publish('returned'); }
+      if (returning) { clearFrame(); state = null; returnPending = false; publish('returned'); }
       else accept(value);
     } catch {
       if (expected === epoch && authenticated) {
@@ -128,7 +129,7 @@
         if (frame) frame.inert = true;
         notice = 'That action could not be confirmed. It was not retried. Refresh to check the current state.';
       }
-    } finally { busy = false; publish(); }
+    } finally { busy = false; returnPending = false; publish(); }
   }
   async function input(method, value) {
     if (presentation !== 'full' || document.hidden || !human() || busy || uncertain || zoomed() || !inputReady) return;

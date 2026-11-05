@@ -190,16 +190,31 @@ function syncBrowserPreviewActivity() {
   if(lastBrowserStatus?.generation!==previewGeneration || lastBrowserStatus?.agent_active===true && !previewAgentActive) dismissedBrowserPreview=null;
   previewGeneration=lastBrowserStatus?.generation;previewAgentActive=lastBrowserStatus?.agent_active===true;
 }
+function syncBrowserHandoff(enabled, browserMode) {
+  const control=browserView?.state!=="unavailable" && lastBrowserStatus?.state==="live" && lastBrowserStatus.control;
+  const own=enabled && control?.mode==="human" && Boolean(control.lease_id);
+  const observing=own && control.observation_mode==="observe";
+  const paused=enabled && control?.mode==="paused";
+  const elsewhere=enabled && control?.mode==="human" && !own;
+  const open=$("browser-handoff-open");
+  $("browser-privacy-bar").hidden=!(own || paused || elsewhere && !browserMode);
+  let label="Browser is private. Choose Return to agent to let Radhouse browse.";
+  if(observing)label="The agent can read this page. Return control to let it browse.";
+  if(paused)label="Browser paused. Take control, then choose Return to agent.";
+  if(elsewhere)label="Another device has control. Review the browser to continue.";
+  const status=$("browser-privacy-label");
+  if(status.textContent!==label)status.textContent=label;
+  open.hidden=browserMode || !(own || paused || elsewhere);
+  open.textContent=elsewhere?"Review browser":"Open browser to return";
+  $("browser-privacy-toggle").hidden=!own;
+  $("browser-privacy-toggle").textContent=observing?"Make private":"Let agent observe";
+  $("browser-privacy-toggle").disabled=!!browserView?.actionPending;
+}
 function syncConversationWorkspace() {
   syncBrowserPreviewActivity();
   const root=document.querySelector("main"), enabled=integratedBrowser() && ["/","/browser"].includes(currentPage);
-  const human=enabled && lastBrowserStatus?.control?.mode==='human' && !!lastBrowserStatus.control.lease_id;
-  const observing=human && lastBrowserStatus.control.observation_mode==='observe';
-  $("browser-privacy-bar").hidden=!human;
-  $("browser-privacy-label").textContent=observing?'Agent can see the browser':'Browser is private';
-  $("browser-privacy-toggle").textContent=observing?'Make private':'Let agent observe';
-  $("browser-privacy-toggle").disabled=!!browserView?.actionPending;
   const browserMode=enabled && currentPage==="/browser", preview=enabled && !browserMode && browserPreviewActive();
+  syncBrowserHandoff(enabled,browserMode);
   root.classList.toggle("conversation-workspace",enabled);
   root.classList.toggle("workspace-browser",browserMode);
   root.classList.toggle("workspace-chat",enabled && !browserMode);
@@ -215,6 +230,7 @@ function syncConversationWorkspace() {
 }
 $("assistant-browser").addEventListener("browser-action-settled",()=>{syncConversationWorkspace();void refreshBrowser();});
 $("browser-privacy-toggle").addEventListener("click",()=>browserView?.streamPresenter?.changeMode(lastBrowserStatus?.control?.observation_mode==='observe'?'private':'observe'));
+$("browser-handoff-open").addEventListener("click",()=>showPage("/browser",true,true));
 $("browser-preview-open").addEventListener("click",()=>showPage("/browser",true,true));
 $("browser-preview-dismiss").addEventListener("click",()=>{dismissedBrowserPreview=lastBrowserStatus?.generation;syncConversationWorkspace();});
 $("browser-minimize").addEventListener("click",()=>{browserView?.streamPresenter?.hideKeyboard();showPage("/",true,true);});
@@ -236,6 +252,16 @@ function browserAnchor() { return [...turns.values()].sort((a,b)=>b.seq-a.seq)[0
 function stopBrowser() {
   browserEpoch++; browserStatusRequest?.controller.abort(); browserStatusRequest=null;
   browserRequestId=null; browserView?.stop();
+}
+function applyBrowserStatus(status, controlled) {
+  const incoming=status.control?.revision, current=lastBrowserStatus?.control?.revision;
+  if(status.generation===lastBrowserStatus?.generation && Number.isInteger(incoming) && Number.isInteger(current) && incoming<current)return;
+  if(lastBrowserStatus?.state==="live" && status.state==="idle")browserContextWanted=false;
+  lastBrowserStatus=status;updateBrowserChip();
+  if((currentPage==="/browser" || integratedBrowser() && currentPage==="/") && !browserView.actionPending)browserView.update(status);
+  syncConversationWorkspace();
+  $("browser-idle-hint").hidden=status.state!=="idle";
+  $("browser-idle-hint").textContent=controlled ? "A browser opens only when you choose to use it." : "Browser control is not connected to this instance yet.";
 }
 async function refreshBrowser() {
   if(browserView?.actionPending)return;
@@ -263,18 +289,12 @@ async function refreshBrowser() {
     (controlled || currentPage==="/browser" && browserAnchor()===request.anchor) && session.features?.browser===true;
   try {
     const status=await api("/chat/browser",undefined,false,request.controller.signal);
-    if (current() && !(status.generation===lastBrowserStatus?.generation && Number.isInteger(status.control?.revision) && Number.isInteger(lastBrowserStatus?.control?.revision) && status.control.revision<lastBrowserStatus.control.revision)) {
-      if(lastBrowserStatus?.state==="live" && status.state==="idle")browserContextWanted=false;
-      lastBrowserStatus=status;updateBrowserChip();
-      if((currentPage==="/browser" || integratedBrowser() && currentPage==="/") && !browserView.actionPending)browserView.update(status);
-      syncConversationWorkspace();
-      $("browser-idle-hint").hidden=status.state!=="idle";
-      $("browser-idle-hint").textContent=controlled ? "A browser opens only when you choose to use it." : "Browser control is not connected to this instance yet.";
-    }
+    if (current()) applyBrowserStatus(status, controlled);
   } catch {
     // The current request becomes unavailable; cancelled or obsolete requests stay quiet.
     if (current()) {
       browserView.update({state:"unavailable",run_id:browserView.run,generation:null,url:null});
+      syncBrowserHandoff(false,false);
       $("browser-idle-hint").hidden=true;
     }
   } finally {

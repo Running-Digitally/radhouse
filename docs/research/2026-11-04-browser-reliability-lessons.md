@@ -26,6 +26,63 @@ drafts and privacy were the release criterion.
 | Functional opening was insufficient product acceptance | The owner required native address/privacy/tools controls, a useful expanded viewport and a live mini within chat. An embedded copy of the full web application did not meet that requirement. | The remote page remains a streamed desktop surface. Duplicate remote Chrome controls were explicitly accepted for this release; a chrome-free launch was reverted and remains a separate design choice. |
 | Activity and availability are different | A browser remains useful after a tool call finishes. `previewAvailable` keeps a dismissible Browser ready card; `active` describes current agent activity. New generation/activity resets dismissal. | Expansion grants no input authority. Hidden/private preview states must redact title/address as well as pixels. |
 
+## Follow-up design: make browser handoff discoverable
+
+Proposed 5 November. A physical phone user recovered agent navigation by taking
+control of a paused browser and explicitly returning it. The visible **Live**
+label described playback while **Browser paused** described control. Chat was
+reachable without the handoff, and the navigation tool was offered even though
+the turn lacked a control binding for the existing browser. The broad tool
+error led the agent to tell the user to re-enable access without naming an
+available action.
+
+Use a persistent, compact handoff prompt beside the composer when a browsing
+request is blocked. Keep the same action in the browser footer. Distinguish
+**Private · Only you**, **Paused · Agent needs control**, **Agent can browse**,
+and **Agent is browsing** from playback state. Label observation as read-only.
+Keep ordinary chat and its draft available. No private title, URL or frame
+belongs in the blocked chat card.
+
+The first implementation uses the authenticated browser status to show
+**Open browser to return** beside the web and native composers. It opens the
+existing controls without taking control. On phones **Return to agent** sits
+above the browser canvas so the keyboard cannot cover the button at the
+bottom. A small optional canvas status indicates a return in flight. For
+ordinary chat with a known live Human or Paused browser, the web service
+freezes a handoff-required reason with the turn, omits browser tools and
+prompts the agent to name the recovery action. Explicit Observe and handoff
+still use their existing routes. First-use launch on an idle session is
+available. Transport failure and uncertain execution remain distinct.
+
+For a direct **Return to agent** from a paused browser, require a fresh,
+authenticated owner action and server proof that this generation is safe to
+return. The current route expects a live human lease; do not simulate one with
+hidden takeover calls. Use **Review browser** when another device holds control,
+the page changed, sensitive input needs clearing, or safety is uncertain.
+Keep existing input-drain, clipboard, sensitive-field and prior-run checks.
+During the handoff, show **Returning…** until the server acknowledges it.
+Only offer **Return and retry** for an identified request the server confirms
+did not execute. A view change or an ambiguous response cannot authorize replay.
+
+Acceptance starts with the reported path: take private control, go to Chat,
+request a public navigation, and recover from the visible prompt while
+preserving the draft. Check web, iOS and Android with the keyboard open, then
+verify the live mini returns only after handoff. Exercise second-client
+ownership, stale state, sensitive fields, and an unconfirmed handoff.
+See [Apple feedback guidance](https://developer.apple.com/design/human-interface-guidelines/feedback)
+and [Microsoft's human–AI interaction guidelines](https://www.microsoft.com/en-us/research/publication/guidelines-for-human-ai-interaction/).
+
+The candidate also separates tool capability validation from tool selection
+(`3207b2d1-7493-438f-b0be-60ac5d781b8a`) and browser status application from
+polling (`ac2593e3-7739-4ac9-9781-b195ac4b63a9`). The browser session tests
+separate the existing compound assertions and isolate the two expected error
+calls. Closure requires analysis of the merged changes. Broader dispatch
+preparation and reply polling refactors (`5fd15e74-64ec-4b0b-ae18-0d3cb9b3a079`,
+`1ac36a71-6302-41ee-99b6-757dc7bd1772`) remain separate, as do the four
+remaining chat client findings below. The conversation history's focusable
+scroll area (`a4f7fee7-7b32-45b8-93c4-9f485267b396`) stays keyboard reachable
+pending a separate cross-browser accessibility check.
+
 ## Contracts that must survive future changes
 
 - Keep the remote browser, its generation, controller lease, viewer connection
